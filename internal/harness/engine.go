@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"sort"
 	"strings"
@@ -230,41 +231,12 @@ type ProbeResult struct {
 	Detail string
 }
 
-// RunScenario dials every declared participant (after=0), executes sc.Steps
-// in order against the binding engine semantics (task-2-brief.md):
-//
-//   - a denied step (Expect.DeniedContaining != "") asserts the command
-//     result is ok=false with an error containing that substring, AND that
-//     NO participant observes any event broadcast within a 300ms absence
-//     window;
-//   - an accepted step (Expect.OK) asserts the result is ok=true, AND that
-//     the event it produced (matched by Sequence) is observed by every
-//     UNPROJECTED participant — the DM and the agent, whose streams are the
-//     log itself. A player's or a spectator's stream is a projection of it
-//     (visibility spec §3.1), so the number of envelopes they receive for one
-//     event is between zero and several and no count can be required of them;
-//     what they DO receive is still collected, because the two assertions
-//     below are computed from it;
-//   - a reconnect step closes that participant's Conn, redials via dial
-//     with the given afterSequence, and asserts the resulting catch-up
-//     replay equals — in event_id order — the subset of that participant's
-//     own previously-observed live events with Sequence > afterSequence.
-//
-// ids is this library's participant-id-placeholder resolution map (P6 Task
-// 4 fix round): every `{{id:<name>}}` occurrence across sc.Steps' Command
-// bytes is resolved to ids[<name>] ONCE, before any participant is dialed
-// or any command dispatched — see resolveParticipantIDPlaceholders' doc
-// comment for why this exists and stays a plain byte substitution. ids may
-// be nil for a scenario that uses no placeholders at all (the common case).
-//
-// Once every step has run, each probe is evaluated against
-// Fold(everything participant 0 has ever observed, live or via catch-up).
-// Human-readable progress is written to report as steps/probes complete;
-// report may be nil (io.Discard). The returned error is reserved for
-// framework failures (e.g. a participant's initial dial failing, an
-// unresolved id placeholder, or a non-fresh campaign — see
-// errFreshCampaignRequired) — scenario assertion failures are reported
-// through Report.Pass/StepResult/ProbeResult, never as a non-nil error.
+// RunScenario dials every participant at after=0, fills {{id:<name>}} from ids,
+// runs sc.Steps and checks sc.Probes on the first participant's fold. A step
+// fails when a world seat misses its event (VTT-381), a denied command reaches
+// a world seat or none can show it did not (VTT-358), a log seat's log breaks
+// (VTT-359) or a replay differs from what its seat saw live (VTT-360, VTT-382).
+// report may be nil; the error is the framework's, never an assertion's.
 func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]string, report io.Writer) (*Report, error) {
 	if report == nil {
 		report = io.Discard
@@ -276,8 +248,8 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 
 	conns := make(map[string]Conn, len(sc.Participants))
 	history := make(map[string][]*vttv1.Envelope, len(sc.Participants))
-	projected := characterSeats(sc.Participants)
-	worldSeat := slices.ContainsFunc(sc.Participants, func(p Participant) bool { return !projected[p.Name] })
+	logSeats := characterSeats(sc.Participants)
+	worldSeat := slices.ContainsFunc(sc.Participants, func(p Participant) bool { return !logSeats[p.Name] })
 	for _, p := range sc.Participants {
 		c, err := dial(p.Name, 0)
 		if err != nil {
@@ -335,22 +307,14 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 	}
 
 	for i, st := range sc.Steps {
-		var sr StepResult
-		switch {
-		case len(st.Command) > 0:
-			sr = runCommandStep(ctx, i, st, conns, projected, history)
-		case st.Reconnect != nil:
-			sr = runReconnectStep(i, st, dial, conns, history)
-		default:
-			sr = StepResult{Index: i, By: st.By, Kind: "unknown", Detail: "step has neither command nor reconnect"}
-		}
+		sr := runStep(ctx, i, st, dial, conns, logSeats, history)
 		rep.Steps = append(rep.Steps, sr)
 
 		// Settle EVERY outstanding denial against this step's own event: they
 		// all precede it, so anything they wrongly produced carries a lower
 		// sequence and must already have arrived.
 		if len(pending) > 0 && sr.firstSeq > 0 {
-			if leaked := leakedSince(history, pending[0].lens, sr.firstSeq, projected); len(leaked) > 0 {
+			if leaked := leakedSince(history, pending[0].lens, sr.firstSeq, logSeats); len(leaked) > 0 {
 				markLeaked(rep, pending, leaked)
 				// The witness step is collateral: it read the leaked event
 				// instead of its own, so its "not observed" message would
@@ -415,6 +379,27 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 	}
 
 	return rep, nil
+}
+
+// runStep runs one step and fails it when a log seat's stream breaks its log
+// in what the step drained (VTT-359).
+func runStep(ctx context.Context, i int, st Step, dial Dialer, conns map[string]Conn,
+	logSeats map[string]bool, history map[string][]*vttv1.Envelope) StepResult {
+	var sr StepResult
+	lens := historyLens(history)
+	switch {
+	case len(st.Command) > 0:
+		sr = runCommandStep(ctx, i, st, conns, logSeats, history)
+	case st.Reconnect != nil:
+		sr = runReconnectStep(i, st, dial, conns, logSeats, history)
+	default:
+		sr = StepResult{Index: i, By: st.By, Kind: "unknown", Detail: "step has neither command nor reconnect"}
+	}
+	if broken := brokenLogs(history, logSeats, lens); len(broken) > 0 {
+		sr.Pass = false
+		sr.Detail = strings.TrimSpace(sr.Detail + " " + strings.Join(broken, "; "))
+	}
+	return sr
 }
 
 // pendingDenial is a denied step whose "no broadcast reached anyone" claim is
@@ -511,10 +496,9 @@ func leakedSince(history map[string][]*vttv1.Envelope, lens map[string]int, witn
 	return leaked
 }
 
-// runCommandStep sends st.Command on the issuing participant's connection
-// and checks it against st.Expect (denial or acceptance — see RunScenario's
-// doc comment for the exact contract of each).
-func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn, projected map[string]bool, history map[string][]*vttv1.Envelope) StepResult {
+// runCommandStep sends st.Command on the issuing participant's connection and
+// checks it against st.Expect: a denial (VTT-358) or an acceptance (VTT-381).
+func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn, logSeats map[string]bool, history map[string][]*vttv1.Envelope) StepResult {
 	sr := StepResult{Index: idx, By: st.By, Kind: "command"}
 
 	conn, ok := conns[st.By]
@@ -585,7 +569,7 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 	// event, matched by observeOnAll below.
 	if isBatchCommand(&cmd) {
 		sr.firstSeq = result.Sequence
-		missing, detail := observeBatchOnAll(conns, projected, history, result.Sequence, observeTimeout, denialAbsenceWindow)
+		missing, detail := observeBatchOnAll(conns, logSeats, history, result.Sequence, observeTimeout, denialAbsenceWindow)
 		if len(missing) > 0 {
 			sr.Detail = fmt.Sprintf("batch (first sequence %d) mismatch for %s: %s", result.Sequence, strings.Join(missing, ", "), detail)
 			return sr
@@ -595,7 +579,7 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 	}
 
 	sr.firstSeq = result.Sequence
-	missing, ended := observeOnAll(conns, projected, history, result.Sequence, observeTimeout, denialAbsenceWindow)
+	missing, ended := observeOnAll(conns, logSeats, history, result.Sequence, observeTimeout, denialAbsenceWindow)
 	if len(ended) > 0 || len(missing) > 0 {
 		// Both facts, never one instead of the other: "did not observe" sends
 		// the reader after a broadcast that may have been perfect, and a
@@ -646,13 +630,13 @@ func isBatchCommand(cmd *vttv1.ClientCommand) bool {
 	}
 }
 
-// runReconnectStep closes the participant's current connection, redials via
-// dial at st.Reconnect.AfterSequence, and asserts the catch-up replay
-// equals (event_id order) the subset of that participant's own previously
-// observed live history with Sequence > AfterSequence. history[st.By] is
-// updated to reflect what was ACTUALLY received (ground truth for any later
-// step or probe), regardless of whether it matched expectations.
-func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, history map[string][]*vttv1.Envelope) StepResult {
+// runReconnectStep redials st.By at st.Reconnect.AfterSequence and compares the
+// replay with what the seat saw live: after the cursor for a world seat
+// (VTT-382), its current log from 1 for a log seat (VTT-360). Expect a false
+// failure once a scenario switches a log seat and then reconnects it: a redial
+// naming no log opens on the default (VTT-340). history[st.By] becomes what the
+// redial actually sent.
+func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, logSeats map[string]bool, history map[string][]*vttv1.Envelope) StepResult {
 	sr := StepResult{Index: idx, By: st.By, Kind: "reconnect"}
 	name := st.By
 
@@ -664,11 +648,16 @@ func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, hist
 	after := st.Reconnect.AfterSequence
 
 	var prefix, want []*vttv1.Envelope
-	for _, env := range history[name] {
-		if env.Sequence > after {
-			want = append(want, env)
-		} else {
-			prefix = append(prefix, env)
+	if logSeats[name] {
+		run := currentRun(history[name])
+		prefix, want = history[name][:run], history[name][run:]
+	} else {
+		for _, env := range history[name] {
+			if env.Sequence > after {
+				want = append(want, env)
+			} else {
+				prefix = append(prefix, env)
+			}
 		}
 	}
 
@@ -739,8 +728,9 @@ func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, hist
 		return sr
 	}
 	for i := range want {
-		if got[i].EventId != want[i].EventId {
-			sr.Detail = fmt.Sprintf("catch-up[%d] event_id = %q, want %q (matching live-observed order)", i, got[i].EventId, want[i].EventId)
+		if got[i].EventId != want[i].EventId || got[i].Sequence != want[i].Sequence {
+			sr.Detail = fmt.Sprintf("catch-up[%d] = %q at sequence %d, want %q at %d (matching live-observed order)",
+				i, got[i].EventId, got[i].Sequence, want[i].EventId, want[i].Sequence)
 			return sr
 		}
 	}
@@ -748,16 +738,55 @@ func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, hist
 	return sr
 }
 
-// observeOnAll reads exactly one new event from every UNPROJECTED
-// participant's connection (in parallel, each bounded by timeout), records it
-// into history regardless of outcome, and returns the names of participants
-// that either didn't see anything in time or saw an event with the wrong
-// Sequence.
-//
-// Projected participants are drained rather than matched — see the block
-// below for why that is the only honest contract once a seat's stream is a
-// projection of the log rather than the log.
-func observeOnAll(conns map[string]Conn, projected map[string]bool, history map[string][]*vttv1.Envelope, wantSeq int64, timeout, quietWindow time.Duration) (missingNames, endedNames []string) {
+// currentRun is the index at which envs' current log starts: its last envelope
+// of sequence 1, or len(envs) for a seat that has been sent none.
+func currentRun(envs []*vttv1.Envelope) int {
+	for i := len(envs) - 1; i >= 0; i-- {
+		if envs[i].GetSequence() == 1 {
+			return i
+		}
+	}
+	return len(envs)
+}
+
+// logBreak is the first index at or after from whose envelope neither continues
+// the run before it nor starts a log at 1, or -1 (VTT-359).
+func logBreak(envs []*vttv1.Envelope, from int) int {
+	for i := max(from, 0); i < len(envs); i++ {
+		seq := envs[i].GetSequence()
+		if seq != 1 && (i == 0 || seq != envs[i-1].GetSequence()+1) {
+			return i
+		}
+	}
+	return -1
+}
+
+// describeBreak names where envs, name's history, stops being one log.
+func describeBreak(name string, envs []*vttv1.Envelope, i int) string {
+	if i == 0 {
+		return fmt.Sprintf("%s's stream opens at sequence %d, not at its log's first entry", name, envs[0].GetSequence())
+	}
+	return fmt.Sprintf("%s's stream breaks its log: sequence %d after %d", name, envs[i].GetSequence(), envs[i-1].GetSequence())
+}
+
+// brokenLogs describes, by name, each log seat whose history after lens breaks
+// its log.
+func brokenLogs(history map[string][]*vttv1.Envelope, logSeats map[string]bool, lens map[string]int) []string {
+	var out []string
+	for _, name := range slices.Sorted(maps.Keys(logSeats)) {
+		envs := history[name]
+		if i := logBreak(envs, min(lens[name], len(envs))); i >= 0 {
+			out = append(out, describeBreak(name, envs, i))
+		}
+	}
+	return out
+}
+
+// observeOnAll reads one event from every world seat, in parallel and each
+// bounded by timeout, records it into history, and names the seats that saw
+// nothing in time or the wrong sequence, and those whose stream ended. A log
+// seat is drained into history instead: one event gives it zero or more entries.
+func observeOnAll(conns map[string]Conn, logSeats map[string]bool, history map[string][]*vttv1.Envelope, wantSeq int64, timeout, quietWindow time.Duration) (missingNames, endedNames []string) {
 	names := sortedParticipantNames(conns)
 	type outcome struct {
 		name  string
@@ -770,7 +799,7 @@ func observeOnAll(conns map[string]Conn, projected map[string]bool, history map[
 	required := 0
 	for _, name := range names {
 		name, conn := name, conns[name]
-		if projected[name] {
+		if logSeats[name] {
 			continue // drained below, after the required seats have observed
 		}
 		required++
@@ -805,32 +834,15 @@ func observeOnAll(conns map[string]Conn, projected map[string]bool, history map[
 		}
 	}
 
-	// A PROJECTED SEAT IS NOT REQUIRED TO OBSERVE ANYTHING, and that is the
-	// visibility arc's doing rather than a relaxation: what such a seat
-	// receives for one event is between zero and several envelopes, and zero
-	// is the right answer for an event about a room they are not standing in
-	// (visibility spec §4.2). Requiring one would fail every honest
-	// projection.
-	//
-	// It is still DRAINED, and that half is load-bearing twice over: the
-	// denial checks prove a negative by counting what arrived since
-	// (leakedSince), and a reconnect step compares catch-up against what the
-	// seat saw LIVE. Both read history, so a seat nobody collected would make
-	// one assertion vacuous and the other wrong.
-	//
-	// AFTER the required seats, never beside them, and that ordering is a
-	// measured requirement rather than tidiness. The drain is bounded by a
-	// quiet window and the required read by a much longer timeout, so a
-	// broadcast that arrives late — which is exactly the shape of the leak
-	// TestDeniedCommandLeakFailsTheDeniedStep injects — reaches the required
-	// seat and would have been missed entirely by a projected one running in
-	// parallel with it. Starting the drain once the event has demonstrably
-	// been delivered somewhere means the projected copy is already queued.
+	// Drain the log seats AFTER the world seats have observed, never beside
+	// them: the drain stops at a quiet window, so an entry that lands late
+	// would be missed by a drain running in parallel. The reconnect and log
+	// checks read what it records (VTT-359, VTT-360).
 	if len(names) > required {
 		var wg sync.WaitGroup
 		var endedMu sync.Mutex
 		for _, name := range names {
-			if !projected[name] {
+			if !logSeats[name] {
 				continue
 			}
 			name, conn := name, conns[name]
@@ -852,52 +864,18 @@ func observeOnAll(conns map[string]Conn, projected map[string]bool, history map[
 	return missing, ended
 }
 
-// observeBatchOnAll asserts every participant observes the FULL batch a
-// use_ability command's result implies, as a CONTIGUOUS run of sequences
-// starting at firstSeq (ruleset-interpreter Task 6, binding, documented
-// here as the one place this is implemented): a use_ability CommandResult
-// carries only the batch's first sequence (campaign.AppendBatch's own
-// contract — see internal/gateway/ruleset.go), never its length, so this
-// cannot wait for a known event count the way observeOnAll does for a
-// single-event command.
-//
-// Per participant, independently and in parallel: wait up to firstTimeout
-// for an event whose Sequence equals firstSeq (the batch's leading event,
-// AbilityUsed); once seen, keep collecting subsequent events as long as
-// each arrives within quietWindow of the previous one AND its Sequence is
-// exactly one past the last one collected (a gap-free run) — the run ends
-// the instant either condition fails: quietWindow elapses with nothing
-// further (the batch is over — the SAME "bounded wait proves a negative"
-// reasoning denialAbsenceWindow's own doc comment already relies on), or an
-// event arrives breaking contiguity (a genuine bug, surfaced as a mismatch
-// rather than silently accepted). Every observed event — whether or not it
-// ends up part of the counted run — is still recorded into history, ground
-// truth for any later step or probe, exactly like observeOnAll's own
-// per-event recording.
-//
-// Correctness of "any event observed here belongs to this batch" rests on
-// RunScenario's own serial execution: exactly one command is ever in
-// flight at a time (steps run strictly in order, and this function is only
-// reached after `result.Ok` has already been confirmed for THIS step's own
-// command) — no other participant is issuing a concurrent command whose
-// events could interleave with this batch's broadcast while this function
-// is collecting, so there is nothing to "push back" onto conn.Events() (a
-// channel offers no such operation) even in the contiguity-break failure
-// case above.
-//
-// The step passes only if every participant's collected run has the SAME
-// length and the SAME sequence of event ids, in order (compared against
-// the first participant's own run) — one atomic AppendBatch broadcast to
-// every subscriber must look identical to every observer, or the step
-// fails naming which participant(s) diverged and how.
-func observeBatchOnAll(conns map[string]Conn, projected map[string]bool, history map[string][]*vttv1.Envelope, firstSeq int64, firstTimeout, quietWindow time.Duration) (missing []string, detail string) {
+// observeBatchOnAll waits for each world seat to observe the batch whose first
+// sequence a batch command's result names: from firstSeq, a gap-free run that
+// ends at a quiet window. Every world seat's run must hold the same event ids
+// in order; a log seat is drained instead. Steps run one at a time, so every
+// event observed here belongs to the batch, and each is recorded into history.
+func observeBatchOnAll(conns map[string]Conn, logSeats map[string]bool, history map[string][]*vttv1.Envelope, firstSeq int64, firstTimeout, quietWindow time.Duration) (missing []string, detail string) {
 	all := sortedParticipantNames(conns)
-	// Same split, same reason, as observeOnAll's: a projected seat receives a
-	// projection of the batch, which is legitimately shorter than the batch
-	// and legitimately empty, so it is drained rather than matched.
+	// Drain a log seat rather than match it, as observeOnAll does: its entries
+	// for a batch may be fewer than the batch, or none.
 	var names []string
 	for _, n := range all {
-		if !projected[n] {
+		if !logSeats[n] {
 			names = append(names, n)
 		}
 	}
@@ -917,12 +895,11 @@ func observeBatchOnAll(conns map[string]Conn, projected map[string]bool, history
 		byName[r.name] = r
 	}
 
-	// Projected seats: drained, never matched, and drained AFTER — the same
-	// split and the same ordering reason as observeOnAll's.
+	// Drain the log seats AFTER, for observeOnAll's reason.
 	if len(all) > len(names) {
 		var wg sync.WaitGroup
 		for _, name := range all {
-			if !projected[name] {
+			if !logSeats[name] {
 				continue
 			}
 			name, conn := name, conns[name]
@@ -949,12 +926,8 @@ func observeBatchOnAll(conns map[string]Conn, projected map[string]bool, history
 	}
 
 	if len(names) == 0 {
-		// EVERY seat is projected, so there is no unfiltered stream to compare
-		// the batch against and this function has nothing left to assert. Not
-		// silently: the drain above still recorded what each seat received, so
-		// the denial and reconnect checks downstream keep their evidence. A
-		// scenario that wants the batch itself pinned needs a DM or an agent
-		// in it, which every committed scenario has.
+		// No world seat: nothing to compare the batch with. The drain above
+		// recorded what each log seat was sent, for the checks that follow.
 		return nil, ""
 	}
 	want := byName[names[0]].envs

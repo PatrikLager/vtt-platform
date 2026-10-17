@@ -224,21 +224,13 @@ func TestScenarioReportCountersMatchStepResults(t *testing.T) {
 	})
 }
 
-// TestReconnectCatchUpExcludesTheCursorEvent pins `env.Sequence > after`
-// (engine.go's runReconnectStep).
-//
-// `after` is a CURSOR, not a lower bound: the participant has already seen
-// that event, so catch-up must replay only what comes strictly after it.
-// Mutated to `>=`, the harness expects the cursor event to be replayed too —
-// so a correctly-behaving server, replaying only newer events, gets reported
-// as delivering a short catch-up. The harness would fail real servers for
-// being right.
-//
-// No existing reconnect test used an AfterSequence that names an event that
-// actually exists, so nothing distinguished the two.
+// TestReconnectCatchUpExcludesTheCursorEvent pins `env.Sequence > after` in
+// runReconnectStep for a world seat: after names an event the seat has seen,
+// so a server replaying only what follows it must pass.
+// VTT-382
 func TestReconnectCatchUpExcludesTheCursorEvent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
+		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "agent": newFakeConn("agent")}
 		sent := 0
 		events := []*vttv1.Envelope{
 			{EventId: "e1", Sequence: 1, SessionId: "sess-1", Payload: &vttv1.Envelope_SessionStarted{
@@ -249,32 +241,32 @@ func TestReconnectCatchUpExcludesTheCursorEvent(t *testing.T) {
 		world["dm"].send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
 			env := events[sent]
 			sent++
-			broadcast(world, env, "dm", "player")
+			broadcast(world, env, "dm", "agent")
 			return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: env.Sequence}, nil
 		}
 
 		sc := &harness.Scenario{
 			Name:         "reconnect-cursor",
-			Participants: []harness.Participant{{Name: "dm", Role: "dm"}, {Name: "player", Role: "player"}},
+			Participants: []harness.Participant{{Name: "dm", Role: "dm"}, {Name: "agent", Role: "agent"}},
 			Steps: []harness.Step{
 				{By: "dm", Command: []byte(`{"startSession":{"name":"s"}}`), Expect: &harness.Expect{OK: true}},
 				{By: "dm", Command: []byte(`{"loadMap":{"mapId":"scn-1"}}`),
 					Expect: &harness.Expect{OK: true}},
-				// after=1 names e1, which player already saw: only e2 may replay.
-				{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 1}},
+				// after=1 names e1, which agent already saw: only e2 may replay.
+				{By: "agent", Reconnect: &harness.ReconnectSpec{AfterSequence: 1}},
 			},
 		}
 
 		// A correct server: replays strictly what follows the cursor.
 		dial := func(name string, after int64) (harness.Conn, error) {
-			if name == "player" && after > 0 {
-				fresh := newFakeConn("player-redialled")
+			if name == "agent" && after > 0 {
+				fresh := newFakeConn("agent-redialled")
 				for _, env := range events[:sent] {
 					if env.Sequence > after {
 						fresh.trySend(env)
 					}
 				}
-				world["player"] = fresh
+				world["agent"] = fresh
 				return fresh, nil
 			}
 			return world[name], nil

@@ -129,6 +129,8 @@ type soakWorld struct {
 	// leakOnlyTo, when set, delivers a leak to that participant alone.
 	leakOnlyTo  string
 	leakTargets map[*vttv1.Envelope]string
+	// skipFor withholds one sequence from one participant's connections.
+	skipFor map[string]int64
 
 	// slowBroadcast, when > 0, delivers ACCEPTED broadcasts from a goroutine
 	// after that delay instead of inline — modelling a server whose fan-out
@@ -450,6 +452,9 @@ func (w *soakWorld) maybeLeak() {
 func (w *soakWorld) broadcast(env *vttv1.Envelope) {
 	for _, c := range w.conns {
 		if to, ok := w.leakTargets[env]; ok && c.name != to {
+			continue
+		}
+		if seq, ok := w.skipFor[c.name]; ok && seq == env.Sequence {
 			continue
 		}
 		// trySend, not a bare channel send: conns keeps every connection ever
@@ -1109,4 +1114,65 @@ func TestRunSoakCatchesALeakOnTheAgentsStreamAlone(t *testing.T) {
 			t.Errorf("the soak should blame the leak on the agent's stream alone, log:\n%s", log.String())
 		}
 	})
+}
+
+// VTT-359 VTT-383
+func TestASoakCheckpointFailsACharacterStreamThatSkips(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ids := soakTestIDs()
+		w := newSoakWorld(ids)
+		w.skipFor = map[string]int64{"player1": 10}
+
+		var log bytes.Buffer
+		rep, err := harness.RunSoak(context.Background(),
+			harness.SoakConfig{Seed: 5, Events: 120, CheckEvery: 50, IDs: ids}, w.dial, &log)
+		if err != nil {
+			t.Fatalf("RunSoak: %v", err)
+		}
+		if rep.Pass {
+			t.Fatalf("a soak whose player1 was never sent sequence 10 passed:\n%s", log.String())
+		}
+		const want = "[checkpoint 1] FAIL: player1's stream breaks its log: sequence 11 after 9"
+		if !strings.Contains(log.String(), want) {
+			t.Fatalf("the first checkpoint did not name the skip (%q):\n%s", want, log.String())
+		}
+		if strings.Contains(log.String(), "[checkpoint 2] FAIL: player1") {
+			t.Fatalf("a later checkpoint blamed player1 again for the same skip:\n%s", log.String())
+		}
+		if strings.Contains(log.String(), "player2's stream") {
+			t.Fatalf("player2, sent every sequence, was blamed:\n%s", log.String())
+		}
+	})
+}
+
+// VTT-359
+func TestTheLastSoakCheckpointReadsWhatALateFanOutDelivers(t *testing.T) {
+	run := func(t *testing.T, skip int64) (pass bool, log string, secondLast int64) {
+		t.Helper()
+		synctest.Test(t, func(t *testing.T) {
+			ids := soakTestIDs()
+			w := newSoakWorld(ids)
+			w.slowBroadcast = 50 * time.Millisecond
+			if skip > 0 {
+				w.skipFor = map[string]int64{"player1": skip}
+			}
+			var out bytes.Buffer
+			rep, err := harness.RunSoak(context.Background(),
+				harness.SoakConfig{Seed: 5, Events: 120, CheckEvery: 50, IDs: ids}, w.dial, &out)
+			if err != nil {
+				t.Fatalf("RunSoak: %v", err)
+			}
+			w.bcWG.Wait()
+			pass, log, secondLast = rep.Pass, out.String(), w.history[len(w.history)-2].Sequence
+		})
+		return pass, log, secondLast
+	}
+	pass, log, secondLast := run(t, 0)
+	if !pass {
+		t.Fatalf("fixture: the clean run failed:\n%s", log)
+	}
+	if pass, log, _ = run(t, secondLast); pass || !strings.Contains(log, "player1's stream breaks its log") {
+		t.Fatalf("player1 was never sent the second-to-last event, %d, and the soak did not say so:\n%s",
+			secondLast, log)
+	}
 }

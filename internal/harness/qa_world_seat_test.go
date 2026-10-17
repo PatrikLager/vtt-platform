@@ -344,6 +344,7 @@ func TestQAWSALeakToEveryWorldSeatNamesEachOfThem(t *testing.T) {
 	})
 }
 
+// VTT-359
 func TestQAWSCharacterSeatEnvelopesBelowTheWitnessAreNotRead(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rep, tab := qaWSRun(t, qaWSTable4, qaWSOrderingSteps(), map[string]qaWSAct{
@@ -353,12 +354,15 @@ func TestQAWSCharacterSeatEnvelopesBelowTheWitnessAreNotRead(t *testing.T) {
 			}},
 		})
 		qaWSWantStrays(t, tab, 2)
-		if !rep.Pass {
-			t.Fatalf("want pass\n%s", qaWSDump(rep))
+		qaWSWantPass(t, rep, 3)
+		qaWSWantFail(t, rep, 4, "carol's stream breaks its log", "dave's stream breaks its log")
+		if strings.Contains(rep.Steps[4].Detail, "unexpected broadcast") {
+			t.Fatalf("a character seat's stray was read as a leak\n%s", qaWSDump(rep))
 		}
 	})
 }
 
+// VTT-380
 func TestQAWSEveryRoleButPlayerAndSpectatorIsAWorldSeat(t *testing.T) {
 	for _, role := range []string{"", "custom", "agent", "dm"} {
 		t.Run(fmt.Sprintf("role=%q", role), func(t *testing.T) {

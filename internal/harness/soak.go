@@ -77,7 +77,7 @@ type SoakReport struct {
 	Accepted int
 	Denied   int
 	// Checkpoints counts how many incremental-fold-vs-fresh-catch-up-fold
-	// comparisons ran (periodic, every CheckEvery accepted events, plus
+	// comparisons ran (periodic, every CheckEvery accepted actions, plus
 	// exactly one more at the end) — a passing soak report always shows
 	// Checkpoints > 0 for any Events large enough to accept at least one
 	// action.
@@ -214,20 +214,12 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 	}
 
 	participants := SoakParticipants()
-	// SPLIT BY WHAT THEIR STREAM IS, because since the visibility projection
-	// landed "everyone receives every event" is no longer true of this roster
-	// (visibility spec §3.1). The DM and the agent still do, so they can be
-	// waited on BY SEQUENCE. The two players receive what their actors can
-	// see, which for most of a soak's events is nothing at all — waiting for a
-	// sequence in their history would time out on a correct server.
-	//
-	// Both lists matter and for different assertions: the sequence wait is
-	// what makes the denial snapshots meaningful, and the projected seats
-	// still have to be SETTLED before those snapshots (see settle) or their
-	// legitimately-late envelopes are read as a leak.
-	projected := characterSeats(participants)
-	unprojectedNames := make([]string, 0, len(participants))
-	projectedNames := make([]string, 0, len(participants))
+	// Wait on a world seat by sequence: its stream is the log. Settle a log
+	// seat by quiet instead (settle), since most events send it nothing, and
+	// check its stream at each checkpoint for being one log (VTT-359).
+	logSeats := characterSeats(participants)
+	worldNames := make([]string, 0, len(participants))
+	logNames := make([]string, 0, len(participants))
 	conns := make(map[string]Conn, len(participants))
 	for _, p := range participants {
 		c, err := dial(p.Name, 0)
@@ -235,10 +227,10 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 			return nil, fmt.Errorf("harness: soak: dial participant %q: %w", p.Name, err)
 		}
 		conns[p.Name] = c
-		if projected[p.Name] {
-			projectedNames = append(projectedNames, p.Name)
+		if logSeats[p.Name] {
+			logNames = append(logNames, p.Name)
 		} else {
-			unprojectedNames = append(unprojectedNames, p.Name)
+			worldNames = append(worldNames, p.Name)
 		}
 	}
 	defer func() {
@@ -304,11 +296,11 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 			// and be mistaken for a leaked broadcast from THIS denied
 			// command.
 			if lastAcceptedSeq > 0 {
-				if !histories.waitAllCaughtUp(unprojectedNames, lastAcceptedSeq, observeTimeout) {
+				if !histories.waitAllCaughtUp(worldNames, lastAcceptedSeq, observeTimeout) {
 					rep.Pass = false
-					fmt.Fprintf(report, "[action %d] FAIL: not every unprojected participant caught up to sequence %d within %s before the denial-attempt snapshot\n", i, lastAcceptedSeq, observeTimeout)
+					fmt.Fprintf(report, "[action %d] FAIL: not every world seat caught up to sequence %d within %s before the denial-attempt snapshot\n", i, lastAcceptedSeq, observeTimeout)
 				}
-				histories.settle(projectedNames, denialAbsenceWindow, observeTimeout)
+				histories.settle(logNames, denialAbsenceWindow, observeTimeout)
 			}
 			preLens = histories.lengths()
 		}
@@ -360,12 +352,12 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 				//
 				// This costs nothing on a healthy run: the witness event is
 				// one the server just accepted, so it is already in flight.
-				if !histories.waitAllCaughtUp(unprojectedNames, result.Sequence, observeTimeout) {
+				if !histories.waitAllCaughtUp(worldNames, result.Sequence, observeTimeout) {
 					rep.Pass = false
-					fmt.Fprintf(report, "[action %d] FAIL: not every unprojected participant observed the witness event %d within %s, so the preceding denied action's absence claim could not be settled\n",
+					fmt.Fprintf(report, "[action %d] FAIL: not every world seat observed the witness event %d within %s, so the preceding denied action's absence claim could not be settled\n",
 						i, result.Sequence, observeTimeout)
 				}
-				if leaked := histories.leakedBelow(pending[0].lens, result.Sequence, projected); len(leaked) > 0 {
+				if leaked := histories.leakedBelow(pending[0].lens, result.Sequence, logSeats); len(leaked) > 0 {
 					rep.Pass = false
 					fmt.Fprint(report, deniedLeakLine(pending, leaked))
 				}
@@ -377,7 +369,7 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 			fmt.Fprintf(report, "[action %d] by=%s kind=%s accepted (sequence %d)\n", i, step.issuer, step.kind, result.Sequence)
 
 			if rep.Accepted%checkEvery == 0 {
-				if err := runSoakCheckpoint(rep, histories, dial, lastAcceptedSeq, report); err != nil {
+				if err := runSoakCheckpoint(rep, histories, dial, lastAcceptedSeq, logNames, report); err != nil {
 					return nil, err
 				}
 			}
@@ -391,7 +383,9 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 		settleTrailingDenials(rep, histories, pending, report)
 	}
 
-	if err := runSoakCheckpoint(rep, histories, dial, lastAcceptedSeq, report); err != nil {
+	// Settle the log seats first: no checkpoint follows to read what arrives late.
+	histories.settle(logNames, denialAbsenceWindow, observeTimeout)
+	if err := runSoakCheckpoint(rep, histories, dial, lastAcceptedSeq, logNames, report); err != nil {
 		return nil, err
 	}
 
@@ -446,15 +440,17 @@ type deniedPending struct {
 	lens   map[string]int
 }
 
-// runSoakCheckpoint folds the observer's incrementally-drained history,
-// folds a FRESH catch-up (a brand-new second connection, dialed after=0,
-// drained to quiescence, then closed), and compares the two via
-// statesEqual — RunSoak's central, repeated proof (see the package
-// comment). waitForSeq > 0 makes the observer's history wait to include
-// that sequence first (bounded by observeTimeout), closing the race between
-// SendCommand returning and that same command's OWN broadcast reaching
-// Events() a beat later (client.go's SendCommand doc comment).
-func runSoakCheckpoint(rep *SoakReport, histories *soakHistories, dial Dialer, waitForSeq int64, report io.Writer) error {
+// runSoakCheckpoint checks each of logNames' streams since the last checkpoint
+// for being one log (VTT-359), then compares the fold of the observer's
+// drained history, once it holds waitForSeq when that is above 0, with the
+// fold of a fresh after=0 catch-up: RunSoak's central proof.
+func runSoakCheckpoint(rep *SoakReport, histories *soakHistories, dial Dialer, waitForSeq int64, logNames []string, report io.Writer) error {
+	// Count first: every line this checkpoint writes carries its own number.
+	rep.Checkpoints++
+	for _, broken := range histories.brokenLogs(logNames) {
+		rep.Pass = false
+		fmt.Fprintf(report, "[checkpoint %d] FAIL: %s\n", rep.Checkpoints, broken)
+	}
 	if waitForSeq > 0 && !histories.waitFor(soakObserverName, waitForSeq, observeTimeout) {
 		rep.Pass = false
 		fmt.Fprintf(report, "[checkpoint %d] FAIL: observer %q never caught up to sequence %d within %s\n", rep.Checkpoints, soakObserverName, waitForSeq, observeTimeout)
@@ -507,7 +503,6 @@ func runSoakCheckpoint(rep *SoakReport, histories *soakHistories, dial Dialer, w
 		return fmt.Errorf("harness: soak: checkpoint %d: fold fresh catch-up: %w", rep.Checkpoints, err)
 	}
 
-	rep.Checkpoints++
 	if !statesEqual(incrementalState, freshState) {
 		rep.Pass = false
 		fmt.Fprintf(report, "[checkpoint %d] FAIL: incremental fold (%d events) != fresh catch-up fold (%d events)\n", rep.Checkpoints, len(incremental), len(freshHistory))
@@ -685,24 +680,10 @@ func statesEqual(a, b *engine.State) bool {
 
 // --- continuously-drained per-participant history ---------------------------
 
-// soakHistories accumulates every envelope each dialed participant observes
-// over its OWN connection, for the full lifetime of that connection — begun
-// immediately at dial time (see start), the same obligation any honest
-// continuous client has (client.go's eventBuffer doc comment: a consumer
-// that falls behind for 256 envelopes gets torn down with
-// ErrEventsOverflow). This serves three purposes at once: it is what keeps
-// every one of the four long-lived connections drained (never overflowing)
-// across a long run; it is the checkpoint's "incremental" side (the
-// observer's history); and it is the evidence base for the denial-leak
-// accounting RunSoak's main loop runs around every denied/accepted step —
-// lengths and leakedBelow read a point-in-time snapshot for the "did
-// anything land below the witness sequence" proof, grewSince and settle
-// read it again for the trailing-denial and projected-seat cases, and
-// waitAllCaughtUp blocks on it directly — none of which has any source
-// other than this type (fix round 1: the omission of this third purpose
-// from this comment predates Task 4 of
-// docs/superpowers/plans/2026-08-31-retraction-leaves.md (commit 92f1284)
-// and is fixed here, not merely re-derived down to two).
+// soakHistories is every participant's history, drained from dial time for as
+// long as its connection lives, so no connection overflows. The observer's is
+// a checkpoint's incremental side; every denial, catch-up and log check reads
+// it, and nothing else holds it.
 type soakHistories struct {
 	mu   sync.Mutex
 	data map[string][]*vttv1.Envelope
@@ -711,13 +692,32 @@ type soakHistories struct {
 	// absence check, and silence from a dead connection is not evidence —
 	// see grewSince.
 	ended map[string]error
+	// checked is how much of each log seat's history brokenLogs has read.
+	checked map[string]int
 }
 
 func newSoakHistories() *soakHistories {
 	return &soakHistories{
-		data:  map[string][]*vttv1.Envelope{},
-		ended: map[string]error{},
+		data:    map[string][]*vttv1.Envelope{},
+		ended:   map[string]error{},
+		checked: map[string]int{},
 	}
+}
+
+// brokenLogs describes each of names whose history since the last call breaks
+// its log (VTT-359).
+func (h *soakHistories) brokenLogs(names []string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []string
+	for _, name := range names {
+		envs := h.data[name]
+		if i := logBreak(envs, h.checked[name]); i >= 0 {
+			out = append(out, describeBreak(name, envs, i))
+		}
+		h.checked[name] = len(envs)
+	}
+	return out
 }
 
 // start launches the one goroutine that drains name's connection for as
@@ -1297,19 +1297,10 @@ func (m *soakModel) planDeniedAttempt(rng *rand.Rand) (soakStep, bool) {
 	return soakStep{issuer: player, cmd: cmd, kind: actionDeniedAttempt, wantDenied: true, apply: func(int64) {}}, true
 }
 
-// settle waits until every name's history has stopped growing for a whole
-// quiet window, bounded by timeout.
-//
-// The sequence wait (waitAllCaughtUp) is the sharper instrument and is used
-// wherever it can be: it names the exact envelope it is waiting for. It cannot
-// be used on a PROJECTED seat, because there is no envelope to name — what
-// such a seat receives for a given log event is between zero and several, and
-// zero is a correct answer (visibility spec §4.2). Quiet is the only signal
-// left, and it is the same "a bounded silence proves the negative" reasoning
-// denialAbsenceWindow already rests on everywhere else in this file.
-//
-// Returns nothing: a seat that never goes quiet is a busy one, not a broken
-// one, and the assertions this precedes report their own failures.
+// settle waits, bounded by timeout, until every name's history has stopped
+// growing for a whole quiet window. Use it for a log seat only: a world seat's
+// sequence wait (waitAllCaughtUp) names the envelope it waits for, and a log
+// seat has none to name. A seat that never goes quiet is busy, not broken.
 func (h *soakHistories) settle(names []string, quiet, timeout time.Duration) {
 	if len(names) == 0 {
 		return

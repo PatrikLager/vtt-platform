@@ -188,6 +188,7 @@ func TestRunScenarioOKStepPassesWhenAllParticipantsObserveBroadcast(t *testing.T
 	})
 }
 
+// VTT-381
 func TestRunScenarioOKStepFailsWhenBroadcastOmittedForOneParticipant(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		dm := newFakeConn("dm")
@@ -323,6 +324,7 @@ func TestRunScenarioReconnectCatchUpEqualityPasses(t *testing.T) {
 	})
 }
 
+// VTT-382
 func TestRunScenarioReconnectCatchUpEqualityFailsOnMismatch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		dm := newFakeConn("dm")
@@ -1092,4 +1094,112 @@ func TestRunScenarioLoadMapWithAPlacementObservesTheWholeBatch(t *testing.T) {
 			}
 		})
 	})
+}
+
+// logStepSend accepts each call as world sequence n, sending dm that event and
+// player the log entries logs[n-1] names by sequence.
+func logStepSend(world map[string]*fakeConn, logs [][]int64) func(*vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+	n := int64(0)
+	return func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
+		n++
+		env := sceneCreatedEnv(fmt.Sprintf("ev-%d", n))
+		if n == 1 {
+			env = sessionStartedEnv("ev-1")
+		} else {
+			env.GetSceneCreated().SceneId = fmt.Sprintf("scn-%d", n)
+		}
+		env.Sequence = n
+		world["dm"].trySend(env)
+		for _, seq := range logs[n-1] {
+			world["player"].trySend(&vttv1.Envelope{EventId: fmt.Sprintf("ev-%d-at-%d", n, seq), Sequence: seq,
+				Payload: &vttv1.Envelope_NarrationAdded{NarrationAdded: &vttv1.NarrationAdded{Text: "entry"}}})
+		}
+		return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: n}, nil
+	}
+}
+
+func logSeatScenario(steps int, extra ...harness.Step) *harness.Scenario {
+	sc := &harness.Scenario{Participants: []harness.Participant{{Name: "dm", Role: "dm"}, {Name: "player", Role: "player"}}}
+	for range steps {
+		sc.Steps = append(sc.Steps, harness.Step{By: "dm", Command: []byte(`{"startSession":{"name":"s1"}}`),
+			Expect: &harness.Expect{OK: true}})
+	}
+	sc.Steps = append(sc.Steps, extra...)
+	return sc
+}
+
+// VTT-359
+func TestACharacterSeatsEnvelopeOutOfItsLogFailsTheStep(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
+		// A run, an event the log does not hold, a switch to a new log, then a
+		// world sequence where the new log's second entry belongs.
+		world["dm"].send = logStepSend(world, [][]int64{{1, 2}, {}, {3}, {1}, {5}})
+		rep, err := harness.RunScenario(context.Background(), logSeatScenario(5), fixedDialer(world), nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		for _, i := range []int{0, 1, 2, 3} {
+			if !rep.Steps[i].Pass {
+				t.Errorf("step %d: %s, want pass: its entries continue the log or start one at 1", i, rep.Steps[i].Detail)
+			}
+		}
+		if s := rep.Steps[4]; s.Pass || !strings.Contains(s.Detail, "player's stream breaks its log: sequence 5 after 1") {
+			t.Fatalf("step 4 = %+v, want it failed for player's stream breaking its log", s)
+		}
+	})
+	synctest.Test(t, func(t *testing.T) {
+		world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
+		world["dm"].send = logStepSend(world, [][]int64{{4}})
+		rep, err := harness.RunScenario(context.Background(), logSeatScenario(1), fixedDialer(world), nil, io.Discard)
+		if err != nil {
+			t.Fatalf("RunScenario: %v", err)
+		}
+		if s := rep.Steps[0]; s.Pass || !strings.Contains(s.Detail, "player's stream opens at sequence 4") {
+			t.Fatalf("step 0 = %+v, want it failed for a stream opening past its log's first entry", s)
+		}
+	})
+}
+
+// VTT-360
+func TestACharacterSeatsReconnectIsComparedWithItsCurrentLog(t *testing.T) {
+	entry := func(id string, seq int64) *vttv1.Envelope { return &vttv1.Envelope{EventId: id, Sequence: seq} }
+	replay := func(t *testing.T, envs ...*vttv1.Envelope) harness.StepResult {
+		t.Helper()
+		var got harness.StepResult
+		synctest.Test(t, func(t *testing.T) {
+			world := map[string]*fakeConn{"dm": newFakeConn("dm"), "player": newFakeConn("player")}
+			// Log A's first two entries, then a switch to log B.
+			world["dm"].send = logStepSend(world, [][]int64{{1, 2}, {1}})
+			old, redial := world["player"], newFakeConn("player-redialled")
+			for _, env := range envs {
+				redial.trySend(env)
+			}
+			dial := func(name string, after int64) (harness.Conn, error) {
+				if name == "player" && old.isClosed() {
+					return redial, nil
+				}
+				return world[name], nil
+			}
+			sc := logSeatScenario(2, harness.Step{By: "player", Reconnect: &harness.ReconnectSpec{AfterSequence: 2}})
+			rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
+			if err != nil {
+				t.Fatalf("RunScenario: %v", err)
+			}
+			got = rep.Steps[2]
+		})
+		return got
+	}
+	if s := replay(t, entry("ev-2-at-1", 1)); !s.Pass {
+		t.Errorf("a replay of log B from its first entry: %s, want pass", s.Detail)
+	}
+	if s := replay(t, entry("ev-1-at-1", 1), entry("ev-1-at-2", 2)); s.Pass {
+		t.Error("a replay of log A, which the seat left, passed")
+	}
+	if s := replay(t, entry("ev-1-at-1", 1), entry("ev-1-at-2", 2), entry("ev-2-at-1", 1)); s.Pass {
+		t.Error("a replay of both logs passed")
+	}
+	if s := replay(t, entry("ev-2-at-1", 2)); s.Pass {
+		t.Error("a replay of log B's entry at another sequence passed")
+	}
 }

@@ -219,9 +219,8 @@ func TestObserveOnAllSeparatesADeadStreamFromAMissedEvent(t *testing.T) {
 	dead.finish()
 
 	history := map[string][]*vttv1.Envelope{}
-	// No projected seats: this pins the UNFILTERED contract, which is the one
-	// that answers "who did not see this event" at all. What a projected seat
-	// does here has its own test below.
+	// No log seats: this pins the world seats' contract, the one that answers
+	// who did not see this event. A log seat's has its own test below.
 	missing, ended := observeOnAll(
 		map[string]Conn{"saw": saw, "missed": missed, "dead": dead}, nil, history, 7,
 		50*time.Millisecond, 20*time.Millisecond)
@@ -342,21 +341,14 @@ func TestSoakHistoriesStillCatchARealLeak(t *testing.T) {
 	}
 }
 
-// TestObserveOnAllNeverRequiresAProjectedSeatToSeeAnything is the visibility
-// arc's amendment to the contract above, and both halves matter.
-//
-// A projected seat receives what its participant may see, so silence is a
-// legitimate answer for an event about a room they are not in — requiring one
-// event each would fail every honest projection (visibility spec §4.2). But
-// what it DOES receive still has to reach history, because the denial checks
-// count what arrived since (leakedSince) and the reconnect step compares
-// catch-up against what was seen live; a seat drained by nobody makes one
-// assertion vacuous and the other wrong.
-func TestObserveOnAllNeverRequiresAProjectedSeatToSeeAnything(t *testing.T) {
-	silent := newStubConn() // a projected seat that may see nothing
+// One event may send a log seat no entry or several: keep a log seat out of
+// missing, and keep what it is sent reaching history, which the log and
+// reconnect checks read (VTT-359, VTT-360).
+func TestObserveOnAllNeverRequiresALogSeatToSeeAnything(t *testing.T) {
+	silent := newStubConn() // a log seat sent nothing
 	watching := newStubConn()
 	watching.send(envSeq(7))
-	watching.send(envSeq(7)) // one event, two projected envelopes
+	watching.send(envSeq(7)) // one event, two entries
 	dm := newStubConn()
 	dm.send(envSeq(7))
 
@@ -367,7 +359,7 @@ func TestObserveOnAllNeverRequiresAProjectedSeatToSeeAnything(t *testing.T) {
 		history, 7, 50*time.Millisecond, 30*time.Millisecond)
 
 	if len(missing) != 0 {
-		t.Fatalf("a projected seat must never be reported missing, got %v", missing)
+		t.Fatalf("a log seat must never be reported missing, got %v", missing)
 	}
 	if len(ended) != 0 {
 		t.Fatalf("nothing ended, got %v", ended)
@@ -376,18 +368,18 @@ func TestObserveOnAllNeverRequiresAProjectedSeatToSeeAnything(t *testing.T) {
 		t.Fatalf("the silent seat recorded %d envelopes, want 0", len(history["silent"]))
 	}
 	if len(history["watching"]) != 2 {
-		t.Fatalf("a projected seat given two envelopes for one event recorded %d, want 2 — "+
-			"the denial and reconnect assertions read this", len(history["watching"]))
+		t.Fatalf("a log seat given two entries for one event recorded %d, want 2 — "+
+			"the log and reconnect checks read this", len(history["watching"]))
 	}
 	if len(history["dm"]) != 1 {
-		t.Fatalf("the unprojected seat recorded %d envelopes, want 1", len(history["dm"]))
+		t.Fatalf("the world seat recorded %d envelopes, want 1", len(history["dm"]))
 	}
 }
 
-// TestObserveOnAllStillNamesAProjectedSeatWhoseStreamDied keeps the half that
+// TestObserveOnAllStillNamesALogSeatWhoseStreamDied keeps the half that
 // silence must not swallow: a seat entitled to receive nothing is not the same
 // as a seat that can no longer receive at all.
-func TestObserveOnAllStillNamesAProjectedSeatWhoseStreamDied(t *testing.T) {
+func TestObserveOnAllStillNamesALogSeatWhoseStreamDied(t *testing.T) {
 	dead := newStubConn()
 	dead.err = ErrEventsOverflow
 	dead.finish()
@@ -401,9 +393,9 @@ func TestObserveOnAllStillNamesAProjectedSeatWhoseStreamDied(t *testing.T) {
 		history, 7, 50*time.Millisecond, 30*time.Millisecond)
 
 	if len(missing) != 0 {
-		t.Fatalf("a projected seat must never be reported missing, got %v", missing)
+		t.Fatalf("a log seat must never be reported missing, got %v", missing)
 	}
 	if len(ended) != 1 || ended[0] != "dead" {
-		t.Fatalf("want the dead projected stream named, got %v", ended)
+		t.Fatalf("want the dead log seat's stream named, got %v", ended)
 	}
 }

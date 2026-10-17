@@ -333,6 +333,25 @@ missing`, `outside the tool`.
 
 ## Open debt
 
+**The harness cannot see a log seat switched on its old subscription.**
+Recipe: in `seat.watch` (`internal/gateway/seat.go`), at the top of its loop,
+set `shown` and `told` and return when `s.unsub` is not nil, so a switch is
+announced while the old log keeps arriving. Every `cmd/vtt` scenario test
+stays green, the seed-1 soak included. The corpus's only switches are
+`scenarios/shared-control.json`'s revocations, which move a seat from a log to
+nobody, and a stream that keeps the old log then simply continues its run;
+`internal/harness`'s client drops `ViewpointChanged`, so `logBreak` sees a
+switch only when the new log restarts at 1. The gateway's
+`TestAConnectionStopsWatchingAnActorItMayNoLongerWatch` goes red on the same
+edit (VTT-348). The same blindness makes `runReconnectStep` fail a correct
+server once a scenario switches a log seat and then reconnects it: the redial
+opens on the default (VTT-340), and the harness compares it with the log the
+seat was switched to. Labels: `test data missing`, `outside the tool`.
+Closing it needs the harness to know a seat's viewpoint, by surfacing
+`ViewpointChanged` through `Conn` or by passing `log` through the `Dialer`,
+which the fourth per-character-logs ticket carries. Recorded 2026-10-17 by
+ticket 3b's Task 6, whose deliberate break found it.
+
 **`migrateLocked`'s re-read error arm is unreachable through `testdb`.**
 `migrateLocked` in `internal/identity` re-reads the table's shape under the
 write lock and wraps a failure there as `identity: migrate:`; nothing holds
