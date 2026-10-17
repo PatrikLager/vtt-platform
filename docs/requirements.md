@@ -346,3 +346,36 @@ checked: `docs/specifications/008-requirement-ids-come-from-the-dispenser.md`.
 | VTT-335 | Closing the campaign ends every character log subscription. | internal/campaign/character_subscribe_test.go#TestClosingTheCampaignEndsCharacterSubscriptions, internal/store/character_subscribe_test.go#TestClosingTheStoreEndsCharacterSubscriptions, internal/store/qa_character_subscribe_test.go#TestQASubClosingTheStoreEndsEveryCharacterSubscription, internal/campaign/qa_character_subscribe_test.go#TestQACSubClosingTheCampaignEndsEveryCharacterSubscription |
 | VTT-336 | A character log subscription that leaves a waiting entry unaccepted for its no-progress budget is closed. | internal/store/character_subscribe_test.go#TestAStalledCharacterSubscriberIsDroppedAfterTheNoProgressTimeout, internal/store/qa_character_subscribe_test.go#TestQASubStalledSubscriptionIsClosedAfterItsBudget, internal/campaign/qa_character_subscribe_test.go#TestQACSubAStalledReaderIsClosedAndDelaysNoOther |
 | VTT-337 | A character log subscription that stops reading delays and closes no other subscription. | internal/store/character_subscribe_test.go#TestAStalledCharacterSubscriberIsDroppedAfterTheNoProgressTimeout, internal/store/qa_character_subscribe_test.go#TestQASubStalledSubscriptionDelaysAndClosesNoOther, internal/campaign/qa_character_subscribe_test.go#TestQACSubAStalledReaderIsClosedAndDelaysNoOther |
+| VTT-338 | A player's or a spectator's connection is sent the entries of the one character log it watches, each as that log holds it, and no world event. | **OPEN — no test yet** |
+| VTT-339 | A player's or a spectator's connection that names a log its participant may watch opens on that log. | **OPEN — no test yet** |
+| VTT-340 | Whenever a player's connection watches no actor the player may watch, it watches their first party member by id, or nobody when they control none. | **OPEN — no test yet** |
+| VTT-341 | A connection that watches nobody is sent no event. | **OPEN — no test yet** |
+| VTT-342 | A switch of what an open connection watches is announced by one `ViewpointChanged`, followed by the new log from its first entry, or by no entry for a switch to nobody. | **OPEN — no test yet** |
+| VTT-343 | A player's `set_viewpoint` is accepted only for a party member they control. | **OPEN — no test yet** |
+| VTT-344 | A player may issue none of `add_actor`, `place_token`, `remove_token`, `remove_actor`, `start_session`, `end_session`, `upsert_note`, `delete_note`, `load_adventure`, `load_map` and `grant_actor_control`, even for an actor or token they control. | **OPEN — no test yet** |
+| VTT-345 | A spectator's `set_viewpoint` naming no actor is accepted. | **OPEN — no test yet** |
+| VTT-346 | A player's `set_viewpoint` naming no actor is refused. | **OPEN — no test yet** |
+| VTT-347 | A refused `set_viewpoint` naming an actor gives one string whether the actor exists, is a party member, or is controlled by the player. | **OPEN — no test yet** |
+| VTT-348 | No entry of a log caused by the event that took away a connection's right to watch that log, or by a later event, is sent on that connection. | **OPEN — no test yet** |
+| VTT-349 | A player's or a spectator's connection is sent only entries after its cursor when it opens on the log it names, and otherwise the log it opens on from its first entry. | **OPEN — no test yet** |
+| VTT-350 | A player may not move a token onto a square the character they watch cannot see. | **OPEN — no test yet** |
+| VTT-351 | A player's move is judged by the eyes of the character their connection shows or, when they may no longer watch that one, of their first party member by id at the command's snapshot. | **OPEN — no test yet** |
+| VTT-352 | A revoked player's or spectator's connection is closed at the next append, whether or not that append sends it an entry. | **OPEN — no test yet** |
+| VTT-353 | Each successful append wakes every append watch of the campaign. | **OPEN — no test yet** |
+| VTT-354 | A refused, failed or poisoning append wakes no append watch. | **OPEN — no test yet** |
+| VTT-355 | An append's wake is raised after its live apply and before any of its entries is delivered. | **READING — Phase 4b** |
+| VTT-356 | Closing the campaign ends every append watch. | **OPEN — no test yet** |
+| VTT-357 | A poisoned campaign refuses an append watch. | **OPEN — no test yet** |
+| VTT-358 | A scenario's denied step fails as unprovable when no world seat is connected. | **OPEN — no test yet** |
+| VTT-359 | A character seat that receives an envelope whose sequence neither continues its log's run nor starts one at 1 fails the scenario step or the soak checkpoint that drained it. | **OPEN — no test yet** |
+| VTT-360 | A character seat's reconnect step fails when its replay differs from the seat's live history since its last entry of sequence 1. | **OPEN — no test yet** |
+| VTT-361 | Every active character log introduces every party member, seen or not. | **OPEN — no test yet** |
+| VTT-362 | Narration reaches every active character log. | **OPEN — no test yet** |
+| VTT-363 | A session's start and end reach every active character log. | **OPEN — no test yet** |
+| VTT-364 | A public note reaches every active character log, whatever its character sees. | **OPEN — no test yet** |
+| VTT-365 | The character a log is written for counts as seen in that log, with or without a token on a seen square. | **OPEN — no test yet** |
+| VTT-366 | A player's or a spectator's connection holds no subscription to the world log. | **READING — Phase 4b** |
+| VTT-367 | No entry of the previous log is sent after a switch's `ViewpointChanged`. | **OPEN — no test yet** |
+| VTT-368 | A player's or a spectator's connection is sent a `ViewpointChanged` naming what it opens on before any entry. | **OPEN — no test yet** |
+| VTT-369 | A spectator's connection whose `log` names no party member opens watching nobody. | **OPEN — no test yet** |
+| VTT-370 | A player who controls no party member may move no token. | **OPEN — no test yet** |
