@@ -376,6 +376,23 @@ Closing it needs the harness to know a seat's viewpoint, by surfacing
 which the fourth per-character-logs ticket carries. Recorded 2026-10-17 by
 ticket 3b's Task 6, whose deliberate break found it.
 
+**A promotion re-judges a seat only at the next append's wake.** Recipe: in
+`internal/gateway`, perch a spectator on a party member another player
+controls while that log's catch-up is still queued, promote the spectator to
+player with `promote_participant`, and append nothing. The connection, now a
+player's, is still sent the queued rest of that log and goes on showing it
+until an append's wake makes `recheck` move it to the default, though VTT-340
+says a player watches their first party member "whenever" they watch an
+actor they may not. `handlePromotion` calls `identity.DB.SetRole` and
+`announcePromotion` and wakes no seat; `onEntry` refreshes the participant
+but re-judges only on a waiting wake. Nothing written after the promotion is
+sent first (VTT-355). `TestAPromotedSpectatorWatchesTheirFirstPartyMember`
+appends after the promotion, so no test sees the window. Labels: `test data
+missing`. Closing it needs the owner's choice: a promotion that wakes the
+promoted participant's seats, or VTT-340 succeeded by a row that says when.
+Recorded 2026-10-18 by ticket 3b's specification step, whose reading review
+found it.
+
 **`migrateLocked`'s re-read error arm is unreachable through `testdb`.**
 `migrateLocked` in `internal/identity` re-reads the table's shape under the
 write lock and wraps a failure there as `identity: migrate:`; nothing holds
