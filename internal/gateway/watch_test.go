@@ -300,7 +300,7 @@ func TestAPlayerWatchesTheirFirstPartyMemberByID(t *testing.T) {
 	}
 	appendEvents(t, f.campaign, &vttv1.NarrationAdded{Text: "addressed to the table"})
 	ivo.quiet(300 * time.Millisecond)
-	spec.quiet(0)
+	spec.quiet(300 * time.Millisecond)
 
 	appendEvents(t, f.campaign, partyMemberOf("b1", participantID(t, f, f.otherPlayerToken))...)
 	vp, before := ivo.untilViewpoint()
