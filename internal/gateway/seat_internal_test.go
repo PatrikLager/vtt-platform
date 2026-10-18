@@ -298,7 +298,7 @@ func pumpUnderTest(t *testing.T, s *Server, p *identity.Participant) (*perchBox,
 	go func() {
 		defer close(done)
 		defer sub.close()
-		s.pump(sub, p, perches, stop, out, writerDone, <-conns, &closing)
+		s.pump(sub, p, perches, nil, stop, out, writerDone, <-conns, &closing)
 	}()
 	t.Cleanup(func() {
 		closing.Store(true)

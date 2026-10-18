@@ -32,6 +32,7 @@ func conn(participantID, displayName string, buffer int) *presenceConn {
 		participantID: participantID,
 		displayName:   displayName,
 		out:           make(chan []byte, buffer),
+		rejudge:       make(chan struct{}, 1),
 		// Open, never closed: these connections are live for the whole test.
 		// A nil done would also work — a nil channel blocks forever, so the
 		// select simply never picks it — but it would work by accident, and
@@ -736,5 +737,33 @@ func TestSuppressionIsPerParticipantNotPerConnection(t *testing.T) {
 	}
 	if !r.announceIfAbsent("p-1", nil, func() []byte { return []byte("DISCONNECTED p-1") }) {
 		t.Fatal("the real departure was suppressed")
+	}
+}
+
+// VTT-340
+func TestARejudgeSignalsEveryConnectionOfTheParticipantAndNoOther(t *testing.T) {
+	r := newPresenceRegistry()
+	first, second, other := conn("p-1", "Ana", 1), conn("p-1", "Ana", 1), conn("p-2", "Bo", 1)
+	for _, c := range []*presenceConn{first, second, other} {
+		join(r, c)
+	}
+	r.rejudge("p-1")
+	for i, c := range []*presenceConn{first, second} {
+		if len(c.rejudge) != 1 {
+			t.Fatalf("p-1's connection %d holds %d signals, want 1", i+1, len(c.rejudge))
+		}
+	}
+	if len(other.rejudge) != 0 {
+		t.Fatalf("p-2's connection holds %d signals, want none", len(other.rejudge))
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.rejudge("p-1")
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("a rejudge blocked on a signal already waiting")
 	}
 }

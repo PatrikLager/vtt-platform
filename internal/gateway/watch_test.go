@@ -619,3 +619,114 @@ func TestAPlayerWithNoPartyMemberMovesNothing(t *testing.T) {
 		}
 	}
 }
+
+func promote(t *testing.T, dm *watchConn, participantID string, role identity.Role) {
+	t.Helper()
+	r := dm.command(&vttv1.ClientCommand{Command: &vttv1.ClientCommand_PromoteParticipant{
+		PromoteParticipant: &vttv1.PromoteParticipant{ParticipantId: participantID, Role: string(role)}}})
+	if !r.GetOk() {
+		t.Fatalf("the promotion to %s was refused: %s", role, r.GetError())
+	}
+}
+
+// VTT-340
+func TestAPromotionMovesASpectatorOffAShoulderThePlayerMayNotWatch(t *testing.T) {
+	f := newGWFixture(t)
+	dm := f.watch(f.dmToken, 0, "")
+	spec := f.watch(f.spectatorToken, 0, "")
+	if _, vp := spec.opening(); vp != "" {
+		t.Fatalf("an unperched spectator opens on %q", vp)
+	}
+	if r := spec.command(setViewpoint("a1")); !r.GetOk() {
+		t.Fatalf("perching on a1 was refused: %s", r.GetError())
+	}
+	if vp, _ := spec.untilViewpoint(); vp != "a1" {
+		t.Fatalf("perched on %q, want a1", vp)
+	}
+	spec.entries(len(logOf(t, f, "a1")))
+
+	promote(t, dm, participantID(t, f, f.spectatorToken), identity.RolePlayer)
+	if vp, before := spec.untilViewpoint(); vp != "" || len(before) != 0 {
+		t.Fatalf("promoted with nothing appended, the connection moved to %q after %d entries, want nobody after none",
+			vp, len(before))
+	}
+	appendEvents(t, f.campaign, &vttv1.NarrationAdded{Text: "a1 hears this"})
+	spec.quiet(300 * time.Millisecond)
+}
+
+// VTT-340
+func TestAPromotedSpectatorMovesOntoThePartyMemberTheyHold(t *testing.T) {
+	f := newGWFixture(t)
+	dm := f.watch(f.dmToken, 0, "")
+	id := participantID(t, f, f.spectatorToken)
+	appendEvents(t, f.campaign, partyMemberOf("c1", id)...)
+	spec := f.watch(f.spectatorToken, 0, "")
+	if head, vp := spec.opening(); head != 0 || vp != "" {
+		t.Fatalf("a spectator who holds c1 opens on %q at head %d, want nobody at 0", vp, head)
+	}
+
+	promote(t, dm, id, identity.RolePlayer)
+	if vp, before := spec.untilViewpoint(); vp != "c1" || len(before) != 0 {
+		t.Fatalf("promoted with nothing appended, the connection moved to %q after %d entries, want c1 after none",
+			vp, len(before))
+	}
+	want := logOf(t, f, "c1")
+	requireLog(t, "c1 from its first entry", spec.entries(len(want)), want)
+}
+
+// VTT-340
+func TestAPromotionMovesEveryConnectionOfTheParticipant(t *testing.T) {
+	f := newGWFixture(t)
+	dm := f.watch(f.dmToken, 0, "")
+	devices := []*watchConn{f.watch(f.spectatorToken, 0, "a1"), f.watch(f.spectatorToken, 0, "a1")}
+	for i, w := range devices {
+		if _, vp := w.opening(); vp != "a1" {
+			t.Fatalf("device %d opens on %q, want a1", i+1, vp)
+		}
+		w.entries(len(logOf(t, f, "a1")))
+	}
+
+	promote(t, dm, participantID(t, f, f.spectatorToken), identity.RolePlayer)
+	for i, w := range devices {
+		if vp, before := w.untilViewpoint(); vp != "" || len(before) != 0 {
+			t.Fatalf("device %d moved to %q after %d entries, want nobody after none", i+1, vp, len(before))
+		}
+	}
+}
+
+// VTT-388
+func TestAPlayerMadeASpectatorKeepsWatchingTheirPartyMember(t *testing.T) {
+	f := newGWFixture(t)
+	dm := f.watch(f.dmToken, 0, "")
+	w := f.watch(f.playerToken, 0, "")
+	if _, vp := w.opening(); vp != "a1" {
+		t.Fatalf("opens on %q, want a1", vp)
+	}
+	before := logOf(t, f, "a1")
+	w.entries(len(before))
+
+	promote(t, dm, f.playerID, identity.RoleSpectator)
+	appendEvents(t, f.campaign, &vttv1.NarrationAdded{Text: "a1 still hears this"})
+	requireLog(t, "a1's next entry", w.entries(1), logOf(t, f, "a1")[len(before):])
+	w.quiet(300 * time.Millisecond)
+}
+
+// VTT-388
+func TestAPromotedSpectatorKeepsWatchingAPartyMemberTheyHold(t *testing.T) {
+	f := newGWFixture(t)
+	dm := f.watch(f.dmToken, 0, "")
+	id := participantID(t, f, f.spectatorToken)
+	appendEvents(t, f.campaign, partyMemberOf("c1", id)...)
+	appendEvents(t, f.campaign, partyMemberOf("c2", id)...)
+	w := f.watch(f.spectatorToken, 0, "c2")
+	if _, vp := w.opening(); vp != "c2" {
+		t.Fatalf("opens on %q, want c2", vp)
+	}
+	before := logOf(t, f, "c2")
+	w.entries(len(before))
+
+	promote(t, dm, id, identity.RolePlayer)
+	appendEvents(t, f.campaign, &vttv1.NarrationAdded{Text: "c2 still hears this"})
+	requireLog(t, "c2's next entry", w.entries(1), logOf(t, f, "c2")[len(before):])
+	w.quiet(300 * time.Millisecond)
+}

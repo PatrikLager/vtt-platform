@@ -16,7 +16,8 @@ type presenceConn struct {
 	// parked sender panics that goroutine (SPEC-011).
 	out chan []byte
 
-	done chan struct{}
+	rejudge chan struct{}
+	done    chan struct{}
 }
 
 type presenceRegistry struct {
@@ -77,6 +78,22 @@ func (r *presenceRegistry) joinAndSend(c *presenceConn, frame func([]*vttv1.Pres
 		r.send(c, b)
 	}
 	return first
+}
+
+// Take mu alone and never block on a channel: a fan-out holds fanOut for a
+// send budget per wedged connection, and the signal must not wait (SPEC-011).
+func (r *presenceRegistry) rejudge(participantID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for conn := range r.conns {
+		if conn.participantID != participantID {
+			continue
+		}
+		select {
+		case conn.rejudge <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // Safe without r.mu only because out is never closed (presenceConn.out).

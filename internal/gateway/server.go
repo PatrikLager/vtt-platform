@@ -320,6 +320,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		participantID: p.ID,
 		displayName:   p.Name,
 		out:           outCh,
+		rejudge:       make(chan struct{}, 1),
 		done:          make(chan struct{}),
 	}
 	// Keep the snapshot built and queued inside joinAndSend's critical section:
@@ -359,7 +360,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	go func() {
 		defer close(pumpDone)
 		defer sub.close()
-		s.pump(sub, p, perches, stopPump, outCh, writerDone, conn, &closing)
+		s.pump(sub, p, perches, pc.rejudge, stopPump, outCh, writerDone, conn, &closing)
 	}()
 
 	// Announce after the pump is running, and synchronously: before it, N wedged
@@ -436,8 +437,9 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 // pump is the one producer of a connection's entries and ViewpointChanged frames
 // (SPEC-011). Return with the socket closed by reason, or let it fall through to
 // CloseNow.
-func (s *Server) pump(sub *seat, p *identity.Participant, perches *perchBox, stop <-chan struct{},
-	outCh chan<- []byte, writerDone <-chan struct{}, conn *websocket.Conn, closing *atomic.Bool) {
+func (s *Server) pump(sub *seat, p *identity.Participant, perches *perchBox, rejudge <-chan struct{},
+	stop <-chan struct{}, outCh chan<- []byte, writerDone <-chan struct{}, conn *websocket.Conn,
+	closing *atomic.Bool) {
 	ps := &pumpState{s: s, sub: sub, id: p.ID, lookup: s.ids.Lookup, outCh: outCh, writerDone: writerDone,
 		conn: conn, closing: closing}
 	if ps.revoked() {
@@ -457,6 +459,10 @@ func (s *Server) pump(sub *seat, p *identity.Participant, perches *perchBox, sto
 		case _, ok := <-sub.wake:
 			if !ok || !ps.onWake() {
 				ps.lostUnless(ok)
+				return
+			}
+		case <-rejudge:
+			if !ps.onWake() {
 				return
 			}
 		// A closed events channel is the store's drop or the campaign's close (SPEC-011).
@@ -520,7 +526,7 @@ func (ps *pumpState) moved(switched bool, err error) bool {
 	return !switched || (!ps.revoked() && ps.announce())
 }
 
-// onWake re-reads the actors after an append (VTT-340, VTT-348).
+// onWake re-judges the seat after an append or a promotion (VTT-340, VTT-348).
 func (ps *pumpState) onWake() bool {
 	if ps.revoked() {
 		return false
@@ -929,6 +935,8 @@ func (s *Server) handlePromotion(requestID string, req *vttv1.PromoteParticipant
 	if err := s.ids.SetRole(req.GetParticipantId(), identity.Role(req.GetRole())); err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
+	// Signal after SetRole: the pump that takes it must look up the new role.
+	s.presence.rejudge(req.GetParticipantId())
 	s.announcePromotion(req.GetParticipantId())
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
 }
