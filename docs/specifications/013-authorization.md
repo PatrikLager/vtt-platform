@@ -15,7 +15,9 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `internal/engine`'s `State`; pinned by `internal/gateway/authz_test.go`,
 `grant_validate_test.go`, `add_actor_validate_test.go`,
 `note_validate_test.go`, `convert_test.go`, `server_test.go`,
-`server_visibility_test.go` and `server_internal_test.go`, and by
+`server_visibility_test.go`, `server_internal_test.go`, `watch_test.go`,
+`seat_internal_test.go`, `viewpoint_test.go`, `qa_seat_test.go` and
+`qa_move_gate_test.go`, and by
 `cmd/vtt/scenario_goldens_test.go`.
 
 ## Principles served
@@ -59,18 +61,20 @@ may issue it:
 | `rotate_join_link` | yes | yes | no | no |
 | `open_door` | yes | yes | `mayWorkDoor` | no |
 | `close_door` | yes | yes | `mayWorkDoor` | no |
-| `set_viewpoint` | no | no | no | yes |
+| `set_viewpoint` | no | no | `unrestricted` | yes |
 
 A player cell names the `playerRules` entry that decides it; every other
 "yes" is the whole of the role's answer from the table. The DM and the agent
-hold every row but `set_viewpoint`; `set_viewpoint` is the spectator's only
-cell. Removal authors the board and the cast, so `remove_token` holds
-`place_token`'s cells and `remove_actor` holds `add_actor`'s: a player may
-remove neither a token nor an actor they control. Granting control,
-promotion and the join door are the DM's and the agent's alone, since each
-confers standing at a table whose shared link admits spectators (SPEC-009,
-VTT-028). Every refusal `Authorize` returns wraps `ErrUnauthorized`: every
-`fmt.Errorf` in `authz.go` and `viewpoint.go` wraps it with `%w`.
+hold every row but `set_viewpoint`, since they are sent the world and watch
+no character log (SPEC-015); `set_viewpoint` is the spectator's only cell and
+one of the player's. Removal authors the board and the cast, so
+`remove_token` holds `place_token`'s cells and `remove_actor` holds
+`add_actor`'s: a player may remove neither a token nor an actor they control.
+Granting control, promotion and the join door are the DM's and the agent's
+alone, since each confers standing at a table whose shared link admits
+spectators (SPEC-009, VTT-028). Every refusal `Authorize` returns wraps
+`ErrUnauthorized`: every `fmt.Errorf` in `authz.go` and `viewpoint.go` wraps
+it with `%w`.
 `TestEveryClientCommandHasRoleCells` walks the oneof and requires every arm
 to resolve through `commandName` to a name with a row, and
 `TestAuthorizeTableAllCommandsAllRoles` asserts every cell of the table
@@ -88,9 +92,10 @@ refused for every role the same way.
 accepts a target role of player or spectator and refuses every other, for
 the DM's promotions as for anyone's; SPEC-009 states that bound and
 `handlePromotion`'s bound on the target's current role. For `set_viewpoint`
-it runs `MayPerch`, whose rule is SPEC-015's. Both run for every role,
-so the DM is bound by promotion's bound and a spectator, whom the player half
-never reaches, is bound by `MayPerch`.
+it runs `MayWatch` against the snapshot's actors, whose rule is SPEC-015's.
+Both run for every role, so the DM is bound by
+promotion's bound and a spectator, whom the player half never reaches, is
+bound by `MayWatch`.
 
 **The player half.** For every role but player, `Authorize` returns after
 those two checks. For a player it calls `authorizePlayer` with the name it
@@ -100,8 +105,9 @@ by another's rule; `Authorize` is its one production caller (`grep -rn
 `playerRules`, a table keyed like `commandRoles` whose entries are
 `playerRule` functions run against the participant, the command and the
 snapshot. A player cell with no entry is refused by `errUndecided`, whose
-message names the command. `unrestricted` is the entry for `add_narration`,
-so a command that needs no rule says so in the table rather than by its
+message names the command. `unrestricted` is the entry for `add_narration`
+and for `set_viewpoint`, whose rule `MayWatch` has already applied, so a
+command that needs no rule says so in the table rather than by its
 absence. `TestEveryPlayerCommandHasARule` holds that every player cell has an
 entry and every entry a player cell; while the two agree no command reaches
 the missing-rule arm through `Authorize`, and `AuthorizeUndecidedForTest` in
@@ -148,8 +154,8 @@ every role but player, and `handleCommand`'s move gate runs for a player
 only. They act on, and grant and revoke control of, an actor a player
 controls, and acting on it leaves its `controller_ids` as they were; they
 work a door from anywhere; they move a token onto any square, a wall and a
-square no player can see included. The table's cells and the two checks
-for every role bind them.
+square no player can see included (VTT-158, VTT-379). The table's cells
+and the two checks for every role bind them.
 
 **The command path.** `serve`'s read loop decodes each frame, re-resolves the
 participant through `identity.Lookup` (SPEC-009) and hands the command to
@@ -188,17 +194,20 @@ the connection or writes to the wire: neither it nor `answerCommand` is
 handed the connection.
 
 **The player's move gate.** For a player's `move_token` whose token
-`st.Tokens` holds, `handleCommand` first asks `canSee(viewerFor(p), st,
-tok.SceneID, to)` and, when it answers false, refuses with `gateway: cannot
-move there — you cannot see that square`, whatever stands on the square. Only
-then does it ask `st.Blocked(tok.SceneID, x, y)`, and refuses a blocked
+`st.Tokens` holds, `handleCommand` first asks `canSee(sub.judgedBy(p,
+st.Actors), st, tok.SceneID, to)`, through the eyes of the character
+SPEC-015 says the move is judged by, and when it answers false, it refuses
+with `gateway: cannot move there — you cannot see that square`, whatever
+stands on the square. Only then does it ask `st.Blocked(tok.SceneID, x, y)`,
+and refuses a blocked
 square with `gateway: cannot move there — ` followed by
 `describeBlockage(why)`. `engine.State.Blocked` answers for every square of a
 scene, seen or not, so the order is what keeps an unseen square's refusal one
 string that names no wall, door or scenery. A square out of the player's sight
 is refused even when they remember its terrain. A token the snapshot does not
-hold never reaches the gate, since `authorizeTokenOwnership` has refused it.
-`canSee` and `viewerFor` are SPEC-015's; what a projection sees is SPEC-016's.
+hold never reaches the gate, since
+`authorizeTokenOwnership` has refused it. `canSee` and `judgedBy` are
+SPEC-015's; what a character sees is SPEC-016's.
 
 **`describeBlockage`.** It rewrites the reason `engine.State.Blocked` gives.
 `scenery: <kind>` becomes `something (a <kind>) is in the way`, the kind
@@ -231,7 +240,7 @@ alone. `validateUpsertNote` refuses an `upsert_note` whose `visibility` is
 `NOTE_VISIBILITY_UNSPECIFIED`, with a message naming `visibility`, and accepts
 every other value, so the enum may grow without a note being refused.
 `engine.Apply` accepts a `NoteUpserted` with no visibility, which the
-projection sends to no player or spectator (SPEC-016), so this refusal too
+projection writes to no character log (SPEC-016), so this refusal too
 exists at the command boundary alone.
 
 **What is dispatched, and what becomes one envelope.** `use_ability`
@@ -252,17 +261,16 @@ the log records the scene and the square the token left; `engine.Apply`'s
 `SceneId` (SPEC-018), and never `From`.
 
 **`set_viewpoint`.** `answerCommand` routes it to `handleSetViewpoint`, which
-runs `authorize` (the spectator's cell and `MayPerch`), then
-`perches.set(actorID)`, and answers ok=true. It appends nothing (SPEC-007)
-and projects nothing itself: `perchBox.set` records the shoulder and wakes
-the pump without blocking, and the pump takes the shoulder and applies it
-(SPEC-011). An ok result means the shoulder is recorded, not that its frames
-are sent, and a shoulder replaced before the pump takes it is never applied.
-`serve` makes `perches` per connection, so a perch ends with its connection.
+runs `authorize` (the cell and `MayWatch`), hands the choice to the pump with
+`perches.set(actorID)` without waiting, and answers ok=true; what the pump
+does with it is SPEC-015's. It appends nothing (SPEC-007). An ok result means
+the choice is recorded, not that the switch is sent. `serve` makes `perches`
+per connection, so a choice ends with its connection.
 
 **What this record does not decide.** Promotion's bounds and the
-re-resolution before every command are SPEC-009's; the perch's rule and what
-a seat is sent are SPEC-015's; the batch handlers are SPEC-012's, SPEC-014's
+re-resolution before every command are SPEC-009's; who may watch whom, the
+viewpoint the move gate judges by, and what a seat is sent are SPEC-015's;
+the batch handlers are SPEC-012's, SPEC-014's
 and SPEC-017's; the join door and promotion handlers are
 SPEC-009's; what the fold refuses is `engine.Apply`'s, and its byte bounds
 SPEC-018's.
@@ -271,23 +279,24 @@ SPEC-018's.
 
 A client or tool author is bound by these:
 
-- A spectator's only command is `set_viewpoint`.
+- A spectator's only command is `set_viewpoint`; a player's `set_viewpoint`
+  chooses which of their party members they watch, and the DM and the agent
+  may not issue it.
 - A player acts only through an actor that counts them among its
   controllers; an actor nobody controls is the DM's and the agent's.
 - A player works a door from a controlled token beside it, and moves only
-  onto a square they can see now; a square they remember and cannot see is
-  refused.
+  onto a square the character they watch can see now; a square they remember
+  and cannot see is refused.
 - A refusal is an ok=false result on a connection that stays open, seen by
-  the issuer alone. A move refusal's text names nothing the issuer has not
-  been sent (VTT-156, VTT-159); no other refusal's text is bounded by this
-  record.
+  the issuer alone. A move refusal's text names nothing the character the
+  move was judged by has not seen (VTT-156, VTT-159); no other refusal's text
+  is bounded by this record.
 - A `grant_actor_control` and an `add_actor` state what the actor is; an
   `add_actor` never confers control, and control is granted afterwards.
 - An `upsert_note` states who may read the note.
 - The DM and the agent are bound by the table's cells and by promotion's
   bound, and by no player rule.
-- A perch does not survive a reconnect; a client re-sends it after
-  redialling.
+- What a reconnect opens on is SPEC-015's.
 
 And whoever changes the code:
 
@@ -298,7 +307,7 @@ And whoever changes the code:
 
 ## Requirements
 
-VTT-138, VTT-139, VTT-140, VTT-141, VTT-142, VTT-143, VTT-144, VTT-145,
-VTT-146, VTT-147, VTT-148, VTT-149, VTT-150, VTT-151, VTT-152, VTT-153,
-VTT-154, VTT-155, VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161,
-VTT-162, VTT-231, VTT-260, VTT-261.
+VTT-138, VTT-139, VTT-140, VTT-142, VTT-143, VTT-144, VTT-145, VTT-146,
+VTT-147, VTT-148, VTT-149, VTT-150, VTT-151, VTT-152, VTT-153, VTT-154,
+VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161, VTT-162, VTT-231,
+VTT-260, VTT-261, VTT-344, VTT-379.

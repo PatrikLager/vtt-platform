@@ -62,8 +62,7 @@ is its own (SPEC-009) and takes no hold.
 
 - The hold binds `campaign.Open` and nothing else. A process that writes
   `log.db` without a `Campaign` is not stopped, and the log it leaves may not
-  fold; a seat fed it withholds from the first event that does not fold
-  (SPEC-015), and the next `Open` refuses the log.
+  fold; the next `Open` refuses that log.
 - The hold is unix only: `syscall.Flock` does not exist for `GOOS=windows`,
   so `internal/campaign` does not build there.
 - A filesystem on which `flock` fails with anything but `EWOULDBLOCK`

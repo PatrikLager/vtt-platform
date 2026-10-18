@@ -208,7 +208,7 @@ A client author is bound by these:
 - A refused `use_ability` or `load_adventure` leaves the connection usable,
   and a bundle's warnings arrive on the issuer's result.
 - Nothing this surface answers is filtered per seat beyond the role gate; what
-  a seat SEES of the campaign is the projection's, not this record's.
+  a connection is sent of the campaign is SPEC-015's, not this record's.
 
 ## Requirements
 

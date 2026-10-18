@@ -51,15 +51,17 @@ under the same id is controlled by nobody: `engine.Apply` refuses an
 (SPEC-013).
 
 **What this record does not decide.** The batch's wire shape and its
-atomicity are SPEC-007's; who may remove an actor is SPEC-013's (VTT-141);
-what a viewer is sent of a removal is SPEC-016's; what the fold refuses in
-general, and that an actor's conditions leave with it, is `engine.Apply`'s.
+atomicity are SPEC-007's; who may remove an actor is SPEC-013's (VTT-344);
+what a character log is written of a removal is SPEC-016's; what the fold
+refuses in general, and that an actor's conditions leave with it, is
+`engine.Apply`'s.
 
 ## Consequences
 
-- The DM and the agent, whose seats are unprojected (SPEC-015), receive a
-  removal as contiguous `TokenRemoved` events, then the `ActorRemoved`; what
-  a player or spectator receives is SPEC-016's.
+- The DM and the agent, who are sent the world (SPEC-015), receive a removal
+  as contiguous `TokenRemoved` events, then the `ActorRemoved`; what a player
+  or a spectator receives is what the character log they watch is written of
+  it (SPEC-016).
 - Removing an actor that does not exist is refused with the fold's message,
   and nothing is appended.
 - A removal refused because a token was placed for the actor meanwhile can be

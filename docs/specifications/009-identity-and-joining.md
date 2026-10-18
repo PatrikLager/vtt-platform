@@ -11,6 +11,7 @@ checks the rows under Requirements name, in
 `internal/identity/identity_failure_test.go`, `internal/gateway/join_test.go`,
 `internal/gateway/authz_test.go`, `internal/gateway/server_test.go`,
 `internal/gateway/qa_promotion_revoked_test.go`,
+`internal/gateway/qa_seat_test.go`, `internal/gateway/seat_internal_test.go`,
 `internal/engine/role_test.go` and `internal/engine/qa_role_test.go`.
 
 ## Principles served
@@ -43,17 +44,21 @@ campaign can neither reopen a door nor bring a revoked participant back.
 verifies the token against the plain HTTP request, before `websocket.Accept`; a
 token `identity.Verify` refuses gets a 401 and the connection is never
 upgraded. From then on the participant is re-resolved through
-`identity.Lookup`: in the read loop before every command, through
-`credentialGone` before the backlog and before every event taken from the log
-(the frames a `set_viewpoint` perch delivers are not re-checked; the command
-that placed the perch was), and through `revoked` before every presence
+`identity.Lookup`: in the read loop before every command; on the pump,
+through `pumpState.revoked`, when it starts, on every append wake and every
+perch it takes, before and after `admit` decides each envelope it takes, and
+after every switch (SPEC-015); and through `revoked` before every presence
 announcement: an arrival or a departure in `announcePresence` and
 `announceDeparture`, and a promotion in `announcePromotion`. An announcement
 skips a revoked participant's connections and leaves them open; their next
-command or delivered event closes them. A lookup that answers
-`identity.ErrInvalidToken` ends the connection, from the read loop with a
-policy-violation close and from delivery
-through `credentialGone`. Any other lookup error is operational:
+command, or the pump's next wake, perch or envelope, closes them, so a log
+seat's connection is closed at the next append whether or not it sends that
+connection an entry (VTT-352). A lookup that answers
+`identity.ErrInvalidToken` ends the connection with a policy-violation close,
+from the read loop and from the pump alike (VTT-376). A successful lookup on
+the pump replaces the seat's participant, so the pump judges by the current
+role (VTT-340, SPEC-015), as the read loop does for a command (VTT-031).
+Any other lookup error is operational:
 `answerCommand` refuses that one command with `gateway: identity unavailable`
 and the connection stays; the delivery and presence checks match
 `ErrInvalidToken` alone and let an operational failure through. The `/api/*`
@@ -186,4 +191,4 @@ VTT-038, VTT-039, VTT-040, VTT-041, VTT-042, VTT-043, VTT-044, VTT-045,
 VTT-046, VTT-047, VTT-048, VTT-049, VTT-060, VTT-061, VTT-062, VTT-063,
 VTT-064, VTT-065, VTT-066, VTT-067, VTT-068, VTT-069, VTT-070, VTT-071,
 VTT-072, VTT-073, VTT-074, VTT-075, VTT-076, VTT-077, VTT-256, VTT-309,
-VTT-310.
+VTT-310, VTT-352, VTT-376.

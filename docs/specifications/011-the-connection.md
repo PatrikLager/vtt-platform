@@ -3,12 +3,15 @@
 ## Status
 
 Accepted. Implemented by `internal/gateway/server.go` (`handleWS`, `Handler`,
-`serve`, `writeUntilFlushed`, `deliver`, `enqueueEvents`, `credentialGone`,
-`announcePresence`, `announceDeparture`, `announcePromotion`, `revoked`),
-`internal/gateway/keepalive.go`, `internal/gateway/presence.go`,
-`internal/gateway/codec.go`, `internal/gateway/seat.go` (`newSeat`,
-`subscribeFrom`, `catchUp`) and `cmd/vtt/serve_compose.go` (`composeServer`);
-pinned by `internal/gateway/server_test.go`, `server_internal_test.go`,
+`serve`, `writeUntilFlushed`, `pump`, `pumpState`, `lost`, `sendViewpoint`,
+`deliver`, `enqueueEvents`, `announcePresence`, `announceDeparture`,
+`announcePromotion`, `revoked`), `internal/gateway/keepalive.go`,
+`internal/gateway/presence.go`, `internal/gateway/codec.go`,
+`internal/gateway/seat.go` (`openSeat`, `watch`) and
+`cmd/vtt/serve_compose.go` (`composeServer`); pinned by
+`internal/gateway/server_test.go`, `server_internal_test.go`,
+`watch_test.go`, `seat_internal_test.go`, `qa_seat_test.go`,
+`server_visibility_test.go`,
 `presence_internal_test.go`, `keepalive_internal_test.go`,
 `keepalive_conn_internal_test.go`, `static_test.go` and
 `cmd/vtt/serve_e2e_test.go`.
@@ -21,10 +24,12 @@ absent from the system; the blueprint is owed a ticket of its own.
 
 ## How it works
 
-**The handshake refuses before it upgrades.** `handleWS` reads two query
+**The handshake refuses before it upgrades.** `handleWS` reads three query
 parameters from the plain HTTP request. `after`, parsed by `parseAfter`, is the
-sequence the client has already seen; absent it is 0, and one that is not an
-integer is answered 400 before the token is looked at. `token` is verified by
+sequence the client has already seen, in the world or in the log `log` names;
+absent it is 0, and one that is not an integer is answered 400 before the
+token is looked at. `log` is handed to `serve` as it comes, and what it
+selects is SPEC-015's. `token` is verified by
 `identity.Verify`, and a token it refuses, unknown or revoked, is answered 401
 with no upgrade. Only then does `websocket.Accept` run, the connection's read
 limit is pinned to `maxWSFrameBytes`, and `serve` takes over with the request's
@@ -45,8 +50,9 @@ What each API route does is not this record's.
 `serve` makes the connection's outbound queue, `outCh`, of `gatewayBuffer`
 frames, and starts one writer goroutine running `writeUntilFlushed`. Every
 frame the connection is sent goes through that queue: the catch-up head from
-`serve` itself, results from the read loop, events and perch frames from the
-pump through `deliver` and `enqueueEvents`, and presence frames from
+`serve` itself, results from the read loop, events and `ViewpointChanged`
+frames from the pump through `deliver` and `sendViewpoint`, and presence
+frames from
 `presenceRegistry.send`. The writer takes frames in queue order and writes
 each with `conn.Write` under a context bounded by `writeTimeout`; the first
 write that fails stops the writer. Nothing closes `outCh`. The writer stops on
@@ -58,7 +64,8 @@ parking. `stampedWrite` marks the writer busy for exactly the duration of each
 write, which is what keepalive reads.
 
 **The bounds.** `gatewayBuffer` is 256 frames, the size of `outCh` and of the
-hand-off channel `campaign.SubscribeWithNoProgressTimeout` gives the pump; it
+hand-off channel of the subscription the pump reads, the world's or a
+character log's; it
 is slack for a bursty reader, not a limit on how far behind a connection may
 fall. `gatewayNoProgress` is 30 seconds, the store's per-subscriber budget: a
 connection that leaves a waiting frame unaccepted for that long has its
@@ -74,44 +81,46 @@ frame that reads but does not decode as a `ClientCommand` runs `shutdown` and
 closes with `StatusPolicyViolation` and the reason `gateway: malformed frame`.
 Each of these ends the one connection it happened on and no other.
 
-**The catch-up head is the seat's, not the log's.** `newSeat` decides what the
-connection may receive and where its subscription starts: the DM and the agent
-are unprojected and subscribe from `after`; a projected seat subscribes from 0
-so it can fold the prefix and feed its projector from the log's first event
-(SPEC-015), and frames at or below `after` are
-dropped on the way out. `seat.catchUp` returns the store's catch-up head
-untouched for an unprojected seat and drains nothing: the last sequence queued
-for it, or `after` itself when the log holds nothing newer. For a projected
-seat it drains the preloaded backlog, projects every envelope, and answers with
-the sequence of the last envelope it sends, 0 when it sends none, which can be
-below the log's head; that is the sequence this seat will actually be sent.
+**The catch-up head is the head of what the seat follows.** `openSeat`
+decides what the connection follows and where it starts. The DM and the
+agent subscribe to the world from `after`, and their head is the store's
+catch-up head: the last sequence queued, or `after` itself when the log holds
+nothing newer. Every other seat follows one character log (SPEC-015):
+`watch` subscribes to it after the cursor its `log` was read at, or from its
+first entry, and the head is that subscription's catch-up head, a sequence
+of that log's own (SPEC-021); a seat that watches nobody is told 0.
 `serve` encodes `CatchUpHead` with that number and queues it first. If the head
 cannot be encoded the connection is refused rather than served: `serve`
 unsubscribes, flushes the writer, and closes with `StatusInternalError` and the
 reason `gateway: encode catch-up head failed`. What the head means to a client
 is SPEC-007's.
 
-**Delivery re-resolves the credential and sends whole batches.** The pump
-goroutine is the only producer of this connection's envelopes. Before the
-projected backlog and before every later event it asks `credentialGone`, which
-is true only when `identity.Lookup` answers `ErrInvalidToken`; a revoked
-participant is closed with `StatusPolicyViolation` and the reason `gateway:
-credential no longer valid`, and any other lookup failure delivers anyway. The
-rule that a revoked participant is refused on delivery is SPEC-009's (VTT-032,
-VTT-033); this is where it runs. Each event goes through `seat.receive`, the
-projection, which yields zero, one or several envelopes; a spectator's perch,
-taken from `perches` when the pump wakes, is applied and delivered here too, so
-the order envelopes are sent in is the order the projector's memory changed in.
-`enqueueEvents` encodes each envelope as an event frame and queues it, stopping
-at the first failure; an envelope that cannot be encoded ends the connection,
-closed with `StatusInternalError` and the reason `gateway: encode failed`, and
-no later envelope of that batch is sent, because the order inside a projected
-batch is load-bearing for the client's fold. `EncodeFrame` marshals every
-frame. The head, the events and the presence frames reach it through
-`encodeFrame`, a field of `Server` and never a package variable, so a test that
-swaps it cannot reach another server's connections; the read loop marshals a
-`CommandResult` with `EncodeFrame` directly. When `events` closes without
-`shutdown` having asked for it, the pump closes the socket with `CloseNow`.
+**Delivery re-resolves the credential, and the pump moves the seat.** The
+pump goroutine is the only producer of this connection's events and
+`ViewpointChanged` frames. It re-resolves the participant through
+`pumpState.revoked` on the schedule SPEC-009 states; a lookup that answers
+`ErrInvalidToken` closes the connection with `StatusPolicyViolation`
+and the reason `gateway: credential no longer valid`, and any other lookup
+failure delivers anyway. The rule that a revoked participant is refused on
+delivery is SPEC-009's (VTT-032, VTT-033); this is where it runs. A log
+seat's pump also queues the `ViewpointChanged` frames SPEC-015 describes, each
+before the entries of the log it names, so the order frames are sent in is the
+order the seat changed in. `deliver` hands each envelope
+to `enqueueEvents`, which encodes it as an event frame and queues it; an
+envelope that cannot be encoded ends the connection, closed with
+`StatusInternalError` and the reason `gateway: encode failed`, and nothing
+after it is sent, since an entry after a skipped one may not fold for the
+client. `sendViewpoint` closes the connection the same way when its frame
+cannot be encoded. `EncodeFrame` marshals every frame. The head, the events,
+the `ViewpointChanged` frames and the presence frames reach it through
+`encodeFrame`, a field of `Server` and never a package variable, so a test
+that swaps it cannot reach another server's connections; the read loop
+marshals a `CommandResult` with `EncodeFrame` directly. When the
+subscription's channel or a log seat's append wake closes, which the store's
+no-progress drop and the campaign's `Close` do, or a switch cannot
+subscribe, the pump closes the socket with `CloseNow` (`lost`) unless
+`shutdown` has set `closing`; a switch drops its own subscription first, so
+the pump never reads that one closed.
 
 **Keepalive.** `New` sets `pingInterval` to `gatewayPingInterval`, 20 seconds,
 and `pingTimeout` to `gatewayPingTimeout`, 60 seconds. `serve` starts
@@ -178,9 +187,11 @@ presence frames are not envelopes and that `DISCONNECTED` is per participant.
 
 **Teardown runs in dependency order.** `shutdown` leaves presence first, so a
 departure is announced before this connection's writer stops and a fan-out
-holding this connection abandons it; then sets `closing`, unsubscribes, waits
-for the pump to drain, closes `flush`, and waits for the writer. It runs when
-the read loop ends, whatever ended it: a failed read, a malformed frame, a
+holding this connection abandons it; then sets `closing`, closes `stopPump`
+and waits for the pump to return, which closes the seat's subscription and
+append watch on its way out (`seat.close`); then it closes `flush` and waits
+for the writer. It runs when the read loop ends, whatever ended it: a failed
+read, a malformed frame, a
 revoked credential, or a result the writer could not take. The pump and the
 pinger never call `shutdown`, since it waits on the pump; they close the socket
 so the read fails. A deferred `CloseNow` backstops the returns before
@@ -212,15 +223,17 @@ refused, or is cut off by the exit before it reaches the log.
 - A credential that does not verify is refused with 401 before any frame, so a
   client sees no partial connection.
 - A malformed or oversized inbound frame ends the connection that sent it; a
-  client that reconnects continues from its `after`.
+  client that reconnects continues from its `after`, in the world, or in the
+  log its `log` names while it may still watch it (SPEC-015).
 - A pong not answered within the budget ends the connection with no close
   frame, and a ping is not a clock: nothing may be inferred from a ping that
   does not arrive while frames are flowing.
 - A presence frame may be dropped for a connection that does not drain within
   the budget; the next snapshot repairs it, so a client applies snapshots as
   replacements and deltas in the order received.
-- The head a connection opens with is always reachable by that seat, and a
-  client waiting for it waits for its own seat's last sequence, not the log's.
+- A player's or a spectator's head is a sequence of the character log it
+  opened on, never the world's, and is the cursor when that log holds nothing
+  newer; what a client waiting for it does at a switch is SPEC-007's.
 - Every frame a connection receives was queued by one goroutine per source and
   written by one writer, so a client may rely on queue order and never on
   arrival timing across kinds (SPEC-007).
@@ -230,7 +243,8 @@ refused, or is cut off by the exit before it reaches the log.
 
 ## Requirements
 
-VTT-080, VTT-081, VTT-082, VTT-083, VTT-084, VTT-085, VTT-086, VTT-087,
+VTT-080, VTT-081, VTT-082, VTT-083, VTT-084, VTT-085, VTT-087,
 VTT-088, VTT-089, VTT-090, VTT-091, VTT-092, VTT-093, VTT-094, VTT-095,
 VTT-096, VTT-097, VTT-098, VTT-099, VTT-100, VTT-101, VTT-102, VTT-103,
-VTT-104, VTT-105, VTT-106, VTT-107, VTT-108, VTT-109, VTT-110.
+VTT-104, VTT-105, VTT-106, VTT-107, VTT-108, VTT-109, VTT-110, VTT-378,
+VTT-384.

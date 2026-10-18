@@ -8,7 +8,8 @@ Accepted. Implemented by `internal/campaign/fanout.go`
 `trial`, `appendEntries`, `reanchor`, `record`, `resume`, `resumeScan`,
 `resumesOf`, `observe`, `restartDecisionsLocked`, `opening`, `openSession`)
 and `internal/campaign/campaign.go` (`rebuildLocked`, `foldEvents`,
-`Campaign.appendLocked`, `Campaign.SubscribeCharacter`, `Campaign.Close`),
+`Campaign.appendLocked`, `Campaign.SubscribeCharacter`,
+`Campaign.WatchAppends`, `Campaign.Actors`, `Campaign.Close`),
 over `internal/store/store.go`'s `character_events` table, `Entry`,
 `CharacterEntry`, `AppendBatch`, `ReadCharacterAfter`, `readCharacterLocked`,
 `ReadCharacterLogs`, `Store.chars` and `Close`,
@@ -21,9 +22,11 @@ Pinned by `internal/store/character_log_test.go`,
 `internal/campaign/character_log_test.go`,
 `character_log_property_test.go`, `qa_character_log_test.go`,
 `qa_pause_resume_test.go`, `property_test.go`,
-`character_subscribe_test.go`, `qa_character_subscribe_test.go` and
-`poison_internal_test.go`, by `internal/perceive/resume_from_fold_test.go`,
-and by `internal/gateway/character_log_test.go`.
+`character_subscribe_test.go`, `qa_character_subscribe_test.go`,
+`append_watch_test.go`, `qa_append_watch_test.go`,
+`every_log_told_test.go`, `character_log_oracle_test.go` and
+`poison_internal_test.go`, and by
+`internal/perceive/resume_from_fold_test.go`.
 
 ## Principles served
 
@@ -47,8 +50,8 @@ the `SessionStarted` of an opening or a resume, which carries the open
 session's id. `Campaign.CharacterLog` reads one log from the store at every
 call, so what it returns is the caller's.
 
-**When a log is written.** `Campaign.appendLocked` validates the batch
-(SPEC-015), then `fanOutLocked` folds each envelope onto its own copy of the
+**When a log is written.** `Campaign.appendLocked` validates the batch,
+then `fanOutLocked` folds each envelope onto its own copy of the
 world and walks, by id, every actor that has a log or is a party member after
 the envelope. Nothing is written to an actor that is not a party member after
 the event (VTT-316). For the others it writes, in order, any opening or
@@ -139,17 +142,26 @@ campaign closes the store, which ends every character subscription
 (VTT-335). The world's subscription and this one share `startSubscriber` and
 `enqueueAll`, which ignores an envelope of sequence 0.
 
+**Watching appends.** `Campaign.WatchAppends` registers a channel of
+capacity one in `c.watches` and returns it with a `stop` that removes it.
+`appendLocked`, after the live apply and before both notify loops, sends each
+watch a signal without blocking, so one waiting signal stands for any number
+of appends (VTT-353, VTT-355); a refused, failed or poisoning append returns
+before that loop and wakes nothing (VTT-354). `Close` closes every watch's
+channel and clears the set (VTT-356); `stop` closes nothing. A poisoned
+campaign refuses a watch (VTT-357), and so does a closed one (VTT-373).
+`Campaign.Actors` returns a copy of the live actors, or nil while poisoned:
+a reader that needs who is a party member and who controls whom takes it
+without cloning the whole state. The gateway's log seats and their pumps
+are the readers of both (SPEC-015).
+
 **What this record does not decide.** What the decision gives an event is
 SPEC-016's. The world's append, its validation and its poison contract are
 `internal/campaign`'s, and one writer per campaign directory is SPEC-019's.
-No connection reads or follows a character log (`grep -rn
-'CharacterLog(\|ReadCharacter\|SubscribeCharacter' --include='*.go' . | grep
--v _test.go` prints only `internal/campaign` and `internal/store`): what a
-player or a spectator is sent is the projection's (SPEC-016) until the second
-half of the per-character-logs arc's third ticket
-(`docs/superpowers/specs/2026-10-16-a-character-log-has-its-own-subscription-design.md`,
-"The problem") moves a seat onto its character's log. Who may follow which
-log is SPEC-013's, then.
+Which connection follows which log, and when it switches, is SPEC-015's:
+outside `internal/campaign` and `internal/store`, `grep -rn
+'CharacterLog(\|ReadCharacter\|SubscribeCharacter\|WatchAppends' --include='*.go'
+internal cmd | grep -v _test.go` prints only `internal/gateway/seat.go`.
 
 ## Consequences
 
@@ -175,13 +187,13 @@ bound by these:
 - An entry's `world_seq` is provenance and the anchors' key, never folded and
   never sent on the wire.
 - Every append runs the decision once per party member and envelope, under
-  the campaign's mutex, on top of the gateway's projection until the second
-  half of the third ticket deletes it; the owner accepted that cost on
-  2026-10-16 for now, to be measured
-  again after the third ticket.
+  the campaign's mutex; the owner accepted that cost on 2026-10-16.
 - A character subscription waits for an append in progress, its fan-out
   included, and an append, `State` and `CharacterLog` wait for a
   subscription's catch-up, read under the campaign's mutex.
+- A watcher woken is told only that something was appended: it reads what
+  changed, and a wake raised while it was busy is the same wake as the one
+  waiting.
 - The store keeps a registry key, until it closes, for every actor id it
   subscribed and every actor id `NotifyCharacter` was called with; a call
   after `Close` makes one again.
@@ -193,4 +205,5 @@ bound by these:
 
 VTT-315, VTT-316, VTT-317, VTT-318, VTT-319, VTT-320, VTT-321, VTT-322,
 VTT-323, VTT-324, VTT-325, VTT-326, VTT-327, VTT-328, VTT-329, VTT-330,
-VTT-331, VTT-332, VTT-333, VTT-334, VTT-335, VTT-336, VTT-337.
+VTT-331, VTT-332, VTT-333, VTT-334, VTT-335, VTT-336, VTT-337, VTT-353,
+VTT-354, VTT-355, VTT-356, VTT-357, VTT-371, VTT-372, VTT-373.

@@ -8,7 +8,10 @@ under `contract/gen/go` and `contract/gen/ts`, and the MCP tool definitions
 under `contract/gen/tools`.
 
 Held by `contract/contract_test.go`, `contract/roundtrip_test.go`,
-`contract/events.test.ts` and the fixtures in `contract/testdata/`. Gated by
+`contract/events.test.ts` and the fixtures in `contract/testdata/`; that a
+perch appends nothing, by `internal/gateway/server_visibility_test.go` and
+`qa_seat_test.go` (VTT-184); and the `upsert_note` tool's schema, by
+`tools/toolgen/main_test.go` (VTT-232). Gated by
 `task check:drift` and `task check:breaking`, both inside `task check`.
 
 Both generator plugins are local, run through `buf.gen.yaml`, and pinned
@@ -60,7 +63,8 @@ annotation is what `tools/toolgen` reads.
 ### The ordering contract
 
 Frames are delivered in one order per connection, and events are ordered among
-THEMSELVES by sequence.
+THEMSELVES by sequence, within one log; a player's or a spectator's run
+restarts at each switch (below).
 
 A `CommandResult` is NOT ordered against the `Envelope`s that same command
 produced. The result is enqueued by the command loop and the events by the
@@ -69,7 +73,10 @@ one wins varies with load.
 
 SO A CLIENT MUST NOT CORRELATE BY ARRIVAL POSITION. Correlate a result by its
 `request_id` and events by their sequence; a result's `sequence` field names the
-first event that command produced.
+first world event that command produced. A player's or a spectator's events
+are numbered by the character log they watch, so their sequences are that
+log's and never the world's, and each later `ViewpointChanged` restarts them
+at the new log's first entry.
 
 The one exception is `catch_up_head`, positional by definition: always the first
 frame on a connection. `frameQueue` in `internal/gateway/server_test.go` is the
@@ -78,16 +85,35 @@ were not currently asking for.
 
 ### What the connection opens with
 
+A connection is opened at `/ws` with `token`, `after`, the cursor, and
+`log`, the id of the actor whose character log that cursor was read from.
+The DM and the agent are sent the world and ignore `log`. Which log a player
+or a spectator opens on, and what moves it, is SPEC-015's.
+
 `CatchUpHead` is sent once, first, carrying the last sequence THIS SEAT's
 catch-up will deliver: for the DM and the agent the last sequence queued as
-catch-up, or `after` itself when the log holds nothing newer; for a projected
-seat the sequence of the last envelope its catch-up sends, which can be below
-the log's head, and 0 when it sends none (SPEC-011). A client wanting a
-point-in-time snapshot reads until it has seen `head_sequence`; one wanting a
-live tail ignores the frame.
+catch-up, or `after` itself when the log holds nothing newer; for a player or
+a spectator the last sequence queued from the character log they opened on,
+or the cursor they opened after when that log holds nothing newer, in that
+log's sequence, and 0 when they watch nobody (SPEC-011). A client wanting a
+point-in-time snapshot reads until it has seen `head_sequence`, or until a
+`ViewpointChanged` after the first, since a switch means the head will not
+be sent; one wanting a live tail ignores the frame.
 
 `PresenceSnapshot` follows immediately, sent unconditionally INCLUDING WHEN
 EMPTY, so a joining client never infers who is online from silence.
+
+`ViewpointChanged` comes after the `PresenceSnapshot` on every connection of
+a player or a spectator, not necessarily next, and before any event, naming
+the actor whose log the connection is sent. An empty `actor_id` means
+nobody: protojson omits the field then, so the frame arrives as
+`{"viewpointChanged":{}}` and the arm's presence is the switch. A connection
+that watches nobody is sent no event. Every later switch is one more
+`ViewpointChanged`, whatever moved the seat (SPEC-015), and the new log
+follows it from its first entry, so a client resets what it folded at each
+one. The opening `ViewpointChanged` does not say whether the log follows after
+the cursor or from its first entry; the first entry's sequence does. The DM
+and the agent are sent none.
 
 ### What appends to the log, and what does not
 
@@ -95,7 +121,8 @@ The log only goes forward. Nothing retracts, and nothing rewrites what is
 already in it.
 
 These commands APPEND NOTHING: `set_viewpoint`, `set_join_door`,
-`rotate_join_link`, `promote_participant`. A viewpoint is a view preference, a
+`rotate_join_link`, `promote_participant`. A viewpoint is a choice of which
+character's log a connection is sent, a
 door is operational state, and a role lives in the participants table — none is
 a fact about the campaign, and a replay must not reconstruct them.
 
@@ -202,4 +229,4 @@ Those readers are not reading this record.
 
 ## Requirements
 
-VTT-232.
+VTT-184, VTT-232.
