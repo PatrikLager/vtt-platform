@@ -445,7 +445,8 @@ func (s *Server) pump(sub *seat, p *identity.Participant, perches *perchBox, rej
 	if ps.revoked() {
 		return
 	}
-	if sub.wake != nil && !ps.announce() {
+	// Re-judge after the opening announcement, never before it (SPEC-007).
+	if sub.wake != nil && (!ps.announce() || !ps.moved(sub.recheck())) {
 		return
 	}
 	for {

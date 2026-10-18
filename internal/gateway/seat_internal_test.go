@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
@@ -269,8 +270,10 @@ func TestAWedgedWatcherIsTornDownAndOthersKeepServing(t *testing.T) {
 	}
 }
 
-// pumpUnderTest runs s.pump for p over a real socket, its frames on out.
-func pumpUnderTest(t *testing.T, s *Server, p *identity.Participant) (*perchBox, chan []byte) {
+// Keep before between openSeat and the pump: a promotion's opening tests need
+// that window.
+func pumpUnderTest(t *testing.T, s *Server, p *identity.Participant, named string,
+	before func()) (*perchBox, chan []byte) {
 	t.Helper()
 	conns := make(chan *websocket.Conn, 1)
 	release := make(chan struct{})
@@ -288,9 +291,12 @@ func pumpUnderTest(t *testing.T, s *Server, p *identity.Participant) (*perchBox,
 	if err != nil {
 		t.Fatal(err)
 	}
-	sub, _, err := openSeat(s.campaign, p, "", 0, 64, 0)
+	sub, _, err := openSeat(s.campaign, p, named, 0, 64, 0)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if before != nil {
+		before()
 	}
 	perches, out, stop, done := newPerchBox(), make(chan []byte, 64), make(chan struct{}), make(chan struct{})
 	writerDone := make(chan struct{})
@@ -353,7 +359,7 @@ func TestAPerchTheActorsNoLongerAllowIsNotApplied(t *testing.T) {
 	seatParty(t, c, "a1", p.ID)
 	seatParty(t, c, "b1", "someone-else")
 
-	perches, out := pumpUnderTest(t, s, p)
+	perches, out := pumpUnderTest(t, s, p, "", nil)
 	if vc := frameOf(t, out).GetViewpointChanged(); vc == nil || vc.GetActorId() != "a1" {
 		t.Fatalf("the seat opened on %v, want a1", vc)
 	}
@@ -600,5 +606,79 @@ func TestAnEntryTakenAsTheCredentialGoesIsNotSent(t *testing.T) {
 	}
 	if len(out) != 0 {
 		t.Fatalf("an entry taken as the credential went was delivered (%d frames queued)", len(out))
+	}
+}
+
+func seatSpectator(t *testing.T, s *Server) *identity.Participant {
+	t.Helper()
+	_, id, err := s.ids.CreateInvite("Watcher", identity.RoleSpectator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &identity.Participant{ID: id, Role: identity.RoleSpectator}
+}
+
+func seatPromote(t *testing.T, s *Server, id string) func() {
+	t.Helper()
+	return func() {
+		t.Helper()
+		if err := s.ids.SetRole(id, identity.RolePlayer); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// VTT-387 VTT-368
+func TestAPromotionAsTheSeatOpensSendsNoEntryOfTheShoulder(t *testing.T) {
+	s, c, p := seatServer(t)
+	seatParty(t, c, "x1", p.ID)
+	spec := seatSpectator(t, s)
+	_, out := pumpUnderTest(t, s, spec, "x1", seatPromote(t, s, spec.ID))
+	if vc := frameOf(t, out).GetViewpointChanged(); vc == nil || vc.GetActorId() != "x1" {
+		t.Fatalf("the seat announced %v first, want the x1 it opened on", vc)
+	}
+	for {
+		f := frameOf(t, out)
+		if f.GetEvent() != nil {
+			t.Fatalf("promoted as it opened, the spectator was sent x1's entry %v", f.GetEvent())
+		}
+		if vc := f.GetViewpointChanged(); vc != nil && vc.GetActorId() == "" {
+			break
+		}
+	}
+	seatAppend(t, c, "after", &vttv1.NarrationAdded{Text: "x1 hears this"})
+	select {
+	case b := <-out:
+		t.Fatalf("watching nobody, the connection was sent %s", b)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// VTT-340 VTT-368
+func TestAPromotionAsTheSeatOpensMovesItOntoTheirPartyMember(t *testing.T) {
+	s, c, _ := seatServer(t)
+	spec := seatSpectator(t, s)
+	seatParty(t, c, "c1", spec.ID)
+	_, out := pumpUnderTest(t, s, spec, "", seatPromote(t, s, spec.ID))
+	if vc := frameOf(t, out).GetViewpointChanged(); vc == nil || vc.GetActorId() != "" {
+		t.Fatalf("the seat announced %v first, want the nobody it opened on", vc)
+	}
+	for {
+		f := frameOf(t, out)
+		if f.GetEvent() != nil {
+			t.Fatalf("an entry before the move onto c1: %v", f.GetEvent())
+		}
+		if vc := f.GetViewpointChanged(); vc != nil && vc.GetActorId() == "c1" {
+			break
+		}
+	}
+	held, err := c.CharacterLog("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, e := range held {
+		if got := frameOf(t, out).GetEvent(); !proto.Equal(got, e.Env) {
+			t.Fatalf("c1's entry %d is %v, want %v", i+1, got, e.Env)
+		}
 	}
 }
