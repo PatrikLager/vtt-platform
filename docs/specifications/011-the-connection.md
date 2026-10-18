@@ -169,7 +169,12 @@ queues behind this fan-out on `fanOut`. `announcePromotion` runs
 its deny set, the promoted participant's own included. Every fan-out takes
 `fanOut` first and `mu` only to read the membership, so announcements reach
 every connection in one order and a
-joiner, who takes `mu` alone, never waits for a fan-out in progress. `send`
+joiner, who takes `mu` alone, never waits for a fan-out in progress.
+`rejudge` takes `mu` alone and puts a signal on the `rejudge` channel,
+capacity one, of each connection of the participant it names without
+blocking on it, dropping it when one already waits; the pump re-judges the
+seat on it (SPEC-015), and its caller is SPEC-009's. A connection that has
+left is not in the registry, so no signal reaches it. `send`
 hands a frame to a connection and waits at most `presenceSendBudget`, 3
 seconds, or until that connection's `done`, then drops the frame for that
 connection; presence is repaired by the next snapshot, never by the log.

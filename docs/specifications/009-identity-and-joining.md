@@ -4,14 +4,17 @@
 
 Accepted. Implemented by `internal/identity/identity.go`,
 `internal/gateway/join.go`, `internal/gateway/authz.go`,
-`internal/gateway/server.go` and `internal/gateway/metadata.go`; pinned by the
-checks the rows under Requirements name, in
-`internal/identity/identity_test.go`,
+`internal/gateway/server.go`, `internal/gateway/presence.go` and
+`internal/gateway/metadata.go`; pinned by the checks the rows under
+Requirements name, in `internal/identity/identity_test.go`,
 `internal/identity/fault_internal_test.go`,
 `internal/identity/identity_failure_test.go`, `internal/gateway/join_test.go`,
 `internal/gateway/authz_test.go`, `internal/gateway/server_test.go`,
 `internal/gateway/qa_promotion_revoked_test.go`,
 `internal/gateway/qa_seat_test.go`, `internal/gateway/seat_internal_test.go`,
+`internal/gateway/qa_promotion_rejudge_test.go`,
+`internal/gateway/qa_promotion_opening_test.go`,
+`internal/gateway/qa_promotion_queued_test.go`,
 `internal/engine/role_test.go` and `internal/engine/qa_role_test.go`.
 
 ## Principles served
@@ -40,34 +43,34 @@ contract and is not claimed. The door is a row in `join_access` and revocation
 is an update to `participants` through `identity.Revoke`, so replaying a
 campaign can neither reopen a door nor bring a revoked participant back.
 
-**Authentication happens once; authorization happens continuously.** `handleWS`
-verifies the token against the plain HTTP request, before `websocket.Accept`; a
-token `identity.Verify` refuses gets a 401 and the connection is never
-upgraded. From then on the participant is re-resolved through
-`identity.Lookup`: in the read loop before every command; on the pump,
+**Authentication happens once; authorization happens continuously.**
+`handleWS` verifies the token against the plain HTTP request, before
+`websocket.Accept`; a token `identity.Verify` refuses gets a 401 and the
+connection is never upgraded. From then on the participant is re-resolved
+through `identity.Lookup`: in the read loop before every command; on the pump,
 through `pumpState.revoked`, when it starts, on every append wake and every
-perch it takes, before and after `admit` decides each envelope it takes, and
-after every switch (SPEC-015); and through `revoked` before every presence
-announcement: an arrival or a departure in `announcePresence` and
-`announceDeparture`, and a promotion in `announcePromotion`. An announcement
-skips a revoked participant's connections and leaves them open; their next
-command, or the pump's next wake, perch or envelope, closes them, so a log
-seat's connection is closed at the next append whether or not it sends that
-connection an entry (VTT-352). A lookup that answers
-`identity.ErrInvalidToken` ends the connection with a policy-violation close,
-from the read loop and from the pump alike (VTT-376). A successful lookup on
-the pump replaces the seat's participant, so the pump judges by the current
-role (VTT-340, SPEC-015), as the read loop does for a command (VTT-031).
-Any other lookup error is operational:
-`answerCommand` refuses that one command with `gateway: identity unavailable`
-and the connection stays; the delivery and presence checks match
-`ErrInvalidToken` alone and let an operational failure through. The `/api/*`
-routes verify the bearer token on every request in `authed`, and answer an
-unknown and a revoked token identically. `identity.Verify` finds the row by
-equality on the credential's SHA-256 hash, which is not secret to anyone
-without the credential, and confirms the match with
-`subtle.ConstantTimeCompare`. A stored role that does not parse is refused by
-`Verify`, `Lookup` and `List`, never skipped or defaulted.
+perch and every promotion signal it takes, before and after `admit` decides
+each envelope it takes, and after every switch (SPEC-015); and through
+`revoked` before every presence announcement: an arrival or a departure in
+`announcePresence` and `announceDeparture`, and a promotion in
+`announcePromotion`. An announcement skips a revoked participant's connections
+and leaves them open; their next command, or the pump's next wake, promotion
+signal, perch or envelope, closes them, so a log seat's connection is closed
+at the next append whether or not it sends that connection an entry (VTT-352).
+A lookup that answers `identity.ErrInvalidToken` ends the connection with a
+policy-violation close, from the read loop and from the pump alike (VTT-376).
+A successful lookup on the pump replaces the seat's participant, so the pump
+judges by the current role (VTT-340, SPEC-015), as the read loop does for a
+command (VTT-031). Any other lookup error is operational: `answerCommand`
+refuses that one command with `gateway: identity unavailable` and the
+connection stays; the delivery and presence checks match `ErrInvalidToken`
+alone and let an operational failure through. The `/api/*` routes verify the
+bearer token on every request in `authed`, and answer an unknown and a revoked
+token identically. `identity.Verify` finds the row by equality on the
+credential's SHA-256 hash, which is not secret to anyone without the
+credential, and confirms the match with `subtle.ConstantTimeCompare`. A stored
+role that does not parse is refused by `Verify`, `Lookup` and `List`, never
+skipped or defaulted.
 
 **One shared link admits people; the DM promotes them afterwards.** `POST
 /join` is unauthenticated. It reads at most `maxJoinBody` bytes, refuses a
@@ -124,18 +127,20 @@ column it added.
 **Promotion is a command.** `promote_participant` is ruled by `commandRoles`
 like every other command (`TestEveryClientCommandHasRoleCells` holds that no
 command is missing from it). The role it may grant is bounded in
-`authorizePromotionTarget`, to player or spectator; the role it may act upon is
-bounded in `handlePromotion`, which looks the target up and refuses one
+`authorizePromotionTarget`, to player or spectator; the role it may act upon
+is bounded in `handlePromotion`, which looks the target up and refuses one
 `identity.Lookup` does not answer, a revoked participant among them, and one
 whose current role is dm or agent, because `Authorize` performs no I/O and
-cannot read the target's row.
-`identity.SetRole` changes the role column and nothing else, reports a
-participant it did not find, and leaves a revoked participant revoked. When the
-promoted participant is connected, the handler then sends a `PresenceChanged`
-frame naming them through `announcePromotion` to every connection whose
-participant is not revoked, theirs included (VTT-309); when they are not,
-nothing is sent (VTT-310). It appends nothing; SPEC-007
-names the commands that append nothing and this is one of them.
+cannot read the target's row. `identity.SetRole` changes the role column and
+nothing else, reports a participant it did not find, and leaves a revoked
+participant revoked. The handler then signals each of the promoted
+participant's connections through `presenceRegistry.rejudge`, so each
+re-judges what it watches by the new role (SPEC-015). When the promoted
+participant is connected, the handler then sends a `PresenceChanged` frame
+naming them through `announcePromotion` to every connection whose participant
+is not revoked, theirs included (VTT-309); when they are not, nothing is sent
+(VTT-310). It appends nothing; SPEC-007 names the commands that append nothing
+and this is one of them.
 
 **Revoked participants are not listed.** `identity.List` reads `WHERE revoked =
 0`, ordered by display name and then id, and `GET /api/participants`, open to

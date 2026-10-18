@@ -4,17 +4,20 @@
 
 Accepted, wholly replacing the decision this number held before. Implemented
 by `internal/gateway/seat.go` (`watchesALog`, `errWatchEnded`, `seat`,
-`openSeat`, `watch`, `resolve`, `recheck`, `admit`, `drop`, `close`,
-`perchBox`, `newPerchBox`, `set`, `take`, `judgedBy`, `canSee`) and
+`openSeat`, `watch`, `resolve`, `recheck`, `rejudge`, `admit`, `drop`,
+`close`, `perchBox`, `newPerchBox`, `set`, `take`, `judgedBy`, `canSee`) and
 `internal/gateway/viewpoint.go` (`MayWatch`, `defaultViewpoint`), called from
 `internal/gateway/server.go` (`serve`, `pump`, `pumpState` with `revoked`,
 `announce`, `moved`, `onWake`, `onPerch` and `onEntry`, `sendViewpoint`,
-`answerCommand`, `handleSetViewpoint`, `handleCommand`) and `authz.go`
-(`Authorize`), over `internal/campaign`'s `SubscribeCharacter`,
-`SubscribeWithNoProgressTimeout`, `WatchAppends` and `Actors` and
-`internal/perceive`'s `CanSee`. Pinned by `internal/gateway/watch_test.go`,
-`seat_internal_test.go`, `viewpoint_test.go`, `server_visibility_test.go`,
-`qa_seat_test.go`, `qa_move_gate_test.go` and `authz_test.go`.
+`answerCommand`, `handleSetViewpoint`, `handleCommand`, `handlePromotion`),
+`presence.go` (`presenceRegistry.rejudge`) and `authz.go` (`Authorize`), over
+`internal/campaign`'s `SubscribeCharacter`, `SubscribeWithNoProgressTimeout`,
+`WatchAppends` and `Actors` and `internal/perceive`'s `CanSee`. Pinned by
+`internal/gateway/watch_test.go`, `seat_internal_test.go`,
+`presence_internal_test.go`, `viewpoint_test.go`,
+`server_visibility_test.go`, `qa_seat_test.go`, `qa_move_gate_test.go`,
+`qa_promotion_rejudge_test.go`, `qa_promotion_opening_test.go`,
+`qa_promotion_queued_test.go` and `authz_test.go`.
 
 ## Principles served
 
@@ -57,15 +60,18 @@ control one, from the next time the pump re-judges the seat.
 
 **The open.** `openSeat` registers the append watch before it reads the
 actors, so an append that lands while the seat opens wakes it. When `log`
-names an actor the participant may watch, the seat opens on that log after
-the connection's cursor (VTT-339, VTT-349); otherwise on the default from its
-first entry, the cursor ignored. A spectator whose `log` names no party
-member opens on nobody (VTT-369). For a log seat, the head `serve` queues
-first is what `watch` returns: the catch-up head of the log the seat opened
-on, or 0 for nobody (VTT-374, VTT-384, SPEC-011). The pump re-resolves the
-credential and then queues a `ViewpointChanged` naming what the seat shows,
-empty for nobody, before any entry (VTT-368); a DM's or an agent's pump sends
-none.
+names an actor the participant may watch, the seat opens on that log after the
+connection's cursor (VTT-339, VTT-349); otherwise on the default from its
+first entry, the cursor ignored. A spectator whose `log` names no party member
+opens on nobody (VTT-369). For a log seat, the head `serve` queues first is
+what `watch` returns: the catch-up head of the log the seat opened on, or 0
+for nobody (VTT-374, VTT-384, SPEC-011). The pump re-resolves the credential
+and then queues a `ViewpointChanged` naming what the seat shows, empty for
+nobody, before any entry (VTT-368); a DM's or an agent's pump sends none. A
+log seat's pump then re-judges the seat by the role that lookup returned
+(`recheck`), so a seat that role may not watch moves before any entry,
+announced by a second `ViewpointChanged` (VTT-340, VTT-387), and one it may
+still watch stays (VTT-388).
 
 **`watch`'s settle loop.** `watch(actorID, cursor)` drops the seat's
 subscription, records `actorID` as shown and stores it in `told`, and
@@ -85,6 +91,11 @@ the watch with `errWatchEnded`.
   member by id, or to nobody, and a player watching nobody who is granted a
   party member moves onto it (VTT-340); a spectator whose shoulder leaves
   the party moves to nobody (VTT-386).
+- A promotion: after `identity.SetRole`, `handlePromotion` calls
+  `presenceRegistry.rejudge`, which puts a signal on each of the promoted
+  participant's connections (SPEC-011). The pump takes it and runs `onWake`,
+  so the seat is re-judged by the new role with nothing appended (VTT-340),
+  and a seat the new role may still watch stays where it is (VTT-388).
 - A perch: `handleSetViewpoint` calls `perchBox.set` after `authorize`
   (SPEC-013). The pump takes it, and `onPerch` applies nothing when it names
   what the seat shows (VTT-375) or when `MayWatch` refuses it against the
@@ -92,25 +103,29 @@ the watch with `errWatchEnded`.
   leaves the seat where it was (VTT-193).
 - An entry's admission, below.
 
-A promotion appends nothing (SPEC-007) and wakes no seat: `handlePromotion`
-calls `identity.SetRole` and `announcePromotion` alone. So a promoted
-participant's seat keeps what it shows until the next append's wake
-re-judges it, and the entries its subscription already holds are still
-sent; no entry written after the promotion reaches it first, since an append
-raises its wake before any of its entries is delivered (VTT-355). A move that
+A promotion appends nothing (SPEC-007, VTT-036) and so raises no wake; it
+reaches a seat by its signal, by the pump's opening `recheck`, by another
+append's wake or by an entry's `rejudge`, whichever comes first. A move that
 changes what the seat shows is announced by one `ViewpointChanged`, queued
 after the move and before any entry of the new log, which is sent from its
 first entry (VTT-342, VTT-192); no entry of the previous log follows it
 (VTT-367).
 
-**No entry is sent after the right is lost.** An append raises its wake
-after its live apply and before any of its entries is delivered (VTT-355,
-SPEC-021). `admit` reads a waiting wake before it lets the pump send an
-entry it has taken, and when the recheck moves the seat the entry, which
-belongs to the log just left, is not sent. So no entry caused by the event
-that took away the right to watch a log, or by a later event, is sent on
-that connection (VTT-348). The entries still queued on the old subscription
-are dropped with it, a batch's earlier entries included.
+**No entry is sent after the right is lost.** An append raises its wake after
+its live apply and before any of its entries is delivered (VTT-355, SPEC-021).
+`admit` reads a waiting wake before it lets the pump send an entry it has
+taken, and when the recheck moves the seat the entry, which belongs to the log
+just left, is not sent. So no entry caused by the event that took away the
+right to watch a log, or by a later event, is sent on that connection
+(VTT-348). The entries still queued on the old subscription are dropped with
+it, a batch's earlier entries included. A seat records the role it was last
+judged by (`judgedAs`, set by `openSeat`, `watch` and `recheck`), and
+`onEntry`, after its last lookup, re-judges a seat whose participant now holds
+another (`rejudge`) and does not send the entry when that moves the seat. So
+no entry the pump queues after it has read a new role is of a log that role
+may not watch (VTT-387). An entry the pump judged before it read the new role,
+or a frame already queued for the writer, may still be sent after the
+promotion returns.
 
 **The credential.** The pump re-resolves the participant at the moments
 SPEC-009 lists, after `admit` among them since `admit` may have taken the
@@ -147,7 +162,9 @@ SPEC-011's; the role table and the command path are SPEC-013's;
 `ViewpointChanged`'s shape, what a client does at one, and that
 `set_viewpoint` appends nothing are SPEC-007's; re-resolution is SPEC-009's;
 what a log holds and the append watch are SPEC-021's; what a character
-perceives is SPEC-016's; what a party member is, is `engine.IsPartyMember`'s.
+perceives is SPEC-016's; what a party member is, is `engine.IsPartyMember`'s;
+the presence registry's locks, which a promotion's signal takes, are
+SPEC-011's.
 
 ## Consequences
 
@@ -172,10 +189,14 @@ A client author, and whoever changes the code, are bound by these:
   for it (SPEC-021).
 - A player who controls no party member moves nothing, and watches nobody
   from the pump's next re-judging of the seat.
+- A promotion re-judges the promoted participant's seats with nothing
+  appended and moves each one the new role may not watch; a client learns of
+  a move by its `ViewpointChanged`.
 
 ## Requirements
 
 VTT-176, VTT-181, VTT-182, VTT-188, VTT-189, VTT-192, VTT-193, VTT-306,
 VTT-338, VTT-339, VTT-340, VTT-341, VTT-342, VTT-343, VTT-345, VTT-346,
 VTT-347, VTT-348, VTT-349, VTT-350, VTT-351, VTT-366, VTT-367, VTT-368,
-VTT-369, VTT-370, VTT-374, VTT-375, VTT-377, VTT-385, VTT-386.
+VTT-369, VTT-370, VTT-374, VTT-375, VTT-377, VTT-385, VTT-386, VTT-387,
+VTT-388.
