@@ -529,6 +529,41 @@ func TestASwitchRacingItsOwnLossSettlesOnTheDefault(t *testing.T) {
 	}
 }
 
+// VTT-384
+func TestASeatThatMovesWhileItSubscribesAnswersTheHeadOfTheLogItShows(t *testing.T) {
+	_, c, p := seatServer(t)
+	seatParty(t, c, "a1", p.ID)
+	seatAppend(t, c, "one", &vttv1.NarrationAdded{Text: "one"})
+	seatAppend(t, c, "two", &vttv1.NarrationAdded{Text: "two"})
+	seatParty(t, c, "b1", p.ID)
+	seatParty(t, c, "c1", p.ID)
+	sub, _, err := openSeat(c, p, "c1", 0, 64, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sub.close)
+
+	seatAppend(t, c, "lost", &vttv1.ActorControlRevoked{ActorId: "a1", ParticipantId: p.ID})
+	a1, err := c.CharacterLog("a1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b1, err := c.CharacterLog("b1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a1) == len(b1) {
+		t.Fatalf("fixture: a1's and b1's logs both hold %d entries", len(b1))
+	}
+	head, err := sub.watch("a1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub.shown != "b1" || head != int64(len(b1)) {
+		t.Fatalf("a watch onto a1 that settled on %q answered head %d, want b1 at %d", sub.shown, head, len(b1))
+	}
+}
+
 // Start no pump here: the credential must go between the pump's two lookups.
 // VTT-352
 func TestAnEntryTakenAsTheCredentialGoesIsNotSent(t *testing.T) {

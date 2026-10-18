@@ -78,7 +78,7 @@ func openSeat(c *campaign.Campaign, p *identity.Participant, named string, after
 
 // watch moves the seat onto actorID's log after cursor, and keeps moving while a
 // waiting wake resolves elsewhere, so the head it returns is the log it shows
-// (VTT-086).
+// (VTT-384).
 func (s *seat) watch(actorID string, cursor int64) (int64, error) {
 	for {
 		s.drop()

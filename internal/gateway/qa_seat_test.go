@@ -430,7 +430,7 @@ func qaSeatMinLen(t *testing.T, what string, log []*vttv1.Envelope, n int) {
 	}
 }
 
-// VTT-340 VTT-338 VTT-368 VTT-349 VTT-086 VTT-378
+// VTT-340 VTT-338 VTT-368 VTT-349 VTT-384 VTT-378
 func TestQASeatAPlayerOpensOnTheirFirstPartyMemberByID(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	hero := tb.log(t, "hero")
@@ -484,7 +484,7 @@ func TestQASeatAPlayerIgnoresTheCursorWithoutAWatchableLog(t *testing.T) {
 	}
 }
 
-// VTT-339 VTT-349 VTT-338 VTT-086
+// VTT-339 VTT-349 VTT-338 VTT-384
 func TestQASeatANamedLogOpensAfterItsCursor(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	scout, hero := tb.log(t, "scout"), tb.log(t, "hero")
@@ -518,7 +518,7 @@ func TestQASeatANamedLogOpensAfterItsCursor(t *testing.T) {
 	}
 }
 
-// VTT-349 VTT-086
+// VTT-349 VTT-384
 func TestQASeatACursorAtTheHeadSendsNoHistory(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	scout := tb.log(t, "scout")
@@ -532,7 +532,7 @@ func TestQASeatACursorAtTheHeadSendsNoHistory(t *testing.T) {
 	q.expect(t, next, "scout live", tb.log(t, "scout")[len(scout):])
 }
 
-// VTT-341 VTT-180 VTT-369 VTT-342 VTT-374
+// VTT-341 VTT-385 VTT-369 VTT-342 VTT-374
 func TestQASeatASpectatorWatchesNobodyUntilItPerches(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	for _, query := range []string{
@@ -758,7 +758,7 @@ func TestQASeatLosingControlSwitchesAPlayerToTheNextPartyMember(t *testing.T) {
 	}
 }
 
-// VTT-342 VTT-348 VTT-340 VTT-341
+// VTT-342 VTT-348 VTT-340 VTT-341 VTT-386
 func TestQASeatAShoulderThatStopsBeingAPartyMemberSwitchesItsWatchers(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	spec := tb.dial(t, identity.RoleSpectator, "after=0&log=hero")

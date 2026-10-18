@@ -282,7 +282,7 @@ func TestAPlayersConnectionIsItsCharactersLog(t *testing.T) {
 	w.quiet(300 * time.Millisecond)
 }
 
-// VTT-340 VTT-341
+// VTT-340 VTT-341 VTT-385
 func TestAPlayerWatchesTheirFirstPartyMemberByID(t *testing.T) {
 	f := newGWFixture(t)
 	appendEvents(t, f.campaign, partyMemberOf("a0", f.playerID)...)
@@ -393,7 +393,7 @@ func TestASpectatorWatchesThePartyMemberItPerchesOn(t *testing.T) {
 	w.quiet(300 * time.Millisecond)
 }
 
-// VTT-340 VTT-348
+// VTT-340 VTT-348 VTT-386
 func TestAConnectionStopsWatchingAnActorItMayNoLongerWatch(t *testing.T) {
 	losses := map[string]func(f *gwFixture) []proto.Message{
 		"control revoked": func(f *gwFixture) []proto.Message {

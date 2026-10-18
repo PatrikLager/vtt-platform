@@ -291,7 +291,7 @@ func TestAPlayerCannotStepWhereItCannotSeeButTheDMCan(t *testing.T) {
 	}
 }
 
-// VTT-180 VTT-341
+// VTT-385 VTT-341
 func TestASpectatorWithNoPerchReceivesNoBoard(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -378,7 +378,7 @@ func (f *gwFixture) perch(t *testing.T, conn *websocket.Conn, requestID, actorID
 	return drainEvents(t, conn, 500*time.Millisecond)
 }
 
-// VTT-180 VTT-192 VTT-195 VTT-342
+// VTT-192 VTT-195 VTT-342
 func TestASpectatorHopsFromOneShoulderToAnother(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
@@ -796,7 +796,7 @@ func TestAPlayerCannotStepOntoTerrainItRemembersButCannotSee(t *testing.T) {
 // A client reads to the head it is given (cmd/vtt/state_dump.go's drainToHead):
 // a head above the seat's last catch-up entry hangs it, one below truncates it.
 // Give every seat the last sequence its own catch-up carries.
-// VTT-086
+// VTT-384
 func TestEverySeatCanReachTheCatchUpHeadItIsGiven(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedAmbush(t)
