@@ -355,6 +355,42 @@ holds until the main goroutine blocks, so it reds on the recipe at every
 GOMAXPROCS (60 of 60 across 1, 2 and 8, observed 2026-10-17 by the fix's
 reading review).
 
+## 2026-10-18 — a promotion re-judged a seat only at the next append's wake
+
+**A promotion re-judges a seat only at the next append's wake.**
+`handlePromotion` called `identity.DB.SetRole` and `announcePromotion` and
+woke no seat, and a log seat's pump re-judged what it showed only on an
+append's wake, or on one `admit` found waiting. A spectator promoted
+to player kept the log they watched, and were sent its queued rest, until the
+next append anywhere in the campaign, though VTT-340 says a player watches
+their first party member "whenever" they watch an actor they may not. The
+same held for a promotion that landed while the connection opened. Recipe:
+in `internal/gateway`, delete the `s.presence.rejudge` call in
+`handlePromotion`, the block in `pumpState.onEntry` that calls
+`ps.sub.rejudge()`, and the `|| !ps.moved(sub.recheck())` of `pump`'s start.
+Tier-1 `go test` should have caught it through VTT-340's tests and did not:
+`TestAPromotedSpectatorWatchesTheirFirstPartyMember` appends after the
+promotion, and that append's wake re-judges the seat, so no test saw the
+window. The mutation gate cannot rewrite a call that is not there. Recorded
+2026-10-18 by ticket 3b's specification step, whose reading review found it.
+Labels: `test data missing`, `outside the tool`.
+
+**Closed by** the 2026-10-18 promotion ticket
+(`docs/superpowers/specs/2026-10-18-a-promotion-re-judges-the-promoted-participants-seats-design.md`).
+`TestAPromotionMovesASpectatorOffAShoulderThePlayerMayNotWatch`,
+`TestAPromotedSpectatorMovesOntoThePartyMemberTheyHold` and
+`TestAPromotionMovesEveryConnectionOfTheParticipant` in
+`internal/gateway/watch_test.go` red on the recipe's first edit;
+`TestAnEntryTakenAfterAPromotionIsJudgedByTheNewRole` and
+`TestARoleReadAfterAdmitStillJudgesTheEntry` in
+`internal/gateway/seat_internal_test.go` on the second;
+`TestAPromotionAsTheSeatOpensMovesItOntoTheirPartyMember` there on the third,
+and `TestAPromotionAsTheSeatOpensSendsNoEntryOfTheShoulder` on the second and
+third together. The recipe's own case,
+`TestQAQueuedPromotedSpectatorOnAnothersPartyMemberMovesToNobody` in
+`internal/gateway/qa_promotion_queued_test.go`, reds on the first and second
+together (observed 2026-10-18 on `3ddf8e7`).
+
 ## Open debt
 
 **The harness cannot see a log seat switched on its old subscription.**
@@ -375,23 +411,6 @@ Closing it needs the harness to know a seat's viewpoint, by surfacing
 `ViewpointChanged` through `Conn` or by passing `log` through the `Dialer`,
 which the fourth per-character-logs ticket carries. Recorded 2026-10-17 by
 ticket 3b's Task 6, whose deliberate break found it.
-
-**A promotion re-judges a seat only at the next append's wake.** Recipe: in
-`internal/gateway`, perch a spectator on a party member another player
-controls while that log's catch-up is still queued, promote the spectator to
-player with `promote_participant`, and append nothing. The connection, now a
-player's, is still sent the queued rest of that log and goes on showing it
-until an append's wake makes `recheck` move it to the default, though VTT-340
-says a player watches their first party member "whenever" they watch an
-actor they may not. `handlePromotion` calls `identity.DB.SetRole` and
-`announcePromotion` and wakes no seat; `onEntry` refreshes the participant
-but re-judges only on a waiting wake. Nothing written after the promotion is
-sent first (VTT-355). `TestAPromotedSpectatorWatchesTheirFirstPartyMember`
-appends after the promotion, so no test sees the window. Labels: `test data
-missing`. Closing it needs the owner's choice: a promotion that wakes the
-promoted participant's seats, or VTT-340 succeeded by a row that says when.
-Recorded 2026-10-18 by ticket 3b's specification step, whose reading review
-found it.
 
 **`migrateLocked`'s re-read error arm is unreachable through `testdb`.**
 `migrateLocked` in `internal/identity` re-reads the table's shape under the
