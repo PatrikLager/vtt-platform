@@ -682,3 +682,69 @@ func TestAPromotionAsTheSeatOpensMovesItOntoTheirPartyMember(t *testing.T) {
 		}
 	}
 }
+
+func seatPumpState(s *Server, sub *seat, id string,
+	lookup func(string) (*identity.Participant, error)) (chan []byte, *pumpState) {
+	var closing atomic.Bool
+	closing.Store(true)
+	out := make(chan []byte, 8)
+	return out, &pumpState{s: s, sub: sub, id: id, lookup: lookup, outCh: out, writerDone: make(chan struct{}),
+		closing: &closing}
+}
+
+func seatOpenedOnX1(t *testing.T) (*Server, *seat, *identity.Participant, *vttv1.Envelope) {
+	t.Helper()
+	s, c, p := seatServer(t)
+	seatParty(t, c, "x1", p.ID)
+	spec := seatSpectator(t, s)
+	sub, head, err := openSeat(c, spec, "x1", 0, 64, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sub.close)
+	if head == 0 {
+		t.Fatal("fixture: x1's log is empty")
+	}
+	return s, sub, spec, seatTake(t, sub.events, "x1's first entry")
+}
+
+func seatNoEntryOfX1(t *testing.T, ps *pumpState, sub *seat, out chan []byte, env *vttv1.Envelope) {
+	t.Helper()
+	if len(sub.wake) != 0 {
+		t.Fatal("fixture: a wake waits, so admit would re-judge and the role check go untested")
+	}
+	if !ps.onEntry(env) {
+		t.Fatal("the pump stopped on an entry of a log the new role may not watch")
+	}
+	if vc := frameOf(t, out).GetViewpointChanged(); vc == nil || vc.GetActorId() != "" || sub.shown != "" {
+		t.Fatalf("the seat shows %q after %v, want nobody", sub.shown, vc)
+	}
+	if len(out) != 0 {
+		t.Fatalf("x1's entry was queued for a player who may not watch x1 (%d frames)", len(out))
+	}
+}
+
+// VTT-387
+func TestAnEntryTakenAfterAPromotionIsJudgedByTheNewRole(t *testing.T) {
+	s, sub, spec, env := seatOpenedOnX1(t)
+	if err := s.ids.SetRole(spec.ID, identity.RolePlayer); err != nil {
+		t.Fatal(err)
+	}
+	out, ps := seatPumpState(s, sub, spec.ID, s.ids.Lookup)
+	seatNoEntryOfX1(t, ps, sub, out, env)
+}
+
+// VTT-387
+func TestARoleReadAfterAdmitStillJudgesTheEntry(t *testing.T) {
+	s, sub, spec, env := seatOpenedOnX1(t)
+	player := &identity.Participant{ID: spec.ID, Role: identity.RolePlayer}
+	lookups := 0
+	out, ps := seatPumpState(s, sub, spec.ID, func(string) (*identity.Participant, error) {
+		lookups++
+		if lookups == 1 {
+			return spec, nil
+		}
+		return player, nil
+	})
+	seatNoEntryOfX1(t, ps, sub, out, env)
+}

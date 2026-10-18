@@ -547,8 +547,8 @@ func (ps *pumpState) onPerch(actorID string) bool {
 	return ps.moved(true, err)
 }
 
-// Re-resolve before admit judges with the role, and after it, since it may
-// have taken the entry's wake (VTT-031, VTT-352).
+// Re-resolve before admit and after it, which may have taken the entry's wake,
+// and judge the entry by the role read last (VTT-031, VTT-352, VTT-387).
 func (ps *pumpState) onEntry(env *vttv1.Envelope) bool {
 	if ps.revoked() {
 		return false
@@ -559,6 +559,13 @@ func (ps *pumpState) onEntry(env *vttv1.Envelope) bool {
 	}
 	if !ps.moved(moved, err) {
 		return false
+	}
+	if send {
+		switched, err := ps.sub.rejudge()
+		if !ps.moved(switched, err) {
+			return false
+		}
+		send = !switched
 	}
 	return !send || deliver(ps.s.encodeFrame, []*vttv1.Envelope{env}, ps.outCh, ps.writerDone, ps.conn, ps.closing)
 }
