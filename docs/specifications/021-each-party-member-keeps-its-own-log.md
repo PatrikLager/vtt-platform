@@ -16,6 +16,11 @@ over `internal/store/store.go`'s `character_events` table, `Entry`,
 `internal/store/subscribe.go`'s `subscriber` (`enqueue`, `pump`),
 `SubscribeCharacter`, `NotifyCharacter`, `startSubscriber` and `enqueueAll`,
 and over `perceive`'s `New`, `Resume`, `Event` and `Perch` (SPEC-016).
+`internal/engine/apply.go`'s `Apply` writes and keeps an actor's kind in its
+`ActorControlGranted` and `ActorControlRevoked` arms, and the descriptions of
+`add_actor`, `grant_actor_control` and `revoke_actor_control` in
+`tools/toolgen/main.go` tell the agent how a creature a player runs is
+granted and taken back.
 Pinned by `internal/store/character_log_test.go`,
 `character_subscribe_test.go`, `qa_character_subscribe_test.go` and
 `store_failure_test.go`,
@@ -25,8 +30,10 @@ Pinned by `internal/store/character_log_test.go`,
 `character_subscribe_test.go`, `qa_character_subscribe_test.go`,
 `append_watch_test.go`, `qa_append_watch_test.go`,
 `every_log_told_test.go`, `character_log_oracle_test.go` and
-`poison_internal_test.go`, and by
-`internal/perceive/resume_from_fold_test.go`.
+`poison_internal_test.go`, by
+`internal/perceive/resume_from_fold_test.go`, and, for a creature a player
+runs, by `internal/gateway/creature_test.go` and `qa_creature_test.go`,
+`tools/toolgen/main_test.go` and `internal/engine/actor_control_test.go`.
 
 ## Principles served
 
@@ -84,6 +91,28 @@ by id. Its decision starts from nothing seen, so the frames for the resuming
 event place what it sees on its present square and correct each held actor
 in sight. A new actor added under an old id continues that id's log, and is
 withdrawn and introduced afresh, or corrected, as VTT-313 says.
+
+**A creature a player runs.** By the owner's rulings, of 2026-08-23 for a
+creature charmed into a player's service and of 2026-10-19 for one they
+summon or possess, a creature a player runs for a while is granted
+`ACTOR_KIND_PARTY_MEMBER` for the run, and `ActorKind` in
+`contract/vtt/v1/events.proto` has no other value for it: its values are
+`ACTOR_KIND_UNSPECIFIED`, `ACTOR_KIND_PARTY_MEMBER` and
+`ACTOR_KIND_NON_PARTY`. When the run ends it is granted
+`ACTOR_KIND_NON_PARTY` and the player's control is revoked, or it is
+removed. Nothing in the code tells such a creature from any other actor: its
+kind is the last one stated for it, by its `ActorAdded` or by a grant, which
+writes it even when the participant already controls the actor (VTT-391),
+and a revocation alone leaves a party member a party member (VTT-392). Its
+log is therefore a party member's: it opens at the first event after which
+the creature is a party member (VTT-317), is paused by an event after which
+it is not, the non-party grant or the removal (VTT-316), and resumes without
+a second opening when it is one again (VTT-318). `grant_actor_control`'s
+description tells the agent to grant such a creature
+`ACTOR_KIND_PARTY_MEMBER` and how to end the run (VTT-389);
+`revoke_actor_control`'s tells it that revoking alone leaves the creature a
+party member (`TestRevokeActorControlSaysItEndsAPlayersRunOfACreature`); and
+`add_actor`'s tells it never to reuse an actor's id (VTT-390).
 
 **Frames that would not fold.** Each actor's frames are folded first onto a
 copy of its log, each stamped with the sequence it will have. A set that does
@@ -182,6 +211,21 @@ bound by these:
   session's id.
 - A paused log misses every narration and every public note made during the
   pause, and every session that opened and closed in it.
+- A creature possessed a second time resumes the log of the first
+  possession (VTT-318).
+- A creature added under the id of an earlier, removed actor continues that
+  actor's log, if it had one, once it is a party member (VTT-318). Of an id
+  an actor has had, `engine.Apply` and `adventure.Compile` refuse only one a
+  live actor holds (`grep -rn 'already exists", a.ActorId\|collides with an
+  existing actor' --include='*.go' internal cmd tools | grep -v _test.go`):
+  `add_actor`'s description tells the agent never to reuse one (VTT-390), and
+  an adventure's actor ids are checked against the live actors alone.
+- Revoking a creature's last controller leaves it a party member, and its
+  log is written on (VTT-392, VTT-319).
+- A non-party creature left in a player's control is still theirs to move:
+  `internal/gateway/authz.go` reads no kind (`grep -n 'Kind'
+  internal/gateway/authz.go` prints nothing), and the move is judged by the
+  eyes of the character the player watches (SPEC-015).
 - Entries of one log share `event_id`s with the world and with other logs;
   nothing may treat `character_events.event_id` as unique.
 - An entry's `world_seq` is provenance and the anchors' key, never folded and
@@ -206,4 +250,5 @@ bound by these:
 VTT-315, VTT-316, VTT-317, VTT-318, VTT-319, VTT-320, VTT-321, VTT-322,
 VTT-323, VTT-324, VTT-325, VTT-326, VTT-327, VTT-328, VTT-329, VTT-330,
 VTT-331, VTT-332, VTT-333, VTT-334, VTT-335, VTT-336, VTT-337, VTT-353,
-VTT-354, VTT-355, VTT-356, VTT-357, VTT-371, VTT-372, VTT-373.
+VTT-354, VTT-355, VTT-356, VTT-357, VTT-371, VTT-372, VTT-373, VTT-389,
+VTT-390, VTT-391, VTT-392.
