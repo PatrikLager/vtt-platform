@@ -118,13 +118,28 @@ test("empty state reads honestly rather than rendering a blank panel", () => {
   expect(root.querySelector(".notes")?.textContent).toContain("No notes");
 });
 
-test("the ticker shows sequence numbers, newest first", () => {
+test("the ticker shows the newest event first", () => {
   const log = [
     env(1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) }),
     env(2, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "s1", name: "H", gridWidth: 6, gridHeight: 4 }) }),
   ];
   const ticks = render(world(), log).querySelectorAll(".tick");
-  expect(ticks[0]!.textContent).toContain("#2");
+  expect(ticks[0]!.textContent).toBe('scene "H"');
+});
+
+// VTT-393
+test("each ticker row is its event's description alone, newest first", () => {
+  const log = [
+    env(1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) }),
+    env(2, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "s1", name: "H", gridWidth: 6, gridHeight: 4 }) }),
+    env(3, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t1", to: { x: 3, y: 4 } }) }),
+  ];
+  const ticks = Array.from(render(world(), log).querySelectorAll(".ticker .tick"));
+  expect(ticks.map((r) => r.textContent)).toEqual(["t1 moved to 3,4", 'scene "H"', "session started — S"]);
+  for (const r of ticks) {
+    expect(r.getAttributeNames()).toEqual(["class"]);
+    expect(r.children.length).toBe(0);
+  }
 });
 
 test("the ticker is bounded — an all-night session must not render thousands of rows", () => {
@@ -144,7 +159,7 @@ test("the feed and the ticker show a move's reason", () => {
     tokenId: "t1", to: { x: 3, y: 4 }, reason: "the floor gives way" }) })];
   const root = render(world(), log);
   expect(root.querySelector(".feed .mechanical")?.textContent).toBe("t1 moved to 3,4 — the floor gives way");
-  expect(root.querySelector(".ticker .tick")?.textContent).toBe("#6 t1 moved to 3,4 — the floor gives way");
+  expect(root.querySelector(".ticker .tick")?.textContent).toBe("t1 moved to 3,4 — the floor gives way");
 });
 
 test("in-character speech is marked with its speaker; table talk is not", () => {
@@ -914,13 +929,11 @@ test("notes are listed in sorted key order, headed, and say so when empty", () =
 
 // --- ticker and status ------------------------------------------------------
 
-test("each ticker row carries its sequence number and its description", () => {
+test("each ticker row carries its description, under the Events heading", () => {
   const log = [env(7, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) })];
   const root = render(world(), log);
   expect(Array.from(root.querySelectorAll("h2")).some((n) => n.textContent === "Events")).toBe(true);
-  const row = root.querySelector(".tick")!;
-  expect(row.querySelector(".seq")?.textContent).toBe("#7");
-  expect(row.textContent).toContain("session started");
+  expect(root.querySelector(".tick")?.textContent).toBe("session started — S");
 });
 
 test("the status bar shows the connection state and the session", () => {

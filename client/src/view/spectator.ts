@@ -425,10 +425,7 @@ function renderTicker(log: Envelope[]): HTMLElement {
   // Newest first, and bounded: an all-night session is thousands of events and
   // a spectator only ever looks at the recent tail.
   for (const e of log.slice(-40).reverse()) {
-    const row = el("p", "tick");
-    row.appendChild(el("span", "seq", `#${e.sequence}`));
-    row.appendChild(document.createTextNode(` ${describe(e)}`));
-    wrap.appendChild(row);
+    wrap.appendChild(el("p", "tick", describe(e)));
   }
   return wrap;
 }

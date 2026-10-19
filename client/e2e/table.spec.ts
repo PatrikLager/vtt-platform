@@ -119,13 +119,20 @@ test("a DM starts a session and loads an adventure", async ({ page }) => {
   await page.screenshot(shot("03b-dm-assigned-actor"));
 });
 
+// VTT-393
 test("the story feed and ticker record what happened", async ({ page }) => {
-  await openAs(page, "spectator");
-  // The adventure loaded in the previous test is in the log this client
-  // replays from sequence 0, which is the replay path working.
+  await openAs(page, "player");
+  // Lera's log, replayed from its first entry, holds what she saw of the
+  // adventure "a DM starts a session and loads an adventure" loaded: the replay
+  // path working. Each ticker row is its description alone.
   await expect(page.locator(".tick")).not.toHaveCount(0, { timeout: 10_000 });
-  await expect(page.locator(".seq").first()).toContainText("#");
-  await page.screenshot(shot("04-spectator-populated"));
+  await expect(page.locator(".tick", { hasText: /^tok-lera placed at \d+,\d+$/ })).toHaveCount(1);
+  await expect(page.locator(".tick", { hasText: /#\d/ })).toHaveCount(0);
+  const drawn = await page.locator(".tick").evaluateAll((rows) =>
+    rows.flatMap((r) => [getComputedStyle(r, "::before").content, getComputedStyle(r, "::after").content]),
+  );
+  expect(drawn.filter((c) => c !== "none" && c !== "normal")).toEqual([]);
+  await page.screenshot(shot("04-player-feed-and-ticker"));
 });
 
 test("a player sees their own panel and can move their token", async ({ page }) => {

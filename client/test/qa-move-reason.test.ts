@@ -60,17 +60,16 @@ function feedBeats(root: HTMLElement): string[] {
   return Array.from(feed.querySelectorAll(".beat")).map((b) => b.textContent ?? "");
 }
 
-// The ticker line for one sequence number, with its "#N" marker removed.
-function tickFor(root: HTMLElement, seq: number): string {
+// The ticker line of the log's nth event, counting from 1 for the oldest: the
+// ticker lists its rows newest first. True only while the log has at most the
+// ticker's 40 rows, and every log here has three or fewer.
+function tickFor(root: HTMLElement, nth: number): string {
   const ticker = root.querySelector("section.ticker");
   if (!ticker) throw new Error("no ticker section rendered");
-  for (const t of Array.from(ticker.querySelectorAll(".tick"))) {
-    const marker = t.querySelector(".seq")?.textContent ?? "";
-    if (marker.trim() === `#${seq}`) {
-      return (t.textContent ?? "").slice(marker.length).trim();
-    }
-  }
-  throw new Error(`no ticker line for #${seq}`);
+  const rows = Array.from(ticker.querySelectorAll(".tick"));
+  const row = rows[rows.length - nth];
+  if (nth < 1 || !row) throw new Error(`no ticker line for event ${nth} of ${rows.length}`);
+  return row.textContent ?? "";
 }
 
 function occurrences(hay: string, needle: string): number {
@@ -184,7 +183,7 @@ group("renderSpectator: the feed and the ticker", () => {
   test("a move with no reason renders as before in both places", () => {
     const root = render([move({ seq: 4n })]);
     expect(feedBeats(root)).toEqual([BASE]);
-    expect(tickFor(root, 4)).toBe(BASE);
+    expect(tickFor(root, 1)).toBe(BASE);
   });
 
   // VTT-263

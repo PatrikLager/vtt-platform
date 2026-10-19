@@ -3155,3 +3155,45 @@ test("a player's reconnect still resumes, and sends no perch", async () => {
   expect(redial.sent).toHaveLength(0);
   s?.close();
 });
+
+// VTT-393
+test("no role's window shows a log sequence number", async () => {
+  const seqs = [7001, 7002, 7003, 7004, 7005, 7006];
+  const shows = (t: string, n: number) =>
+    new RegExp(`(?<!\\d)${String(n).replace(/(\d)(?=(\d{3})+$)/g, "$1[,.'\\u0020\\u00a0\\u202f]?")}(?!\\d)`).test(t);
+  const panel: Record<string, string> = { spectator: ".perch", player: ".player", dm: ".dm", agent: ".dm" };
+  for (const role of ["spectator", "player", "dm", "agent"]) {
+    localStorage.setItem("vtt.token", "tok");
+    stubMetadata({
+      "/api/me": { participantId: "p", name: "Watcher", role },
+      "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
+      "/api/adventures": { adventures: [] },
+    });
+    useFakeSocket();
+    const r = root();
+    const s = boot(r);
+    const sock = FakeSocket.instances[0]!;
+    sock.open();
+    sock.deliver(envelope(7001, { sessionStarted: { name: "Night" } }));
+    sock.deliver(envelope(7002, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 8, gridHeight: 8 } }));
+    sock.deliver(envelope(7003, { actorAdded: { actor: { actorId: "a1", name: "Lera", kind: "ACTOR_KIND_PARTY_MEMBER" } } }));
+    sock.deliver(envelope(7004, { actorControlGranted: { actorId: "a1", participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
+    sock.deliver(envelope(7005, { noteUpserted: { key: "n1", title: "Rumour", text: "The well is dry.", visibility: "NOTE_VISIBILITY_PUBLIC" } }));
+    sock.deliver(envelope(7006, { narrationAdded: { text: "The lamps gutter.", as: "", anchorFromSeq: "0", anchorToSeq: "0" } }));
+    await settle();
+
+    expect(r.querySelector(panel[role]!)).not.toBeNull();
+    expect(r.textContent).toContain("The lamps gutter.");
+    expect(r.querySelectorAll(".ticker .tick").length).toBe(6);
+    const shown = [
+      r.textContent ?? "",
+      ...Array.from(r.querySelectorAll("[title], [aria-label]")).flatMap((n) => [
+        n.getAttribute("title") ?? "",
+        n.getAttribute("aria-label") ?? "",
+      ]),
+    ];
+    const leaks = seqs.filter((n) => shown.some((t) => shows(t, n))).map((n) => `${role} shows ${n}`);
+    expect(leaks).toEqual([]);
+    s?.close();
+  }
+});
