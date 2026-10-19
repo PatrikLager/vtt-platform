@@ -26,18 +26,22 @@ const (
 // ActorKind is WHAT an actor is, and it is the ONLY thing the "always known"
 // visibility exception may key on (visibility spec §5.1).
 //
-// Control is transient; what a creature IS is not. Before this field the roster
-// exception read "has any controller", which got both ordinary cases backwards:
-// a player's character run by the DM while its player is offline was still a
-// party member and would have been dropped from every roster, and a charmed
-// monster handed to a player was still a monster and had its whole stat block
-// published to the party.
+// Control does not decide it. Holding an actor and what the actor is are two
+// facts, and only a creation or a grant states the second. Before this field
+// the roster exception read "has any controller", which got both ordinary
+// cases backwards: a player's character whose player had left, and been
+// revoked, was still a party member and would have been dropped from every
+// roster, and a monster a participant held only to move it, the agent
+// running a goblin among them, would have been on every roster with its
+// whole stat block published to the party.
 //
 // AN ENUM RATHER THAN A BOOL, and not for symmetry with JoinDoor/PresenceState.
-// The third case is foreseeable — a neutral, a familiar, a summon — and a bool
-// would have to be RENAMED to admit it, which ADR-007 forbids. Growing this
-// enum is additive; every future value is "not a party member" to the rule
-// below until something deliberately says otherwise, so growth fails closed.
+// A third case is foreseeable — a neutral, say — and a bool would have to be
+// RENAMED to admit it, which ADR-007 forbids. A creature a player runs for a
+// while, summoned or possessed, is not that case: it is a party member while
+// they run it (VTT-389). Growing this enum is additive; every future value is
+// "not a party member" to the rule below until something deliberately says
+// otherwise, so growth fails closed.
 //
 // UNSPECIFIED IS A REAL STATE ON A RECORDED EVENT, not an error, and it means
 // exactly one thing:

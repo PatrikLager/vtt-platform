@@ -157,14 +157,10 @@ func TestAddActorWithNoKindIsRefused(t *testing.T) {
 	}
 }
 
-// TestAddActorAcceptsAKindTheEnumDoesNotYetDefine pins that the check is
-// UNSPECIFIED-ONLY rather than an allowlist of the two values that exist
-// today — the same decision validateGrantActorControl made and for the same
-// reason. ActorKind's own doc comment says a third value is foreseeable (a
-// neutral, a familiar, a summon) and that every future value reads as "not a
-// party member" until something deliberately says otherwise. An allowlist here
-// would refuse a value the contract offers, turning additive growth into a
-// broken command.
+// TestAddActorAcceptsAKindTheEnumDoesNotYetDefine pins that the check refuses
+// UNSPECIFIED alone, as validateGrantActorControl does: an allowlist of today's
+// two values would refuse a value the contract adds, turning additive growth
+// into a broken command (ActorKind's doc comment).
 // VTT-153
 func TestAddActorAcceptsAKindTheEnumDoesNotYetDefine(t *testing.T) {
 	// A value the enum does not define today. It is not UNSPECIFIED, so it is

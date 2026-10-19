@@ -142,7 +142,7 @@ internal/engine/visibility_fold_test.go  27.1
 internal/eventgen/model.go  26.5
 internal/eventgen/model_test.go  14.7
 internal/gateway/add_actor_validate.go  25.0
-internal/gateway/add_actor_validate_test.go  48.8
+internal/gateway/add_actor_validate_test.go  48.0
 internal/gateway/adventure.go  15.3
 internal/gateway/adventure_test.go  26.1
 internal/gateway/artfile_internal_test.go  28.8
@@ -154,7 +154,7 @@ internal/gateway/convert.go  8.6
 internal/gateway/convert_test.go  14.3
 internal/gateway/export_test.go  45.9
 internal/gateway/grant_validate.go  26.4
-internal/gateway/grant_validate_test.go  40.7
+internal/gateway/grant_validate_test.go  38.0
 internal/gateway/join.go  17.9
 internal/gateway/join_test.go  25.7
 internal/gateway/keepalive.go  22.7

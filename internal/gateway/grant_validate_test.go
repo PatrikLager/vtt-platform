@@ -65,13 +65,9 @@ func TestAGrantThatSaysWhatItIsGrantingIsAccepted(t *testing.T) {
 }
 
 // TestEveryActorKindTheContractOffersIsAcceptedByAGrant keeps the validator
-// honest as the enum GROWS. ActorKind's own doc comment says a third value is
-// foreseeable — a neutral, a familiar, a summon — and that every future value
-// is "not a party member" to the roster rule until something deliberately
-// says otherwise. A validator written as `kind == PARTY_MEMBER || kind ==
-// NON_PARTY` would then refuse a value the contract offers, silently making
-// the new case unusable rather than merely conservative. This iterates the
-// descriptor, so a new value joins the gate by existing.
+// honest as the enum grows: a check written as `kind == PARTY_MEMBER || kind ==
+// NON_PARTY` would refuse a value the contract adds. It iterates the
+// descriptor, so a new value joins the gate by existing (ActorKind's doc comment).
 // VTT-151
 func TestEveryActorKindTheContractOffersIsAcceptedByAGrant(t *testing.T) {
 	values := vttv1.ActorKind(0).Descriptor().Values()
