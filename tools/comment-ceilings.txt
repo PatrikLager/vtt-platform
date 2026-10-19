@@ -152,6 +152,7 @@ internal/gateway/codec.go  16.7
 internal/gateway/codec_test.go  8.2
 internal/gateway/convert.go  8.6
 internal/gateway/convert_test.go  14.3
+internal/gateway/creature_test.go  0.0
 internal/gateway/export_test.go  45.9
 internal/gateway/grant_validate.go  26.4
 internal/gateway/grant_validate_test.go  38.0
@@ -170,6 +171,7 @@ internal/gateway/note_validate_test.go  0.0
 internal/gateway/presence.go  15.6
 internal/gateway/presence_internal_test.go  29.3
 internal/gateway/qa_cmd_id_bound_test.go  0.0
+internal/gateway/qa_creature_test.go  0.0
 internal/gateway/qa_id_bound_test.go  0.0
 internal/gateway/qa_issuer_test.go  0.9
 internal/gateway/qa_joining_test.go  4.8
