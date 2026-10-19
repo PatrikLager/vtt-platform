@@ -83,11 +83,11 @@ var manifest = []toolSpec{
 			"vtt.v1.Actor": {
 				requiredOverride: []string{"actorId", "kind"},
 				fieldDocs: map[string]string{
-					"actorId":       "The new actor's id, unique in the campaign. At most 128 bytes of UTF-8; a longer id refuses the whole command.",
+					"actorId":       "The new actor's id. Never reuse the id of an actor this campaign has had, even one since removed: a character log is named by its actor's id, so an actor added under a used id continues the earlier actor's log, if it had one, once it is a party member. At most 128 bytes of UTF-8; a longer id refuses the whole command.",
 					"name":          "Optional display label for the actor. At most 256 bytes of UTF-8; a longer name refuses the whole command.",
 					"controllerId":  "DO NOT SET. This command creates an actor; it does not hand it to anyone, and a request that sets this field is REFUSED whatever else it contains. Control is conferred by grant_actor_control, which also says whether the actor is a party member or a monster. Add the actor first, then grant it — two calls, always.",
 					"controllerIds": "DO NOT SET. Refused, exactly as controllerId is, and for the same reason: control is conferred by grant_actor_control after creation, never here.",
-					"kind":          "REQUIRED. What this actor IS, which decides whether the whole party is told it exists. Set ACTOR_KIND_PARTY_MEMBER for a player's character, ACTOR_KIND_NON_PARTY for every monster, NPC and creature the party must DISCOVER by seeing it. There is no default and omitting it is REFUSED, because an unstated kind cannot be told from a deliberate one — if you are inventing a creature you already know which it is, so say so. Kind is not about who controls the actor: a character whose player is away is still a party member, and a charmed monster is still a monster — which is why grant_actor_control asks again every time control moves.",
+					"kind":          "REQUIRED. What this actor IS, which decides whether the whole party is told it exists. Set ACTOR_KIND_PARTY_MEMBER for a player's character, ACTOR_KIND_NON_PARTY for every monster, NPC and creature the party must DISCOVER by seeing it. There is no default and omitting it is REFUSED, because an unstated kind cannot be told from a deliberate one — if you are inventing a creature you already know which it is, so say so. Kind is not about who controls the actor: a character whose player is away is still a party member, and a monster you run yourself is still a monster. grant_actor_control states it again every time it grants control, and a creature a player is to run for a while is made a party member there, whatever it was added as.",
 					"moduleId":      "Optional; omit unless a rule module instructs otherwise — moduleData is opaque. At most 128 bytes of UTF-8; a longer one refuses the whole command.",
 					"attributes":    "Optional; omit unless a rule module instructs otherwise — moduleData is opaque. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
 					"resources":     "Optional; omit unless a rule module instructs otherwise — moduleData is opaque. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
@@ -248,7 +248,7 @@ var manifest = []toolSpec{
 		overrides: map[protoreflect.FullName]fieldOverride{
 			"vtt.v1.GrantActorControl": {
 				fieldDocs: map[string]string{
-					"kind": "REQUIRED. What this actor IS **right now**, which decides whether the whole party is told it exists. ACTOR_KIND_PARTY_MEMBER when you are assigning a character to the player who will run it; ACTOR_KIND_NON_PARTY when you are handing out a monster, NPC or creature for someone to operate — including when YOU take one over to run it. This is NOT about who is holding it: a character whose player is away is still a party member, and a goblin you are running yourself is still a goblin. It describes standing RIGHT NOW and it can change — grant again with the other value when a monster is charmed into the party's service, or when a charm ends.",
+					"kind": "REQUIRED. What this actor IS **right now**, which decides whether the whole party is told it exists. ACTOR_KIND_PARTY_MEMBER when you are assigning a character to the player who will run it, and when you are handing a player a creature to run for a while, such as one they summoned, one they possessed or one charmed into their service: while a player runs it, it is a party member, with a character log of its own that they may watch. ACTOR_KIND_NON_PARTY for a monster or NPC you run yourself, including one you take over to run. This is NOT about who is holding it: a character whose player is away is still a party member, and a goblin you are running yourself is still a goblin. It describes standing RIGHT NOW and it can change: when a player's run of a creature ends, grant it to them again with ACTOR_KIND_NON_PARTY and then revoke_actor_control them, or remove_actor it. Revoking alone leaves it a party member.",
 				},
 			},
 		},
@@ -256,7 +256,7 @@ var manifest = []toolSpec{
 	{
 		message:     "vtt.v1.RevokeActorControl",
 		name:        "revoke_actor_control",
-		description: "Take a participant out of an actor's control set. Used to REASSIGN a character — when a player leaves the table for good, or a character changes hands — never to let the DM act, which needs no revocation. DM/agent may revoke anyone; a player may revoke only themselves.",
+		description: "Take a participant out of an actor's control set. Used to REASSIGN a character — when a player leaves the table for good, or a character changes hands — and to take a creature back when a player's run of it ends, after granting it ACTOR_KIND_NON_PARTY: revoking alone leaves it a party member. Never used to let the DM act, which needs no revocation. DM/agent may revoke anyone; a player may revoke only themselves.",
 		descriptor:  (&vttv1.RevokeActorControl{}).ProtoReflect().Descriptor(),
 	},
 	{

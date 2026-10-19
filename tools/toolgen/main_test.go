@@ -180,7 +180,7 @@ func TestAddActorRequiredOverrideReplacesDerivedList(t *testing.T) {
 // per-field guidance half of the same fix: every field the required
 // override demoted to optional must carry a "description" steering the LLM
 // away from fabricating a value, and actorId, which stayed required, must
-// state the fold's bound rather than steer.
+// state the fold's bound and say nothing of being optional.
 func TestAddActorFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T) {
 	tool := findTool(t, "add_actor")
 	schema := tool["inputSchema"].(map[string]any)
@@ -224,11 +224,11 @@ func TestAddActorFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T) {
 		t.Fatalf("add_actor actor.properties[\"actorId\"].description = %q, want the id bound and no word of it being optional", desc)
 	}
 
-	// kind is required too, and it carries a steer, where actorId's description
-	// only states the bound. The steer it needs is not "do not fabricate a
-	// value" but "this is not a question about who controls the actor", which is
-	// the confusion this whole arc was made of: a character whose player is away
-	// is still a party member, and a charmed monster is still a monster.
+	// kind is required too, and it carries a steer. The steer it needs is not
+	// "do not fabricate a value" but "this is not a question about who controls
+	// the actor", which is the confusion this whole arc was made of: a character
+	// whose player is away is still a party member, and a monster the agent runs
+	// is still a monster.
 	kindProp, ok := props["kind"].(map[string]any)
 	if !ok {
 		t.Fatalf("add_actor actor.properties[\"kind\"] missing or not an object: %#v", props["kind"])
@@ -244,6 +244,80 @@ func TestAddActorFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T) {
 	// doc outliving its decision.
 	if strings.Contains(kindDoc, "Omitting it is safe") {
 		t.Fatalf("add_actor kind guidance still says omitting is safe, and the server refuses it: %q", kindDoc)
+	}
+}
+
+// VTT-389
+func TestGrantActorControlSaysACreatureAPlayerRunsIsAPartyMember(t *testing.T) {
+	tool := findTool(t, "grant_actor_control")
+	props := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	prop, ok := props["kind"].(map[string]any)
+	if !ok {
+		t.Fatalf("grant_actor_control properties[\"kind\"] missing or not an object: %#v", props["kind"])
+	}
+	desc, _ := prop["description"].(string)
+	for _, want := range []string{
+		"ACTOR_KIND_PARTY_MEMBER when you are assigning a character to the player who will run it, " +
+			"and when you are handing a player a creature to run for a while",
+		"while a player runs it, it is a party member",
+		"summoned",
+		"possessed",
+		"charmed into their service",
+		"when a player's run of a creature ends",
+		"ACTOR_KIND_NON_PARTY and then revoke_actor_control them, or remove_actor it",
+		"Revoking alone leaves it a party member",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("grant_actor_control kind description = %q, want it to contain %q", desc, want)
+		}
+	}
+	if strings.Contains(desc, "for someone to operate") {
+		t.Fatalf("grant_actor_control kind description still offers ACTOR_KIND_NON_PARTY for a creature "+
+			"handed to someone to operate: %q", desc)
+	}
+}
+
+func TestRevokeActorControlSaysItEndsAPlayersRunOfACreature(t *testing.T) {
+	desc, _ := findTool(t, "revoke_actor_control")["description"].(string)
+	for _, want := range []string{
+		"to take a creature back when a player's run of it ends, after granting it ACTOR_KIND_NON_PARTY",
+		"revoking alone leaves it a party member",
+		"Never used to let the DM act",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("revoke_actor_control description = %q, want it to contain %q", desc, want)
+		}
+	}
+}
+
+// VTT-390
+func TestAddActorSaysAnIDIsNeverReused(t *testing.T) {
+	tool := findTool(t, "add_actor")
+	actor := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["actor"].(map[string]any)
+	props, ok := actor["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("add_actor: actor.properties missing or not an object: %#v", actor["properties"])
+	}
+	describe := func(field string) string {
+		prop, ok := props[field].(map[string]any)
+		if !ok {
+			t.Fatalf("add_actor actor.properties[%q] missing or not an object: %#v", field, props[field])
+		}
+		desc, _ := prop["description"].(string)
+		return desc
+	}
+	id := describe("actorId")
+	for _, want := range []string{"Never reuse the id of an actor this campaign has had", "continues the earlier actor's log"} {
+		if !strings.Contains(id, want) {
+			t.Fatalf("add_actor actorId description = %q, want it to contain %q", id, want)
+		}
+	}
+	kind := describe("kind")
+	if strings.Contains(kind, "charm") {
+		t.Fatalf("add_actor kind description still speaks of charm: %q", kind)
+	}
+	if want := "a creature a player is to run for a while is made a party member there"; !strings.Contains(kind, want) {
+		t.Fatalf("add_actor kind description = %q, want it to contain %q", kind, want)
 	}
 }
 

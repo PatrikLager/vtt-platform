@@ -120,7 +120,7 @@ internal/campaign/states_equal_notes_test.go  12.5
 internal/campaign/writer_hold_test.go  0.0
 internal/campaigncfg/campaigncfg.go  67.0
 internal/campaigncfg/campaigncfg_test.go  33.0
-internal/engine/actor_control_test.go  32.2
+internal/engine/actor_control_test.go  31.5
 internal/engine/actorkind.go  36.4
 internal/engine/actorkind_test.go  38.5
 internal/engine/apply.go  33.3

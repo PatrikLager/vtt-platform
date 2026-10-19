@@ -307,6 +307,17 @@ func TestARegrantToAnExistingControllerStillRestatesTheKind(t *testing.T) {
 	if ids := a.GetControllerIds(); len(ids) != 1 || ids[0] != "p-agent" {
 		t.Fatalf("want the control set still un-duplicated, got %v", ids)
 	}
+
+	back := foldAll(t,
+		&vttv1.Envelope{Sequence: 1, EventId: "added",
+			Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
+				Actor: &vttv1.Actor{ActorId: "archer"}}}},
+		grantKindEnv(2, "archer", "p-agent", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER),
+		grantKindEnv(3, "archer", "p-agent", vttv1.ActorKind_ACTOR_KIND_NON_PARTY),
+	)
+	if got := back.Actors["archer"].GetKind(); got != vttv1.ActorKind_ACTOR_KIND_NON_PARTY {
+		t.Fatalf("kind = %v, want a re-grant to take a party member back to a monster", got)
+	}
 }
 
 // VTT-392
