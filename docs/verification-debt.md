@@ -391,6 +391,47 @@ third together. The recipe's own case,
 `internal/gateway/qa_promotion_queued_test.go`, reds on the first and second
 together (observed 2026-10-18 on `3ddf8e7`).
 
+## 2026-10-19 — the agent was told to grant a creature a player runs as a monster
+
+**The agent's tool descriptions told it to grant a creature a player runs as
+non-party.** `grant_actor_control`'s `kind` description in
+`tools/toolgen/main.go` offered `ACTOR_KIND_NON_PARTY` "when you are handing
+out a monster, NPC or creature for someone to operate", beside its own "grant
+again with the other value when a monster is charmed into the party's
+service", and `add_actor`'s `kind` said "a charmed monster is still a
+monster". An agent that followed them would grant a summoned creature
+`ACTOR_KIND_NON_PARTY`. The creature would then have no log, `MayWatch` would
+refuse a `set_viewpoint` on it, and the move gate would judge a move of its
+token by the eyes of the character the player watched. Recipe: in
+`tools/toolgen/main.go`, in `grant_actor_control`'s `kind`, replace "for a
+monster or NPC you run yourself, including one you take over to run" with "for
+a monster or NPC you run yourself, or a creature for someone to operate,
+including one you take over to run"; in `add_actor`'s `kind`, replace "and a
+monster you run yourself is still a monster." with "a monster you run yourself
+is still a monster, and a charmed monster is still a monster."; and run
+`task generate:contract`. The reading review of `42f7af9` should have caught
+it. That commit put the kind on the grant after the owner's revision of
+2026-08-23, wrote the "for someone to operate" clause beside its own charm
+clause, and left `80dfa0e`'s sentence in `add_actor`'s description. Why the
+review passed them cannot be established: the commit's message says what it
+found and that `add_actor`'s description was corrected in the same round, not
+what the review was asked to read. A creature a player summons or possesses
+was ruled on only on 2026-10-19, so before then no spec said which kind it
+has. No requirement named what the descriptions say, so no test could pin
+them: `TestToolsMatchGolden` holds the bytes whatever they say, no test read
+`grant_actor_control`'s `kind`, and
+`TestAddActorFieldDocsNameOptionalFieldsAgainstFabrication` asserted only that
+`add_actor`'s names both kinds, says "not about who controls" and does not say
+omitting it is safe. Recorded 2026-10-19 by the creature ticket's Phase 1,
+which found it. Labels: `spec silent`.
+
+**Closed by** the 2026-10-19 creature ticket
+(`docs/superpowers/specs/2026-10-19-a-creature-a-player-runs-is-a-party-member-design.md`).
+`TestGrantActorControlSaysACreatureAPlayerRunsIsAPartyMember` (VTT-389) in
+`tools/toolgen/main_test.go` reds on the recipe's first edit, and
+`TestAddActorSaysAnIDIsNeverReused` (VTT-390) on its second (observed
+2026-10-19 on `fd2a9ee`).
+
 ## Open debt
 
 **The harness cannot see a log seat switched on its old subscription.**
