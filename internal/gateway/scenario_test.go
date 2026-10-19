@@ -464,7 +464,7 @@ func TestThreeRoleExitScenarioOverLiveWebSockets(t *testing.T) {
 	// which is what this scenario is about.
 	env = issueAndVerify(t, dm, &vttv1.ClientCommand{
 		RequestId: "dm-load-map",
-		Command: &vttv1.ClientCommand_LoadMap{LoadMap: &vttv1.LoadMap{MapId: exitSceneID}},
+		Command:   &vttv1.ClientCommand_LoadMap{LoadMap: &vttv1.LoadMap{MapId: exitSceneID}},
 	}, dm.id, unfiltered)
 	if _, ok := env.Payload.(*vttv1.Envelope_SceneCreated); !ok {
 		t.Fatalf("dm-load-map: payload = %T, want SceneCreated", env.Payload)
