@@ -10,7 +10,14 @@ under `contract/gen/tools`.
 Held by `contract/contract_test.go`, `contract/roundtrip_test.go`,
 `contract/events.test.ts` and the fixtures in `contract/testdata/`; that a
 perch appends nothing, by `internal/gateway/server_visibility_test.go` and
-`qa_seat_test.go` (VTT-184); and the `upsert_note` tool's schema, by
+`qa_seat_test.go` (VTT-184); that the window shows no sequence outside the
+reason it gives for a log it cannot fold, by
+`client/test/app.test.ts`'s "no role's window shows a log sequence number",
+`client/test/spectator-view.test.ts`, `client/test/qa-window-number.test.ts`
+and `client/e2e/table.spec.ts` (VTT-393), the last outside `task check`; that
+a player's result names the world event, by
+`TestThreeRoleExitScenarioOverLiveWebSockets` in
+`internal/gateway/scenario_test.go`; and the `upsert_note` tool's schema, by
 `tools/toolgen/main_test.go` (VTT-232). Gated by
 `task check:drift` and `task check:breaking`, both inside `task check`.
 
@@ -73,15 +80,37 @@ one wins varies with load.
 
 SO A CLIENT MUST NOT CORRELATE BY ARRIVAL POSITION. Correlate a result by its
 `request_id` and events by their sequence; a result's `sequence` field names the
-first world event that command produced. A player's or a spectator's events
-are numbered by the character log they watch, so their sequences are that
-log's and never the world's, and each later `ViewpointChanged` restarts them
-at the new log's first entry.
+first world event that command produced, on every connection, a player's
+included (the owner's ruling "Bara fönstret", 2026-10-19). A player's or a
+spectator's events are numbered by the character log they watch, so their
+sequences are that log's and never the world's, and each later
+`ViewpointChanged` restarts them at the new log's first entry. On a player's
+connection, then, a result's `sequence` is a world sequence arriving among a
+character log's sequences, and may equal the sequence of an unrelated entry in
+that log: a player's client correlates a result by `request_id` alone, and
+`client/src/wire.ts` matches every result to its command that way. Only the
+successful result of a command that appends carries a sequence;
+`grep -rn 'CommandResult{.*Sequence:' internal --include='*.go' | grep -v _test.go`
+finds every result built with one. A refusal carries none, and neither does a
+command that appends nothing (below), `set_viewpoint` among them, a
+spectator's only command (SPEC-013).
 
 The one exception is `catch_up_head`, positional by definition: always the first
 frame on a connection. `frameQueue` in `internal/gateway/server_test.go` is the
 shape a correct reader takes — demultiplex the kinds, never discard the one you
 were not currently asking for.
+
+**A sequence is for correlating and tracing, not for showing.** A client
+resumes and rolls back by the sequences it is sent (`client/src/wire.ts`,
+`client/src/session.ts`), and groups a narration with the events it is
+anchored to by them (`client/src/view/feed.ts`); the store keeps every log's
+sequences, and the wire carries them, `Envelope.sequence`,
+`CatchUpHead.head_sequence` and `CommandResult.sequence` among them, so a
+problem can be traced. The window a client draws, `renderSpectator` in
+`client/src/view/spectator.ts` and what `client/src/app.ts` adds to it per
+role, shows what happened as text and no sequence, to any role, except in the
+reason it gives for a log it cannot fold (VTT-393; the owner's rulings of
+2026-10-19).
 
 ### What the connection opens with
 
@@ -229,4 +258,4 @@ Those readers are not reading this record.
 
 ## Requirements
 
-VTT-184, VTT-232.
+VTT-184, VTT-232, VTT-393.
