@@ -286,6 +286,7 @@ func TestAKindlessGrantDoesNotEraseAKindAlreadyDeclared(t *testing.T) {
 	}
 }
 
+// VTT-391
 func TestARegrantToAnExistingControllerStillRestatesTheKind(t *testing.T) {
 	// The grant's idempotency is about the CONTROL SET, never about kind.
 	// Charm the goblin the agent is already running and it becomes that
@@ -308,15 +309,10 @@ func TestARegrantToAnExistingControllerStillRestatesTheKind(t *testing.T) {
 	}
 }
 
+// VTT-392
 func TestRevokingControlLeavesAPartyMemberAPartyMember(t *testing.T) {
-	// KIND SURVIVES REVOCATION (visibility spec §5.1's second rule). A player
-	// leaving the table does not turn their character into a monster:
-	// revocation reassigns control, it does not restate what a character IS.
-	//
-	// Asserted explicitly because "revoke tidies up after itself" is the
-	// plausible-looking wrong thing to write, and because its consequence is
-	// invisible at the revoke — the character simply stops being on the
-	// party's roster the next time they turn a corner.
+	// Never let a revocation restate the kind: the loss shows only later, when
+	// the character drops off the party's roster at its next corner.
 	st := foldAll(t,
 		&vttv1.Envelope{Sequence: 1, EventId: "added",
 			Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
