@@ -2,22 +2,23 @@
 
 ## Status
 
-Accepted, wholly replacing the decision this number held before. Implemented
-by `internal/gateway/seat.go` (`watchesALog`, `errWatchEnded`, `seat`,
-`openSeat`, `watch`, `resolve`, `recheck`, `rejudge`, `admit`, `drop`,
-`close`, `perchBox`, `newPerchBox`, `set`, `take`, `judgedBy`, `canSee`) and
-`internal/gateway/viewpoint.go` (`MayWatch`, `defaultViewpoint`), called from
-`internal/gateway/server.go` (`serve`, `pump`, `pumpState` with `revoked`,
-`announce`, `moved`, `onWake`, `onPerch` and `onEntry`, `sendViewpoint`,
-`answerCommand`, `handleSetViewpoint`, `handleCommand`, `handlePromotion`),
-`presence.go` (`presenceRegistry.rejudge`) and `authz.go` (`Authorize`), over
-`internal/campaign`'s `SubscribeCharacter`, `SubscribeWithNoProgressTimeout`,
-`WatchAppends` and `Actors` and `internal/perceive`'s `CanSee`. Pinned by
-`internal/gateway/watch_test.go`, `seat_internal_test.go`,
-`presence_internal_test.go`, `viewpoint_test.go`,
+Accepted, wholly replacing the decision this number held before. Implemented by
+`internal/gateway/seat.go` (`watchesALog`, `errWatchEnded`, `seat`, `openSeat`,
+`watch`, `resolve`, `recheck`, `rejudge`, `admit`, `drop`, `close`, `perchBox`,
+`newPerchBox`, `set`, `take`, `judgedBy`, `canSee`) and
+`internal/gateway/viewpoint.go` (`MayWatch`, `defaultViewpoint`, `watchable`),
+called from `internal/gateway/server.go` (`serve`, `pump`, `pumpState` with
+`revoked`, `announce`, `tell`, `moved`, `onWake`, `onPerch` and `onEntry`,
+`queueFrame`, `answerCommand`, `handleSetViewpoint`, `handleCommand`,
+`handlePromotion`), `presence.go` (`presenceRegistry.rejudge`) and `authz.go`
+(`Authorize`), over `internal/campaign`'s `SubscribeCharacter`,
+`SubscribeWithNoProgressTimeout`, `WatchAppends` and `Actors` and
+`internal/perceive`'s `CanSee`. Pinned by `internal/gateway/watch_test.go`,
+`seat_internal_test.go`, `presence_internal_test.go`, `viewpoint_test.go`,
 `server_visibility_test.go`, `qa_seat_test.go`, `qa_move_gate_test.go`,
 `qa_promotion_rejudge_test.go`, `qa_promotion_opening_test.go`,
-`qa_promotion_queued_test.go` and `authz_test.go`.
+`qa_promotion_queued_test.go`, `watchable_test.go`, `qa_watchable_test.go` and
+`authz_test.go`.
 
 ## Principles served
 
@@ -58,20 +59,37 @@ connection names no log it may watch watches nobody until it perches
 (VTT-369, VTT-385), and a player watches a party member whenever they
 control one, from the next time the pump re-judges the seat.
 
-**The open.** `openSeat` registers the append watch before it reads the
-actors, so an append that lands while the seat opens wakes it. When `log`
-names an actor the participant may watch, the seat opens on that log after the
-connection's cursor (VTT-339, VTT-349); otherwise on the default from its
-first entry, the cursor ignored. A spectator whose `log` names no party member
-opens on nobody (VTT-369). For a log seat, the head `serve` queues first is
-what `watch` returns: the catch-up head of the log the seat opened on, or 0
-for nobody (VTT-374, VTT-384, SPEC-011). The pump re-resolves the credential
-and then queues a `ViewpointChanged` naming what the seat shows, empty for
-nobody, before any entry (VTT-368); a DM's or an agent's pump sends none. A
-log seat's pump then re-judges the seat by the role that lookup returned
-(`recheck`), so a seat that role may not watch moves before any entry,
-announced by a second `ViewpointChanged` (VTT-340, VTT-387), and one it may
-still watch stays (VTT-388).
+**Whom a seat is told it may watch.** `watchable` is every party member
+`MayWatch` accepts for the participant, sorted by id, each with its name: for
+a spectator every party member, for a player those they control, and for any
+other role none. `openSeat` records it for a log seat, and `resolve` records
+it again each time it judges the seat, by the participant's role then. `tell`
+queues it as a `WatchableChanged` unless it equals the last one the pump
+queued (`proto.Equal`), and never on a world seat. The pump calls `tell` at
+the opening, after its credential lookup and before the opening
+`ViewpointChanged`, and in `moved`, after every judgment and, on a switch,
+after the credential is re-resolved, before the judgment's
+`ViewpointChanged`. So a seat is sent the set at its opening (VTT-399) and
+again at each judgment that finds it changed (VTT-400), before any entry of
+the append that changed it, since `admit` takes a waiting wake before it
+sends an entry; appends whose wakes the pump takes as one are judged once,
+so a grant and its revocation judged together send no set. A DM's or an
+agent's connection is sent none (VTT-401).
+
+**The open.** `openSeat` registers the append watch before it reads the actors,
+so an append that lands while the seat opens wakes it. When `log` names an
+actor the participant may watch, the seat opens on that log after the
+connection's cursor (VTT-339, VTT-349); otherwise on the default from its first
+entry, the cursor ignored. A spectator whose `log` names no party member opens
+on nobody (VTT-369). For a log seat, the head `serve` queues first is what
+`watch` returns: the catch-up head of the log the seat opened on, or 0 for
+nobody (VTT-374, VTT-384, SPEC-011). The pump re-resolves the credential and
+then queues the set the seat opened with and a `ViewpointChanged` naming what
+the seat shows, empty for nobody, both before any entry (VTT-368); a DM's or an
+agent's pump sends neither. A log seat's pump then re-judges the seat by the
+role that lookup returned (`recheck`), so a seat that role may not watch moves
+before any entry, announced by a second `ViewpointChanged` (VTT-340, VTT-387),
+and one it may still watch stays (VTT-388).
 
 **`watch`'s settle loop.** `watch(actorID, cursor)` drops the seat's
 subscription, records `actorID` as shown and stores it in `told`, and
@@ -107,8 +125,9 @@ A promotion appends nothing (SPEC-007, VTT-036) and so raises no wake; it
 reaches a seat by its signal, by the pump's opening `recheck`, by another
 append's wake or by an entry's `rejudge`, whichever comes first. A move that
 changes what the seat shows is announced by one `ViewpointChanged`, queued
-after the move and before any entry of the new log, which is sent from its
-first entry (VTT-342, VTT-192); no entry of the previous log follows it
+after the move, after the judgment's `WatchableChanged` when the set changed,
+and before any entry of the new log, which is sent from its first entry
+(VTT-342, VTT-192); no entry of the previous log follows it
 (VTT-367).
 
 **No entry is sent after the right is lost.** An append raises its wake after
@@ -156,15 +175,15 @@ player who controls no party member has no eyes, so every move of a token
 they control is refused as unseen; `Authorize` refuses any other first
 (VTT-370).
 
-**What this record does not decide.** Where a world subscription starts,
-what the catch-up head means, the pump's delivery and the one writer are
-SPEC-011's; the role table and the command path are SPEC-013's;
-`ViewpointChanged`'s shape, what a client does at one, and that
-`set_viewpoint` appends nothing are SPEC-007's; re-resolution is SPEC-009's;
-what a log holds and the append watch are SPEC-021's; what a character
-perceives is SPEC-016's; what a party member is, is `engine.IsPartyMember`'s;
-the presence registry's locks, which a promotion's signal takes, are
-SPEC-011's.
+**What this record does not decide.** Where a world subscription starts, what
+the catch-up head means, the pump's delivery and the one writer are SPEC-011's;
+the role table and the command path are SPEC-013's; `ViewpointChanged`'s and
+`WatchableChanged`'s shapes, what a client does at either and what it offers,
+and that `set_viewpoint` appends nothing are SPEC-007's; re-resolution is
+SPEC-009's; what a log holds and the append watch are SPEC-021's; what a
+character perceives is SPEC-016's; what a party member is, is
+`engine.IsPartyMember`'s; the presence registry's locks, which a promotion's
+signal takes, are SPEC-011's.
 
 ## Consequences
 
@@ -192,6 +211,9 @@ A client author, and whoever changes the code, are bound by these:
 - A promotion re-judges the promoted participant's seats with nothing
   appended and moves each one the new role may not watch; a client learns of
   a move by its `ViewpointChanged`.
+- A client learns whom it may watch by `WatchableChanged`, never from its
+  log's roster, and a set that has not changed is not sent again, a switch
+  included.
 
 ## Requirements
 
@@ -199,4 +221,4 @@ VTT-176, VTT-181, VTT-182, VTT-188, VTT-189, VTT-192, VTT-193, VTT-306,
 VTT-338, VTT-339, VTT-340, VTT-341, VTT-342, VTT-343, VTT-345, VTT-346,
 VTT-347, VTT-348, VTT-349, VTT-350, VTT-351, VTT-366, VTT-367, VTT-368,
 VTT-369, VTT-370, VTT-374, VTT-375, VTT-377, VTT-385, VTT-386, VTT-387,
-VTT-388.
+VTT-388, VTT-399, VTT-400, VTT-401.

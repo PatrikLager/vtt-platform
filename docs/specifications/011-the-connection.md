@@ -3,7 +3,7 @@
 ## Status
 
 Accepted. Implemented by `internal/gateway/server.go` (`handleWS`, `Handler`,
-`serve`, `writeUntilFlushed`, `pump`, `pumpState`, `lost`, `sendViewpoint`,
+`serve`, `writeUntilFlushed`, `pump`, `pumpState`, `lost`, `queueFrame`,
 `deliver`, `enqueueEvents`, `announcePresence`, `announceDeparture`,
 `announcePromotion`, `revoked`), `internal/gateway/keepalive.go`,
 `internal/gateway/presence.go`, `internal/gateway/codec.go`,
@@ -50,18 +50,17 @@ What each API route does is not this record's.
 `serve` makes the connection's outbound queue, `outCh`, of `gatewayBuffer`
 frames, and starts one writer goroutine running `writeUntilFlushed`. Every
 frame the connection is sent goes through that queue: the catch-up head from
-`serve` itself, results from the read loop, events and `ViewpointChanged`
-frames from the pump through `deliver` and `sendViewpoint`, and presence
-frames from
-`presenceRegistry.send`. The writer takes frames in queue order and writes
-each with `conn.Write` under a context bounded by `writeTimeout`; the first
-write that fails stops the writer. Nothing closes `outCh`. The writer stops on
-`flush`, a separate signal closed once per connection, and before stopping it
-writes what is still queued. A frame queued after the writer has stopped stays
-in the buffer and is collected with the connection; `enqueueEvents` notices a
-stopped writer through `writerDone` and reports `errWriterGone` instead of
-parking. `stampedWrite` marks the writer busy for exactly the duration of each
-write, which is what keepalive reads.
+`serve` itself, results from the read loop, events, `WatchableChanged` and
+`ViewpointChanged` frames from the pump through `deliver` and `queueFrame`, and
+presence frames from `presenceRegistry.send`. The writer takes frames in queue
+order and writes each with `conn.Write` under a context bounded by
+`writeTimeout`; the first write that fails stops the writer. Nothing closes
+`outCh`. The writer stops on `flush`, a separate signal closed once per
+connection, and before stopping it writes what is still queued. A frame queued
+after the writer has stopped stays in the buffer and is collected with the
+connection; `enqueueEvents` notices a stopped writer through `writerDone` and
+reports `errWriterGone` instead of parking. `stampedWrite` marks the writer
+busy for exactly the duration of each write, which is what keepalive reads.
 
 **The bounds.** `gatewayBuffer` is 256 frames, the size of `outCh` and of the
 hand-off channel of the subscription the pump reads, the world's or a
@@ -95,32 +94,32 @@ unsubscribes, flushes the writer, and closes with `StatusInternalError` and the
 reason `gateway: encode catch-up head failed`. What the head means to a client
 is SPEC-007's.
 
-**Delivery re-resolves the credential, and the pump moves the seat.** The
-pump goroutine is the only producer of this connection's events and
-`ViewpointChanged` frames. It re-resolves the participant through
+**Delivery re-resolves the credential, and the pump moves the seat.** The pump
+goroutine is the only producer of this connection's events, `WatchableChanged`
+and `ViewpointChanged` frames. It re-resolves the participant through
 `pumpState.revoked` on the schedule SPEC-009 states; a lookup that answers
-`ErrInvalidToken` closes the connection with `StatusPolicyViolation`
-and the reason `gateway: credential no longer valid`, and any other lookup
-failure delivers anyway. The rule that a revoked participant is refused on
-delivery is SPEC-009's (VTT-032, VTT-033); this is where it runs. A log
-seat's pump also queues the `ViewpointChanged` frames SPEC-015 describes, each
+`ErrInvalidToken` closes the connection with `StatusPolicyViolation` and the
+reason `gateway: credential no longer valid`, and any other lookup failure
+delivers anyway. The rule that a revoked participant is refused on delivery is
+SPEC-009's (VTT-032, VTT-033); this is where it runs. A log seat's pump also
+queues the `WatchableChanged` and `ViewpointChanged` frames SPEC-015 describes,
+a set before any entry of the append that changed it and a `ViewpointChanged`
 before the entries of the log it names, so the order frames are sent in is the
-order the seat changed in. `deliver` hands each envelope
-to `enqueueEvents`, which encodes it as an event frame and queues it; an
-envelope that cannot be encoded ends the connection, closed with
-`StatusInternalError` and the reason `gateway: encode failed`, and nothing
-after it is sent, since an entry after a skipped one may not fold for the
-client. `sendViewpoint` closes the connection the same way when its frame
-cannot be encoded. `EncodeFrame` marshals every frame. The head, the events,
-the `ViewpointChanged` frames and the presence frames reach it through
-`encodeFrame`, a field of `Server` and never a package variable, so a test
-that swaps it cannot reach another server's connections; the read loop
-marshals a `CommandResult` with `EncodeFrame` directly. When the
-subscription's channel or a log seat's append wake closes, which the store's
-no-progress drop and the campaign's `Close` do, or a switch cannot
-subscribe, the pump closes the socket with `CloseNow` (`lost`) unless
-`shutdown` has set `closing`; a switch drops its own subscription first, so
-the pump never reads that one closed.
+order the seat changed in. `deliver` hands each envelope to `enqueueEvents`,
+which encodes it as an event frame and queues it; an envelope that cannot be
+encoded ends the connection, closed with `StatusInternalError` and the reason
+`gateway: encode failed`, and nothing after it is sent, since an entry after a
+skipped one may not fold for the client. `queueFrame` closes the connection the
+same way when the frame it is handed cannot be encoded. `EncodeFrame` marshals
+every frame. The head, the events, the `WatchableChanged` and
+`ViewpointChanged` frames and the presence frames reach it through
+`encodeFrame`, a field of `Server` and never a package variable, so a test that
+swaps it cannot reach another server's connections; the read loop marshals a
+`CommandResult` with `EncodeFrame` directly. When the subscription's channel or
+a log seat's append wake closes, which the store's no-progress drop and the
+campaign's `Close` do, or a switch cannot subscribe, the pump closes the socket
+with `CloseNow` (`lost`) unless `shutdown` has set `closing`; a switch drops
+its own subscription first, so the pump never reads that one closed.
 
 **Keepalive.** `New` sets `pingInterval` to `gatewayPingInterval`, 20 seconds,
 and `pingTimeout` to `gatewayPingTimeout`, 60 seconds. `serve` starts

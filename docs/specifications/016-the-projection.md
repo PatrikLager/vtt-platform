@@ -295,8 +295,8 @@ A client author, and whoever changes the code, are bound by these:
   the kind it last saw until it sees it again, while an actor that becomes a
   party member is introduced, with its present status and controllers, to
   every viewer that does not hold it. Two viewers' rosters can therefore
-  differ, and a spectator can be offered a shoulder that is no longer a party
-  member, which `MayWatch` refuses (SPEC-015).
+  differ; whom a connection may watch is not a roster's but
+  `WatchableChanged`'s (SPEC-015).
 - A condition an introduction carries bears the introduction's sequence.
 - A viewer hears of a resource, a condition, a control change, an attack or
   an ability only while it sees every actor it names; what changed meanwhile

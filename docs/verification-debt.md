@@ -969,3 +969,18 @@ reached, the pause would exist only in memory, and a reopen would resume the
 log through `perceive.Resume` without its bridge or hides. Labels:
 `outside the tool`. Closing it needs a fault inside the fold of a resume's
 lead. Recorded 2026-10-16 by the same ticket's Task 6 review.
+
+**`queueFrame`'s encode-failure close is unpinned.** In
+`internal/gateway/server.go`, `queueFrame` closes the connection with
+`StatusInternalError` and "gateway: encode failed" when the frame it is handed
+cannot be encoded, as SPEC-011 says, and `sendViewpoint` did the same on
+`0db3d18`. Recipe: delete the `if !closing.Load()` block in `queueFrame`'s
+error arm, leaving its `return false`; `go test ./internal/gateway/` stays
+green. Only `TestCatchUpHeadEncodeFailureClosesTheConnection` and
+`TestAnEncodeFailureTearsTheConnectionRatherThanTheBatch` swap `encodeFrame`,
+and neither fails a frame `queueFrame` is handed. Labels: `test data missing`.
+Closing it needs a `server_internal_test.go` case whose `encodeFrame` fails a
+`WatchableChanged` or a `ViewpointChanged` and asserts that close, with no
+frame after it. Recorded 2026-10-21 by the reading review of the
+specification step of
+`docs/superpowers/specs/2026-10-20-the-client-follows-the-log-it-is-sent-design.md`.
