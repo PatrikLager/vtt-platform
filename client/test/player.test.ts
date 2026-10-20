@@ -115,7 +115,7 @@ test("targeting from a token that does not exist yields nothing rather than thro
 
 // --- board-click behaviour --------------------------------------------------
 
-import { moveCommandFor, tokenForActor } from "../src/view/player";
+import { moveCommandFor, playerClickFor, tokenForActor } from "../src/view/player";
 import type { Me } from "../src/metadata";
 
 const me: Me = { participantId: "p-me", name: "Me", role: "player" };
@@ -155,6 +155,68 @@ test("with no explicit selection the first controlled actor is used", () => {
   // than silently moving a different actor than the player expects.
   const cmd = moveCommandFor(world(), me, { selectedActorId: "", selectedAbilityId: "", doorsArmed: false }, { x: 1, y: 1 });
   expect(cmd).toBeNull();
+});
+
+// --- a player's board click, between the party members they may watch -----
+
+/** world() with also-mine and an unlisted zed both standing on (3,3). */
+function crowded(): State {
+  const st = world();
+  st.Tokens["t-also"] = { ID: "t-also", SceneID: "s1", ActorID: "also-mine", X: 3, Y: 3 };
+  st.Tokens["t-zed"] = { ID: "t-zed", SceneID: "s1", ActorID: "zed", X: 3, Y: 3 };
+  return st;
+}
+
+const watching = (actorId: string) => ({ selectedActorId: actorId, selectedAbilityId: "", doorsArmed: false });
+
+// VTT-406
+test("a click on a listed party member's token switches to it", () => {
+  const cmd = playerClickFor(crowded(), me, watching("mine"), ["mine", "also-mine"], { x: 3, y: 3 });
+  expect(cmd?.command.case).toBe("setViewpoint");
+  expect((cmd!.command.value as any).actorId).toBe("also-mine");
+});
+
+// VTT-406
+test("two listed party members on one cell switch to the lowest id", () => {
+  const cmd = playerClickFor(crowded(), me, watching("mine"), ["zed", "mine", "also-mine"], { x: 3, y: 3 });
+  expect((cmd!.command.value as any).actorId).toBe("also-mine");
+});
+
+test("a click on the watched character's token sends nothing", () => {
+  expect(playerClickFor(world(), me, watching("mine"), ["mine", "also-mine"], { x: 1, y: 1 })).toBeNull();
+});
+
+// VTT-408
+test("a click on a square with no listed party member moves the watched character", () => {
+  const cmd = playerClickFor(world(), me, watching("mine"), ["mine"], { x: 4, y: 5 });
+  expect(cmd!.command.case).toBe("moveToken");
+  expect((cmd!.command.value as any).tokenId).toBe("t-mine");
+});
+
+// VTT-406, VTT-408
+test("a token the set does not name moves the watched character onto its square", () => {
+  const cmd = playerClickFor(crowded(), me, watching("mine"), ["mine"], { x: 3, y: 3 });
+  expect(cmd!.command.case).toBe("moveToken");
+  expect((cmd!.command.value as any).tokenId).toBe("t-mine");
+  expect((cmd!.command.value as any).to).toMatchObject({ x: 3, y: 3 });
+});
+
+// VTT-406
+test("a listed party member on the same row or column, not the same square, does not switch", () => {
+  const st = world();
+  st.Tokens["t-also"] = { ID: "t-also", SceneID: "s1", ActorID: "also-mine", X: 5, Y: 5 };
+  for (const cell of [{ x: 5, y: 2 }, { x: 2, y: 5 }]) {
+    const cmd = playerClickFor(st, me, watching("mine"), ["mine", "also-mine"], cell);
+    expect(cmd!.command.case).toBe("moveToken");
+  }
+});
+
+// VTT-406
+test("a listed party member's token in another scene does not switch", () => {
+  const st = world();
+  st.Tokens["t-also"] = { ID: "t-also", SceneID: "s2", ActorID: "also-mine", X: 4, Y: 4 };
+  const cmd = playerClickFor(st, me, watching("mine"), ["mine", "also-mine"], { x: 4, y: 4 });
+  expect(cmd!.command.case).toBe("moveToken");
 });
 
 // --- who each role may act as ----------------------------------------------

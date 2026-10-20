@@ -1208,6 +1208,12 @@ test("before /api/maps resolves, the console renders no Maps group at all", asyn
   s?.close();
 });
 
+/** Open a player's or a spectator's connection as the gateway does: the set, then the viewpoint. */
+function opensOn(sock: FakeSocket, viewpoint: string, actors: [string, string][] = [["a1", "Lera"]]) {
+  sock.deliver({ watchableChanged: { actors: actors.map(([actorId, name]) => ({ actorId, name })) } });
+  sock.deliver({ viewpointChanged: viewpoint === "" ? {} : { actorId: viewpoint } });
+}
+
 /** A minimal live table: a scene, one actor the caller controls, and its token. */
 // TWO EVENTS PER CHARACTER, because the fold refuses an actorAdded that names
 // a controller: creation makes a character, a grant hands it over (visibility
@@ -1244,6 +1250,7 @@ test("the ruleset's abilities reach the player panel, and nothing else does", as
   const s = boot(r);
   const sock = FakeSocket.instances[0]!;
   sock.open();
+  opensOn(sock, "a1");
   seedTable(sock);
   await settle();
 
@@ -1264,6 +1271,7 @@ test("a ruleset that never loads leaves the panel with no ability list at all", 
   const s = boot(r);
   const sock = FakeSocket.instances[0]!;
   sock.open();
+  opensOn(sock, "a1");
   seedTable(sock);
   await settle();
 
@@ -1286,6 +1294,7 @@ test("clicking the board moves the player's token", async () => {
   const s = boot(r);
   const sock = FakeSocket.instances[0]!;
   sock.open();
+  opensOn(sock, "a1");
   seedTable(sock);
   await settle();
 
@@ -1313,6 +1322,7 @@ test("a spectator's clicks on the board send nothing", async () => {
   const s = boot(r);
   const sock = FakeSocket.instances[0]!;
   sock.open();
+  opensOn(sock, "a1");
   seedTable(sock);
   await settle();
 
@@ -1345,6 +1355,7 @@ async function playerTableWithDoor() {
   const s = boot(r);
   const sock = FakeSocket.instances[0]!;
   sock.open();
+  opensOn(sock, "a1");
   sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
   sock.deliver(
     envelope(2, {
@@ -2524,7 +2535,12 @@ async function tableAs(role: string) {
   const s = boot(r);
   const sock = FakeSocket.instances[0]!;
   sock.open();
-  seedTable(sock);
+  // A spectator opens on nobody and is sent no entry (VTT-369, VTT-341).
+  if (role === "spectator") opensOn(sock, "");
+  else {
+    if (role === "player") opensOn(sock, "a1");
+    seedTable(sock);
+  }
   await settle();
   return { r, s, sock };
 }
@@ -2550,6 +2566,7 @@ test("only a spectator is offered a shoulder", async () => {
   }
 });
 
+// VTT-405
 test("choosing a shoulder sends set_viewpoint over the wire", async () => {
   // THE SEAM. Everything either side of it is tested — the builder makes the
   // command, the control offers the party — and the one line joining them was
@@ -2603,7 +2620,7 @@ test("a ViewpointChanged moves the indicator", async () => {
 });
 
 test("an accepted perch CLEARS the refusal the last one left up", async () => {
-  // The success arm of perchOn's toast, which the refusal tests above cannot
+  // The success arm of switchTo's toast, which the refusal tests above cannot
   // see: they only ever assert that a refusal APPEARS, and a success that
   // wrote some other string — or left the old refusal standing — would satisfy
   // every one of them. A watcher who is told "refused: not a party member"
@@ -2658,6 +2675,7 @@ test("a spectator's reconnect names the log it watches and re-sends nothing", as
   s?.close();
 });
 
+// VTT-405
 test("'no shoulder' reaches the wire, and is not quietly skipped", async () => {
   // THE THIRD BEHAVIOUR, and the plan calls it the one most likely to be got
   // wrong. Everything either side of this seam is pinned — the builder makes a
@@ -2833,6 +2851,110 @@ test("the window follows the ViewpointChanged, not the command's result", async 
   await settle();
   expect(r.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: Lera");
   expect(sock.sent).toHaveLength(1);
+  s?.close();
+});
+
+// --- a player switches between the party members they may watch -----------
+
+/**
+ * A player at playerTableWithDoor's 4x4 scale (120 px per cell from x=80),
+ * holding Lera (a1) at (1,1) and Bram (a2) at (1,0), opened on `viewpoint`.
+ */
+async function twoMemberTable(viewpoint: string, set: [string, string][], abilities: unknown[] = []) {
+  localStorage.setItem("vtt.token", "tok");
+  stubMetadata({
+    "/api/me": { participantId: "p", name: "Mira", role: "player" },
+    "/api/ruleset": { id: "r", name: "R", abilities, conditions: [], resources: [] },
+    "/api/adventures": { adventures: [] },
+  });
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  opensOn(sock, viewpoint, set);
+  sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+  sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 4, gridHeight: 4 } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera" } } }));
+  sock.deliver(envelope(4, { actorControlGranted: { actorId: "a1", participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
+  sock.deliver(envelope(5, { actorAdded: { actor: { actorId: "a2", name: "Bram" } } }));
+  sock.deliver(envelope(6, { actorControlGranted: { actorId: "a2", participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
+  sock.deliver(envelope(7, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }));
+  sock.deliver(envelope(8, { tokenPlaced: { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 1, y: 0 } } }));
+  await settle();
+  return { r, s, sock };
+}
+
+const chips = (r: HTMLElement) =>
+  Array.from(r.querySelector(".player .row")?.querySelectorAll("button") ?? []);
+
+// VTT-402, VTT-404
+test("a player is offered exactly the party members the set names", async () => {
+  // The fold shows Bram under this player's control, and the set names a Quill
+  // the fold has never introduced: the chips are the set's.
+  const { r, s } = await twoMemberTable("a1", [["a1", "Lera"], ["a3", "Quill"]]);
+  expect(chips(r).map((b) => b.textContent)).toEqual(["Lera", "Quill"]);
+  expect(chips(r).map((b) => b.className)).toEqual(["chip sel", "chip"]);
+  s?.close();
+});
+
+// VTT-405, VTT-406
+test("a player switches by a button and by a click on the token", async () => {
+  const { r, s, sock } = await twoMemberTable("a1", [["a1", "Lera"], ["a2", "Bram"]]);
+  chips(r).find((b) => b.textContent === "Bram")!.click();
+  await settle();
+  clickBoard(r, 210, 10);
+  await settle();
+
+  const sent = sock.sent.map((raw) => JSON.parse(raw));
+  expect(sent).toHaveLength(2);
+  for (const cmd of sent) expect(cmd.setViewpoint).toMatchObject({ actorId: "a2" });
+  s?.close();
+});
+
+test("a DM's chips pick from the fold and send nothing, and the board moves the pick", async () => {
+  // Only a player switches by a chip; a DM acts as any actor and watches the world.
+  const { r, s, sock } = await tableAs("dm");
+  chips(r).find((b) => b.textContent === "Lera")!.click();
+  await settle();
+  expect(sock.sent).toHaveLength(0);
+  expect(chips(r).find((b) => b.textContent === "Lera")!.className).toBe("chip sel");
+  clickBoard(r, 5, 5);
+  await settle();
+  expect(JSON.parse(sock.sent[0]!).moveToken).toMatchObject({ tokenId: "t1" });
+  s?.close();
+});
+
+test("a player's armed ability stays armed, and a switch disarms it", async () => {
+  const poke = { id: "poke", name: "Poke", range: 1, maxTargets: 1, usage: { kind: "atWill" } };
+  const { r, s, sock } = await twoMemberTable("a1", [["a1", "Lera"], ["a2", "Bram"]], [poke]);
+  Array.from(r.querySelectorAll(".player button")).find((b) => b.textContent === "Poke")!.dispatchEvent(
+    new MouseEvent("click", { bubbles: true }),
+  );
+  await settle();
+  expect(r.querySelector(".player")!.textContent).toContain("Targets (range 1)");
+
+  sock.deliver({ viewpointChanged: { actorId: "a2" } });
+  sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+  sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 4, gridHeight: 4 } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a2", name: "Bram" } } }));
+  sock.deliver(envelope(4, { actorControlGranted: { actorId: "a2", participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
+  sock.deliver(envelope(5, { tokenPlaced: { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 1, y: 0 } } }));
+  await settle();
+  expect(r.querySelector(".player")!.textContent).toContain("Poke");
+  expect(r.querySelector(".player")!.textContent).not.toContain("Targets");
+  s?.close();
+});
+
+// VTT-408
+test("a player's move moves the character they watch", async () => {
+  const { r, s, sock } = await twoMemberTable("a2", [["a1", "Lera"], ["a2", "Bram"]]);
+  clickBoard(r, 330, 250);
+  await settle();
+
+  const sent = sock.sent.map((raw) => JSON.parse(raw));
+  expect(sent).toHaveLength(1);
+  expect(sent[0].moveToken).toMatchObject({ tokenId: "t2", to: { x: 2, y: 2 } });
   s?.close();
 });
 

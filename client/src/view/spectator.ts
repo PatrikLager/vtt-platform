@@ -9,7 +9,7 @@
 
 import type { State } from "../state";
 import type { Participant } from "../session";
-import { ActorKind, NoteVisibility, type Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
+import { NoteVisibility, type Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import { buildFeed, type FeedEntry } from "./feed";
 import { cellFromPoint, tokensOnScene, type Geometry, type TokenDisc } from "./grid";
 import { fitCamera, worldFromScreen, type Camera } from "./camera";
@@ -431,52 +431,30 @@ function renderTicker(log: Envelope[]): HTMLElement {
 }
 
 /**
- * The spectator's perch: which shoulder they are riding, and the party to
- * choose from (visibility spec §3.1.1).
- *
- * `current` is the shoulder the SERVER has confirmed, never the last one
- * clicked — see app.ts, which only moves it when the command comes back ok.
- * "" is a real value here and means perched on nobody.
+ * The spectator's perch: the party members the gateway lets them watch, and
+ * the one the last ViewpointChanged named, "" for nobody (SPEC-015, VTT-403).
  */
 export interface PerchControl {
+  actors: readonly { actorId: string; name: string }[];
   current: string;
   onPerch: (actorId: string) => void;
 }
 
-/**
- * A LIST, NOT A CLICK ON A TOKEN, and that is forced rather than chosen.
- *
- * An unperched spectator has NO EYES, so their board is empty — there is no
- * token on it to click, and direct manipulation cannot bootstrap itself. What
- * makes the list possible is that spec §5's party-member exception is not
- * gated on eyes: internal/gateway/project.go's look() walks st.Actors flat and
- * marks every party member known, so an unperched spectator is told the whole
- * party and nothing else. That is where these names come from. Clicking a
- * token could be added ON TOP of this later; it could never replace it.
- *
- * PARTY MEMBERS ONLY, by KIND (spec §5.1). Not "has a controller" — that was
- * the defect that ruling closed, and it made the Goblin Archer perchable the
- * moment a DM took control of it. The server refuses such a perch anyway
- * (MayPerch); this is the UI not offering the click in the first place, which
- * is a different job and not a substitute for it.
- */
-function renderPerch(st: State, perch: PerchControl): HTMLElement {
+function renderPerch(perch: PerchControl): HTMLElement {
   const wrap = el("section", "perch");
   wrap.appendChild(el("h2", undefined, "Whose eyes"));
 
-  const party = Object.values(st.Actors).filter((a) => a.kind === ActorKind.PARTY_MEMBER);
-  // Sorted by name, ties on the id — the same comparator and the same reasoning
-  // as session.ts's participant list: arrival order (here, object key order) is
-  // an accident of the log, and a list that reshuffles is hard to read and
-  // impossible to test stably. Two arms, not three: actorId is st.Actors' KEY,
-  // so no two entries can share one and an "equal" arm would be unreachable.
+  // Sort by label, ties on the id: two arms, since the gateway's set holds one
+  // entry per actor id (tools/ts-mutation-equivalents.txt).
+  const party = [...perch.actors];
   party.sort((a, b) =>
     label(a, a.actorId) === label(b, b.actorId)
       ? (a.actorId < b.actorId ? -1 : 1)
       : (label(a, a.actorId) < label(b, b.actorId) ? -1 : 1),
   );
 
-  wrap.appendChild(el("p", "perched-on", `Perched on: ${label(st.Actors[perch.current], perch.current)}`));
+  const watched = perch.actors.find((a) => a.actorId === perch.current);
+  wrap.appendChild(el("p", "perched-on", `Perched on: ${label(watched, perch.current)}`));
 
   // OFFERED AT ANY SIZE, INCLUDING NONE. A control that vanished when the
   // party list was empty would make "nobody has a character yet" look
@@ -506,16 +484,9 @@ function renderPerch(st: State, perch: PerchControl): HTMLElement {
 }
 
 /**
- * How one shoulder reads: its actor's name, its id when the actor has none or
- * is not in this roster, and "nobody" for the empty id.
- *
- * THREE ANSWERS, because there are three states and collapsing any two of them
- * loses something a watcher needs. "" is perched on nobody, which is where
- * every connection starts. An id the roster does not hold is a shoulder this
- * client asked for and can no longer name — a log that does not reach back to
- * that actor's ActorAdded lands here — and showing "nobody" for it would say
- * the board is blank because they chose that, when it is blank because the
- * character is gone.
+ * How one shoulder reads: the set's name, its id when that name is empty or
+ * the set does not name it, and "nobody" for the empty id (VTT-404). Keep the
+ * id apart from "nobody": a shoulder the set no longer names is not a choice.
  */
 function label(a: { name: string } | undefined, id: string): string {
   if (id === "") return "nobody";
@@ -573,16 +544,7 @@ export interface ViewExtras {
   participants?: Participant[] | undefined;
   /** Redial, offered only while the connection is closed. */
   onReconnect?: (() => void) | undefined;
-  /**
-   * Whose eyes this spectator is looking through, and how to change it.
-   *
-   * ABSENT FOR EVERY OTHER ROLE, which is the whole of the negative case:
-   * MayPerch refuses a player, a DM and an agent outright ("role %q does not
-   * perch — a viewpoint is the spectator's"), so offering them the control
-   * would be an affordance that can only ever produce a refusal. app.ts is
-   * what withholds it; renderSpectator honours the omission rather than
-   * defaulting to a control.
-   */
+  /** The spectator's perch; absent for every other role (SPEC-015). */
   perch?: PerchControl | undefined;
   /**
    * Real pack art, resolved by pack-assets.ts and loaded by app.ts (Task
@@ -640,7 +602,7 @@ export function renderSpectator(
   ];
   // Only the spectator is ever given one, and a spectator has neither a panel
   // nor a console, so this never actually competes with them for position.
-  if (extras.perch) nodes.push(renderPerch(st, extras.perch));
+  if (extras.perch) nodes.push(renderPerch(extras.perch));
   if (extras.panel) nodes.push(extras.panel);
   if (extras.console) nodes.push(extras.console);
   if (extras.toast) {

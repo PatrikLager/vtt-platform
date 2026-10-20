@@ -13,6 +13,7 @@ import {
   PresenceState,
   type ClientCommand,
   type CommandResult,
+  type WatchableActor,
 } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { EnvelopeSchema, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 
@@ -42,6 +43,7 @@ export class Wire {
   private statusHandlers: ((s: WireStatus) => void)[] = [];
   private presenceHandlers: ((batch: PresenceEvent[], replace: boolean) => void)[] = [];
   private restartHandlers: (() => void)[] = [];
+  private watchableHandlers: ((actors: WatchableActor[]) => void)[] = [];
   // null until a ViewpointChanged names one: the DM's and the agent's world.
   private log: string | null = null;
   private lastSeq = 0n;
@@ -76,6 +78,11 @@ export class Wire {
    */
   onRestart(fn: () => void): void {
     this.restartHandlers.push(fn);
+  }
+
+  /** Called with each set of party members the gateway says this connection may watch (VTT-402). */
+  onWatchable(fn: (actors: WatchableActor[]) => void): void {
+    this.watchableHandlers.push(fn);
   }
 
   /**
@@ -213,6 +220,10 @@ export class Wire {
         this.reset();
         return;
       }
+      case "watchableChanged": {
+        for (const fn of this.watchableHandlers) fn(frame.frame.value.actors);
+        return;
+      }
       case "presenceSnapshot": {
         const batch: PresenceEvent[] = [];
         for (const e of frame.frame.value.present) {
@@ -264,5 +275,5 @@ export class Wire {
 }
 
 /** Re-exported so callers need not reach into the generated module. */
-export type { Envelope, ClientCommand, CommandResult };
+export type { Envelope, ClientCommand, CommandResult, WatchableActor };
 export { EnvelopeSchema };

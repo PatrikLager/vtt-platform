@@ -153,12 +153,14 @@ function leraRestarted(): Frame[] {
 
 const vc = (actorId: string): Frame => ({ viewpointChanged: actorId === "" ? {} : { actorId } });
 
-/** A connection's opening: head, presence, and, for a log seat, the viewpoint. */
+/** A connection's opening: head, presence, and, for a log seat, the set and the viewpoint. */
 function openSeat(sock: FakeSocket, viewpoint: string | null, head: number) {
   sock.open();
   sock.deliver({ catchUpHead: { headSequence: String(head) } });
   sock.deliver({ presenceSnapshot: { present: [] } });
-  if (viewpoint !== null) sock.deliver(vc(viewpoint));
+  if (viewpoint === null) return;
+  sock.deliver({ watchableChanged: { actors: [{ actorId: LERA, name: "Lera" }, { actorId: BRAM, name: "Bram" }] } });
+  sock.deliver(vc(viewpoint));
 }
 
 function deliverAll(sock: FakeSocket, frames: Frame[]) {

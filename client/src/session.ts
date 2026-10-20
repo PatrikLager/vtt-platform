@@ -5,7 +5,7 @@
 // handed, so an incremental apply that throws would leave ingest no last good
 // state to hold.
 
-import { Wire, type WireStatus, type PresenceEvent } from "./wire";
+import { Wire, type WireStatus, type PresenceEvent, type WatchableActor } from "./wire";
 import { fold } from "./fold";
 import { newState, type State } from "./state";
 import type { Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
@@ -28,6 +28,7 @@ export class Session {
   // the same person twice and never correct itself.
   private present = new Map<string, Participant>();
   private fail = "";
+  private set: WatchableActor[] = [];
   private errorHandlers: ((e: Error) => void)[] = [];
   private presenceHandlers: ((batch: PresenceEvent[]) => void)[] = [];
 
@@ -36,6 +37,10 @@ export class Session {
     this.wire.onEvent((e) => this.ingest(e));
     this.wire.onPresence((batch, replace) => this.presence(batch, replace));
     this.wire.onRestart(() => this.empty());
+    this.wire.onWatchable((actors) => {
+      this.set = actors;
+      for (const fn of this.changeHandlers) fn();
+    });
   }
 
   get state(): State {
@@ -69,6 +74,11 @@ export class Session {
   /** The actor the last ViewpointChanged named, "" for nobody or the world (VTT-407). */
   get viewpoint(): string {
     return this.wire.viewpoint ?? "";
+  }
+
+  /** The party members the gateway last said this connection may watch; a reset keeps them (VTT-402). */
+  get watchable(): readonly WatchableActor[] {
+    return this.set;
   }
 
   /** Why the log this session holds cannot be folded, or "" (VTT-393). */

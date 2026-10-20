@@ -309,7 +309,10 @@ function openWith(ws: FakeSocket, role: Role, log: Frame[], head: number) {
       ],
     },
   });
-  if (watchesALog(role)) ws.deliver({ viewpointChanged: { actorId: "hero" } });
+  if (watchesALog(role)) {
+    ws.deliver({ watchableChanged: { actors: [{ actorId: "hero", name: "Lera" }, { actorId: "mage", name: "Quill" }] } });
+    ws.deliver({ viewpointChanged: { actorId: "hero" } });
+  }
   for (const f of log) ws.deliver(f);
 }
 

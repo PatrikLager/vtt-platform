@@ -13,7 +13,7 @@ import { Auth } from "./auth";
 import { Session } from "./session";
 import type { WireStatus } from "./wire";
 import { renderSpectator } from "./view/spectator";
-import { renderPlayerPanel, moveCommandFor, type PlayerUIState } from "./view/player";
+import { renderPlayerPanel, moveCommandFor, playerClickFor, type PlayerUIState } from "./view/player";
 import { doorCommandFor } from "./view/doors";
 import {
   fetchMe, fetchRuleset, fetchAdventures, fetchAdventureGuide, fetchMaps,
@@ -341,7 +341,7 @@ function startSession(root: HTMLElement, token: string): Session {
 
   // Show a refusal verbatim, and move nothing: the indicator follows the
   // ViewpointChanged the gateway sends, never the click (VTT-407).
-  const perchOn = (actorId: string): Promise<void> =>
+  const switchTo = (actorId: string): Promise<void> =>
     session.send(setViewpoint(actorId)).then((res) => {
       toast = res.ok ? "" : `refused: ${res.error}`;
       paint();
@@ -363,8 +363,19 @@ function startSession(root: HTMLElement, token: string): Session {
     const canAct = me !== null && (me.role === "player" || me.role === "dm" || me.role === "agent");
     const isDM = me !== null && (me.role === "dm" || me.role === "agent");
     const isSpectator = me !== null && mayPerch(me);
+    const isPlayer = me !== null && me.role === "player";
+    // A player acts as the character they watch, and an armed ability is
+    // that character's: both follow the ViewpointChanged (VTT-408).
+    if (isPlayer && ui.selectedActorId !== session.viewpoint) {
+      ui.selectedActorId = session.viewpoint;
+      ui.selectedAbilityId = "";
+    }
+    const watchable = session.watchable;
     renderSpectator(root, session.state, [...session.events], status, {
-      panel: canAct ? renderPlayerPanel(session.state, me!, abilities, ui, act, paint) : undefined,
+      panel: canAct
+        ? renderPlayerPanel(session.state, me!, abilities, ui, act, paint,
+          isPlayer ? { actors: watchable, onSwitch: (id) => void switchTo(id) } : undefined)
+        : undefined,
       console: isDM
         ? renderDMConsole({
             st: session.state,
@@ -388,25 +399,26 @@ function startSession(root: HTMLElement, token: string): Session {
             toggleDoors,
           })
         : undefined,
-      // ARMED MEANS A NON-DOOR CLICK DOES NOTHING, not "falls through to a
-      // move" — that is the whole point of arming (spec §8): while the tool
-      // is armed, a board click is either a door command or nothing at all.
-      // doorCommandFor already returns null when `!armed`, so the `??`
-      // right side only ever runs moveCommandFor while UNarmed; while armed
-      // and doorCommandFor found no workable door at that cell (wrong role,
-      // out of reach, not a door), it evaluates to `ui.doorsArmed ? null :
-      // ...` = null, and the move never fires.
+      // Keep armed doors a door command or nothing, never a move or a switch:
+      // doorCommandFor returns null unarmed, and an armed click it finds no
+      // workable door for must end at null.
       onCell: canAct
         ? (cell) => {
             const cmd =
               doorCommandFor(session.state, me!, ui.doorsArmed, cell) ??
-              (ui.doorsArmed ? null : moveCommandFor(session.state, me!, ui, cell));
+              (ui.doorsArmed
+                ? null
+                : isPlayer
+                  ? playerClickFor(session.state, me!, ui, watchable.map((a) => a.actorId), cell)
+                  : moveCommandFor(session.state, me!, ui, cell));
             if (cmd) act(cmd);
           }
         : undefined,
       toast: toast || undefined,
       participants: session.participants,
-      perch: isSpectator ? { current: session.viewpoint, onPerch: (id) => void perchOn(id) } : undefined,
+      perch: isSpectator
+        ? { actors: watchable, current: session.viewpoint, onPerch: (id) => void switchTo(id) }
+        : undefined,
       onReconnect: () => {
         void session.reconnect().catch(() => undefined);
       },

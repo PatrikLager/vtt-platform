@@ -426,6 +426,37 @@ test("a ViewpointChanged naming another log empties what was folded", async () =
   }
 });
 
+const watchable = (...ids: string[]) => ({ watchableChanged: { actors: ids.map((actorId) => ({ actorId, name: actorId.toUpperCase() })) } });
+
+test("the set survives a switch", async () => {
+  const gw = gatewayServing([watchable("a1", "a2"), viewpoint("a1"), ...world, viewpoint("a2"), ...a2Log]);
+  try {
+    const s = new Session(gw.url, "tok");
+    await s.start();
+    await until(() => s.viewpoint === "a2" && s.events.length === 3, "a2's log");
+    expect(s.watchable.map((a) => a.actorId)).toEqual(["a1", "a2"]);
+    s.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+test("a new set replaces the last", async () => {
+  const gw = gatewayServing([watchable("a1", "a2"), viewpoint("a1"), ...world, watchable("a1")]);
+  try {
+    const s = new Session(gw.url, "tok");
+    let sets = 0;
+    s.onChange(() => (sets = s.watchable.length === 1 ? sets + 1 : sets));
+    await s.start();
+    await until(() => sets > 0, "the second set");
+    expect(s.watchable.map((a) => [a.actorId, a.name])).toEqual([["a1", "A1"]]);
+    expect(s.events).toHaveLength(4);
+    s.close();
+  } finally {
+    gw.stop();
+  }
+});
+
 // VTT-394
 test("a ViewpointChanged naming nobody empties what was folded", async () => {
   const gw = gatewayServing([viewpoint("a1"), ...world, viewpoint("")]);

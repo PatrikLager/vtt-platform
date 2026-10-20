@@ -63,7 +63,7 @@ import { doorKey } from "../fold";
  * cannot build — a Scene with no Tiles, a Scene with no OpenDoors, a token
  * whose actor is missing — and each of those tests earns its keep.
  */
-function currentSceneId(st: State): string {
+export function currentSceneId(st: State): string {
   return Object.keys(st.Scenes).sort().at(-1) ?? "";
 }
 

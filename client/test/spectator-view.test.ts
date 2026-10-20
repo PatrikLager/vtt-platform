@@ -1436,15 +1436,9 @@ test("with no participants supplied the list renders empty, not fabricated", () 
 
 // --- the perch: whose eyes a spectator is looking through -------------------
 //
-// Visibility spec §3.1.1, Patrik 2026-08-18: "you as a spectator can jump
-// between tokens — like a bird hopping from one shoulder to another."
-//
-// A LIST AND NOT A CLICK ON A TOKEN, and that is forced rather than chosen: an
-// unperched spectator has NO EYES, so their board is empty and there is no
-// token on it to click. Direct manipulation cannot bootstrap itself here. The
-// list can exist because §5's party-member exception is not gated on eyes —
-// internal/gateway/project.go's look() walks st.Actors flat — so an unperched
-// spectator is told about every party member and nothing else.
+// The shoulders are the party members the gateway's last WatchableChanged
+// names (SPEC-015, VTT-403), never the folded log's roster: a spectator
+// watching nobody holds no log at all.
 
 /** A world with two party members, an NPC, and an actor whose kind is unstated. */
 function party(): State {
@@ -1457,88 +1451,66 @@ function party(): State {
   };
   st.Actors["g1"] = {
     actorId: "g1", name: "Goblin Archer", moduleId: "", attributes: {}, resources: {},
-    // CONTROLLED, and still not a shoulder. This is spec §5.1's ruling in a
-    // fixture: the predicate is what the actor IS, never who holds it, and
-    // "has a controller" is the bug that ruling closed.
     controllerId: "p-dm", controllerIds: ["p-dm"], kind: ActorKind.NON_PARTY,
-  };
-  st.Actors["u1"] = {
-    actorId: "u1", name: "Unstated", moduleId: "", attributes: {}, resources: {},
-    controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
   };
   return st;
 }
+
+/** A WatchableChanged's actors, in the order given. */
+function members(...pairs: [string, string][]): { actorId: string; name: string }[] {
+  return pairs.map(([actorId, name]) => ({ actorId, name }));
+}
+
+const asmeAndArmak = members(["a1", "Asme"], ["a2", "Armak"]);
 
 function shoulders(root: HTMLElement): string[] {
   return Array.from(root.querySelectorAll(".perch .shoulder")).map((n) => n.textContent ?? "");
 }
 
-/** A party whose ARRIVAL order — st.Actors' key order, which is the order the
- *  log added them in — is chosen by the caller, because the whole job of the
- *  comparator below is to make that order stop mattering. */
-function arrivedAs(members: [string, string][]): State {
-  const st = newState();
-  for (const [actorId, name] of members) {
-    st.Actors[actorId] = {
-      actorId, name, moduleId: "", attributes: {}, resources: {},
-      controllerId: "", controllerIds: [], kind: ActorKind.PARTY_MEMBER,
-    };
-  }
-  return st;
-}
-
-function perched(st: State, current: string): HTMLElement {
+function perched(
+  st: State,
+  current: string,
+  actors: { actorId: string; name: string }[],
+  onPerch: (id: string) => void = () => {},
+): HTMLElement {
   const root = document.createElement("div");
-  renderSpectator(root, st, [], "connected", { perch: { current, onPerch: () => {} } });
+  renderSpectator(root, st, [], "connected", { perch: { actors, current, onPerch } });
   return root;
 }
 
 test("the perch control says what choosing a name from it does", () => {
-  // A bare column of character names next to a board is not self-explanatory —
-  // it reads as a party roster, which is what the DM console shows. The heading
-  // is the only thing on the control that says these names are POINTS OF VIEW,
-  // so a blank one leaves a watcher guessing what a click will do to their
-  // screen.
-  expect(perched(party(), "").querySelector(".perch h2")?.textContent).toBe("Whose eyes");
+  // The heading is the only thing on the control that says these names are
+  // points of view rather than a party roster.
+  expect(perched(party(), "", asmeAndArmak).querySelector(".perch h2")?.textContent).toBe("Whose eyes");
 });
 
-test("the perch lists the party, and nobody else", () => {
-  // The Goblin Archer is the whole point: "a spectator perched on the Goblin
-  // Archer would watch the ambush from inside it, and the arc would be undone
-  // in a single click." The server refuses it (MayPerch) — this is the UI not
-  // offering it in the first place. An actor whose kind is UNSPECIFIED is not
-  // offered either: an absent kind is not a party member, always (§5.1).
-  const root = document.createElement("div");
-  renderSpectator(root, party(), [], "connected", { perch: { current: "", onPerch: () => {} } });
-  expect(shoulders(root)).toEqual(["Armak", "Asme"]);
-  // And with a party to offer, the empty-state is NOT also rendered. "No party
-  // members yet." standing above two clickable names says the control failed to
-  // notice the very people it is listing, which is worse than either message
-  // alone: a watcher who believes it stops clicking. Mapped to text rather than
-  // asserted as a null node so a failure prints the sentence that was wrongly
-  // rendered, not happy-dom's entire element dump.
+// VTT-403
+test("the perch lists exactly the party members it is handed", () => {
+  // The fold holds Asme, Armak and the Goblin Archer; the set names Armak and
+  // a Quill the fold has never heard of. Only the set is offered.
+  const root = perched(party(), "", members(["a2", "Armak"], ["x9", "Quill"]));
+  expect(shoulders(root)).toEqual(["Armak", "Quill"]);
   expect(Array.from(root.querySelectorAll(".perch .empty")).map((n) => n.textContent)).toEqual([]);
 });
 
-test("the shoulders are listed by name, not in the order the party arrived", () => {
-  // THREE members, arriving in an order that is neither the answer nor its
-  // reverse. A two-name fixture cannot tell a real comparator from one that
-  // answers "before" for every pair or "after" for every pair: on two elements
-  // those two accidents produce the reversed and the unchanged order, and one
-  // of them is always right. Every other perch fixture in this file has exactly
-  // two party members, so this is the one that pins the sort at all.
-  //
-  // Arrival order is an accident of the log — who the DM added first — and a
-  // list that follows it reshuffles under the watcher's cursor every time an
-  // actor is added, on a control whose whole use is clicking between names.
-  const st = arrivedAs([["x1", "Cara"], ["x2", "Asme"], ["x3", "Bo"]]);
-  expect(shoulders(perched(st, ""))).toEqual(["Asme", "Bo", "Cara"]);
+// VTT-403, VTT-404
+test("a spectator watching nobody is offered every party member the set names, and nobody", () => {
+  const root = perched(newState(), "", members(["a1", "Lera"], ["a2", "Bram"]));
+  expect(shoulders(root)).toEqual(["Bram", "Lera"]);
+  expect(root.querySelector(".perch .unperch")?.textContent).toBe("No shoulder");
 });
 
+test("the shoulders are listed by name, not in the order the set gives them", () => {
+  // Three members in an order that is neither the answer nor its reverse: two
+  // cannot tell a real comparator from one that answers the same for every pair.
+  const root = perched(newState(), "", members(["x1", "Cara"], ["x2", "Asme"], ["x3", "Bo"]));
+  expect(shoulders(root)).toEqual(["Asme", "Bo", "Cara"]);
+});
+
+// VTT-405
 test("choosing a shoulder perches on that actor", () => {
-  const root = document.createElement("div");
   const chosen: string[] = [];
-  renderSpectator(root, party(), [], "connected", { perch: { current: "", onPerch: (id) => chosen.push(id) } });
+  const root = perched(party(), "", asmeAndArmak, (id) => chosen.push(id));
   const armak = Array.from(root.querySelectorAll(".perch .shoulder"))
     .find((n) => n.textContent === "Armak") as HTMLButtonElement;
   armak.click();
@@ -1546,114 +1518,75 @@ test("choosing a shoulder perches on that actor", () => {
   expect(chosen).toEqual(["a2"]);
 });
 
+// VTT-405
 test("'no shoulder' SENDS the empty id rather than doing nothing", () => {
-  // The empty actor id is a REAL state (internal/gateway/viewpoint.go: "naming
-  // no actor is how a bird LEAVES a shoulder without immediately sitting on
-  // another"). A control that treated it as "nothing to do" would leave a
-  // spectator unable to stop seeing, and would look identical to a working one
-  // in any test that only counted the party.
-  const root = document.createElement("div");
+  // The empty id is how a spectator stops watching anyone (SPEC-015); a
+  // control that skipped it would leave them unable to stop seeing.
   const chosen: string[] = [];
-  renderSpectator(root, party(), [], "connected", { perch: { current: "a1", onPerch: (id) => chosen.push(id) } });
+  const root = perched(party(), "a1", asmeAndArmak, (id) => chosen.push(id));
   const off = root.querySelector(".perch .unperch") as HTMLButtonElement | null;
   expect(off).not.toBeNull();
-  // The LABEL too, on the same rule as the reconnect control above: a blank
-  // button is still clickable and still satisfies a presence-only assertion,
-  // while telling the watcher nothing about what it will do — and this is the
-  // one control on the panel that does not name a character, so it has no other
-  // way to read.
   expect(off!.textContent).toBe("No shoulder");
   off!.click();
   expect(chosen).toEqual([""]);
 });
 
 test("the control says whose shoulder the spectator is sitting on", () => {
-  // A perch with no indicator means the board changes under you with no way to
-  // know why, and hopping is the whole feature.
-  const root = document.createElement("div");
-  renderSpectator(root, party(), [], "connected", { perch: { current: "a2", onPerch: () => {} } });
+  const root = perched(party(), "a2", asmeAndArmak);
   expect(root.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: Armak");
-  // And it is marked in the list too, so the answer is where the choice is.
   const marked = Array.from(root.querySelectorAll(".perch .shoulder.on")).map((n) => n.textContent);
   expect(marked).toEqual(["Armak"]);
 });
 
 test("perched on nobody reads as nobody, not as a blank", () => {
-  // Where every spectator starts a connection. "Perched on: " with nothing
-  // after it is indistinguishable from a broken indicator.
-  const root = document.createElement("div");
-  renderSpectator(root, party(), [], "connected", { perch: { current: "", onPerch: () => {} } });
+  const root = perched(party(), "", asmeAndArmak);
   expect(root.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: nobody");
   expect(root.querySelector(".perch .unperch")?.className).toContain("on");
   expect(root.querySelectorAll(".perch .shoulder.on")).toHaveLength(0);
 });
 
+// VTT-404
 test("a party member with no name is still choosable, by id", () => {
-  const st = party();
-  st.Actors["a2"]!.name = "";
-  const root = document.createElement("div");
-  renderSpectator(root, st, [], "connected", { perch: { current: "a2", onPerch: () => {} } });
+  const root = perched(party(), "a2", members(["a1", "Asme"], ["a2", ""]));
   expect(shoulders(root)).toContain("a2");
   expect(root.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: a2");
 });
 
-test("two party members sharing a name are ordered by id, whichever of them arrived first", () => {
-  // The tie-break arm — and BOTH arrival orders of the tied pair, because one
-  // of the two is a false pass and the earlier version of this test used only
-  // that one.
-  //
-  // MEASURED: sorting two elements calls the comparator exactly once, as
-  // compare(the SECOND, the FIRST). So a comparator that has lost its tie-break
-  // and answers "after" for every tie (which is what collapsing either arm of
-  // `label(a) === label(b) ? (a.actorId < b.actorId ? -1 : 1) : ...` to a
-  // constant produces) leaves an already-ascending pair exactly where it sat
-  // and looks perfect. Feed it the DESCENDING arrival too and it must actually
-  // swap them, which a constant cannot. Both orders in one loop so neither can
-  // later be dropped as the redundant-looking half.
-  //
-  // Two tied names are indistinguishable in the list itself, so the ORDER is
-  // read off the marked button instead: "a-lea" is the perched one and sorts
-  // first on the id, so it must be the FIRST shoulder both times. The order two
-  // buttons a watcher clicks between appear in must not depend on which of the
-  // two characters the DM happened to create first.
-  const arrivals: [string, string][][] = [
+test("two party members sharing a name are ordered by id, whichever of them the set gives first", () => {
+  // Both orders of the tied pair: sorting two elements compares the second
+  // with the first once, so a comparator that answers "after" for every tie
+  // leaves an ascending pair where it sat and looks right on that order alone.
+  // The order is read off the marked button, since the two labels are equal.
+  const orders: [string, string][][] = [
     [["a-lea", "Asme"], ["b-vex", "Asme"]],
     [["b-vex", "Asme"], ["a-lea", "Asme"]],
   ];
-  for (const arrival of arrivals) {
-    const root = perched(arrivedAs(arrival), "a-lea");
+  for (const order of orders) {
+    const root = perched(newState(), "a-lea", members(...order));
     expect(shoulders(root)).toEqual(["Asme", "Asme"]);
     expect(Array.from(root.querySelectorAll(".perch .shoulder")).map((n) => n.className))
       .toEqual(["shoulder on", "shoulder"]);
   }
 });
 
-test("a shoulder the roster no longer holds reads as its id, not as nobody", () => {
-  // An undo covering the ActorAdded reaches here: the server accepted this
-  // perch and the actor is gone. Saying "nobody" would tell the watcher their
-  // blank board is a choice they made, when it is a character that vanished.
-  const root = document.createElement("div");
-  renderSpectator(root, party(), [], "connected", { perch: { current: "ghost", onPerch: () => {} } });
+test("a shoulder the set does not name reads as its id, not as nobody", () => {
+  // Saying "nobody" would tell the watcher their blank board is a choice they
+  // made, when it is a shoulder the gateway no longer offers.
+  const root = perched(party(), "ghost", asmeAndArmak);
   expect(root.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: ghost");
   expect(root.querySelector(".perch .unperch")?.className).not.toContain("on");
 });
 
 test("a table with no party yet says so rather than rendering an empty panel", () => {
-  const st = world();
-  st.Actors["a1"]!.kind = ActorKind.NON_PARTY;
-  const root = document.createElement("div");
-  renderSpectator(root, st, [], "connected", { perch: { current: "", onPerch: () => {} } });
+  const root = perched(party(), "", []);
   expect(root.querySelector(".perch")).not.toBeNull();
   expect(shoulders(root)).toEqual([]);
   expect(root.querySelector(".perch .empty")?.textContent).toBe("No party members yet.");
 });
 
 test("no perch supplied, no control at all", () => {
-  // THE NEGATIVE CASE, and it matters as much as the positive: a player, a DM
-  // and an agent must not be offered a perch, because MayPerch refuses every
-  // one of them outright ("role %q does not perch — a viewpoint is the
-  // spectator's"). app.ts is what withholds it; this is the renderer honouring
-  // the omission rather than defaulting to a control.
+  // The negative case: only a spectator chooses a shoulder (SPEC-015), and
+  // app.ts is what withholds the control from every other role.
   const root = document.createElement("div");
   renderSpectator(root, party(), [], "connected");
   expect(root.querySelector(".perch")).toBeNull();

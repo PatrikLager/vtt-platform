@@ -12,9 +12,9 @@
 import type { State } from "../state";
 import type { Ability, Me } from "../metadata";
 import { affordable, controlledActors, targetableTokens } from "../player";
-import { moveToken, useAbility, addNarration } from "../commands";
+import { moveToken, useAbility, addNarration, setViewpoint } from "../commands";
 import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
-import { mayWorkDoor } from "./doors";
+import { currentSceneId, mayWorkDoor } from "./doors";
 
 export interface PlayerUIState {
   selectedActorId: string;
@@ -37,6 +37,12 @@ export interface PlayerUIState {
   doorsArmed: boolean;
 }
 
+/** A player's switch between the party members the gateway lets them watch (VTT-402). */
+export interface Switcher {
+  actors: readonly { actorId: string; name: string }[];
+  onSwitch: (actorId: string) => void;
+}
+
 function el(tag: string, cls?: string, text?: string): HTMLElement {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -56,58 +62,12 @@ export function tokenForActor(st: State, actorId: string): string {
 }
 
 /**
- * Whether ANY door in the current scene is one this player could actually
- * work — the gate for offering the arm-doors toggle at all, so a player with
- * no controlled token near any door gets no control whose every use
- * mayWorkDoor would refuse (doors.ts's own reasoning about mayWorkDoor,
- * applied one level up: don't even OFFER what it would refuse every time).
- *
- * Walks the scene's own door tiles and asks mayWorkDoor about each, rather
- * than re-deriving the adjacency geometry here: the two must never drift,
- * or this offers a control mayWorkDoor is certain to refuse.
- *
- * NO SCENE, NO TOGGLE: `if (!scene) return false` is what a player with no
- * campaign scene yet meets — not a fallback into "sure, offer it anyway".
- * Pinned by name, not just implied by the guard's shape — see
- * client/test/player.test.ts's "no scenes at all means no toggle, even with
- * a controlled actor" (that file, not this one: nothing in THIS file is
- * "below" a doc comment).
- *
- * The "current scene" pick — the lexicographically greatest scene id, via
- * `.sort().at(-1)` — is the SAME ONE-LINE COMPUTATION doors.ts's own
- * currentSceneId and spectator.ts's renderSpectator each write out
- * independently: three copies, not one shared helper. NEITHER OF THE OTHER
- * TWO COMMENTS EXPLAINS WHY IT IS A COPY RATHER THAN A CALL — an earlier
- * draft of this comment invented a reason and attributed it to
- * spectator.ts's comment, which says nothing of the kind (it says only that
- * the active scene is the most recently created one, and that a scene
- * selector belongs with the DM console). This file makes no claim on
- * either of their behalf; the fact stated here is only that the
- * computation is duplicated three times, not why.
- *
- * THE `?? ""` FALLBACK IS NOT EQUIVALENT, and an earlier draft of this
- * comment claimed it was — the same mistake Task 3 nearly made about
- * doors.ts's identically-shaped copy, caught there before it reached that
- * file and caught here only after it did. The false argument was that the
- * fallback feeds only a SCENE LOOKUP (`st.Scenes[sceneId]`) on an object
- * with zero own keys, so no string could make the lookup succeed. That
- * misses the PROTOTYPE CHAIN: `st.Scenes[key]` for a key outside
- * `Object.keys(st.Scenes)` still resolves through whatever `st.Scenes`
- * inherits from, and "zero own keys" says nothing about what is inherited.
- * player.test.ts's "a prototype-injected empty-string scene defeats the `??
- * ""` equivalence claim" builds exactly that state — Scenes with no own
- * keys but a prototype answering "" with a real scene — and kills the
- * mutant: the real fallback ("") finds that scene, the mutant
- * ("Stryker was here!") finds nothing. NOT a state fold() can ever build
- * (fold.ts always hands Scenes an `Object.create(null)` via state.ts's
- * emptyMap, so no real campaign log can give it a prototype at all) — the
- * same category of hand-built-past-the-fold state doors.test.ts already
- * uses for this module family, and doors.ts's own currentSceneId doc
- * comment cites for its own paired claim.
+ * Whether any door in the current scene is one this player could work, the
+ * gate for offering the arm-doors toggle at all. Ask mayWorkDoor per door tile
+ * rather than re-deriving its geometry here: the two must never drift.
  */
 function mayWorkAnyDoor(st: State, me: Me): boolean {
-  const sceneId = Object.keys(st.Scenes).sort().at(-1) ?? "";
-  const scene = st.Scenes[sceneId];
+  const scene = st.Scenes[currentSceneId(st)];
   if (!scene) return false;
   return Object.entries(scene.Tiles ?? {}).some(([key, tile]) => {
     if (tile.Kind !== "door") return false;
@@ -123,11 +83,12 @@ export function renderPlayerPanel(
   ui: PlayerUIState,
   send: (c: ClientCommand) => void,
   rerender: () => void,
+  switcher?: Switcher,
 ): HTMLElement {
   const wrap = el("section", "player");
   wrap.appendChild(el("h2", undefined, "Your turn"));
 
-  const mine = controlledActors(st, me.participantId);
+  const mine = switcher ? switcher.actors : controlledActors(st, me.participantId);
   if (mine.length === 0) {
     wrap.appendChild(el("p", "empty", "You do not control an actor yet."));
     return wrap;
@@ -138,6 +99,10 @@ export function renderPlayerPanel(
   for (const a of mine) {
     const b = el("button", ui.selectedActorId === a.actorId ? "chip sel" : "chip", a.name || a.actorId);
     b.addEventListener("click", () => {
+      if (switcher) {
+        switcher.onSwitch(a.actorId);
+        return;
+      }
       ui.selectedActorId = a.actorId;
       ui.selectedAbilityId = "";
       rerender();
@@ -275,4 +240,26 @@ export function moveCommandFor(
   // handled by the target buttons so a stray board click cannot fire it.
   if (ui.selectedAbilityId !== "") return null;
   return moveToken(tokenId, cell);
+}
+
+/**
+ * A player's board click: a switch to a party member the gateway lets them
+ * watch whose token is on the cell, nothing on the watched one's own token,
+ * else a move of it (VTT-406, VTT-408).
+ */
+export function playerClickFor(
+  st: State,
+  me: Me,
+  ui: PlayerUIState,
+  watchable: readonly string[],
+  cell: { x: number; y: number },
+): ClientCommand | null {
+  const scene = currentSceneId(st);
+  const here = Object.values(st.Tokens)
+    .filter((t) => t.SceneID === scene && t.X === cell.x && t.Y === cell.y)
+    .map((t) => t.ActorID);
+  const others = watchable.filter((id) => id !== ui.selectedActorId && here.includes(id)).sort();
+  if (others.length > 0) return setViewpoint(others[0]!);
+  if (here.includes(ui.selectedActorId)) return null;
+  return moveCommandFor(st, me, ui, cell);
 }
