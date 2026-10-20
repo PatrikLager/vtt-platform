@@ -110,6 +110,7 @@ test("a fold error is surfaced instead of leaving a half-applied state", async (
     await s.start();
     await until(() => errors.length > 0, "the fold error to surface");
     expect(errors.length).toBeGreaterThan(0);
+    expect(s.failure).toBe(errors[0]!);
     s.close();
   } finally {
     gw.stop();
@@ -127,13 +128,7 @@ test("reconnect redials and resumes from the last folded sequence", async () => 
   //
   // The discriminator is a SECOND connection carrying an event the first one
   // never sent, and the `after` cursor it resumes from, which is what makes
-  // this a resume rather than a fresh replay.
-  //
-  // The fake gateway REPLAYS BY CURSOR rather than scripting each connection,
-  // because the cursor is now the thing under test: a reconnect resumes one
-  // sequence before the highest seen (wire.ts's replay-cursor note), so a
-  // server that ignored `after` would hide both halves of that — the sequence
-  // rolled off the log and the same sequence arriving again.
+  // this a resume rather than a fresh replay (VTT-398).
   const seen: string[] = [];
   let opened = 0;
   let pendingAfter = 0n;
@@ -175,12 +170,9 @@ test("reconnect redials and resumes from the last folded sequence", async () => 
 
     expect(s.head).toBe(5n);
     expect(s.state.Tokens["t1"]).toMatchObject({ X: 3, Y: 3 });
-    // Two connections, and the second asked to resume rather than replay —
-    // from 3, one sequence below the 4 it had folded, because sequence 4 may
-    // have been a torn batch and is taken again whole.
     expect(seen.length).toBe(2);
     expect(seen[0]).toBe("0");
-    expect(seen[1]).toBe("3");
+    expect(seen[1]).toBe("4");
     s.close();
   } finally {
     server.stop(true);
@@ -377,97 +369,8 @@ test("a departure for someone never seen leaves the list alone", async () => {
   }
 });
 
-test("a reconnect after a torn batch takes that sequence again, and folds it exactly once", async () => {
-  // THE CASE THE PROJECTION CREATED. Since internal/gateway projects per seat,
-  // one log event can reach a player as SEVERAL envelopes sharing one
-  // sequence — something coming into view is an ActorAdded plus a
-  // TokenPlaced. A socket that dies between them leaves this client holding
-  // half of sequence 4.
-  //
-  // Both of the obvious cursors are wrong, which is why this test exists.
-  // after=4 asks the server for events strictly above 4, so the TokenPlaced is
-  // never sent again and the token is silently missing forever — and when the
-  // torn envelope is a TokenHidden instead, the thing left behind is an enemy
-  // token on a player's board, which is the leak this whole arc closes.
-  // after=3 without dropping the half-batch first would fold the ActorAdded
-  // twice, and a duplicate actor is a fold error, which Session turns into a
-  // permanently frozen board.
-  let opened = 0;
-  let pendingAfter = 0n;
-  const before = [
-    { event: env(1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) }) },
-    { event: env(2, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "scn", name: "Cave", gridWidth: 8, gridHeight: 8 }) }) },
-    { event: env(3, { case: "actorAdded", value: create(ActorAddedSchema, { actor: { actorId: "a1", name: "Hero" } }) }) },
-  ];
-  // One log event, two envelopes, one sequence: the goblin coming into view.
-  const batch = [
-    { event: env(4, { case: "actorAdded", value: create(ActorAddedSchema, { actor: { actorId: "a2", name: "Goblin" } }) }) },
-    { event: env(4, { case: "tokenPlaced", value: create(TokenPlacedSchema, { tokenId: "t2", sceneId: "scn", actorId: "a2", position: { x: 6, y: 6 } }) }) },
-  ];
-  const server = Bun.serve({
-    port: 0,
-    fetch(req, srv) {
-      pendingAfter = BigInt(new URL(req.url).searchParams.get("after") ?? "0");
-      if (srv.upgrade(req)) return undefined;
-      return new Response("expected websocket", { status: 400 });
-    },
-    websocket: {
-      open(ws) {
-        opened += 1;
-        const after = pendingAfter;
-        for (const f of [...before, ...batch]) {
-          if (BigInt((f as any).event.sequence) <= after) continue;
-          // THE TEAR: on the first connection the socket dies after the first
-          // envelope of sequence 4.
-          if (opened === 1 && (f as any).event.sequence === "4" && (f as any).event.tokenPlaced) break;
-          ws.send(JSON.stringify(f));
-        }
-      },
-      message() {},
-    },
-  });
-  const url = `ws://localhost:${server.port}/ws`;
-  try {
-    const s = new Session(url, "tok");
-    const errors: string[] = [];
-    s.onError((e) => errors.push(e.message));
-    await s.start();
-    await until(() => s.head === 4n, "the torn batch's first envelope");
-    expect(s.state.Actors["a2"]).toBeDefined();
-    expect(s.state.Tokens["t2"]).toBeUndefined(); // the tear, before recovery
-
-    await s.reconnect();
-    await until(() => s.state.Tokens["t2"] !== undefined, "the re-sent batch to complete the sighting");
-
-    expect(errors).toEqual([]); // a duplicate ActorAdded would be here
-    expect(s.state.Actors["a2"]).toBeDefined();
-    expect(s.state.Tokens["t2"]).toMatchObject({ X: 6, Y: 6 });
-    s.close();
-  } finally {
-    server.stop(true);
-  }
-});
-
-test("a redial that drops nothing does not repaint", async () => {
-  // The rollback is a no-op WHENEVER the resume cursor already sits at or above
-  // everything held, and that is not an exotic case: it is the state of a
-  // spectator who has perched and seen nothing else happen. Perch frames carry
-  // sequence 0 deliberately (the gateway's perchSequence), 0 never advances the
-  // high-water mark, so a redial resumes at 0, keeps the whole log, and has
-  // nothing to say about it.
-  //
-  // Saying it anyway is not free. onChange is what every view redraws on, and a
-  // redraw the state did not earn throws away whatever the DOM was holding —
-  // the same hazard the DM console's draft buffer exists for, one layer down.
-  // "Nothing changed" must therefore be silent, not merely correct.
-  //
-  // The DISCRIMINATOR is the count, not the state: the log and the board are
-  // identical either way, because re-folding an untruncated log reproduces
-  // exactly what was already there. Only the notification tells the two apart.
-  const perchFrame = {
-    event: env(0, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "perched", name: "P", gridWidth: 2, gridHeight: 2 }) }),
-  };
-  let opened = 0;
+test("close closes the socket", async () => {
+  let closed = false;
   const server = Bun.serve({
     port: 0,
     fetch(req, srv) {
@@ -475,171 +378,134 @@ test("a redial that drops nothing does not repaint", async () => {
       return new Response("expected websocket", { status: 400 });
     },
     websocket: {
-      open(ws) {
-        opened += 1;
-        // Only the first connection speaks. A second replay would fold a
-        // duplicate scene and notify for a reason this test is not about.
-        if (opened === 1) ws.send(JSON.stringify(perchFrame));
-      },
+      open() {},
       message() {},
+      close() {
+        closed = true;
+      },
     },
   });
   try {
     const s = new Session(`ws://localhost:${server.port}/ws`, "tok");
     await s.start();
-    await until(() => s.state.Scenes["perched"] !== undefined, "the perch frame");
-
-    let changes = 0;
-    s.onChange(() => changes++);
-    await s.reconnect();
-
-    expect(changes).toBe(0);
-    // And the frame the rollback had no reason to drop is still here: 0 is at
-    // or below every cursor, so a redial keeps it. Emptying is restart()'s job.
-    expect(s.events).toHaveLength(1);
-    expect(s.state.Scenes["perched"]).toBeDefined();
     s.close();
+    await until(() => closed, "the gateway to see the socket close");
   } finally {
     server.stop(true);
   }
 });
 
-// --- restart: the redial a spectator's perch needs ---------------------------
+// --- one log at a time -------------------------------------------------------
 
-test("restart dials from zero and drops the whole log, perch frames and all", async () => {
-  // A PERCH IS CONNECTION STATE (visibility spec §3.1.1). The server's
-  // projector is reborn perched on nobody, so a redial that RESUMES leaves
-  // this client holding a board the new connection knows nothing about, and
-  // the next perch re-introduces every scene, actor and token in it — the
-  // duplicate-introduction freeze, measured against the real gateway.
-  //
-  // reconnect() cannot serve here for two separate reasons, and this test
-  // discriminates on both. Its cursor is seenSeq-1, not 0; and its rollback
-  // keeps everything AT OR BELOW that cursor, so the sequence-0 frames a perch
-  // produces — stamped 0 deliberately, so that no undo can name one — survive
-  // a rollback that drops ordinary ones.
-  const seen: string[] = [];
-  let opened = 0;
-  let pendingAfter = 0n;
-  // What a perch delivers: a scene the LOG does not contain, at sequence 0 —
-  // sent on the connection that asked for it and never replayed to another,
-  // exactly as the gateway's perch frames are (internal/gateway/project.go's
-  // perchSequence, and seat.perch, whose output skips the replay filter).
-  const perchFrame = {
-    event: env(0, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "perched", name: "P", gridWidth: 2, gridHeight: 2 }) }),
-  };
-  const server = Bun.serve({
-    port: 0,
-    fetch(req, srv) {
-      const after = new URL(req.url).searchParams.get("after") ?? "";
-      seen.push(after);
-      pendingAfter = BigInt(after || "0");
-      if (srv.upgrade(req)) return undefined;
-      return new Response("expected websocket", { status: 400 });
-    },
-    websocket: {
-      open(ws) {
-        opened += 1;
-        const after = pendingAfter;
-        for (const f of world) {
-          if (BigInt((f as any).event.sequence) > after) ws.send(JSON.stringify(f));
-        }
-        if (opened === 1) ws.send(JSON.stringify(perchFrame));
-      },
-      message() {},
-    },
-  });
+const viewpoint = (actorId: string) => ({ viewpointChanged: actorId === "" ? {} : { actorId } });
+
+// A second log that opens a session and a scene the first one also held.
+const a2Log = [
+  { event: env(1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) }) },
+  { event: env(2, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "s1", name: "S1", gridWidth: 9, gridHeight: 9 }) }) },
+  { event: env(3, { case: "actorAdded", value: create(ActorAddedSchema, { actor: { actorId: "a2", name: "B" } }) }) },
+];
+
+// VTT-394
+test("a ViewpointChanged naming another log empties what was folded", async () => {
+  const gw = gatewayServing([viewpoint("a1"), ...world, viewpoint("a2"), ...a2Log]);
   try {
-    const s = new Session(`ws://localhost:${server.port}/ws`, "tok");
-    await s.start();
-    await until(() => s.state.Scenes["perched"] !== undefined, "the first connection's replay and its perch");
-
+    const s = new Session(gw.url, "tok");
     const errors: string[] = [];
     s.onError((e) => errors.push(e.message));
-    // Every log length a view was told about. The emptying must NOTIFY, not
-    // just mutate: a spectator who redials with no shoulder sends nothing
-    // afterwards, so nothing else repaints until the replay lands and the old
-    // board would sit there in the meantime, behind a connection that no
-    // longer holds it.
-    const painted: number[] = [];
-    s.onChange(() => painted.push(s.events.length));
-    await s.restart();
-    await until(() => s.events.length === 4, "the whole log again");
-    expect(painted).toContain(0);
+    await s.start();
+    await until(() => s.viewpoint === "a2" && s.events.length === 3, "a2's log");
 
-    expect(seen).toEqual(["0", "0"]);
-    // The perch frame is GONE, not re-folded: it came from a connection that
-    // no longer exists, and the server will re-send its own if asked again.
-    expect(s.state.Scenes["perched"]).toBeUndefined();
-    expect(s.state.Tokens["t1"]).toMatchObject({ SceneID: "s1", X: 0, Y: 0 });
-    // A kept log would have made the whole replay a duplicate introduction.
     expect(errors).toEqual([]);
-    expect(s.events).toHaveLength(4);
+    expect(s.state.Actors["a2"]).toBeDefined();
+    expect(s.state.Actors["a1"]).toBeUndefined();
+    expect(s.state.Tokens["t1"]).toBeUndefined();
     s.close();
   } finally {
-    server.stop(true);
+    gw.stop();
   }
 });
 
-test("a restart forgets the cursors, so the next redial cannot resume from a log this client no longer holds", async () => {
-  // seenSeq is the high-water mark a redial derives its resume point from. A
-  // restart empties the log, so leaving that mark standing would have the NEXT
-  // reconnect ask for events after a sequence this client has never folded —
-  // and the events between are silently never sent, which is the leak
-  // direction (a lost TokenHidden leaves an enemy token on the board).
-  //
-  // The discriminator is a second connection that replays NOTHING: with the
-  // cursors reset the third dial asks for 0, and without them it asks for 3.
-  const seen: string[] = [];
-  let opened = 0;
-  const server = Bun.serve({
-    port: 0,
-    fetch(req, srv) {
-      seen.push(new URL(req.url).searchParams.get("after") ?? "");
-      if (srv.upgrade(req)) return undefined;
-      return new Response("expected websocket", { status: 400 });
-    },
-    websocket: {
-      open(ws) {
-        opened += 1;
-        if (opened > 1) return; // the campaign is gone; nothing to replay
-        for (const f of world) ws.send(JSON.stringify(f));
-      },
-      message() {},
-    },
-  });
+// VTT-394
+test("a ViewpointChanged naming nobody empties what was folded", async () => {
+  const gw = gatewayServing([viewpoint("a1"), ...world, viewpoint("")]);
   try {
-    const s = new Session(`ws://localhost:${server.port}/ws`, "tok");
+    const s = new Session(gw.url, "tok");
+    let painted = -1;
+    s.onChange(() => (painted = s.events.length));
     await s.start();
-    await until(() => s.head === 4n, "the first connection's replay");
+    await until(() => s.viewpoint === "" && painted === 0, "the switch to nobody");
 
-    await s.restart();
-    await s.reconnect();
-
-    expect(seen).toEqual(["0", "0", "0"]);
+    expect(s.events).toHaveLength(0);
+    expect(s.state.Scenes["s1"]).toBeUndefined();
     s.close();
   } finally {
-    server.stop(true);
+    gw.stop();
   }
 });
 
-test("a restart that cannot dial leaves the board standing", async () => {
-  // The cost of restart() over reconnect() is what it throws away, so what it
-  // does on FAILURE is not a detail. A watcher clicking Reconnect while the
-  // network is still down would otherwise trade a stale board for a blank
-  // page, and get no replay to fill it.
-  const gw = gatewayServing(world);
-  const s = new Session(gw.url, "tok");
+// VTT-396
+test("a ViewpointChanged naming the log held keeps it", async () => {
+  const moved = { event: env(5, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t1", sceneId: "s1", to: { x: 3, y: 3 } }) }) };
+  const gw = gatewayServing([viewpoint("a1"), ...world, viewpoint("a1"), moved]);
   try {
+    const s = new Session(gw.url, "tok");
+    const errors: string[] = [];
+    s.onError((e) => errors.push(e.message));
     await s.start();
-    await until(() => s.events.length === 4, "the replay");
-    gw.stop(); // the table is unreachable now
+    await until(() => s.head === 5n, "the entry after the second ViewpointChanged");
 
-    await expect(s.restart()).rejects.toThrow();
-
-    expect(s.events).toHaveLength(4);
-    expect(s.state.Tokens["t1"]).toMatchObject({ SceneID: "s1", X: 0, Y: 0 });
-  } finally {
+    expect(errors).toEqual([]);
+    expect(s.events).toHaveLength(5);
+    expect(s.state.Tokens["t1"]).toMatchObject({ X: 3, Y: 3 });
     s.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+// VTT-395
+test("an entry of sequence 1 starts the held log again", async () => {
+  const gw = gatewayServing([viewpoint("a1"), ...world, ...world.slice(0, 2)]);
+  try {
+    const s = new Session(gw.url, "tok");
+    const errors: string[] = [];
+    s.onError((e) => errors.push(e.message));
+    let emptied = false;
+    s.onChange(() => (emptied ||= s.events.length === 0));
+    await s.start();
+    await until(() => emptied && s.events.length === 2, "the log from its first entry again");
+
+    expect(errors).toEqual([]);
+    expect(s.head).toBe(2n);
+    expect(s.state.Scenes["s1"]).toBeDefined();
+    expect(s.state.Tokens["t1"]).toBeUndefined();
+    s.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+// VTT-394
+test("a reset clears the fold failure", async () => {
+  const gw = gatewayServing([
+    viewpoint("a1"),
+    { event: env(1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "A" }) }) },
+    { event: env(2, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "B" }) }) },
+    viewpoint("a2"),
+    ...a2Log,
+  ]);
+  try {
+    const s = new Session(gw.url, "tok");
+    let failed = "";
+    s.onError((e) => (failed = e.message));
+    await s.start();
+    await until(() => failed !== "" && s.viewpoint === "a2" && s.events.length === 3, "the failure, then a2's log");
+
+    expect(s.failure).toBe("");
+    expect(s.state.Actors["a2"]).toBeDefined();
+    s.close();
+  } finally {
+    gw.stop();
   }
 });

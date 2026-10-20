@@ -67,13 +67,21 @@ function envelopeJSON(seq: number) {
   );
 }
 
+function viewpointJSON(actorId: string) {
+  return JSON.stringify({ viewpointChanged: actorId === "" ? {} : { actorId } });
+}
+
+function queryOf(gw: { queries: string[] }, i: number) {
+  return new URLSearchParams(gw.queries[i]);
+}
+
 test("connect replays from after=0 and delivers events", async () => {
   const gw = fakeGateway(() => {});
   try {
     const wire = new Wire(gw.url, "tok-1");
     const seen: bigint[] = [];
     wire.onEvent((e) => seen.push(e.sequence));
-    await wire.connect(0n);
+    await wire.connect();
 
     gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(1) }));
     await until(() => seen.length > 0, "the event to arrive");
@@ -87,35 +95,144 @@ test("connect replays from after=0 and delivers events", async () => {
   }
 });
 
-test("a reconnect resumes one sequence below the last one seen, and says so", async () => {
-  // Resuming from 0 would replay the whole log into a client that already
-  // folded it — duplicated events, and a state that disagrees with the server.
-  //
-  // Resuming from exactly 7 is the OTHER wrong answer, and the one that only
-  // became wrong when the gateway started projecting per seat: several
-  // envelopes can now share a sequence, the cursor reaches 7 on the first of
-  // them, and the server resumes strictly ABOVE a sequence — so a socket that
-  // died mid-batch would never be sent the rest. Resuming from 6 and taking
-  // sequence 7 again is the only expressible answer, and it is safe precisely
-  // because the tail is rolled back first.
+// VTT-397, VTT-398
+test("a player's redial names the log it holds and the last sequence it folded", async () => {
   const gw = fakeGateway(() => {});
   try {
     const wire = new Wire(gw.url, "tok-1");
-    const rolledBackThrough: bigint[] = [];
-    wire.onRollback((seq) => rolledBackThrough.push(seq));
-    await wire.connect(0n);
-    gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(7) }));
-    await until(() => wire.head === 7n, "the cursor to advance to 7");
+    await wire.connect();
+    gw.sockets[0].send(viewpointJSON("a1"));
+    for (const seq of [1, 2]) gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(seq) }));
+    await until(() => wire.head === 2n, "a1's log to reach sequence 2");
 
     await wire.reconnect();
     await until(() => gw.queries.length === 2, "the redial to reach the gateway");
+    expect(queryOf(gw, 1).get("log")).toBe("a1");
+    expect(queryOf(gw, 1).get("after")).toBe("2");
+    wire.close();
+  } finally {
+    gw.stop();
+  }
+});
 
-    expect(gw.queries.length).toBe(2);
-    expect(gw.queries[1]).toContain("after=6");
-    // The rollback is announced BEFORE the redial and names the same cursor,
-    // so whoever holds the log drops sequence 7 rather than folding it twice.
-    expect(rolledBackThrough).toEqual([6n]);
-    expect(wire.head).toBe(6n);
+// VTT-397
+test("a redial names a log whose id needs encoding exactly", async () => {
+  const gw = fakeGateway(() => {});
+  try {
+    const wire = new Wire(gw.url, "tok-1");
+    await wire.connect();
+    gw.sockets[0].send(viewpointJSON("a 1&after=99"));
+    await until(() => wire.viewpoint === "a 1&after=99", "the ViewpointChanged");
+
+    await wire.reconnect();
+    await until(() => gw.queries.length === 2, "the redial to reach the gateway");
+    expect(queryOf(gw, 1).get("log")).toBe("a 1&after=99");
+    expect(queryOf(gw, 1).getAll("after")).toEqual(["0"]);
+    wire.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+// VTT-397, VTT-398
+test("a DM's redial names its last world sequence and no log", async () => {
+  const gw = fakeGateway(() => {});
+  try {
+    const wire = new Wire(gw.url, "tok-dm");
+    await wire.connect();
+    for (const seq of [1, 2, 3]) gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(seq) }));
+    await until(() => wire.head === 3n, "the world to reach sequence 3");
+
+    await wire.reconnect();
+    await until(() => gw.queries.length === 2, "the redial to reach the gateway");
+    expect(queryOf(gw, 1).has("log")).toBe(false);
+    expect(queryOf(gw, 1).get("after")).toBe("3");
+    wire.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+// VTT-398
+test("a redial after a switch resumes the new log, not the old one", async () => {
+  const gw = fakeGateway(() => {});
+  try {
+    const wire = new Wire(gw.url, "tok-1");
+    await wire.connect();
+    gw.sockets[0].send(viewpointJSON("a1"));
+    for (const seq of [1, 2, 3, 4, 5]) gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(seq) }));
+    await until(() => wire.head === 5n, "a1's log to reach sequence 5");
+    gw.sockets[0].send(viewpointJSON("a2"));
+    for (const seq of [1, 2]) gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(seq) }));
+    await until(() => wire.viewpoint === "a2" && wire.head === 2n, "a2's log to reach sequence 2");
+
+    await wire.reconnect();
+    await until(() => gw.queries.length === 2, "the redial to reach the gateway");
+    expect(queryOf(gw, 1).get("log")).toBe("a2");
+    expect(queryOf(gw, 1).get("after")).toBe("2");
+    wire.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+// VTT-398
+test("a redial before the new log's first entry names the new log from its start", async () => {
+  const gw = fakeGateway(() => {});
+  try {
+    const wire = new Wire(gw.url, "tok-1");
+    await wire.connect();
+    gw.sockets[0].send(viewpointJSON("a1"));
+    for (const seq of [1, 2, 3, 4, 5]) gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(seq) }));
+    await until(() => wire.head === 5n, "a1's log to reach sequence 5");
+    gw.sockets[0].send(viewpointJSON("a2"));
+    await until(() => wire.viewpoint === "a2", "the switch to a2");
+
+    await wire.reconnect();
+    await until(() => gw.queries.length === 2, "the redial to reach the gateway");
+    expect(queryOf(gw, 1).get("log")).toBe("a2");
+    expect(queryOf(gw, 1).get("after")).toBe("0");
+    wire.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+// VTT-398
+test("a redial after the held log started again resumes from where the new start reached", async () => {
+  const gw = fakeGateway(() => {});
+  try {
+    const wire = new Wire(gw.url, "tok-1");
+    const seen: bigint[] = [];
+    wire.onEvent((e) => seen.push(e.sequence));
+    await wire.connect();
+    gw.sockets[0].send(viewpointJSON("a1"));
+    for (const seq of [1, 2, 3, 4, 5, 1, 2, 3]) gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(seq) }));
+    await until(() => seen.length === 8, "a1's log and its new start");
+
+    await wire.reconnect();
+    await until(() => gw.queries.length === 2, "the redial to reach the gateway");
+    expect(queryOf(gw, 1).get("log")).toBe("a1");
+    expect(queryOf(gw, 1).get("after")).toBe("3");
+    wire.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+// VTT-397
+test("a redial while watching nobody names no log", async () => {
+  const gw = fakeGateway(() => {});
+  try {
+    const wire = new Wire(gw.url, "tok-spectator");
+    await wire.connect();
+    gw.sockets[0].send(viewpointJSON(""));
+    await until(() => wire.viewpoint === "", "the ViewpointChanged naming nobody");
+
+    await wire.reconnect();
+    await until(() => gw.queries.length === 2, "the redial to reach the gateway");
+    expect(queryOf(gw, 1).has("log")).toBe(false);
+    expect(queryOf(gw, 1).get("after")).toBe("0");
     wire.close();
   } finally {
     gw.stop();
@@ -123,21 +240,15 @@ test("a reconnect resumes one sequence below the last one seen, and says so", as
 });
 
 test("a reconnect before anything was ever seen still resumes from zero", async () => {
-  // lastSeq - 1 must not go negative: a client that dropped before its first
-  // event has nothing folded, and asking for after=-1 would be a 400 from
-  // parseAfter's own caller rather than a replay.
   const gw = fakeGateway(() => {});
   try {
     const wire = new Wire(gw.url, "tok-1");
-    const rolledBackThrough: bigint[] = [];
-    wire.onRollback((seq) => rolledBackThrough.push(seq));
-    await wire.connect(0n);
+    await wire.connect();
 
     await wire.reconnect();
     await until(() => gw.queries.length === 2, "the redial to reach the gateway");
 
     expect(gw.queries[1]).toContain("after=0");
-    expect(rolledBackThrough).toEqual([0n]);
     wire.close();
   } finally {
     gw.stop();
@@ -157,7 +268,7 @@ test("send resolves even when the command's EVENT arrives before its result", as
     const wire = new Wire(gw.url, "tok-1");
     const events: bigint[] = [];
     wire.onEvent((e) => events.push(e.sequence));
-    await wire.connect(0n);
+    await wire.connect();
 
     const res = await wire.send(create(ClientCommandSchema, {
       command: { case: "startSession", value: { name: "S" } },
@@ -185,7 +296,7 @@ test("two in-flight commands resolve to their own results, not each other's", as
   });
   try {
     const wire = new Wire(gw.url, "tok-1");
-    await wire.connect(0n);
+    await wire.connect();
 
     const first = wire.send(create(ClientCommandSchema, {
       command: { case: "startSession", value: { name: "first" } },
@@ -220,7 +331,7 @@ test("a result's warnings reach whoever awaited send()", async () => {
   });
   try {
     const wire = new Wire(gw.url, "tok-1");
-    await wire.connect(0n);
+    await wire.connect();
 
     const res = await wire.send(create(ClientCommandSchema, {
       command: { case: "startSession", value: { name: "S" } },
@@ -243,7 +354,7 @@ test("every command is given a request id when the caller omits one", async () =
   });
   try {
     const wire = new Wire(gw.url, "tok-1");
-    await wire.connect(0n);
+    await wire.connect();
     await wire.send(create(ClientCommandSchema, {
       command: { case: "startSession", value: { name: "S" } },
     }));
@@ -260,7 +371,7 @@ test("status transitions are reported to the caller", async () => {
     const wire = new Wire(gw.url, "tok-1");
     const statuses: string[] = [];
     wire.onStatus((s) => statuses.push(s));
-    await wire.connect(0n);
+    await wire.connect();
     wire.close();
     await until(() => statuses.includes("closed"), "the closed status");
     expect(statuses).toContain("connecting");
@@ -281,7 +392,7 @@ test("a connection that cannot be made rejects with a reason, and reports error 
   const wire = new Wire("ws://127.0.0.1:1/ws", "tok");
   const statuses: string[] = [];
   wire.onStatus((s) => statuses.push(s));
-  await expect(wire.connect(0n)).rejects.toThrow("wire: connection failed");
+  await expect(wire.connect()).rejects.toThrow("wire: connection failed");
   expect(statuses).toContain("error");
 });
 
@@ -294,7 +405,7 @@ test("a socket closing answers every in-flight command instead of hanging", asyn
   const gw = fakeGateway(() => {}); // never replies
   const wire = new Wire(gw.url, "tok");
   try {
-    await wire.connect(0n);
+    await wire.connect();
     const inFlight = wire.send(create(ClientCommandSchema, { requestId: "mine-1" }));
     await until(() => gw.sockets.length > 0, "the socket");
     gw.sockets[0].close();
@@ -336,7 +447,7 @@ test("a result for an unknown request id is dropped, not fatal", async () => {
   try {
     const seen: bigint[] = [];
     wire.onEvent((e) => seen.push(e.sequence));
-    await wire.connect(0n);
+    await wire.connect();
     gw.sockets[0].send(JSON.stringify({ result: { requestId: "nobody-waits-for-this", ok: true } }));
     // The socket must still be usable afterwards.
     gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(7) }));
@@ -358,7 +469,7 @@ test("an unknown frame kind is ignored and the stream keeps working", async () =
   try {
     const seen: bigint[] = [];
     wire.onEvent((e) => seen.push(e.sequence));
-    await wire.connect(0n);
+    await wire.connect();
     gw.sockets[0].send(JSON.stringify({ catchUpHead: { headSequence: "12" } }));
     gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(9) }));
     await until(() => seen.length > 0, "the event after the unknown frame");
@@ -369,38 +480,23 @@ test("an unknown frame kind is ignored and the stream keeps working", async () =
 });
 
 test("an out-of-order replay never walks the resume cursor backwards", async () => {
-  // NOT "lastSeq is what reconnect resumes from" — it is not, and this comment
-  // said so until 2026-08-25. reconnect() derives its resume point from
-  // seenSeq and then WRITES lastSeq (wire.ts). lastSeq is what `head` reports:
-  // how far this client has folded. Letting an older event lower it would make
-  // `head` claim less progress than the client has actually made, and this
-  // test guards both cursors separately for that reason.
+  // An older entry is a re-send; it must not lower the cursor the redial
+  // names (VTT-398).
   const gw = fakeGateway(() => {});
   const wire = new Wire(gw.url, "tok");
   try {
     const seen: bigint[] = [];
     wire.onEvent((e) => seen.push(e.sequence));
-    await wire.connect(0n);
+    await wire.connect();
     gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(5) }));
     await until(() => seen.length === 1, "the first event");
     gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(3) }));
     await until(() => seen.length === 2, "the older event");
 
-    // BOTH CURSORS, asserted separately, because the query below reads only
-    // one of them. `head` is lastSeq — how far this client has folded, exposed
-    // by Wire's own `get head()` and forwarded by Session.head, though nothing
-    // in client/src reads either today — while the resume point is derived
-    // from seenSeq, a different number. An advance made
-    // unconditional moves lastSeq DOWN to 3 here and leaves after=4 intact, so
-    // a test that stops at the query cannot see it. An older event is not
-    // hypothetical either: a perch's frames carry sequence 0 deliberately.
     expect(wire.head).toBe(5n);
 
     await wire.reconnect();
-    // Two connections: the redial must resume from the HIGHEST sequence seen,
-    // 5, not from the older 3 that arrived after it. One below either way (see
-    // the reconnect test above), so the discriminator is 4 against 2.
-    expect(gw.queries[1]).toContain("after=4");
+    expect(gw.queries[1]).toContain("after=5");
   } finally {
     gw.stop();
   }
@@ -418,7 +514,7 @@ test("a caller's request id is used as-is, and a missing one is generated cleanl
   });
   const wire = new Wire(gw.url, "tok");
   try {
-    await wire.connect(0n);
+    await wire.connect();
     const mine = await wire.send(create(ClientCommandSchema, { requestId: "caller-chose-this" }));
     expect(mine.ok).toBe(true);
     expect(sent[0]).toBe("caller-chose-this");
@@ -442,7 +538,7 @@ test("sending after the socket dropped is refused, not fired into a dead socket"
   try {
     const statuses: string[] = [];
     wire.onStatus((s) => statuses.push(s));
-    await wire.connect(0n);
+    await wire.connect();
     await until(() => gw.sockets.length > 0, "the socket");
     gw.sockets[0].close();
     await until(() => statuses.includes("closed"), "the close to reach the client");
@@ -466,7 +562,7 @@ test("a presence snapshot and its deltas reach the presence handler in order", a
   const wire = new Wire(gw.url, "tok");
   const seen: string[] = [];
   wire.onPresence((batch) => { for (const p of batch) seen.push(`${p.state}:${p.participantId}`); });
-  await wire.connect(0n);
+  await wire.connect();
   await until(() => gw.sockets.length > 0, "socket");
 
   gw.sockets[0].send(JSON.stringify({
@@ -496,14 +592,12 @@ test("a presence snapshot and its deltas reach the presence handler in order", a
 });
 
 test("a presence frame does not advance the replay cursor", async () => {
-  // lastSeq drives reconnect's after=<seq>. Presence is NOT an event and
-  // carries no sequence; letting it touch the cursor would skip real events
-  // on the next redial.
+  // The cursor is what a redial names in after=; presence carries no sequence.
   const gw = fakeGateway(() => {});
   const wire = new Wire(gw.url, "tok");
   const seen: string[] = [];
   wire.onPresence((batch) => { for (const p of batch) seen.push(p.participantId); });
-  await wire.connect(0n);
+  await wire.connect();
   await until(() => gw.sockets.length > 0, "socket");
 
   gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(4) }));
@@ -531,7 +625,7 @@ test("a presence frame with no state is dropped, not guessed", async () => {
   const wire = new Wire(gw.url, "tok");
   const seen: string[] = [];
   wire.onPresence((batch) => { for (const p of batch) seen.push(`${p.state}:${p.participantId}`); });
-  await wire.connect(0n);
+  await wire.connect();
   await until(() => gw.sockets.length > 0, "socket");
 
   gw.sockets[0].send(JSON.stringify({
@@ -558,7 +652,7 @@ test("a snapshot is flagged as a replacement; a delta is not", async () => {
   const wire = new Wire(gw.url, "tok");
   const calls: { ids: string[]; replace: boolean }[] = [];
   wire.onPresence((batch, replace) => calls.push({ ids: batch.map((p) => p.participantId), replace }));
-  await wire.connect(0n);
+  await wire.connect();
   await until(() => gw.sockets.length > 0, "socket");
 
   gw.sockets[0].send(JSON.stringify({
@@ -585,7 +679,7 @@ test("an EMPTY snapshot still replaces", async () => {
   const wire = new Wire(gw.url, "tok");
   const calls: { n: number; replace: boolean }[] = [];
   wire.onPresence((batch, replace) => calls.push({ n: batch.length, replace }));
-  await wire.connect(0n);
+  await wire.connect();
   await until(() => gw.sockets.length > 0, "socket");
 
   gw.sockets[0].send(JSON.stringify({ presenceSnapshot: {} }));
@@ -604,7 +698,7 @@ test("a snapshot entry with no state is skipped, and the rest still arrive", asy
   const wire = new Wire(gw.url, "tok");
   const calls: string[][] = [];
   wire.onPresence((batch) => calls.push(batch.map((p) => p.participantId)));
-  await wire.connect(0n);
+  await wire.connect();
   await until(() => gw.sockets.length > 0, "socket");
 
   gw.sockets[0].send(JSON.stringify({
@@ -655,29 +749,17 @@ class ScriptedSocket {
 }
 
 test("a frame from the socket a reconnect abandoned is never folded", async () => {
-  // THE ROLLBACK'S OWN RACE. reconnect() closes the socket, announces the
-  // rollback, and redials — but the handler is bound per socket at connect
-  // time and knows nothing about which socket it belongs to. A `message` event
-  // queued before close() still runs, and its envelope lands AFTER the log was
-  // truncated: the rolled-back sequence is re-added, the redial delivers it a
-  // second time, and the duplicate introduction freezes the client
-  // permanently. Measured before the fix as log 1,2,2 and
-  // `duplicate actor "a1"`.
-  //
-  // Narrow through the UI today — the Reconnect button only shows on status
-  // "closed" — but reconnect() is public API and any automatic redial opens it
-  // wide.
+  // A message queued before close() still runs; its envelope must neither
+  // reach the fold nor move the cursor the redial named.
   const nativeWS = globalThis.WebSocket;
   ScriptedSocket.instances = [];
   globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
   try {
     const wire = new Wire("ws://scripted/ws", "tok-1");
     const seen: bigint[] = [];
-    const rolledBack: bigint[] = [];
     wire.onEvent((e) => seen.push(e.sequence));
-    wire.onRollback((s) => rolledBack.push(s));
 
-    const first = wire.connect(0n);
+    const first = wire.connect();
     ScriptedSocket.instances[0]!.open();
     await first;
     ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(2) });
@@ -687,13 +769,12 @@ test("a frame from the socket a reconnect abandoned is never folded", async () =
     ScriptedSocket.instances[1]!.open();
     await redial;
 
-    // The abandoned socket speaks anyway. Nothing it says may reach the fold,
-    // and nothing it says may move the cursor the redial just set.
-    ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(2) });
+    expect(ScriptedSocket.instances[1]!.url).toContain("after=2");
+
+    ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(3) });
 
     expect(seen).toEqual([2n]);
-    expect(rolledBack).toEqual([1n]);
-    expect(wire.head).toBe(1n);
+    expect(wire.head).toBe(2n);
   } finally {
     globalThis.WebSocket = nativeWS;
   }
@@ -716,11 +797,11 @@ test("a second connect silences the socket the first one left behind", async () 
     const seen: bigint[] = [];
     wire.onEvent((e) => seen.push(e.sequence));
 
-    const first = wire.connect(0n);
+    const first = wire.connect();
     ScriptedSocket.instances[0]!.open();
     await first;
 
-    const second = wire.connect(0n);
+    const second = wire.connect();
     ScriptedSocket.instances[1]!.open();
     await second;
 
@@ -751,11 +832,8 @@ test("a close answers the commands sent on ITS socket, and no others", async () 
   //
   // Narrow through the UI today — the Reconnect button shows only on status
   // "closed", which this same handler sets one line before it walks the map, so
-  // the app's sockets are strictly serial. But connect() and restart() are
-  // public API, restart() is close-then-send by construction, and a second
-  // connect() (below) holds two live sockets with one map between them.
-  // app.test.ts's "a redial whose abandoned socket closes late still ends up
-  // perch-shaped" walks what the wrong answer costs a watcher.
+  // the app's sockets are strictly serial. But connect() is public API, and a
+  // second connect() (below) holds two live sockets with one map between them.
   //
   // BOTH DIRECTIONS IN ONE TEST, deliberately, because the cheap way to pass
   // the first half is to answer nothing at all. A command written to the socket
@@ -769,7 +847,7 @@ test("a close answers the commands sent on ITS socket, and no others", async () 
   globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
   try {
     const wire = new Wire("ws://scripted/ws", "tok-1");
-    const first = wire.connect(0n);
+    const first = wire.connect();
     ScriptedSocket.instances[0]!.open();
     await first;
     const onOld = wire.send(create(ClientCommandSchema, { requestId: "sent-on-the-old-socket" }));
@@ -777,7 +855,7 @@ test("a close answers the commands sent on ITS socket, and no others", async () 
     // A second connect abandons the first socket WITHOUT closing it, which is
     // what holds two live sockets long enough to tell whose command is whose —
     // the same shape as the test above, which covers the frame half of it.
-    const second = wire.connect(0n);
+    const second = wire.connect();
     ScriptedSocket.instances[1]!.open();
     await second;
     const onNew = wire.send(create(ClientCommandSchema, { requestId: "sent-on-the-new-socket" }));
@@ -813,16 +891,10 @@ test("a close answers the commands sent on ITS socket, and no others", async () 
 });
 
 test("reconnecting repeatedly does not walk the cursor backwards", async () => {
-  // The resume cursor steps back one sequence per redial so a torn batch can
-  // be taken again whole. It must step back from the HIGHEST SEQUENCE EVER
-  // SEEN, not from wherever the previous redial left it — otherwise every
-  // click of the Reconnect button rewinds the board by one more event, which
-  // is precisely when that button is on screen. The DM and the agent reach
-  // this too, and for them the tear it guards against cannot even happen.
   const gw = fakeGateway(() => {});
   try {
     const wire = new Wire(gw.url, "tok-1");
-    await wire.connect(0n);
+    await wire.connect();
     gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(9) }));
     await until(() => wire.head === 9n, "the cursor to reach 9");
 
@@ -832,119 +904,44 @@ test("reconnecting repeatedly does not walk the cursor backwards", async () => {
     }
 
     for (const q of gw.queries.slice(1)) {
-      expect(q).toContain("after=8");
+      expect(q).toContain("after=9");
     }
-    expect(wire.head).toBe(8n);
+    expect(wire.head).toBe(9n);
     wire.close();
   } finally {
     gw.stop();
   }
 });
 
-test("a frame from the socket a restart abandoned is never folded", async () => {
-  // The same race as the reconnect case above, one redial apart, and it is
-  // worse here rather than merely equal: a restart empties the log entirely,
-  // so a stale frame landing after it does not re-add a sequence — it seeds a
-  // log with an envelope the replay is about to send AGAIN, which is the
-  // duplicate introduction that freezes a client for good.
-  //
-  // Scripted rather than served, for the reason the class above gives: whether
-  // a queued frame still lands after a close is the runtime's decision, and a
-  // test whose subject is a race must not be one.
+test("a reconnect whose dial fails leaves the cursor and the log", async () => {
   const nativeWS = globalThis.WebSocket;
   ScriptedSocket.instances = [];
   globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
   try {
     const wire = new Wire("ws://scripted/ws", "tok-1");
-    const seen: bigint[] = [];
     let emptied = 0;
-    wire.onEvent((e) => seen.push(e.sequence));
     wire.onRestart(() => emptied++);
 
-    const first = wire.connect(0n);
+    const first = wire.connect();
     ScriptedSocket.instances[0]!.open();
     await first;
+    ScriptedSocket.instances[0]!.deliver({ viewpointChanged: { actorId: "a1" } });
+    ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(1) });
     ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(2) });
-    expect(seen).toEqual([2n]);
-    expect(wire.head).toBe(2n);
-
-    const again = wire.restart();
-    // Dialled from the beginning, and the emptying has NOT happened yet: it
-    // rides the open event, so a dial that never opens costs nothing.
-    expect(ScriptedSocket.instances[1]!.url).toContain("after=0");
-    expect(emptied).toBe(0);
-    ScriptedSocket.instances[1]!.open();
-    await again;
-    expect(emptied).toBe(1);
-    expect(wire.head).toBe(0n);
-
-    ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(2) });
-    expect(seen).toEqual([2n]);
-    expect(wire.head).toBe(0n);
-  } finally {
-    globalThis.WebSocket = nativeWS;
-  }
-});
-
-test("a restart before anything was ever connected dials from zero rather than throwing", async () => {
-  // restart() forgets its socket and then closes it, and on a wire that never
-  // dialled there is no socket to close. Its sibling is pinned two hundred
-  // lines up ("close and reconnect are safe before anything was ever
-  // connected") and this is the same reach one method over — the optional call
-  // is the whole of what stands between a spectator who clicks Reconnect on a
-  // dial that never opened and a TypeError thrown during teardown, where it is
-  // least visible.
-  //
-  // The DISCRIMINATOR is that a socket was created at all: the close comes
-  // BEFORE the dial in restart(), so throwing on the socket that never existed
-  // means the redial never happens either, and the watcher is left with no
-  // connection rather than with a fresh one.
-  const nativeWS = globalThis.WebSocket;
-  ScriptedSocket.instances = [];
-  globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
-  try {
-    const wire = new Wire("ws://scripted/ws", "tok-1");
-    let emptied = 0;
-    wire.onRestart(() => emptied++);
-
-    const dial = wire.restart();
-    expect(ScriptedSocket.instances).toHaveLength(1);
-    expect(ScriptedSocket.instances[0]!.url).toContain("after=0");
-    ScriptedSocket.instances[0]!.open();
-    await dial;
-
-    expect(emptied).toBe(1);
-    expect(wire.head).toBe(0n);
-  } finally {
-    globalThis.WebSocket = nativeWS;
-  }
-});
-
-test("a restart whose dial fails leaves the wire exactly as it was", async () => {
-  // A watcher clicking Reconnect on a network that is still down must not be
-  // punished with a blank page: reconnect() forfeits one sequence when its
-  // dial fails, and restart() would forfeit the WHOLE log. So the discard
-  // rides the open event, and a socket that errors instead never runs it.
-  const nativeWS = globalThis.WebSocket;
-  ScriptedSocket.instances = [];
-  globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
-  try {
-    const wire = new Wire("ws://scripted/ws", "tok-1");
-    let emptied = 0;
-    wire.onRestart(() => emptied++);
-
-    const first = wire.connect(0n);
-    ScriptedSocket.instances[0]!.open();
-    await first;
     ScriptedSocket.instances[0]!.deliver({ event: envelopeJSON(3) });
-    expect(wire.head).toBe(3n);
+    expect(emptied).toBe(1);
 
-    const doomed = wire.restart();
+    const doomed = wire.reconnect();
     ScriptedSocket.instances[1]!.onerror?.();
     await expect(doomed).rejects.toThrow("wire: connection failed");
 
-    expect(emptied).toBe(0);
+    expect(emptied).toBe(1);
     expect(wire.head).toBe(3n);
+    expect(wire.viewpoint).toBe("a1");
+    const again = wire.reconnect();
+    expect(ScriptedSocket.instances[2]!.url).toContain("after=3&log=a1");
+    ScriptedSocket.instances[2]!.open();
+    await again;
   } finally {
     globalThis.WebSocket = nativeWS;
   }

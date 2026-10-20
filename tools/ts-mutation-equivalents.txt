@@ -89,7 +89,7 @@
 # They are deleted rather than re-keyed because the FILE is deleted —
 # lastUndoable and retractableRange do not exist, so neither do their mutants.
 # Nothing else in this file may cite them; the wire.ts `env.sequence >
-# this.seenSeq` entry that did now states the shape inline instead.
+# this.lastSeq` entry states the same shape inline.
 #
 # Their shape is worth keeping in words, because it recurs: `x > best` -> `>=`
 # where the branch's only effect is `best = x`. At equality the mutant performs
@@ -382,15 +382,11 @@ client/src/view/grid.ts  EqualityOperator  offset=59  span=21  nth=1  copies=1  
 
 client/src/wire.ts  EqualityOperator  offset=5  span=27  nth=1  copies=1  env.sequence >= this.lastSeq
     code: if (env.sequence > this.lastSeq) this.lastSeq = env.sequence;
-    `if (env.sequence > this.lastSeq) this.lastSeq = env.sequence` -> `>=`. The two differ on exactly one input — an envelope whose sequence EQUALS the mark — and on that input the mutant performs the assignment the original skips, writing the value the field already holds. bigint is a primitive compared by value, so there is no identity to see the write: `Object.is(4n, 4n)` is true. CORRECTED 2026-08-25: this used to say "lastSeq's only consumer is reconnect's resume cursor", and BOTH halves were false. reconnect() never reads lastSeq — it WRITES it (`this.lastSeq = resume`), deriving resume from seenSeq, as wire.ts's own header says in capitals. And lastSeq is not private to the wire: `get head()` exposes it, Session.head forwards it, and a dozen tests assert on it directly. The conclusion survives the correction — head returns the same bigint either way — but the old reason sent an auditor looking for a consumer that does not exist, past the public getter that does.
+    `if (env.sequence > this.lastSeq) this.lastSeq = env.sequence` -> `>=`. The two differ on exactly one input — an envelope whose sequence EQUALS the cursor — and on that input the mutant performs the assignment the original skips, writing the value the field already holds. bigint is a primitive compared by value, so there is no identity to see the write: `Object.is(4n, 4n)` is true. The cursor has three readers — the `after=` that `connect()` dials, `get head()` (forwarded by Session.head), and the reset guard `this.lastSeq > 0n` in the same event arm — and all three see the same bigint either way. Reason rewritten 2026-10-20, when wire.ts's second cursor left with the projection's redial (docs/superpowers/plans/2026-10-20-the-client-follows-the-log-it-is-sent.md, D17); the reason it replaced described how `reconnect()` derived its resume point from that second cursor.
 
 client/src/wire.ts  ConditionalExpression  offset=1  span=139  nth=1  copies=1  default:
     code: default:
     Empties the `default:` arm of handleFrame's switch, whose body is a bare `return;`. The switch is the last statement in the function and nothing follows it, so falling out of an empty arm reaches the same end of the same void function. Deliberately NOT deleted despite that: the arm is where the ignore-unknown-frames decision is written down, and it is pinned by test ("an unknown frame kind is ignored and the stream keeps working") through the behaviour rather than through this mutant.
-
-client/src/wire.ts  EqualityOperator  offset=5  span=27  nth=1  copies=1  env.sequence >= this.seenSeq
-    code: if (env.sequence > this.seenSeq) this.seenSeq = env.sequence;
-    `if (env.sequence > this.seenSeq) this.seenSeq = env.sequence;` -> `>=` in handleFrame's event arm. The two branches differ on exactly one input — an envelope whose sequence EQUALS the high-water mark, which the projection makes ordinary rather than exotic (one log event reaches a seat as several envelopes sharing one sequence). On that input the mutant performs the assignment the original skips, and the assignment writes the value the field already holds. Both are bigint, a primitive compared by value, so there is no identity to distinguish either: `Object.is(4n, 4n)` is true, and the field is a plain private with no getter, setter or Proxy on it. seenSeq is read in exactly two places — `reconnect()`'s `this.seenSeq > 0n ? this.seenSeq - 1n : 0n`, and this comparison itself — and neither can tell a re-written 4n from an untouched one. MEASURED 2026-08-24: mutant hand-applied, the WHOLE client suite run (639 tests, 26 files), 0 failures. THE SHAPE, stated here rather than by pointing at a neighbour: an equality mutant whose only extra effect is an assignment writing the value the field already holds, indistinguishable because bigint is compared by value. This sentence used to cite the two undo.ts entries as the exemplar of that shape; they were deleted on 2026-08-31 with undo.ts itself, and a cross-reference to a deleted entry is the failure no gate in this repo watches for — check-ts-mutation.py validates adjudication KEYS, never the prose between them.
 
 # --- client/src/view/feed.ts ------------------------------------------------
 #

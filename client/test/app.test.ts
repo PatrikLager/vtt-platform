@@ -128,24 +128,6 @@ class FakeSocket {
   onerror: (() => void) | null = null;
   onclose: (() => void) | null = null;
   onmessage: ((ev: { data: string }) => void) | null = null;
-  /**
-   * Whether close() DISPATCHES the close event or merely arms it.
-   *
-   * No real WebSocket fires `close` from inside close(): the closing handshake
-   * is a server round trip and the event is delivered as a task afterwards,
-   * whenever afterwards turns out to be. Firing it inline is a simplification
-   * every test here is happy with except one — and that one is about precisely
-   * that gap, so it arms the close and lands it after the redial that abandoned
-   * the socket has already sent its next command.
-   *
-   * IT IS THE ORDERING THIS BUYS, not a faithful socket: a real one that has
-   * already dispatched a close reports no second one, and it sits in CLOSING
-   * rather than CLOSED while the event is in flight. The test that uses this
-   * says which half of it is the realistic half and which is staging.
-   */
-  lateClose = false;
-  private armedClose = false;
-
   constructor(readonly url: string) {
     FakeSocket.instances.push(this);
   }
@@ -161,22 +143,6 @@ class FakeSocket {
   }
   close() {
     this.readyState = 3;
-    if (this.lateClose) {
-      this.armedClose = true;
-      return;
-    }
-    this.onclose?.();
-  }
-  /**
-   * Deliver a close that lateClose held back.
-   *
-   * THROWS when there is none, rather than doing nothing: a test whose whole
-   * subject is a late close would otherwise pass while never delivering one,
-   * which is a green proving the opposite of what it claims.
-   */
-  fireClose() {
-    if (!this.armedClose) throw new Error("fireClose: no close was held back");
-    this.armedClose = false;
     this.onclose?.();
   }
 }
@@ -1720,18 +1686,9 @@ test("the board is painted with a status before any metadata request goes out", 
 });
 
 test("clicking Reconnect redials from the last folded sequence", () => {
-  // The whole T5 wiring end to end: status "closed" surfaces the control, the
-  // click reaches session.reconnect(), and the redial resumes near where the
-  // client left off instead of replaying the campaign from zero.
-  //
-  // after=6 rather than after=7, and that is the cursor's own contract rather
-  // than a fudge here: since the gateway projects per seat, several envelopes
-  // can share one sequence, so the last sequence seen may be incomplete and is
-  // rolled back and taken again (see wire.ts's replay-cursor note). What this
-  // test is for is unchanged — an emptied handler redials nothing at all.
-  //
-  // Without this the app.ts handler body could be emptied and every other test
-  // still passed — the button existed and did nothing.
+  // Status "closed" surfaces the control, and the click redials after the last
+  // sequence folded (VTT-398). Without this the app.ts handler body could be
+  // emptied and every other test still passed — the button did nothing.
   localStorage.setItem("vtt.token", "tok-1");
   useFakeSocket();
   const r = root();
@@ -1747,7 +1704,7 @@ test("clicking Reconnect redials from the last folded sequence", () => {
   btn!.click();
 
   expect(FakeSocket.instances).toHaveLength(2);
-  expect(FakeSocket.instances[1]!.url).toContain("after=6");
+  expect(FakeSocket.instances[1]!.url).toContain("after=7");
   session?.close();
 });
 
@@ -2612,11 +2569,8 @@ test("choosing a shoulder sends set_viewpoint over the wire", async () => {
 });
 
 test("the indicator follows the SERVER's answer, never the click", async () => {
-  // A refused perch that still moved the indicator would say the spectator is
-  // riding a shoulder the server never gave them — and the board, which comes
-  // from the server, would disagree with the label above it. That is exactly
-  // the "the board changes under you with no way to know why" failure the
-  // indicator exists to prevent, inverted.
+  // The indicator names what the last ViewpointChanged named; a refused perch
+  // brings none, so it still says nobody, and the refusal is shown (VTT-407).
   const { r, s, sock } = await tableAs("spectator");
   const asme = Array.from(r.querySelectorAll(".perch .shoulder"))
     .find((b) => b.textContent === "Lera") as HTMLButtonElement;
@@ -2631,7 +2585,8 @@ test("the indicator follows the SERVER's answer, never the click", async () => {
   s?.close();
 });
 
-test("an accepted perch moves the indicator", async () => {
+// VTT-407
+test("a ViewpointChanged moves the indicator", async () => {
   const { r, s, sock } = await tableAs("spectator");
   const asme = Array.from(r.querySelectorAll(".perch .shoulder"))
     .find((b) => b.textContent === "Lera") as HTMLButtonElement;
@@ -2639,6 +2594,8 @@ test("an accepted perch moves the indicator", async () => {
   await settle();
   const reqID = JSON.parse(sock.sent[0]!).requestId as string;
   sock.deliver({ result: { requestId: reqID, ok: true } });
+  sock.deliver({ viewpointChanged: { actorId: "a1" } });
+  seedTable(sock);
   await settle();
 
   expect(r.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: Lera");
@@ -2679,247 +2636,25 @@ test("an accepted perch CLEARS the refusal the last one left up", async () => {
   s?.close();
 });
 
-test("a spectator's reconnect starts the log over, and re-sends the shoulder", async () => {
-  // THE HAZARD, and the reason this is a task rather than an afternoon.
-  //
-  // A perch is CONNECTION state: the server's projector is reborn perched on
-  // nobody, so a redial that resumes leaves this client holding a board the
-  // new connection knows nothing about. Measured against the real gateway
-  // (internal/gateway, 2026-08-24) with a watcher who had perched and then
-  // seen a goblin walk into view:
-  //
-  //   - resume + re-perch  -> `engine: scene "ambush" already exists`, the
-  //     duplicate-introduction freeze, because the reborn projector
-  //     re-introduces everything the perch shows it;
-  //   - resume + drop the sequence-0 frames first -> `engine: token placed in
-  //     unknown scene "ambush"`, and it fails BEFORE the re-perch: the frames
-  //     an ordinary event delivered (the goblin's arrival at sequence 12) are
-  //     stamped with the causing sequence, survive the rollback, and depend on
-  //     a scene that only the perch ever introduced. Dropping the perch frames
-  //     breaks the log that is left;
-  //   - resume and DON'T re-perch -> folds, and shows a board that never
-  //     updates again: the reborn projector sends this seat nothing, and the
-  //     sequence the rollback dropped is never re-sent either;
-  //   - dial after=0 with an empty log, then re-perch -> folds cleanly, and is
-  //     the only one of the four that also shows a live board.
-  //
-  // So a spectator redials by STARTING OVER. Asserted here as the cursor
-  // (after=0, not seenSeq-1), the emptied log, and the re-sent shoulder.
+// VTT-397, VTT-398
+test("a spectator's reconnect names the log it watches and re-sends nothing", async () => {
   const { r, s, sock } = await tableAs("spectator");
-  const asme = Array.from(r.querySelectorAll(".perch .shoulder"))
-    .find((b) => b.textContent === "Lera") as HTMLButtonElement;
-  asme.click();
+  sock.deliver({ viewpointChanged: { actorId: "a1" } });
+  seedTable(sock);
   await settle();
-  sock.deliver({ result: { requestId: JSON.parse(sock.sent[0]!).requestId as string, ok: true } });
-  // The board the perch produced: sequence-0 frames, which no rollback drops.
-  sock.deliver(envelope(0, { sceneCreated: { sceneId: "s2", name: "Ambush", gridWidth: 4, gridHeight: 4 } }));
-  await settle();
-  expect(s!.state.Scenes["s2"]).toBeDefined();
 
   sock.close();
   await settle();
   (r.querySelector(".reconnect") as HTMLButtonElement).click();
   await settle();
 
-  expect(FakeSocket.instances).toHaveLength(2);
   const redial = FakeSocket.instances[1]!;
-  expect(redial.url).toContain("after=0");
-  // NOT YET EMPTIED, and that is the ordering rather than an accident of this
-  // test: a dial that fails must cost this watcher nothing, so the board they
-  // have stays up until there is a connection to replace it. Wire.restart says
-  // so; without this line moving the discard back above the dial goes
-  // unnoticed, and a refused redial blanks the page.
-  expect(s!.state.Scenes["s2"]).toBeDefined();
-
+  expect(new URL(redial.url).searchParams.get("log")).toBe("a1");
+  expect(new URL(redial.url).searchParams.get("after")).toBe("5");
   redial.open();
   await settle();
-  // NOW it is emptied, perch frames and all. `after=0` alone would not be
-  // enough: the whole log is about to arrive again, and keeping the old one
-  // double-folds it.
-  expect(s!.state.Scenes["s2"]).toBeUndefined();
-  expect(s!.events).toHaveLength(0);
-  const resent = redial.sent.map((raw) => JSON.parse(raw));
-  expect(resent).toHaveLength(1);
-  expect(resent[0]).toHaveProperty("setViewpoint");
-  expect(resent[0].setViewpoint).toMatchObject({ actorId: "a1" });
-  s?.close();
-});
-
-test("a redial whose abandoned socket closes late still ends up perch-shaped", async () => {
-  // THE OTHER END of wire.test.ts's "a close answers the commands sent on ITS
-  // socket, and no others", seen from the only place the defect can hurt
-  // anybody.
-  //
-  // restart() is close-then-send by construction: it closes the old socket,
-  // dials a new one, and this app re-sends the perch on the new one. So a close
-  // landing after the dial has a command in front of it that it knows nothing
-  // about, and a close handler that walked the whole pending map answered that
-  // command with "connection closed" — a refusal the server never sent.
-  // Everything downstream follows:
-  //
-  //   - perchOn saw ok=false, so it showed the refusal and, worse, left
-  //     `perchShaped` FALSE;
-  //   - the server, which heard none of this, accepted the perch and sent the
-  //     perch frames, which the new socket folded — so the log IS perch-shaped
-  //     while the flag says it is not;
-  //   - so the NEXT redial resumed instead of starting over, holding frames
-  //     only a perch ever produced, and the reborn projector re-introduced the
-  //     scene: `engine: scene "..." already exists`, the duplicate-introduction
-  //     freeze Wire.restart exists to prevent, arriving by a different road.
-  //     session.ts re-folds its whole log on every event, so it is permanent.
-  //
-  // The last of those is the assertion at the bottom, and it is the one that
-  // catches the whole chain — verified by removing the assertions above it and
-  // watching the redial ask for after=4. The refusal it also asserts is the
-  // same fault one step earlier, at the only point a watcher sees anything at
-  // all.
-  //
-  // WHAT THIS STAGES, AND WHAT IT DOES NOT. The ordering is the realistic part:
-  // no WebSocket dispatches `close` from inside close(), so a close of a live
-  // socket lands after whatever the caller did next — which is what lateClose
-  // models, and FakeSocket's inline dispatch is what hides. The scenario is
-  // NOT one today's UI produces: the Reconnect button appears only on status
-  // "closed", and the wire sets that status in the same handler that walks the
-  // pending map, so the app's sockets are strictly serial and the close the
-  // drop below delivers has already walked an empty map. Reaching the defect
-  // through this door therefore takes a second close on a socket that has
-  // already reported one. That makes this a test of the DESIGN restart() is
-  // one caller of — the first automatic redial, or any second live connection,
-  // makes it a test of the shipped path — and its narrative above is a fault
-  // chain traced through the code, not measured history.
-  const { r, s, sock } = await tableAs("spectator");
-  const asme = Array.from(r.querySelectorAll(".perch .shoulder"))
-    .find((b) => b.textContent === "Lera") as HTMLButtonElement;
-  asme.click();
-  await settle();
-  sock.deliver({ result: { requestId: JSON.parse(sock.sent[0]!).requestId as string, ok: true } });
-  await settle();
-
-  // The connection drops. THIS close dispatches immediately — it is what turns
-  // the status to "closed" and offers the Reconnect button — and there is
-  // nothing in flight for it to answer.
-  sock.close();
-  await settle();
-
-  // From here the socket holds its close back: restart() calls close() on it a
-  // moment from now, and a real one would report back some time after that.
-  sock.lateClose = true;
-  (r.querySelector(".reconnect") as HTMLButtonElement).click();
-  await settle();
-
-  const redial = FakeSocket.instances[1]!;
-  expect(redial.url).toContain("after=0");
-  redial.open();
-  await settle();
-  // The shoulder, re-taken on the NEW socket — this is the command the stale
-  // close must not touch.
-  expect(redial.sent).toHaveLength(1);
-  const perchReq = JSON.parse(redial.sent[0]!).requestId as string;
-  // The replay this connection promised, so the shoulder has a name again.
-  seedTable(redial);
-  await settle();
-
-  // NOW the socket abandoned two steps ago finally reports its close.
-  sock.fireClose();
-  await settle();
-
-  // The server accepted the perch and answers on the socket the command was
-  // actually written to. That command must still be waiting for it.
-  redial.deliver({ result: { requestId: perchReq, ok: true } });
-  await settle();
-  // THE TOAST IS THE VISIBLE SYMPTOM, and the indicator is not: `viewpoint`
-  // holds the shoulder the server last CONFIRMED, and the confirmation came
-  // before the drop, so a refusal here leaves the label reading "Perched on:
-  // Lera" either way — measured, not assumed. What a watcher actually sees is
-  // a refusal of a command the server accepted, sitting under a board that
-  // went on updating.
-  expect(r.textContent).not.toContain("refused:");
-
-  // AND THE FLAG THAT DECIDES THE NEXT REDIAL. after=0 is the restart path; a
-  // resume would ask after=4, and it would be asking for events sitting on top
-  // of frames only a perch ever produced.
-  redial.close();
-  await settle();
-  (r.querySelector(".reconnect") as HTMLButtonElement).click();
-  await settle();
-  expect(FakeSocket.instances).toHaveLength(3);
-  expect(FakeSocket.instances[2]!.url).toContain("after=0");
-  s?.close();
-});
-
-test("perch frames that outran a result the drop swallowed still start the next redial over", async () => {
-  // THE ROUTE NO IDENTITY GUARD CAN CLOSE, and the sibling above is exactly the
-  // one it is not: THAT socket was abandoned and reported its close late, so a
-  // guard on identity keeps its news to itself. THIS socket is the live one,
-  // and it genuinely dies with a command still on it.
-  //
-  // The gateway does not order a CommandResult against the envelopes the same
-  // command produced (wire.ts's header note), and for a perch the two are not
-  // even written by the same goroutine: the PUMP computes and enqueues the
-  // perch's frames (internal/gateway/server.go's `case <-perches.wake` arm)
-  // while the READ LOOP enqueues the result. So the pump wins, the sequence-0
-  // frames land and are folded, and then the connection drops before the result
-  // gets out. wire.ts answers the waiting command "connection closed before a
-  // result arrived" — a refusal for a perch the server granted and has already
-  // acted on.
-  //
-  // A flag read off THAT answer says false over a log that holds the perch's
-  // whole board, and everything follows: the next redial resumes; rollback
-  // keeps everything at or below its cursor and perch frames carry sequence 0,
-  // so they survive it; the reborn projector, perched on nobody, sends this
-  // seat nothing; and the next accepted perch re-introduces the scene, which
-  // fold.ts refuses. session.ts re-folds the whole log on every event, so the
-  // fatal panel never leaves. The same end state as the sibling above, reached
-  // with one socket and no staging.
-  //
-  // AND IT NEEDS NO RACE AT ALL by the second door: server.go drops a result it
-  // cannot encode (`if err != nil { continue }`) and the connection lives on,
-  // leaving the promise unresolved over a log the perch has already shaped.
-  const { r, s, sock } = await tableAs("spectator");
-  const asme = Array.from(r.querySelectorAll(".perch .shoulder"))
-    .find((b) => b.textContent === "Lera") as HTMLButtonElement;
-  asme.click();
-  await settle();
-
-  // THE PUMP WINS. Sequence 0 is what makes these a perch's frames and nothing
-  // else's: every other synthesized envelope carries the sequence of the event
-  // that caused it, and real sequences start at 1 (project.go's perchSequence).
-  sock.deliver(envelope(0, { sceneCreated: { sceneId: "s2", name: "Ambush", gridWidth: 4, gridHeight: 4 } }));
-  await settle();
-  expect(s!.state.Scenes["s2"]).toBeDefined();
-
-  // ...and the socket dies with the result still behind it.
-  sock.close();
-  await settle();
-
-  (r.querySelector(".reconnect") as HTMLButtonElement).click();
-  await settle();
-  const redial = FakeSocket.instances[1]!;
-  // after=4 is the resume, and it would be asking for events to sit on top of a
-  // scene only that perch ever introduced.
-  expect(redial.url).toContain("after=0");
-  redial.open();
-  await settle();
-  expect(s!.events).toHaveLength(0);
-  expect(s!.state.Scenes["s2"]).toBeUndefined();
-  // NO shoulder is re-taken, and that is right rather than a shortfall:
-  // `viewpoint` holds what the server CONFIRMED, nothing ever confirmed this
-  // one, and the indicator must not claim a shoulder on the strength of a
-  // refusal. The watcher lands perched on nobody over a clean log with the
-  // perch control in front of them — which works, where the freeze did not.
   expect(redial.sent).toHaveLength(0);
-
-  // AND THE FRESH LOG IS UNSHAPED AGAIN, so the redial after this one resumes.
-  // The witness is read off the log this client is holding, so emptying that
-  // log answers it; one that latched instead would replay the whole campaign on
-  // every reconnect for the rest of the session.
-  seedTable(redial);
-  await settle();
-  redial.close();
-  await settle();
-  (r.querySelector(".reconnect") as HTMLButtonElement).click();
-  await settle();
-  expect(FakeSocket.instances[2]!.url).toContain("after=4");
+  expect(s!.events).toHaveLength(5);
   s?.close();
 });
 
@@ -2942,217 +2677,162 @@ test("'no shoulder' reaches the wire, and is not quietly skipped", async () => {
   s?.close();
 });
 
-test("a spectator who has never perched resumes like anybody else", async () => {
-  // The condition is about the LOG, not about the role. A watcher who has
-  // perched on nobody holds only what the replay would send them again, so
-  // there is nothing for a restart to repair and a full re-replay of the
-  // campaign would be a cost for nothing.
-  const { r, s, sock } = await tableAs("spectator");
-  sock.close();
-  await settle();
-  (r.querySelector(".reconnect") as HTMLButtonElement).click();
-  await settle();
+// --- one log at a time -------------------------------------------------------
 
-  const redial = FakeSocket.instances[1]!;
-  expect(redial.url).toContain("after=4");
-  expect(s!.events.length).toBeGreaterThan(0); // the log is KEPT
-  redial.open();
-  await settle();
-  // NOT setViewpoint(""), which would be a command with nothing to do: a fresh
-  // connection is already perched on nobody.
-  expect(redial.sent).toHaveLength(0);
-  s?.close();
-});
-
-test("a REFUSED perch does not shape the log, so that watcher still resumes", async () => {
-  // The flag follows the SERVER's answer, exactly as the indicator beside it
-  // does — and for a sharper reason. A refused perch put nothing in this log:
-  // the server sent no frames, so there is nothing a restart could repair, and
-  // a client that shaped its flag on the CLICK would replay the whole campaign
-  // on every reconnect for the rest of the session, paying the full re-fold
-  // cost for a perch it was never granted.
-  //
-  // The rest of this family says which QUESTION the flag asks ("has a perch
-  // shaped this log", not "am I perched" or "am I a spectator"); this one says
-  // what counts as an answer.
-  const { r, s, sock } = await tableAs("spectator");
-  const asme = Array.from(r.querySelectorAll(".perch .shoulder"))
-    .find((b) => b.textContent === "Lera") as HTMLButtonElement;
-  asme.click();
-  await settle();
-  sock.deliver({
-    result: { requestId: JSON.parse(sock.sent[0]!).requestId as string, ok: false, error: "not a party member" },
-  });
-  await settle();
-  expect(r.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: nobody");
-
-  sock.close();
-  await settle();
-  (r.querySelector(".reconnect") as HTMLButtonElement).click();
-  await settle();
-
-  const redial = FakeSocket.instances[1]!;
-  expect(redial.url).toContain("after=4");
-  expect(s!.events.length).toBeGreaterThan(0); // the log is KEPT
-  redial.open();
-  await settle();
-  // And no shoulder is re-taken, because none was ever given.
-  expect(redial.sent).toHaveLength(0);
-  s?.close();
-});
-
-test("a spectator who hopped OFF a shoulder still starts over", async () => {
-  // "Am I perched RIGHT NOW" is the wrong question, and this is the case that
-  // proves it: nothing on the wire un-introduces a scene or an actor, so a
-  // watcher who perched and then hopped off is still holding everything the
-  // perch put in their log. Un-perching hides tokens; it does not un-say them.
-  const { r, s, sock } = await tableAs("spectator");
-  const asme = Array.from(r.querySelectorAll(".perch .shoulder"))
-    .find((b) => b.textContent === "Lera") as HTMLButtonElement;
-  asme.click();
-  await settle();
-  sock.deliver({ result: { requestId: JSON.parse(sock.sent[0]!).requestId as string, ok: true } });
-  await settle();
-  (r.querySelector(".perch .unperch") as HTMLButtonElement).click();
-  await settle();
-  sock.deliver({ result: { requestId: JSON.parse(sock.sent[1]!).requestId as string, ok: true } });
-  await settle();
-
-  sock.close();
-  await settle();
-  (r.querySelector(".reconnect") as HTMLButtonElement).click();
-  await settle();
-  const redial = FakeSocket.instances[1]!;
-  expect(redial.url).toContain("after=0");
-  redial.open();
-  await settle();
-  expect(redial.sent).toHaveLength(0); // no shoulder to re-take
-
-  // AND THE FRESH LOG IS NO LONGER PERCH-SHAPED, so the redial after THIS one
-  // resumes again. A flag left standing would make every later reconnect
-  // replay the whole campaign.
-  seedTable(redial);
-  await settle();
-  redial.close();
-  await settle();
-  (r.querySelector(".reconnect") as HTMLButtonElement).click();
-  await settle();
-  expect(FakeSocket.instances[2]!.url).toContain("after=4");
-  s?.close();
-});
-
-test("hopping off a shoulder nobody ever took leaves the log unshaped", async () => {
-  // The EMPTY id is the other half of what shapes a log, and it shapes
-  // nothing. setViewpoint("") is a real command with a real effect — it is
-  // never skipped, which the "'no shoulder' reaches the wire" test above pins
-  // — but the effect is to stop seeing, and stopping seeing introduces no
-  // scene, no actor and no token. A watcher who has only ever pressed this
-  // button holds precisely what the replay would hand them again.
-  //
-  // Distinct from "a spectator who hopped OFF a shoulder still starts over"
-  // just above, and the pair is the whole point: THAT one perched first, so
-  // its log carries frames nothing on the wire un-says. This one never did.
-  // A flag set by any accepted set_viewpoint, rather than by an accepted
-  // SHOULDER, cannot tell the two apart and makes every later reconnect replay
-  // the campaign.
-  const { r, s, sock } = await tableAs("spectator");
-  (r.querySelector(".perch .unperch") as HTMLButtonElement).click();
-  await settle();
-  sock.deliver({ result: { requestId: JSON.parse(sock.sent[0]!).requestId as string, ok: true } });
-  await settle();
-
-  sock.close();
-  await settle();
-  (r.querySelector(".reconnect") as HTMLButtonElement).click();
-  await settle();
-
-  const redial = FakeSocket.instances[1]!;
-  expect(redial.url).toContain("after=4");
-  expect(s!.events.length).toBeGreaterThan(0); // the log is KEPT
-  redial.open();
-  await settle();
-  expect(redial.sent).toHaveLength(0);
-  s?.close();
-});
-
-test("a spectator PROMOTED to player still starts over, because their log is perch-shaped", async () => {
-  // "Am I a spectator" is the other wrong question, and a role is not fixed:
-  // app.ts re-reads /api/me on a presence frame naming this participant, so a
-  // promotion lands mid-session. Their log still holds the frames their perch
-  // introduced, while their new seat's projector has never sent them any of
-  // it — and the first thing it introduces above the resume cursor that they
-  // already hold is the duplicate-introduction freeze.
+/** Boot under one role and open the socket, sending nothing. */
+async function dialAs(role: string) {
   localStorage.setItem("vtt.token", "tok");
-  let role = "spectator";
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
-    const path = new URL(String(input)).pathname;
-    const table: Record<string, unknown> = {
-      "/api/me": { participantId: "p", name: "Watcher", role },
-      "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
-      "/api/adventures": { adventures: [] },
-    };
-    if (!(path in table)) return new Response("", { status: 404 });
-    return new Response(JSON.stringify(table[path]), {
-      status: 200, headers: { "content-type": "application/json" },
-    });
-  }) as typeof fetch;
+  stubMetadata({
+    "/api/me": { participantId: "p", name: "Watcher", role },
+    "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
+    "/api/adventures": { adventures: [] },
+  });
   useFakeSocket();
   const r = root();
   const s = boot(r);
   const sock = FakeSocket.instances[0]!;
   sock.open();
-  seedTable(sock);
   await settle();
+  return { r, s, sock };
+}
 
-  const asme = Array.from(r.querySelectorAll(".perch .shoulder"))
-    .find((b) => b.textContent === "Lera") as HTMLButtonElement;
-  asme.click();
-  await settle();
-  sock.deliver({ result: { requestId: JSON.parse(sock.sent[0]!).requestId as string, ok: true } });
-  await settle();
+/** A second party member's log, which opens a session and scene s1 again. */
+function seedBram(sock: FakeSocket) {
+  sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+  sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Crypt", gridWidth: 8, gridHeight: 8 } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a2", name: "Bram" } } }));
+  sock.deliver(envelope(4, { actorControlGranted: { actorId: "a2", participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
+  sock.deliver(envelope(5, { tokenPlaced: { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 2, y: 2 } } }));
+}
 
-  // The DM promotes them; the server re-announces, and app.ts re-reads.
-  role = "player";
-  sock.deliver({ presenceChanged: { participantId: "p", displayName: "Watcher", state: "PRESENCE_STATE_CONNECTED" } });
-  await settle();
-  expect(r.querySelector(".perch")).toBeNull(); // the control is gone, as it must be
+const viewpointFrame = (actorId: string): Frame => ({ viewpointChanged: actorId === "" ? {} : { actorId } });
 
+// VTT-394
+test("a switch to a log that opens a session and a scene the first held shows the second log's board", async () => {
+  for (const role of ["player", "spectator"]) {
+    const { r, s, sock } = await dialAs(role);
+    sock.deliver(viewpointFrame("a1"));
+    seedTable(sock);
+    sock.deliver(viewpointFrame("a2"));
+    seedBram(sock);
+    await settle();
+
+    expect(r.textContent).not.toContain("Cannot derive state from the log");
+    expect(s!.state.Scenes["s1"]?.Name).toBe("Crypt");
+    expect(s!.state.Tokens["t2"]).toBeDefined();
+    expect(s!.state.Tokens["t1"]).toBeUndefined();
+    expect(r.querySelector(".grid")).not.toBeNull();
+    s?.close();
+  }
+});
+
+test("a first dial that fails leaves the page offering Reconnect", async () => {
+  localStorage.setItem("vtt.token", "tok");
+  stubMetadata({ "/api/me": { participantId: "p", name: "Watcher", role: "spectator" } });
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.onerror?.();
   sock.close();
   await settle();
-  (r.querySelector(".reconnect") as HTMLButtonElement).click();
-  await settle();
-  expect(FakeSocket.instances[1]!.url).toContain("after=0");
-  FakeSocket.instances[1]!.open();
-  await settle();
-  expect(s!.events).toHaveLength(0);
-  // AND THE SHOULDER IS NOT RE-TAKEN, because this seat may no longer have one.
-  // MayPerch refuses every role but the spectator's ("role %q does not perch —
-  // a viewpoint is the spectator's"), so a redial that re-sends the last
-  // confirmed shoulder regardless of role greets a promoted watcher with a
-  // refusal toast for a command they never issued — over a board that is
-  // already correct, since a player's own eyes are what the replay just rebuilt.
-  // The restart above is still right (their log holds perch frames); the
-  // re-perch is what their new role has no use for.
-  expect(FakeSocket.instances[1]!.sent).toHaveLength(0);
+  expect(r.querySelector(".reconnect")).not.toBeNull();
   s?.close();
 });
 
-test("a player's reconnect still resumes, and sends no perch", async () => {
-  // The other half of the branch. A player's projector is rebuilt from their
-  // own fixed eyes by the replay, so their resume is correct and a full
-  // re-replay of the campaign would be a cost for nothing.
-  const { r, s, sock } = await tableAs("player");
+test("a fold failure is drawn as soon as it happens, not at the next paint", async () => {
+  const { r, s, sock } = await dialAs("spectator");
+  sock.deliver(envelope(1, { tokenMoved: { tokenId: "ghost", sceneId: "s", to: { x: 1, y: 1 } } }));
+  expect(r.querySelector(".fatal")?.textContent).toContain("ghost");
+  s?.close();
+});
+
+// VTT-394
+test("a spectator who switches to nobody is shown no board", async () => {
+  const { r, s, sock } = await dialAs("spectator");
+  sock.deliver(viewpointFrame("a1"));
+  seedTable(sock);
+  await settle();
+  expect(r.querySelector(".grid")).not.toBeNull();
+
+  sock.deliver(viewpointFrame(""));
+  await settle();
+  expect(s!.events).toHaveLength(0);
+  expect(r.querySelector(".grid")).toBeNull();
+  expect(r.textContent).toContain("No scene yet.");
+  s?.close();
+});
+
+// VTT-394, VTT-395
+test("a redial the gateway opens on another log, or on the held log from its first entry, shows that log folded from its first entry", async () => {
+  const redialed = async (opensOn: string) => {
+    const { r, s, sock } = await dialAs("player");
+    sock.deliver(viewpointFrame("a1"));
+    seedTable(sock);
+    await settle();
+    sock.close();
+    await settle();
+    (r.querySelector(".reconnect") as HTMLButtonElement).click();
+    const redial = FakeSocket.instances[1]!;
+    redial.open();
+    redial.deliver(viewpointFrame(opensOn));
+    if (opensOn === "a2") seedBram(redial);
+    else seedTable(redial);
+    await settle();
+    expect(r.textContent).not.toContain("Cannot derive state from the log");
+    expect(s!.events).toHaveLength(5);
+    return { s, r };
+  };
+
+  const other = await redialed("a2");
+  expect(other.s!.state.Tokens["t2"]).toBeDefined();
+  expect(other.s!.state.Tokens["t1"]).toBeUndefined();
+  other.s?.close();
+
+  const same = await redialed("a1");
+  expect(same.s!.state.Tokens["t1"]).toMatchObject({ X: 1, Y: 1 });
+  same.s?.close();
+});
+
+// VTT-396
+test("a redial the gateway opens on the held log after its cursor keeps what was folded", async () => {
+  const { r, s, sock } = await dialAs("player");
+  sock.deliver(viewpointFrame("a1"));
+  seedTable(sock);
+  await settle();
   sock.close();
   await settle();
   (r.querySelector(".reconnect") as HTMLButtonElement).click();
+  const redial = FakeSocket.instances[1]!;
+  redial.open();
+  redial.deliver(viewpointFrame("a1"));
+  redial.deliver(envelope(6, { tokenMoved: { tokenId: "t1", sceneId: "s1", to: { x: 3, y: 3 } } }));
   await settle();
 
-  const redial = FakeSocket.instances[1]!;
-  expect(redial.url).toContain("after=4");
-  expect(s!.events.length).toBeGreaterThan(0); // the log is KEPT
-  redial.open();
+  expect(r.textContent).not.toContain("Cannot derive state from the log");
+  expect(s!.events).toHaveLength(6);
+  expect(s!.state.Scenes["s1"]?.Name).toBe("Hall");
+  expect(s!.state.Tokens["t1"]).toMatchObject({ X: 3, Y: 3 });
+  expect(r.querySelector(".grid")).not.toBeNull();
+  s?.close();
+});
+
+// VTT-407
+test("the window follows the ViewpointChanged, not the command's result", async () => {
+  const { r, s, sock } = await tableAs("spectator");
+  const lera = () => Array.from(r.querySelectorAll(".perch .shoulder"))
+    .find((b) => b.textContent === "Lera") as HTMLButtonElement;
+  lera().click();
   await settle();
-  expect(redial.sent).toHaveLength(0);
+  sock.deliver({ result: { requestId: JSON.parse(sock.sent[0]!).requestId as string, ok: true } });
+  await settle();
+  expect(r.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: nobody");
+
+  sock.deliver(viewpointFrame("a1"));
+  seedTable(sock);
+  await settle();
+  expect(r.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: Lera");
+  expect(sock.sent).toHaveLength(1);
   s?.close();
 });
 

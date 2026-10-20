@@ -1,25 +1,9 @@
-// Session ties the wire to the fold: it accumulates the replayed log and
+// Session ties the wire to the fold: it accumulates the log it is sent and
 // derives state from it.
 //
-// # Why the whole stream is re-folded on every event
-//
-// Retraction used to be the answer: a marker invalidated history that had
-// already been applied, and no incremental "apply this one event to the
-// previous state" scheme could walk that back. Retraction has left the
-// platform (Patrik, 2026-08-30) and the re-fold stays, because the reason
-// underneath it did not go anywhere.
-//
-// fold's apply MUTATES the state it is handed. An incremental apply that
-// throws halfway has already half-changed the board, and ingest's catch —
-// which holds the LAST GOOD state rather than showing a plausible wrong one —
-// would have nothing good left to hold. Re-folding from an empty state is
-// what confines a failed fold's damage to a value nobody keeps. rollback
-// rebuilds for a second reason: it TRUNCATES the log, and a state that has
-// already been mutated forwards has no way to shrink except by being built
-// again.
-//
-// The cost is re-folding a growing list. That is fine at table scale: a long
-// session is thousands of events, not millions.
+// Re-fold the whole log on every event: fold's apply mutates the state it is
+// handed, so an incremental apply that throws would leave ingest no last good
+// state to hold.
 
 import { Wire, type WireStatus, type PresenceEvent } from "./wire";
 import { fold } from "./fold";
@@ -43,6 +27,7 @@ export class Session {
   // an arrival only on a participant's FIRST connection. Appending would list
   // the same person twice and never correct itself.
   private present = new Map<string, Participant>();
+  private fail = "";
   private errorHandlers: ((e: Error) => void)[] = [];
   private presenceHandlers: ((batch: PresenceEvent[]) => void)[] = [];
 
@@ -50,7 +35,6 @@ export class Session {
     this.wire = new Wire(url, token);
     this.wire.onEvent((e) => this.ingest(e));
     this.wire.onPresence((batch, replace) => this.presence(batch, replace));
-    this.wire.onRollback((throughSeq) => this.rollback(throughSeq));
     this.wire.onRestart(() => this.empty());
   }
 
@@ -80,6 +64,16 @@ export class Session {
 
   get head(): bigint {
     return this.wire.head;
+  }
+
+  /** The actor the last ViewpointChanged named, "" for nobody or the world (VTT-407). */
+  get viewpoint(): string {
+    return this.wire.viewpoint ?? "";
+  }
+
+  /** Why the log this session holds cannot be folded, or "" (VTT-393). */
+  get failure(): string {
+    return this.fail;
   }
 
   /**
@@ -117,27 +111,14 @@ export class Session {
     this.wire.onStatus(fn);
   }
 
-  /** Connect and replay the whole log from the beginning. */
+  /** Connect, and be sent the log from its first entry. */
   start(): Promise<void> {
-    return this.wire.connect(0n);
+    return this.wire.connect();
   }
 
-  /** Redial, resuming from the last sequence already folded. */
+  /** Redial, naming the log held and the last sequence it was sent (VTT-397). */
   reconnect(): Promise<void> {
     return this.wire.reconnect();
-  }
-
-  /**
-   * Redial from the beginning, holding nothing — the spectator's redial.
-   *
-   * See Wire.restart for WHY a perched spectator cannot simply resume, and for
-   * the measurements that ruled out the alternatives. What matters here is
-   * that the emptying is not a rollback: rollback keeps everything at or below
-   * its cursor and a perch frame carries sequence 0, so no cursor can reach
-   * one. The log is dropped whole, by the handler this class registered.
-   */
-  restart(): Promise<void> {
-    return this.wire.restart();
   }
 
   send(cmd: ClientCommand): Promise<CommandResult> {
@@ -178,45 +159,12 @@ export class Session {
     for (const fn of this.changeHandlers) fn();
   }
 
-  /**
-   * Drop everything above throughSeq, because the server is about to send it
-   * again.
-   *
-   * A reconnect resumes one sequence BEFORE the highest this client saw (see
-   * wire.ts's replay-cursor note): one event is now several envelopes for a
-   * projected seat, and a socket that dies mid-batch leaves this log holding
-   * part of a sequence with no way to ask for the rest. Rolling that sequence
-   * off and taking it whole again is what makes the resume point expressible.
-   *
-   * Truncating a log is always safe to FOLD — what remains is a prefix of
-   * something that folded a moment ago — so this deliberately does not report
-   * an error path it cannot reach. It re-folds rather than trusting the
-   * previous state because there is nothing to trust: dropping envelopes off
-   * the end of the log cannot be expressed as an edit to a state those
-   * envelopes have already been applied to.
-   */
-  private rollback(throughSeq: bigint): void {
-    const kept = this.log.filter((e) => e.sequence <= throughSeq);
-    if (kept.length === this.log.length) return;
-    this.log = kept;
-    this.derived = fold(this.log);
-    for (const fn of this.changeHandlers) fn();
-  }
-
-  /**
-   * Drop the log entirely, because the whole of it is about to arrive again.
-   *
-   * NOT rollback(0n), which would keep the sequence-0 frames a perch produces
-   * — 0 is at or below every cursor — and those are exactly the frames a
-   * restart exists to be rid of: they came from a connection that no longer
-   * exists, and the one being dialled will introduce their contents again.
-   *
-   * Notifies unconditionally, like presence: a view still painting the old
-   * board while the replay is in flight is a board nobody is behind.
-   */
+  // Notify unconditionally: a view still painting the old board while the new
+  // log is in flight is a board nobody is behind.
   private empty(): void {
     this.log = [];
     this.derived = newState();
+    this.fail = "";
     for (const fn of this.changeHandlers) fn();
   }
 
@@ -229,9 +177,9 @@ export class Session {
       // log cannot be folded, the client does not know the true board, and
       // showing a plausible-looking wrong one invites a player to act on a
       // position that never existed. Report and hold the last good state.
-      for (const fn of this.errorHandlers) {
-        fn(err instanceof Error ? err : new Error(String(err)));
-      }
+      const e = err instanceof Error ? err : new Error(String(err));
+      this.fail = e.message;
+      for (const fn of this.errorHandlers) fn(e);
       return;
     }
     for (const fn of this.changeHandlers) fn();
