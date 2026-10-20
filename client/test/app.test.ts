@@ -2923,6 +2923,15 @@ test("a DM's chips pick from the fold and send nothing, and the board moves the 
   s?.close();
 });
 
+test("a DM's board click before any chip moves the actor granted to them", async () => {
+  const { r, s, sock } = await tableAs("dm");
+  clickBoard(r, 5, 5);
+  await settle();
+  expect(sock.sent).toHaveLength(1);
+  expect(JSON.parse(sock.sent[0]!).moveToken).toMatchObject({ tokenId: "t1" });
+  s?.close();
+});
+
 test("a player's armed ability stays armed, and a switch disarms it", async () => {
   const poke = { id: "poke", name: "Poke", range: 1, maxTargets: 1, usage: { kind: "atWill" } };
   const { r, s, sock } = await twoMemberTable("a1", [["a1", "Lera"], ["a2", "Bram"]], [poke]);

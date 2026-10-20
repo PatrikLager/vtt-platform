@@ -457,6 +457,20 @@ test("a new set replaces the last", async () => {
   }
 });
 
+test("a session holding the world watches nobody and may watch no one", async () => {
+  const gw = gatewayServing(world);
+  try {
+    const s = new Session(gw.url, "tok");
+    await s.start();
+    await until(() => s.head === 4n, "the replay to reach sequence 4");
+    expect(s.viewpoint).toBe("");
+    expect(s.watchable).toEqual([]);
+    s.close();
+  } finally {
+    gw.stop();
+  }
+});
+
 // VTT-394
 test("a ViewpointChanged naming nobody empties what was folded", async () => {
   const gw = gatewayServing([viewpoint("a1"), ...world, viewpoint("")]);
