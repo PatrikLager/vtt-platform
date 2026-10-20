@@ -25,6 +25,8 @@ const cases = [
   ["server_frame_catch_up_head.json", ServerFrameSchema],
   ["server_frame_viewpoint_changed.json", ServerFrameSchema],
   ["server_frame_viewpoint_changed_nobody.json", ServerFrameSchema],
+  ["server_frame_watchable_changed.json", ServerFrameSchema],
+  ["server_frame_watchable_changed_none.json", ServerFrameSchema],
   ["ability_used_envelope.json", EnvelopeSchema],
   ["use_ability_command.json", ClientCommandSchema],
   ["narration_added_envelope.json", EnvelopeSchema],
@@ -125,7 +127,8 @@ function oneofCases(schema: OneofHolder, oneof: string): string[] {
 
 /**
  * THE CONTROL, and it is what stops both tests below being vacuous — the same
- * job project_internal_test.go's own control does for the classify loop.
+ * job TestEveryEnvelopePayloadArmHasAnExplicitRuling's own control does for
+ * the classify loop.
  *
  * Two ways these tests pass while proving nothing, and NEITHER is visible in a
  * green run. Narrow the pattern to `/^retract$/i` and both stay green forever

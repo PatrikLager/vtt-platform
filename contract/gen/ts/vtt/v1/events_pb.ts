@@ -272,8 +272,9 @@ export type Actor = Message<"vtt.v1.Actor"> & {
   controllerIds: string[];
 
   /**
-   * What this actor IS. The visibility roster, MayPerch and the spectator's
-   * eyes all key on this and never on who holds it (visibility spec §5.1);
+   * What this actor IS. The visibility roster, MayWatch and the spectator's
+   * eyes all tell a party member by this, never by who holds it (visibility
+   * spec §5.1);
    * see ActorKind above for the rule and for what an absent value means.
    *
    * STATED AT CREATION, always: add_actor is refused without it, and so is an

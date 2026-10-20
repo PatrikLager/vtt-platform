@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file vtt/v1/commands.proto.
  */
 export const file_vtt_v1_commands: GenFile = /*@__PURE__*/
-  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQiPgoIT3BlbkRvb3ISEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIj8KCUNsb3NlRG9vchIQCghzY2VuZV9pZBgBIAEoCRIgCgJhdBgCIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24iKAoIQWRkQWN0b3ISHAoFYWN0b3IYASABKAsyDS52dHQudjEuQWN0b3IiagoKUGxhY2VUb2tlbhIQCgh0b2tlbl9pZBgBIAEoCRIQCghzY2VuZV9pZBgCIAEoCRIQCghhY3Rvcl9pZBgDIAEoCRImCghwb3NpdGlvbhgEIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24iHwoLUmVtb3ZlVG9rZW4SEAoIdG9rZW5faWQYASABKAkiHwoLUmVtb3ZlQWN0b3ISEAoIYWN0b3JfaWQYASABKAkiHAoMU3RhcnRTZXNzaW9uEgwKBG5hbWUYASABKAkiDAoKRW5kU2Vzc2lvbiJGCgpVc2VBYmlsaXR5EhAKCGFjdG9yX2lkGAEgASgJEhIKCmFiaWxpdHlfaWQYAiABKAkSEgoKdGFyZ2V0X2lkcxgDIAMoCSI5Cg9SZW1vdmVDb25kaXRpb24SEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJIlgKDEFkZE5hcnJhdGlvbhIMCgR0ZXh0GAEgASgJEgoKAmFzGAIgASgJEhcKD2FuY2hvcl9mcm9tX3NlcRgDIAEoAxIVCg1hbmNob3JfdG9fc2VxGAQgASgDImIKClVwc2VydE5vdGUSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkSKgoKdmlzaWJpbGl0eRgEIAEoDjIWLnZ0dC52MS5Ob3RlVmlzaWJpbGl0eSIZCgpEZWxldGVOb3RlEgsKA2tleRgBIAEoCSIlCg1Mb2FkQWR2ZW50dXJlEhQKDGFkdmVudHVyZV9pZBgBIAEoCSIZCgdMb2FkTWFwEg4KBm1hcF9pZBgBIAEoCSIgCgxTZXRWaWV3cG9pbnQSEAoIYWN0b3JfaWQYASABKAkisQgKDUNsaWVudENvbW1hbmQSEgoKcmVxdWVzdF9pZBgBIAEoCRIuCgptb3ZlX3Rva2VuGAogASgLMhgudnR0LnYxLk1vdmVUb2tlblJlcXVlc3RIABIlCglhZGRfYWN0b3IYDCABKAsyEC52dHQudjEuQWRkQWN0b3JIABIpCgtwbGFjZV90b2tlbhgNIAEoCzISLnZ0dC52MS5QbGFjZVRva2VuSAASLQoNc3RhcnRfc2Vzc2lvbhgOIAEoCzIULnZ0dC52MS5TdGFydFNlc3Npb25IABIpCgtlbmRfc2Vzc2lvbhgPIAEoCzISLnZ0dC52MS5FbmRTZXNzaW9uSAASKQoLdXNlX2FiaWxpdHkYESABKAsyEi52dHQudjEuVXNlQWJpbGl0eUgAEjMKEHJlbW92ZV9jb25kaXRpb24YEiABKAsyFy52dHQudjEuUmVtb3ZlQ29uZGl0aW9uSAASLQoNYWRkX25hcnJhdGlvbhgTIAEoCzIULnZ0dC52MS5BZGROYXJyYXRpb25IABIpCgt1cHNlcnRfbm90ZRgUIAEoCzISLnZ0dC52MS5VcHNlcnROb3RlSAASKQoLZGVsZXRlX25vdGUYFSABKAsyEi52dHQudjEuRGVsZXRlTm90ZUgAEi8KDmxvYWRfYWR2ZW50dXJlGBYgASgLMhUudnR0LnYxLkxvYWRBZHZlbnR1cmVIABI4ChNncmFudF9hY3Rvcl9jb250cm9sGBcgASgLMhkudnR0LnYxLkdyYW50QWN0b3JDb250cm9sSAASOgoUcmV2b2tlX2FjdG9yX2NvbnRyb2wYGCABKAsyGi52dHQudjEuUmV2b2tlQWN0b3JDb250cm9sSAASOQoTcHJvbW90ZV9wYXJ0aWNpcGFudBgZIAEoCzIaLnZ0dC52MS5Qcm9tb3RlUGFydGljaXBhbnRIABIsCg1zZXRfam9pbl9kb29yGBogASgLMhMudnR0LnYxLlNldEpvaW5Eb29ySAASMgoQcm90YXRlX2pvaW5fbGluaxgbIAEoCzIWLnZ0dC52MS5Sb3RhdGVKb2luTGlua0gAEiUKCW9wZW5fZG9vchgcIAEoCzIQLnZ0dC52MS5PcGVuRG9vckgAEicKCmNsb3NlX2Rvb3IYHSABKAsyES52dHQudjEuQ2xvc2VEb29ySAASIwoIbG9hZF9tYXAYHiABKAsyDy52dHQudjEuTG9hZE1hcEgAEi0KDXNldF92aWV3cG9pbnQYHyABKAsyFC52dHQudjEuU2V0Vmlld3BvaW50SAASKwoMcmVtb3ZlX3Rva2VuGCAgASgLMhMudnR0LnYxLlJlbW92ZVRva2VuSAASKwoMcmVtb3ZlX2FjdG9yGCEgASgLMhMudnR0LnYxLlJlbW92ZUFjdG9ySABCCQoHY29tbWFuZCJCCgtTZXRKb2luRG9vchIeCgRkb29yGAEgASgOMhAudnR0LnYxLkpvaW5Eb29yEhMKC2FkbWl0X2xpbWl0GAIgASgFIhAKDlJvdGF0ZUpvaW5MaW5rIl4KEUdyYW50QWN0b3JDb250cm9sEhAKCGFjdG9yX2lkGAEgASgJEhYKDnBhcnRpY2lwYW50X2lkGAIgASgJEh8KBGtpbmQYAyABKA4yES52dHQudjEuQWN0b3JLaW5kIj4KElJldm9rZUFjdG9yQ29udHJvbBIQCghhY3Rvcl9pZBgBIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgCIAEoCSI6ChJQcm9tb3RlUGFydGljaXBhbnQSFgoOcGFydGljaXBhbnRfaWQYASABKAkSDAoEcm9sZRgCIAEoCSJiCg1Db21tYW5kUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSCgoCb2sYAiABKAgSDQoFZXJyb3IYAyABKAkSEAoIc2VxdWVuY2UYBCABKAMSEAoId2FybmluZ3MYBSADKAkiJAoLQ2F0Y2hVcEhlYWQSFQoNaGVhZF9zZXF1ZW5jZRgBIAEoAyIkChBWaWV3cG9pbnRDaGFuZ2VkEhAKCGFjdG9yX2lkGAEgASgJIrMCCgtTZXJ2ZXJGcmFtZRInCgZyZXN1bHQYASABKAsyFS52dHQudjEuQ29tbWFuZFJlc3VsdEgAEiEKBWV2ZW50GAIgASgLMhAudnR0LnYxLkVudmVsb3BlSAASLAoNY2F0Y2hfdXBfaGVhZBgDIAEoCzITLnZ0dC52MS5DYXRjaFVwSGVhZEgAEjUKEXByZXNlbmNlX3NuYXBzaG90GAQgASgLMhgudnR0LnYxLlByZXNlbmNlU25hcHNob3RIABIzChBwcmVzZW5jZV9jaGFuZ2VkGAUgASgLMhcudnR0LnYxLlByZXNlbmNlQ2hhbmdlZEgAEjUKEXZpZXdwb2ludF9jaGFuZ2VkGAYgASgLMhgudnR0LnYxLlZpZXdwb2ludENoYW5nZWRIAEIHCgVmcmFtZSJlCg9QcmVzZW5jZUNoYW5nZWQSFgoOcGFydGljaXBhbnRfaWQYASABKAkSFAoMZGlzcGxheV9uYW1lGAIgASgJEiQKBXN0YXRlGAMgASgOMhUudnR0LnYxLlByZXNlbmNlU3RhdGUiPAoQUHJlc2VuY2VTbmFwc2hvdBIoCgdwcmVzZW50GAEgAygLMhcudnR0LnYxLlByZXNlbmNlQ2hhbmdlZCpPCghKb2luRG9vchIZChVKT0lOX0RPT1JfVU5TUEVDSUZJRUQQABISCg5KT0lOX0RPT1JfT1BFThABEhQKEEpPSU5fRE9PUl9DTE9TRUQQAipuCg1QcmVzZW5jZVN0YXRlEh4KGlBSRVNFTkNFX1NUQVRFX1VOU1BFQ0lGSUVEEAASHAoYUFJFU0VOQ0VfU1RBVEVfQ09OTkVDVEVEEAESHwobUFJFU0VOQ0VfU1RBVEVfRElTQ09OTkVDVEVEEAJCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_vtt_v1_events]);
+  fileDesc("ChV2dHQvdjEvY29tbWFuZHMucHJvdG8SBnZ0dC52MSJmChBNb3ZlVG9rZW5SZXF1ZXN0EhAKCHRva2VuX2lkGAEgASgJEiAKAnRvGAIgASgLMhQudnR0LnYxLkdyaWRQb3NpdGlvbhITCgZyZWFzb24YAyABKAlIAIgBAUIJCgdfcmVhc29uIlEKEU1vdmVUb2tlblJlc3BvbnNlEgoKAm9rGAEgASgIEg0KBWVycm9yGAIgASgJEiEKBWV2ZW50GAMgASgLMhIudnR0LnYxLlRva2VuTW92ZWQiPgoIT3BlbkRvb3ISEAoIc2NlbmVfaWQYASABKAkSIAoCYXQYAiABKAsyFC52dHQudjEuR3JpZFBvc2l0aW9uIj8KCUNsb3NlRG9vchIQCghzY2VuZV9pZBgBIAEoCRIgCgJhdBgCIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24iKAoIQWRkQWN0b3ISHAoFYWN0b3IYASABKAsyDS52dHQudjEuQWN0b3IiagoKUGxhY2VUb2tlbhIQCgh0b2tlbl9pZBgBIAEoCRIQCghzY2VuZV9pZBgCIAEoCRIQCghhY3Rvcl9pZBgDIAEoCRImCghwb3NpdGlvbhgEIAEoCzIULnZ0dC52MS5HcmlkUG9zaXRpb24iHwoLUmVtb3ZlVG9rZW4SEAoIdG9rZW5faWQYASABKAkiHwoLUmVtb3ZlQWN0b3ISEAoIYWN0b3JfaWQYASABKAkiHAoMU3RhcnRTZXNzaW9uEgwKBG5hbWUYASABKAkiDAoKRW5kU2Vzc2lvbiJGCgpVc2VBYmlsaXR5EhAKCGFjdG9yX2lkGAEgASgJEhIKCmFiaWxpdHlfaWQYAiABKAkSEgoKdGFyZ2V0X2lkcxgDIAMoCSI5Cg9SZW1vdmVDb25kaXRpb24SEAoIYWN0b3JfaWQYASABKAkSFAoMY29uZGl0aW9uX2lkGAIgASgJIlgKDEFkZE5hcnJhdGlvbhIMCgR0ZXh0GAEgASgJEgoKAmFzGAIgASgJEhcKD2FuY2hvcl9mcm9tX3NlcRgDIAEoAxIVCg1hbmNob3JfdG9fc2VxGAQgASgDImIKClVwc2VydE5vdGUSCwoDa2V5GAEgASgJEg0KBXRpdGxlGAIgASgJEgwKBHRleHQYAyABKAkSKgoKdmlzaWJpbGl0eRgEIAEoDjIWLnZ0dC52MS5Ob3RlVmlzaWJpbGl0eSIZCgpEZWxldGVOb3RlEgsKA2tleRgBIAEoCSIlCg1Mb2FkQWR2ZW50dXJlEhQKDGFkdmVudHVyZV9pZBgBIAEoCSIZCgdMb2FkTWFwEg4KBm1hcF9pZBgBIAEoCSIgCgxTZXRWaWV3cG9pbnQSEAoIYWN0b3JfaWQYASABKAkisQgKDUNsaWVudENvbW1hbmQSEgoKcmVxdWVzdF9pZBgBIAEoCRIuCgptb3ZlX3Rva2VuGAogASgLMhgudnR0LnYxLk1vdmVUb2tlblJlcXVlc3RIABIlCglhZGRfYWN0b3IYDCABKAsyEC52dHQudjEuQWRkQWN0b3JIABIpCgtwbGFjZV90b2tlbhgNIAEoCzISLnZ0dC52MS5QbGFjZVRva2VuSAASLQoNc3RhcnRfc2Vzc2lvbhgOIAEoCzIULnZ0dC52MS5TdGFydFNlc3Npb25IABIpCgtlbmRfc2Vzc2lvbhgPIAEoCzISLnZ0dC52MS5FbmRTZXNzaW9uSAASKQoLdXNlX2FiaWxpdHkYESABKAsyEi52dHQudjEuVXNlQWJpbGl0eUgAEjMKEHJlbW92ZV9jb25kaXRpb24YEiABKAsyFy52dHQudjEuUmVtb3ZlQ29uZGl0aW9uSAASLQoNYWRkX25hcnJhdGlvbhgTIAEoCzIULnZ0dC52MS5BZGROYXJyYXRpb25IABIpCgt1cHNlcnRfbm90ZRgUIAEoCzISLnZ0dC52MS5VcHNlcnROb3RlSAASKQoLZGVsZXRlX25vdGUYFSABKAsyEi52dHQudjEuRGVsZXRlTm90ZUgAEi8KDmxvYWRfYWR2ZW50dXJlGBYgASgLMhUudnR0LnYxLkxvYWRBZHZlbnR1cmVIABI4ChNncmFudF9hY3Rvcl9jb250cm9sGBcgASgLMhkudnR0LnYxLkdyYW50QWN0b3JDb250cm9sSAASOgoUcmV2b2tlX2FjdG9yX2NvbnRyb2wYGCABKAsyGi52dHQudjEuUmV2b2tlQWN0b3JDb250cm9sSAASOQoTcHJvbW90ZV9wYXJ0aWNpcGFudBgZIAEoCzIaLnZ0dC52MS5Qcm9tb3RlUGFydGljaXBhbnRIABIsCg1zZXRfam9pbl9kb29yGBogASgLMhMudnR0LnYxLlNldEpvaW5Eb29ySAASMgoQcm90YXRlX2pvaW5fbGluaxgbIAEoCzIWLnZ0dC52MS5Sb3RhdGVKb2luTGlua0gAEiUKCW9wZW5fZG9vchgcIAEoCzIQLnZ0dC52MS5PcGVuRG9vckgAEicKCmNsb3NlX2Rvb3IYHSABKAsyES52dHQudjEuQ2xvc2VEb29ySAASIwoIbG9hZF9tYXAYHiABKAsyDy52dHQudjEuTG9hZE1hcEgAEi0KDXNldF92aWV3cG9pbnQYHyABKAsyFC52dHQudjEuU2V0Vmlld3BvaW50SAASKwoMcmVtb3ZlX3Rva2VuGCAgASgLMhMudnR0LnYxLlJlbW92ZVRva2VuSAASKwoMcmVtb3ZlX2FjdG9yGCEgASgLMhMudnR0LnYxLlJlbW92ZUFjdG9ySABCCQoHY29tbWFuZCJCCgtTZXRKb2luRG9vchIeCgRkb29yGAEgASgOMhAudnR0LnYxLkpvaW5Eb29yEhMKC2FkbWl0X2xpbWl0GAIgASgFIhAKDlJvdGF0ZUpvaW5MaW5rIl4KEUdyYW50QWN0b3JDb250cm9sEhAKCGFjdG9yX2lkGAEgASgJEhYKDnBhcnRpY2lwYW50X2lkGAIgASgJEh8KBGtpbmQYAyABKA4yES52dHQudjEuQWN0b3JLaW5kIj4KElJldm9rZUFjdG9yQ29udHJvbBIQCghhY3Rvcl9pZBgBIAEoCRIWCg5wYXJ0aWNpcGFudF9pZBgCIAEoCSI6ChJQcm9tb3RlUGFydGljaXBhbnQSFgoOcGFydGljaXBhbnRfaWQYASABKAkSDAoEcm9sZRgCIAEoCSJiCg1Db21tYW5kUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSCgoCb2sYAiABKAgSDQoFZXJyb3IYAyABKAkSEAoIc2VxdWVuY2UYBCABKAMSEAoId2FybmluZ3MYBSADKAkiJAoLQ2F0Y2hVcEhlYWQSFQoNaGVhZF9zZXF1ZW5jZRgBIAEoAyIkChBWaWV3cG9pbnRDaGFuZ2VkEhAKCGFjdG9yX2lkGAEgASgJIjoKEFdhdGNoYWJsZUNoYW5nZWQSJgoGYWN0b3JzGAEgAygLMhYudnR0LnYxLldhdGNoYWJsZUFjdG9yIjAKDldhdGNoYWJsZUFjdG9yEhAKCGFjdG9yX2lkGAEgASgJEgwKBG5hbWUYAiABKAki6gIKC1NlcnZlckZyYW1lEicKBnJlc3VsdBgBIAEoCzIVLnZ0dC52MS5Db21tYW5kUmVzdWx0SAASIQoFZXZlbnQYAiABKAsyEC52dHQudjEuRW52ZWxvcGVIABIsCg1jYXRjaF91cF9oZWFkGAMgASgLMhMudnR0LnYxLkNhdGNoVXBIZWFkSAASNQoRcHJlc2VuY2Vfc25hcHNob3QYBCABKAsyGC52dHQudjEuUHJlc2VuY2VTbmFwc2hvdEgAEjMKEHByZXNlbmNlX2NoYW5nZWQYBSABKAsyFy52dHQudjEuUHJlc2VuY2VDaGFuZ2VkSAASNQoRdmlld3BvaW50X2NoYW5nZWQYBiABKAsyGC52dHQudjEuVmlld3BvaW50Q2hhbmdlZEgAEjUKEXdhdGNoYWJsZV9jaGFuZ2VkGAcgASgLMhgudnR0LnYxLldhdGNoYWJsZUNoYW5nZWRIAEIHCgVmcmFtZSJlCg9QcmVzZW5jZUNoYW5nZWQSFgoOcGFydGljaXBhbnRfaWQYASABKAkSFAoMZGlzcGxheV9uYW1lGAIgASgJEiQKBXN0YXRlGAMgASgOMhUudnR0LnYxLlByZXNlbmNlU3RhdGUiPAoQUHJlc2VuY2VTbmFwc2hvdBIoCgdwcmVzZW50GAEgAygLMhcudnR0LnYxLlByZXNlbmNlQ2hhbmdlZCpPCghKb2luRG9vchIZChVKT0lOX0RPT1JfVU5TUEVDSUZJRUQQABISCg5KT0lOX0RPT1JfT1BFThABEhQKEEpPSU5fRE9PUl9DTE9TRUQQAipuCg1QcmVzZW5jZVN0YXRlEh4KGlBSRVNFTkNFX1NUQVRFX1VOU1BFQ0lGSUVEEAASHAoYUFJFU0VOQ0VfU1RBVEVfQ09OTkVDVEVEEAESHwobUFJFU0VOQ0VfU1RBVEVfRElTQ09OTkVDVEVEEAJCQlpAZ2l0aHViLmNvbS9QYXRyaWtMYWdlci92dHQtcGxhdGZvcm0vY29udHJhY3QvZ2VuL2dvL3Z0dC92MTt2dHR2MWIGcHJvdG8z", [file_vtt_v1_events]);
 
 /**
  * @generated from message vtt.v1.MoveTokenRequest
@@ -447,24 +447,9 @@ export const LoadMapSchema: GenMessage<LoadMap> = /*@__PURE__*/
   messageDesc(file_vtt_v1_commands, 16);
 
 /**
- * SetViewpoint perches a spectator on a party member's shoulder (visibility
- * spec §3.1.1, Patrik 2026-08-18: "like a bird hopping from one shoulder to
- * another").
- *
- * APPENDS NOTHING — the same shape as SetJoinDoor, whose handler
- * (internal/gateway/server.go's handleJoinDoor) says so outright in its own
- * doc comment. Where a spectator points their camera is not a fact about the
- * campaign: it is a view preference like zoom, so logging it would replay
- * forever, add story-panel noise, and — the log only going forward since
- * 2026-08-31 — stay in the record for good. That last clause used to read
- * "make it RETRACTABLE, letting a DM 'undo' somebody having looked at Asme",
- * which was true while retraction existed and stopped being true when
- * RetractEvents left this file: the cost is now PERMANENCE, not a DM's power
- * to unsee. A perch therefore lives on the connection and the client re-sends
- * it on reconnect. This message and the oneof field are added here; Task 6 of
- * the visibility arc wires the handler that gives the comment above a body.
- *
- * An empty actor_id un-perches.
+ * SetViewpoint names the character log a player's or a spectator's connection
+ * is sent from here on, and appends nothing. An empty actor_id is nobody,
+ * which only a spectator may ask for (SPEC-007, SPEC-015).
  *
  * @generated from message vtt.v1.SetViewpoint
  */
@@ -932,6 +917,49 @@ export const ViewpointChangedSchema: GenMessage<ViewpointChanged> = /*@__PURE__*
   messageDesc(file_vtt_v1_commands, 26);
 
 /**
+ * WatchableChanged names every party member this connection may watch, sent
+ * at its opening and again whenever that set changes; never to a DM or an
+ * agent, and never in a log (SPEC-007, SPEC-015).
+ *
+ * @generated from message vtt.v1.WatchableChanged
+ */
+export type WatchableChanged = Message<"vtt.v1.WatchableChanged"> & {
+  /**
+   * @generated from field: repeated vtt.v1.WatchableActor actors = 1;
+   */
+  actors: WatchableActor[];
+};
+
+/**
+ * Describes the message vtt.v1.WatchableChanged.
+ * Use `create(WatchableChangedSchema)` to create a new message.
+ */
+export const WatchableChangedSchema: GenMessage<WatchableChanged> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 27);
+
+/**
+ * @generated from message vtt.v1.WatchableActor
+ */
+export type WatchableActor = Message<"vtt.v1.WatchableActor"> & {
+  /**
+   * @generated from field: string actor_id = 1;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+};
+
+/**
+ * Describes the message vtt.v1.WatchableActor.
+ * Use `create(WatchableActorSchema)` to create a new message.
+ */
+export const WatchableActorSchema: GenMessage<WatchableActor> = /*@__PURE__*/
+  messageDesc(file_vtt_v1_commands, 28);
+
+/**
  * The server->client frame; the oneof key is the frame discriminator.
  * ServerFrame is everything the server sends on a connection.
  *
@@ -1005,6 +1033,12 @@ export type ServerFrame = Message<"vtt.v1.ServerFrame"> & {
      */
     value: ViewpointChanged;
     case: "viewpointChanged";
+  } | {
+    /**
+     * @generated from field: vtt.v1.WatchableChanged watchable_changed = 7;
+     */
+    value: WatchableChanged;
+    case: "watchableChanged";
   } | { case: undefined; value?: undefined };
 };
 
@@ -1013,7 +1047,7 @@ export type ServerFrame = Message<"vtt.v1.ServerFrame"> & {
  * Use `create(ServerFrameSchema)` to create a new message.
  */
 export const ServerFrameSchema: GenMessage<ServerFrame> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 27);
+  messageDesc(file_vtt_v1_commands, 29);
 
 /**
  * PresenceChanged reports one participant joining or leaving — or, since the
@@ -1063,7 +1097,7 @@ export type PresenceChanged = Message<"vtt.v1.PresenceChanged"> & {
  * Use `create(PresenceChangedSchema)` to create a new message.
  */
 export const PresenceChangedSchema: GenMessage<PresenceChanged> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 28);
+  messageDesc(file_vtt_v1_commands, 30);
 
 /**
  * PresenceSnapshot is the full present-set, sent once immediately after
@@ -1086,7 +1120,7 @@ export type PresenceSnapshot = Message<"vtt.v1.PresenceSnapshot"> & {
  * Use `create(PresenceSnapshotSchema)` to create a new message.
  */
 export const PresenceSnapshotSchema: GenMessage<PresenceSnapshot> = /*@__PURE__*/
-  messageDesc(file_vtt_v1_commands, 29);
+  messageDesc(file_vtt_v1_commands, 31);
 
 /**
  * JoinDoor is the state of the shared join link (joining-a-table spec §2).

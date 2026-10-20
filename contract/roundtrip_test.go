@@ -158,6 +158,51 @@ func TestServerFrameViewpointChangedToNobodyRoundTrip(t *testing.T) {
 	roundTrip(t, "server_frame_viewpoint_changed_nobody.json", &vttv1.ServerFrame{})
 }
 
+// Keep the nameless actor: a client labels it by its id (VTT-404).
+func TestServerFrameWatchableChangedRoundTrip(t *testing.T) {
+	roundTrip(t, "server_frame_watchable_changed.json", &vttv1.ServerFrame{})
+}
+
+// Keep the empty case: a connection that may watch nobody is still told so
+// (VTT-399), and the arm's presence is the frame.
+func TestServerFrameWatchableChangedToNoneRoundTrip(t *testing.T) {
+	roundTrip(t, "server_frame_watchable_changed_none.json", &vttv1.ServerFrame{})
+}
+
+// protojson omits an empty repeated field, so the empty set goes out as
+// {"watchableChanged":{}}; a reader that takes the absent "actors" key for no
+// frame keeps the last set it was told (VTT-399).
+func TestAnEmptyWatchableSetStillSerializesAsItsFrame(t *testing.T) {
+	frame := &vttv1.ServerFrame{Frame: &vttv1.ServerFrame_WatchableChanged{
+		WatchableChanged: &vttv1.WatchableChanged{},
+	}}
+	raw, err := protojson.Marshal(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	set, ok := got["watchableChanged"]
+	if !ok {
+		t.Fatalf("an empty set must still identify itself as one, got %s", raw)
+	}
+	if m, isMap := set.(map[string]any); !isMap || len(m) != 0 {
+		t.Fatalf("want an empty object for a connection that may watch nobody, got %v", set)
+	}
+	var back vttv1.ServerFrame
+	if err := protojson.Unmarshal(raw, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.GetWatchableChanged() == nil {
+		t.Fatal("round-trip lost the watchable_changed arm — an empty set must not decode as no frame")
+	}
+	if n := len(back.GetWatchableChanged().GetActors()); n != 0 {
+		t.Fatalf("want no actor, got %d", n)
+	}
+}
+
 func TestEnvelopePayloadIsCompilerDiscriminated(t *testing.T) {
 	raw, _ := os.ReadFile("testdata/envelope.json")
 	var env vttv1.Envelope

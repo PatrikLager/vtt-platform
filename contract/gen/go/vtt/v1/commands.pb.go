@@ -1071,24 +1071,9 @@ func (x *LoadMap) GetMapId() string {
 	return ""
 }
 
-// SetViewpoint perches a spectator on a party member's shoulder (visibility
-// spec §3.1.1, Patrik 2026-08-18: "like a bird hopping from one shoulder to
-// another").
-//
-// APPENDS NOTHING — the same shape as SetJoinDoor, whose handler
-// (internal/gateway/server.go's handleJoinDoor) says so outright in its own
-// doc comment. Where a spectator points their camera is not a fact about the
-// campaign: it is a view preference like zoom, so logging it would replay
-// forever, add story-panel noise, and — the log only going forward since
-// 2026-08-31 — stay in the record for good. That last clause used to read
-// "make it RETRACTABLE, letting a DM 'undo' somebody having looked at Asme",
-// which was true while retraction existed and stopped being true when
-// RetractEvents left this file: the cost is now PERMANENCE, not a DM's power
-// to unsee. A perch therefore lives on the connection and the client re-sends
-// it on reconnect. This message and the oneof field are added here; Task 6 of
-// the visibility arc wires the handler that gives the comment above a body.
-//
-// An empty actor_id un-perches.
+// SetViewpoint names the character log a player's or a spectator's connection
+// is sent from here on, and appends nothing. An empty actor_id is nobody,
+// which only a spectator may ask for (SPEC-007, SPEC-015).
 type SetViewpoint struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
@@ -2061,6 +2046,105 @@ func (x *ViewpointChanged) GetActorId() string {
 	return ""
 }
 
+// WatchableChanged names every party member this connection may watch, sent
+// at its opening and again whenever that set changes; never to a DM or an
+// agent, and never in a log (SPEC-007, SPEC-015).
+type WatchableChanged struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Actors        []*WatchableActor      `protobuf:"bytes,1,rep,name=actors,proto3" json:"actors,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchableChanged) Reset() {
+	*x = WatchableChanged{}
+	mi := &file_vtt_v1_commands_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchableChanged) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchableChanged) ProtoMessage() {}
+
+func (x *WatchableChanged) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_commands_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchableChanged.ProtoReflect.Descriptor instead.
+func (*WatchableChanged) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *WatchableChanged) GetActors() []*WatchableActor {
+	if x != nil {
+		return x.Actors
+	}
+	return nil
+}
+
+type WatchableActor struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchableActor) Reset() {
+	*x = WatchableActor{}
+	mi := &file_vtt_v1_commands_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchableActor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchableActor) ProtoMessage() {}
+
+func (x *WatchableActor) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_commands_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchableActor.ProtoReflect.Descriptor instead.
+func (*WatchableActor) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *WatchableActor) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *WatchableActor) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
 // The server->client frame; the oneof key is the frame discriminator.
 // ServerFrame is everything the server sends on a connection.
 //
@@ -2101,6 +2185,7 @@ type ServerFrame struct {
 	//	*ServerFrame_PresenceSnapshot
 	//	*ServerFrame_PresenceChanged
 	//	*ServerFrame_ViewpointChanged
+	//	*ServerFrame_WatchableChanged
 	Frame         isServerFrame_Frame `protobuf_oneof:"frame"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2108,7 +2193,7 @@ type ServerFrame struct {
 
 func (x *ServerFrame) Reset() {
 	*x = ServerFrame{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[27]
+	mi := &file_vtt_v1_commands_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2120,7 +2205,7 @@ func (x *ServerFrame) String() string {
 func (*ServerFrame) ProtoMessage() {}
 
 func (x *ServerFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[27]
+	mi := &file_vtt_v1_commands_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2133,7 +2218,7 @@ func (x *ServerFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServerFrame.ProtoReflect.Descriptor instead.
 func (*ServerFrame) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{27}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ServerFrame) GetFrame() isServerFrame_Frame {
@@ -2197,6 +2282,15 @@ func (x *ServerFrame) GetViewpointChanged() *ViewpointChanged {
 	return nil
 }
 
+func (x *ServerFrame) GetWatchableChanged() *WatchableChanged {
+	if x != nil {
+		if x, ok := x.Frame.(*ServerFrame_WatchableChanged); ok {
+			return x.WatchableChanged
+		}
+	}
+	return nil
+}
+
 type isServerFrame_Frame interface {
 	isServerFrame_Frame()
 }
@@ -2225,6 +2319,10 @@ type ServerFrame_ViewpointChanged struct {
 	ViewpointChanged *ViewpointChanged `protobuf:"bytes,6,opt,name=viewpoint_changed,json=viewpointChanged,proto3,oneof"`
 }
 
+type ServerFrame_WatchableChanged struct {
+	WatchableChanged *WatchableChanged `protobuf:"bytes,7,opt,name=watchable_changed,json=watchableChanged,proto3,oneof"`
+}
+
 func (*ServerFrame_Result) isServerFrame_Frame() {}
 
 func (*ServerFrame_Event) isServerFrame_Frame() {}
@@ -2236,6 +2334,8 @@ func (*ServerFrame_PresenceSnapshot) isServerFrame_Frame() {}
 func (*ServerFrame_PresenceChanged) isServerFrame_Frame() {}
 
 func (*ServerFrame_ViewpointChanged) isServerFrame_Frame() {}
+
+func (*ServerFrame_WatchableChanged) isServerFrame_Frame() {}
 
 // PresenceChanged reports one participant joining or leaving — or, since the
 // joining-a-table branch, being PROMOTED.
@@ -2270,7 +2370,7 @@ type PresenceChanged struct {
 
 func (x *PresenceChanged) Reset() {
 	*x = PresenceChanged{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[28]
+	mi := &file_vtt_v1_commands_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2282,7 +2382,7 @@ func (x *PresenceChanged) String() string {
 func (*PresenceChanged) ProtoMessage() {}
 
 func (x *PresenceChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[28]
+	mi := &file_vtt_v1_commands_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2295,7 +2395,7 @@ func (x *PresenceChanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PresenceChanged.ProtoReflect.Descriptor instead.
 func (*PresenceChanged) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{28}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *PresenceChanged) GetParticipantId() string {
@@ -2333,7 +2433,7 @@ type PresenceSnapshot struct {
 
 func (x *PresenceSnapshot) Reset() {
 	*x = PresenceSnapshot{}
-	mi := &file_vtt_v1_commands_proto_msgTypes[29]
+	mi := &file_vtt_v1_commands_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2345,7 +2445,7 @@ func (x *PresenceSnapshot) String() string {
 func (*PresenceSnapshot) ProtoMessage() {}
 
 func (x *PresenceSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_commands_proto_msgTypes[29]
+	mi := &file_vtt_v1_commands_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2358,7 +2458,7 @@ func (x *PresenceSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PresenceSnapshot.ProtoReflect.Descriptor instead.
 func (*PresenceSnapshot) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{29}
+	return file_vtt_v1_commands_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *PresenceSnapshot) GetPresent() []*PresenceChanged {
@@ -2496,14 +2596,20 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"\vCatchUpHead\x12#\n" +
 	"\rhead_sequence\x18\x01 \x01(\x03R\fheadSequence\"-\n" +
 	"\x10ViewpointChanged\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\"\x84\x03\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\"B\n" +
+	"\x10WatchableChanged\x12.\n" +
+	"\x06actors\x18\x01 \x03(\v2\x16.vtt.v1.WatchableActorR\x06actors\"?\n" +
+	"\x0eWatchableActor\x12\x19\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xcd\x03\n" +
 	"\vServerFrame\x12/\n" +
 	"\x06result\x18\x01 \x01(\v2\x15.vtt.v1.CommandResultH\x00R\x06result\x12(\n" +
 	"\x05event\x18\x02 \x01(\v2\x10.vtt.v1.EnvelopeH\x00R\x05event\x129\n" +
 	"\rcatch_up_head\x18\x03 \x01(\v2\x13.vtt.v1.CatchUpHeadH\x00R\vcatchUpHead\x12G\n" +
 	"\x11presence_snapshot\x18\x04 \x01(\v2\x18.vtt.v1.PresenceSnapshotH\x00R\x10presenceSnapshot\x12D\n" +
 	"\x10presence_changed\x18\x05 \x01(\v2\x17.vtt.v1.PresenceChangedH\x00R\x0fpresenceChanged\x12G\n" +
-	"\x11viewpoint_changed\x18\x06 \x01(\v2\x18.vtt.v1.ViewpointChangedH\x00R\x10viewpointChangedB\a\n" +
+	"\x11viewpoint_changed\x18\x06 \x01(\v2\x18.vtt.v1.ViewpointChangedH\x00R\x10viewpointChanged\x12G\n" +
+	"\x11watchable_changed\x18\a \x01(\v2\x18.vtt.v1.WatchableChangedH\x00R\x10watchableChangedB\a\n" +
 	"\x05frame\"\x88\x01\n" +
 	"\x0fPresenceChanged\x12%\n" +
 	"\x0eparticipant_id\x18\x01 \x01(\tR\rparticipantId\x12!\n" +
@@ -2533,7 +2639,7 @@ func file_vtt_v1_commands_proto_rawDescGZIP() []byte {
 }
 
 var file_vtt_v1_commands_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_vtt_v1_commands_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_vtt_v1_commands_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_vtt_v1_commands_proto_goTypes = []any{
 	(JoinDoor)(0),              // 0: vtt.v1.JoinDoor
 	(PresenceState)(0),         // 1: vtt.v1.PresenceState
@@ -2564,24 +2670,26 @@ var file_vtt_v1_commands_proto_goTypes = []any{
 	(*CommandResult)(nil),      // 26: vtt.v1.CommandResult
 	(*CatchUpHead)(nil),        // 27: vtt.v1.CatchUpHead
 	(*ViewpointChanged)(nil),   // 28: vtt.v1.ViewpointChanged
-	(*ServerFrame)(nil),        // 29: vtt.v1.ServerFrame
-	(*PresenceChanged)(nil),    // 30: vtt.v1.PresenceChanged
-	(*PresenceSnapshot)(nil),   // 31: vtt.v1.PresenceSnapshot
-	(*GridPosition)(nil),       // 32: vtt.v1.GridPosition
-	(*TokenMoved)(nil),         // 33: vtt.v1.TokenMoved
-	(*Actor)(nil),              // 34: vtt.v1.Actor
-	(NoteVisibility)(0),        // 35: vtt.v1.NoteVisibility
-	(ActorKind)(0),             // 36: vtt.v1.ActorKind
-	(*Envelope)(nil),           // 37: vtt.v1.Envelope
+	(*WatchableChanged)(nil),   // 29: vtt.v1.WatchableChanged
+	(*WatchableActor)(nil),     // 30: vtt.v1.WatchableActor
+	(*ServerFrame)(nil),        // 31: vtt.v1.ServerFrame
+	(*PresenceChanged)(nil),    // 32: vtt.v1.PresenceChanged
+	(*PresenceSnapshot)(nil),   // 33: vtt.v1.PresenceSnapshot
+	(*GridPosition)(nil),       // 34: vtt.v1.GridPosition
+	(*TokenMoved)(nil),         // 35: vtt.v1.TokenMoved
+	(*Actor)(nil),              // 36: vtt.v1.Actor
+	(NoteVisibility)(0),        // 37: vtt.v1.NoteVisibility
+	(ActorKind)(0),             // 38: vtt.v1.ActorKind
+	(*Envelope)(nil),           // 39: vtt.v1.Envelope
 }
 var file_vtt_v1_commands_proto_depIdxs = []int32{
-	32, // 0: vtt.v1.MoveTokenRequest.to:type_name -> vtt.v1.GridPosition
-	33, // 1: vtt.v1.MoveTokenResponse.event:type_name -> vtt.v1.TokenMoved
-	32, // 2: vtt.v1.OpenDoor.at:type_name -> vtt.v1.GridPosition
-	32, // 3: vtt.v1.CloseDoor.at:type_name -> vtt.v1.GridPosition
-	34, // 4: vtt.v1.AddActor.actor:type_name -> vtt.v1.Actor
-	32, // 5: vtt.v1.PlaceToken.position:type_name -> vtt.v1.GridPosition
-	35, // 6: vtt.v1.UpsertNote.visibility:type_name -> vtt.v1.NoteVisibility
+	34, // 0: vtt.v1.MoveTokenRequest.to:type_name -> vtt.v1.GridPosition
+	35, // 1: vtt.v1.MoveTokenResponse.event:type_name -> vtt.v1.TokenMoved
+	34, // 2: vtt.v1.OpenDoor.at:type_name -> vtt.v1.GridPosition
+	34, // 3: vtt.v1.CloseDoor.at:type_name -> vtt.v1.GridPosition
+	36, // 4: vtt.v1.AddActor.actor:type_name -> vtt.v1.Actor
+	34, // 5: vtt.v1.PlaceToken.position:type_name -> vtt.v1.GridPosition
+	37, // 6: vtt.v1.UpsertNote.visibility:type_name -> vtt.v1.NoteVisibility
 	2,  // 7: vtt.v1.ClientCommand.move_token:type_name -> vtt.v1.MoveTokenRequest
 	6,  // 8: vtt.v1.ClientCommand.add_actor:type_name -> vtt.v1.AddActor
 	7,  // 9: vtt.v1.ClientCommand.place_token:type_name -> vtt.v1.PlaceToken
@@ -2605,20 +2713,22 @@ var file_vtt_v1_commands_proto_depIdxs = []int32{
 	8,  // 27: vtt.v1.ClientCommand.remove_token:type_name -> vtt.v1.RemoveToken
 	9,  // 28: vtt.v1.ClientCommand.remove_actor:type_name -> vtt.v1.RemoveActor
 	0,  // 29: vtt.v1.SetJoinDoor.door:type_name -> vtt.v1.JoinDoor
-	36, // 30: vtt.v1.GrantActorControl.kind:type_name -> vtt.v1.ActorKind
-	26, // 31: vtt.v1.ServerFrame.result:type_name -> vtt.v1.CommandResult
-	37, // 32: vtt.v1.ServerFrame.event:type_name -> vtt.v1.Envelope
-	27, // 33: vtt.v1.ServerFrame.catch_up_head:type_name -> vtt.v1.CatchUpHead
-	31, // 34: vtt.v1.ServerFrame.presence_snapshot:type_name -> vtt.v1.PresenceSnapshot
-	30, // 35: vtt.v1.ServerFrame.presence_changed:type_name -> vtt.v1.PresenceChanged
-	28, // 36: vtt.v1.ServerFrame.viewpoint_changed:type_name -> vtt.v1.ViewpointChanged
-	1,  // 37: vtt.v1.PresenceChanged.state:type_name -> vtt.v1.PresenceState
-	30, // 38: vtt.v1.PresenceSnapshot.present:type_name -> vtt.v1.PresenceChanged
-	39, // [39:39] is the sub-list for method output_type
-	39, // [39:39] is the sub-list for method input_type
-	39, // [39:39] is the sub-list for extension type_name
-	39, // [39:39] is the sub-list for extension extendee
-	0,  // [0:39] is the sub-list for field type_name
+	38, // 30: vtt.v1.GrantActorControl.kind:type_name -> vtt.v1.ActorKind
+	30, // 31: vtt.v1.WatchableChanged.actors:type_name -> vtt.v1.WatchableActor
+	26, // 32: vtt.v1.ServerFrame.result:type_name -> vtt.v1.CommandResult
+	39, // 33: vtt.v1.ServerFrame.event:type_name -> vtt.v1.Envelope
+	27, // 34: vtt.v1.ServerFrame.catch_up_head:type_name -> vtt.v1.CatchUpHead
+	33, // 35: vtt.v1.ServerFrame.presence_snapshot:type_name -> vtt.v1.PresenceSnapshot
+	32, // 36: vtt.v1.ServerFrame.presence_changed:type_name -> vtt.v1.PresenceChanged
+	28, // 37: vtt.v1.ServerFrame.viewpoint_changed:type_name -> vtt.v1.ViewpointChanged
+	29, // 38: vtt.v1.ServerFrame.watchable_changed:type_name -> vtt.v1.WatchableChanged
+	1,  // 39: vtt.v1.PresenceChanged.state:type_name -> vtt.v1.PresenceState
+	32, // 40: vtt.v1.PresenceSnapshot.present:type_name -> vtt.v1.PresenceChanged
+	41, // [41:41] is the sub-list for method output_type
+	41, // [41:41] is the sub-list for method input_type
+	41, // [41:41] is the sub-list for extension type_name
+	41, // [41:41] is the sub-list for extension extendee
+	0,  // [0:41] is the sub-list for field type_name
 }
 
 func init() { file_vtt_v1_commands_proto_init() }
@@ -2652,13 +2762,14 @@ func file_vtt_v1_commands_proto_init() {
 		(*ClientCommand_RemoveToken)(nil),
 		(*ClientCommand_RemoveActor)(nil),
 	}
-	file_vtt_v1_commands_proto_msgTypes[27].OneofWrappers = []any{
+	file_vtt_v1_commands_proto_msgTypes[29].OneofWrappers = []any{
 		(*ServerFrame_Result)(nil),
 		(*ServerFrame_Event)(nil),
 		(*ServerFrame_CatchUpHead)(nil),
 		(*ServerFrame_PresenceSnapshot)(nil),
 		(*ServerFrame_PresenceChanged)(nil),
 		(*ServerFrame_ViewpointChanged)(nil),
+		(*ServerFrame_WatchableChanged)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2666,7 +2777,7 @@ func file_vtt_v1_commands_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vtt_v1_commands_proto_rawDesc), len(file_vtt_v1_commands_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   30,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

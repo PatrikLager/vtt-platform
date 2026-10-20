@@ -129,24 +129,9 @@ message LoadAdventure { string adventure_id = 1; }
 // campaign.AppendBatch.
 message LoadMap { string map_id = 1; }
 
-// SetViewpoint perches a spectator on a party member's shoulder (visibility
-// spec §3.1.1, Patrik 2026-08-18: "like a bird hopping from one shoulder to
-// another").
-//
-// APPENDS NOTHING — the same shape as SetJoinDoor, whose handler
-// (internal/gateway/server.go's handleJoinDoor) says so outright in its own
-// doc comment. Where a spectator points their camera is not a fact about the
-// campaign: it is a view preference like zoom, so logging it would replay
-// forever, add story-panel noise, and — the log only going forward since
-// 2026-08-31 — stay in the record for good. That last clause used to read
-// "make it RETRACTABLE, letting a DM 'undo' somebody having looked at Asme",
-// which was true while retraction existed and stopped being true when
-// RetractEvents left this file: the cost is now PERMANENCE, not a DM's power
-// to unsee. A perch therefore lives on the connection and the client re-sends
-// it on reconnect. This message and the oneof field are added here; Task 6 of
-// the visibility arc wires the handler that gives the comment above a body.
-//
-// An empty actor_id un-perches.
+// SetViewpoint names the character log a player's or a spectator's connection
+// is sent from here on, and appends nothing. An empty actor_id is nobody,
+// which only a spectator may ask for (SPEC-007, SPEC-015).
 message SetViewpoint {
   string actor_id = 1;
 }
@@ -337,6 +322,18 @@ message ViewpointChanged {
   string actor_id = 1;
 }
 
+// WatchableChanged names every party member this connection may watch, sent
+// at its opening and again whenever that set changes; never to a DM or an
+// agent, and never in a log (SPEC-007, SPEC-015).
+message WatchableChanged {
+  repeated WatchableActor actors = 1;
+}
+
+message WatchableActor {
+  string actor_id = 1;
+  string name = 2;
+}
+
 // The server->client frame; the oneof key is the frame discriminator.
 // ServerFrame is everything the server sends on a connection.
 //
@@ -375,6 +372,7 @@ message ServerFrame {
     PresenceSnapshot presence_snapshot = 4;
     PresenceChanged presence_changed = 5;
     ViewpointChanged viewpoint_changed = 6;
+    WatchableChanged watchable_changed = 7;
   }
 }
 

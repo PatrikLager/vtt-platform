@@ -1,0 +1,13 @@
+{
+  "watchableChanged": {
+    "actors": [
+      {
+        "actorId": "act-hero",
+        "name": "Hero"
+      },
+      {
+        "actorId": "act-quill"
+      }
+    ]
+  }
+}
