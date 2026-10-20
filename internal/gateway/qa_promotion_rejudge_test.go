@@ -104,7 +104,8 @@ func (e *qaRejudgeEnv) dial(t *testing.T, token, log string) *qaRejudgeConn {
 }
 
 func qaRejudgeIsSideFrame(f *vttv1.ServerFrame) bool {
-	return f.GetResult() != nil || f.GetPresenceChanged() != nil || f.GetPresenceSnapshot() != nil
+	return f.GetResult() != nil || f.GetPresenceChanged() != nil || f.GetPresenceSnapshot() != nil ||
+		f.GetWatchableChanged() != nil
 }
 
 func (rc *qaRejudgeConn) seatFrame(t *testing.T, d time.Duration) *vttv1.ServerFrame {

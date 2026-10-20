@@ -73,7 +73,7 @@ func (f *gwFixture) watch(token string, after int64, log string) *watchConn {
 	return w
 }
 
-// next returns the next frame that is not presence, or nil after d.
+// next returns the next frame that is not presence or a set, or nil after d.
 func (w *watchConn) next(d time.Duration) *vttv1.ServerFrame {
 	w.t.Helper()
 	for {
@@ -89,7 +89,7 @@ func (w *watchConn) next(d time.Duration) *vttv1.ServerFrame {
 				return nil
 			}
 		}
-		if fr.GetPresenceSnapshot() == nil && fr.GetPresenceChanged() == nil {
+		if fr.GetPresenceSnapshot() == nil && fr.GetPresenceChanged() == nil && fr.GetWatchableChanged() == nil {
 			return fr
 		}
 	}

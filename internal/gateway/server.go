@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -434,9 +435,9 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 	}
 }
 
-// pump is the one producer of a connection's entries and ViewpointChanged frames
-// (SPEC-011). Return with the socket closed by reason, or let it fall through to
-// CloseNow.
+// pump is the one producer of a connection's entries, ViewpointChanged and
+// WatchableChanged frames (SPEC-011). Return with the socket closed by reason,
+// or let it fall through to CloseNow.
 func (s *Server) pump(sub *seat, p *identity.Participant, perches *perchBox, rejudge <-chan struct{},
 	stop <-chan struct{}, outCh chan<- []byte, writerDone <-chan struct{}, conn *websocket.Conn,
 	closing *atomic.Bool) {
@@ -446,7 +447,7 @@ func (s *Server) pump(sub *seat, p *identity.Participant, perches *perchBox, rej
 		return
 	}
 	// Re-judge after the opening announcement, never before it (SPEC-007).
-	if sub.wake != nil && (!ps.announce() || !ps.moved(sub.recheck())) {
+	if sub.wake != nil && (!ps.tell() || !ps.announce() || !ps.moved(sub.recheck())) {
 		return
 	}
 	for {
@@ -486,6 +487,7 @@ type pumpState struct {
 	writerDone <-chan struct{}
 	conn       *websocket.Conn
 	closing    *atomic.Bool
+	lastSet    *vttv1.WatchableChanged
 }
 
 // revoked re-resolves the participant, closing on a gone credential and
@@ -515,7 +517,22 @@ func (ps *pumpState) lostUnless(ok bool) {
 }
 
 func (ps *pumpState) announce() bool {
-	return ps.s.sendViewpoint(ps.sub.shown, ps.outCh, ps.writerDone, ps.conn, ps.closing)
+	return ps.s.queueFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_ViewpointChanged{
+		ViewpointChanged: &vttv1.ViewpointChanged{ActorId: ps.sub.shown},
+	}}, ps.outCh, ps.writerDone, ps.conn, ps.closing)
+}
+
+// Queue a set before the ViewpointChanged its judgment causes, and never to a
+// world seat (SPEC-015, VTT-400, VTT-401).
+func (ps *pumpState) tell() bool {
+	set := ps.sub.watchable
+	if ps.sub.wake == nil || (ps.lastSet != nil && proto.Equal(ps.lastSet, set)) {
+		return true
+	}
+	ps.lastSet = set
+	return ps.s.queueFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_WatchableChanged{
+		WatchableChanged: set,
+	}}, ps.outCh, ps.writerDone, ps.conn, ps.closing)
 }
 
 // moved re-checks the credential once a switch may have taken further wakes.
@@ -524,7 +541,10 @@ func (ps *pumpState) moved(switched bool, err error) bool {
 		ps.s.lost(ps.conn, ps.closing)
 		return false
 	}
-	return !switched || (!ps.revoked() && ps.announce())
+	if switched && ps.revoked() {
+		return false
+	}
+	return ps.tell() && (!switched || ps.announce())
 }
 
 // onWake re-judges the seat after an append or a promotion (VTT-340, VTT-348).
@@ -578,12 +598,10 @@ func (s *Server) lost(conn *websocket.Conn, closing *atomic.Bool) {
 	}
 }
 
-// sendViewpoint queues the ViewpointChanged naming actorID (SPEC-007, VTT-342).
-func (s *Server) sendViewpoint(actorID string, outCh chan<- []byte, writerDone <-chan struct{},
+// queueFrame queues one of the pump's own frames (SPEC-007, VTT-342).
+func (s *Server) queueFrame(frame *vttv1.ServerFrame, outCh chan<- []byte, writerDone <-chan struct{},
 	conn *websocket.Conn, closing *atomic.Bool) bool {
-	b, err := s.encodeFrame(&vttv1.ServerFrame{Frame: &vttv1.ServerFrame_ViewpointChanged{
-		ViewpointChanged: &vttv1.ViewpointChanged{ActorId: actorID},
-	}})
+	b, err := s.encodeFrame(frame)
 	if err != nil {
 		if !closing.Load() {
 			_ = conn.Close(websocket.StatusInternalError, "gateway: encode failed")

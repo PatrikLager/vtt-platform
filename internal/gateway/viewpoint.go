@@ -52,3 +52,15 @@ func defaultViewpoint(p *identity.Participant, actors map[string]*vttv1.Actor) s
 	sort.Strings(ids)
 	return ids[0]
 }
+
+// watchable is every party member MayWatch accepts for p, by id (VTT-399).
+func watchable(p *identity.Participant, actors map[string]*vttv1.Actor) *vttv1.WatchableChanged {
+	set := &vttv1.WatchableChanged{}
+	for id, a := range actors {
+		if MayWatch(p, id, actors) == nil {
+			set.Actors = append(set.Actors, &vttv1.WatchableActor{ActorId: id, Name: a.GetName()})
+		}
+	}
+	sort.Slice(set.Actors, func(i, j int) bool { return set.Actors[i].GetActorId() < set.Actors[j].GetActorId() })
+	return set
+}

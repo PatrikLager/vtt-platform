@@ -37,10 +37,11 @@ type seat struct {
 	unsub  func()
 
 	// Keep wake nil for a seat sent the world: only a log seat switches.
-	wake     <-chan struct{}
-	stopWake func()
-	shown    string
-	judgedAs identity.Role
+	wake      <-chan struct{}
+	stopWake  func()
+	shown     string
+	judgedAs  identity.Role
+	watchable *vttv1.WatchableChanged
 	// Read told from any goroutine; watch stores it before a frame names it (VTT-351).
 	told atomic.Pointer[string]
 }
@@ -64,6 +65,7 @@ func openSeat(c *campaign.Campaign, p *identity.Participant, named string, after
 	}
 	s.wake, s.stopWake = wake, stop
 	actors := c.Actors()
+	s.watchable = watchable(p, actors)
 	target, cursor := defaultViewpoint(p, actors), int64(0)
 	if named != "" && MayWatch(p, named, actors) == nil {
 		// Honour the cursor in the log it names alone (VTT-349).
@@ -113,6 +115,7 @@ func (s *seat) watch(actorID string, cursor int64) (int64, error) {
 // resolve keeps what the seat shows while p may watch it, else p's default
 // (VTT-340).
 func (s *seat) resolve(actors map[string]*vttv1.Actor) string {
+	s.watchable = watchable(s.p, actors)
 	if s.shown != "" && MayWatch(s.p, s.shown, actors) == nil {
 		return s.shown
 	}

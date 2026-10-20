@@ -320,17 +320,21 @@ func pumpUnderTest(t *testing.T, s *Server, p *identity.Participant, named strin
 
 func frameOf(t *testing.T, out chan []byte) *vttv1.ServerFrame {
 	t.Helper()
-	select {
-	case b := <-out:
-		var f vttv1.ServerFrame
-		if err := protojson.Unmarshal(b, &f); err != nil {
-			t.Fatal(err)
+	for {
+		select {
+		case b := <-out:
+			var f vttv1.ServerFrame
+			if err := protojson.Unmarshal(b, &f); err != nil {
+				t.Fatal(err)
+			}
+			if f.GetWatchableChanged() == nil {
+				return &f
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("no frame within 3s")
+			return nil
 		}
-		return &f
-	case <-time.After(3 * time.Second):
-		t.Fatal("no frame within 3s")
 	}
-	return nil
 }
 
 func seatServer(t *testing.T) (*Server, *campaign.Campaign, *identity.Participant) {
@@ -567,6 +571,28 @@ func TestASeatThatMovesWhileItSubscribesAnswersTheHeadOfTheLogItShows(t *testing
 	}
 	if sub.shown != "b1" || head != int64(len(b1)) {
 		t.Fatalf("a watch onto a1 that settled on %q answered head %d, want b1 at %d", sub.shown, head, len(b1))
+	}
+}
+
+// VTT-400
+func TestASeatThatMovesWhileItSubscribesRecordsTheSetItSettledBy(t *testing.T) {
+	_, c, p := seatServer(t)
+	seatParty(t, c, "a1", p.ID)
+	seatParty(t, c, "b1", p.ID)
+	seatParty(t, c, "c1", p.ID)
+	sub, _, err := openSeat(c, p, "c1", 0, 64, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(sub.close)
+
+	seatAppend(t, c, "lost", &vttv1.ActorControlRevoked{ActorId: "a1", ParticipantId: p.ID})
+	if _, err := sub.watch("a1", 0); err != nil {
+		t.Fatal(err)
+	}
+	want := &vttv1.WatchableChanged{Actors: []*vttv1.WatchableActor{{ActorId: "b1", Name: "b1"}, {ActorId: "c1", Name: "c1"}}}
+	if sub.shown != "b1" || !proto.Equal(sub.watchable, want) {
+		t.Fatalf("a watch that took a wake settled on %q with the set %v, want b1 with %v", sub.shown, sub.watchable, want)
 	}
 }
 
