@@ -145,6 +145,25 @@ test("a DM hands a second character over, and the player keeps both across a rec
     await expect(panel.getByRole("button", { name: "Ash" })).toBeVisible();
     await player.screenshot(shot("h6-player-with-both-characters"));
 
+    // --- beat 3b: one character at a time, switched by its chip ---------
+    //
+    // The owner's ruling of 2026-10-15: the board empties and the other log
+    // replays. Ash is watched: the default at Ash's grant, kept at Bram's.
+    await expect(panel.getByRole("button", { name: "Ash" })).toHaveClass("chip sel", { timeout: 10_000 });
+    await panel.getByRole("button", { name: "Bram" }).click();
+    await expect(panel.getByRole("button", { name: "Bram" })).toHaveClass("chip sel", { timeout: 10_000 });
+    await expect(panel.getByRole("button", { name: "Ash" })).toHaveClass("chip");
+    await expect(player.locator(`[data-token-id="tok-${SECOND}"]`)).toBeVisible({ timeout: 10_000 });
+    await expect(player.getByText("Cannot derive state")).toHaveCount(0);
+    await player.screenshot(shot("h6b-player-switches-to-bram"));
+
+    await panel.getByRole("button", { name: "Ash" }).click();
+    await expect(panel.getByRole("button", { name: "Ash" })).toHaveClass("chip sel", { timeout: 10_000 });
+    await expect(panel.getByRole("button", { name: "Bram" })).toHaveClass("chip");
+    await expect(player.locator(`[data-token-id="tok-${FIRST}"]`)).toBeVisible({ timeout: 10_000 });
+    await expect(player.getByText("Cannot derive state")).toHaveCount(0);
+    await player.screenshot(shot("h6c-player-back-on-ash"));
+
     // --- beat 4: the player leaves, and the table is told ----------------
     await playerCtx.close();
     await expect(dm.locator(".participant")).not.toContainText(["Lera"], { timeout: 20_000 });

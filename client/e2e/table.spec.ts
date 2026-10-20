@@ -119,6 +119,29 @@ test("a DM starts a session and loads an adventure", async ({ page }) => {
   await page.screenshot(shot("03b-dm-assigned-actor"));
 });
 
+// VTT-403, VTT-405, VTT-394
+test("a spectator chooses a shoulder and is shown that log", async ({ page }) => {
+  // A spectator opens on nobody (VTT-369) and is offered every party member
+  // the gateway lets it watch: the adventure's own, and the Lera that "a DM
+  // starts a session and loads an adventure" handed over.
+  await openAs(page, "spectator");
+  const perch = page.locator(".perch");
+  await expect(perch.locator(".perched-on")).toHaveText("Perched on: nobody", { timeout: 10_000 });
+  await expect(perch.locator(".shoulder", { hasText: "Human Fighter" })).toBeVisible({ timeout: 10_000 });
+  await expect(perch.locator(".shoulder", { hasText: "Lera" })).toBeVisible();
+
+  await perch.locator(".shoulder", { hasText: "Human Fighter" }).click();
+  await expect(perch.locator(".perched-on")).toHaveText("Perched on: Human Fighter", { timeout: 10_000 });
+  await expect(page.locator(".tick")).not.toHaveCount(0, { timeout: 10_000 });
+  await expect(page.getByText("Cannot derive state")).toHaveCount(0);
+  await page.screenshot(shot("04b-spectator-on-a-shoulder"));
+
+  // Leaving the shoulder empties the board: no log follows to start it again.
+  await perch.locator(".unperch").click();
+  await expect(perch.locator(".perched-on")).toHaveText("Perched on: nobody", { timeout: 10_000 });
+  await expect(page.locator(".tick")).toHaveCount(0);
+});
+
 // VTT-393
 test("the story feed and ticker record what happened", async ({ page }) => {
   await openAs(page, "player");
