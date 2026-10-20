@@ -432,6 +432,32 @@ which found it. Labels: `spec silent`.
 `TestAddActorSaysAnIDIsNeverReused` (VTT-390) on its second (observed
 2026-10-19 on `fd2a9ee`).
 
+## 2026-10-20 — a dial that failed left its rejection unhandled
+
+**Neither of the browser client's dials caught a failed dial.** On `0db3d18`,
+`client/src/app.ts` started the first dial with `void session.start();` and
+the Reconnect button's with `void redial();`, whose `session.reconnect()` or
+`session.restart()` rejects when the dial fails, and nothing caught either
+rejection: a browser logs it as uncaught, and bun aborted the test that made
+one. Recipe: in
+`client/src/app.ts`, replace `void session.reconnect().catch(() =>
+undefined);` with `void session.reconnect();`, and `void
+session.start().catch(() => undefined);` with `void session.start();`.
+Tier-1 `bun test` should have caught it and did not: `client/test/wire.test.ts`
+"close and reconnect are safe before anything was ever connected" showed
+`Wire.reconnect` rejecting on a failed dial, and no test of `app.ts` made a
+dial fail; the TS mutation gate cannot add a missing catch. Recorded
+2026-10-20 by the Phase 4a QA of the client's one log
+(`docs/superpowers/plans/2026-10-20-the-client-follows-the-log-it-is-sent.md`,
+Task 3), which found it. Labels: `test data missing`, `outside the tool`.
+
+**Closed by** "window: a Reconnect whose dial fails keeps the fold and offers
+Reconnect again, naming the same log and cursor" in
+`client/test/qa-one-log.test.ts` and "a first dial that fails leaves the page
+offering Reconnect" in `client/test/app.test.ts`, both red under the recipe,
+with bun reporting an unhandled error between tests (observed 2026-10-20 on
+`982b4cc`).
+
 ## Open debt
 
 **The harness cannot see a log seat switched on its old subscription.**
