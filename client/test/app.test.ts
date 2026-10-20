@@ -2546,10 +2546,8 @@ async function tableAs(role: string) {
 }
 
 test("only a spectator is offered a shoulder", async () => {
-  // MayPerch refuses every other role outright: "role %q does not perch — a
-  // viewpoint is the spectator's". The DM and the agent already see
-  // everything, and an unassigned PLAYER's answer to an empty board is to be
-  // GIVEN a character, which is the onboarding flow working as intended.
+  // Only a spectator chooses a shoulder by this control (SPEC-015): the DM and
+  // the agent are sent the world, and a player switches by chip or by token.
   //
   // All four roles in one test on purpose: the positive and the negative
   // differ by one branch, and a test that only asserted the spectator's

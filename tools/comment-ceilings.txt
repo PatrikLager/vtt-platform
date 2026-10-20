@@ -6,8 +6,8 @@
 
 client/src/app.ts  49.7
 client/src/auth.ts  44.5
-client/src/commands.ts  45.4
-client/src/fold.ts  40.8
+client/src/commands.ts  43.2
+client/src/fold.ts  33.9
 client/src/join.ts  53.1
 client/src/main.ts  83.4
 client/src/metadata.ts  50.0
@@ -17,7 +17,7 @@ client/src/state.ts  62.3
 client/src/view/art-assets.ts  68.9
 client/src/view/camera.ts  50.0
 client/src/view/canvas.ts  71.6
-client/src/view/dm.ts  41.9
+client/src/view/dm.ts  40.7
 client/src/view/doors.ts  72.5
 client/src/view/feed.ts  36.1
 client/src/view/grid.ts  45.7

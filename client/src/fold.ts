@@ -231,51 +231,19 @@ function apply(st: State, env: Envelope): void {
       return;
     }
     case "tokenRemoved": {
-      // Takes a piece off the board (retraction-leaves spec §5.1): "no
-      // longer part of the world going forward", never "this never
-      // happened".
-      //
-      // NOT tokenHidden (below) — but not because that arm stays away from
-      // this fold; it does not. tokenHidden reaches THIS SAME switch, on a
-      // player's own projected stream, every time a token leaves their
-      // sight — the arm right below folds it constantly. The difference is
-      // where the fact comes from: no COMMAND produces tokenHidden — the
-      // server's projection layer (internal/gateway/project.go) synthesizes
-      // it, so it can never appear in the actual campaign log — while
-      // tokenRemoved is a real, log-carrying event, produced by a real
-      // command (remove_token), that removes the piece for everyone, not
-      // just one viewer's sight of it.
-      //
-      // The message DELIBERATELY MATCHES tokenMoved's own unknown-token
-      // message above ("moved" -> "removed"), the same wording apply.go's
-      // two arms share.
+      // Keep this apart from tokenHidden below: remove_token and remove_actor's
+      // batch make this in the world's log, while tokenHidden is a character
+      // log's own entry for a token leaving one viewer's sight (SPEC-016). Word
+      // the refusal as tokenMoved's, "removed" for "moved", as apply.go does.
       const v = p.value;
       if (!st.Tokens[v.tokenId]) throw new FoldError(`unknown token "${v.tokenId}" removed`);
       delete st.Tokens[v.tokenId];
       return;
     }
     case "actorRemoved": {
-      // Takes an actor out of the world (retraction-leaves spec §5.2), the
-      // same rule tokenRemoved states one level down: "no longer part of the
-      // world going forward", never "this never happened".
-      //
-      // IT REMOVES THE ACTOR AND NOTHING ELSE — in particular it does NOT
-      // remove that actor's tokens, and it must not. Taking them off the board
-      // is the COMMAND's job: remove_actor emits a tokenRemoved per token, in
-      // token-id order, ahead of this event, as one batch (the server's
-      // handleRemoveActor). Cascading here as well would put the same rule in
-      // two places and make the batch do the work twice.
-      //
-      // SO IT REFUSES INSTEAD, the strict mirror of internal/engine's
-      // ActorRemoved arm, down to the order of the two guards. Read that arm
-      // for why: an ActorRemoved that left a token standing would leave a
-      // world whose own introductions no longer fold, and this module is where
-      // that costs a viewer everything — Session.ingest re-folds the entire
-      // log on every event, so one throw here is permanent.
-      //
-      // A player's stream never reaches either guard: the server forwards this
-      // event only to a seat that HOLDS the actor (project.go's classify), and
-      // that seat's tokens for it were hidden by the batch's earlier events.
+      // Remove the actor and never its tokens: remove_actor's batch takes them
+      // off first (SPEC-017). Refuse a removal that would leave one standing,
+      // mirroring internal/engine's ActorRemoved arm guard for guard.
       const v = p.value;
       const a = st.Actors[v.actorId];
       if (!a) throw new FoldError(`unknown actor "${v.actorId}" removed`);
@@ -629,63 +597,19 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
         })),
         OpenDoors: sortedMap(s.OpenDoors ?? {}, (v) => v),
       };
-      // Explored mirrors Go's `json:",omitempty"` tag on Scene.Explored
-      // (state.go): OMITTED entirely when empty, not serialized as `{}`.
-      // Every scenarios/goldens/*/state.json was hand-derived from a stream
-      // with no sceneSeen — those are the LOGS — so Explored is empty on all
-      // of them, and an unconditional key here (even an empty object) fails
-      // every one of those byte comparisons (client/test/fold-parity.test.ts),
-      // because Go never emits the key at all in that case. This is
-      // Correction 1's reasoning carried across the language boundary: the
-      // FIELD needed omitempty on the Go side; the DUMP needs the equivalent
-      // conditional omission here, since TS has no struct-tag mechanism to do
-      // it for us.
-      //
-      // AMENDED 2026-08-22, in step with Visible's comment below so the pair
-      // cannot drift: the corpus now also carries PROJECTED halves under
-      // scenarios/goldens/*/projections/*/, and those DO populate Explored
-      // wherever the scene declares terrain.
-      //
-      // RE-MEASURED 2026-09-01, and the number went DOWN: an unconditional
-      // `Explored: {}` now fails the 8 log goldens — plus the dedicated case
-      // in client/test/fold-unit.test.ts, which is not a corpus case and is
-      // not counted here. It used to fail both projected seats as well,
-      // because each held the
-      // bare-canvas `camp` — a visible set with no terrain to remember, so an
-      // empty Explored that had to stay absent. `camp` declares all nine of
-      // its own now, and every projected scene's Explored is populated. EIGHT
-      // corpus cases, measured by injecting the fault and counting, not by
-      // decrementing the old figure.
-      //
-      // WHAT KEEPS THAT TRUE CHANGED ON 2026-09-02 while the number did not.
-      // This said "create_scene now refuses a scene that leaves a square
-      // undeclared"; no scenario issues create_scene any more, and every
-      // corpus scene comes from a map file, which mapdef permits to declare
-      // no tiles at all. The eight stands because every committed map under
-      // scenarios/maps/ declares its whole grid — a convention, not a
-      // refusal. Re-measure rather than assume if one ever ships without.
+      // Keep Explored's key omitted when empty, as Go's `json:",omitempty"` on
+      // Scene.Explored (state.go) does: every scenarios/goldens/*/state.json
+      // comes from a log with no sceneSeen, so an unconditional key fails
+      // client/test/fold-parity.test.ts. A populated one comes only from a
+      // character log (SPEC-016).
       const explored = s.Explored ?? {};
       if (Object.keys(explored).length > 0) {
         scene.Explored = sortedMap(explored, (v) => v);
       }
-      // Visible mirrors Go's `json:",omitempty"` on Scene.Visible exactly as
-      // Explored above mirrors its own, and the omission collapses the
-      // undefined/`{}` distinction the FIELD carries — deliberately, because
-      // Go's tag collapses nil and empty the same way. What the LOG-LEVEL
-      // corpus holds this to is ABSENCE: scenarios/goldens/*/stream.json are
-      // real logs and nothing in a log produces a sceneSeen, so in all eight
-      // this field is UNDEFINED, never `{}`. That half pins only the
-      // key-omission for THAT case — emitting it unconditionally fails all
-      // eight, re-measured 2026-08-22 — and says nothing about the empty one,
-      // since a version emitting the key whenever Visible is defined also
-      // passes every one of them.
-      //
-      // AMENDED 2026-08-22: the POPULATED case IS a cross-language check now.
-      // scenarios/goldens/*/projections/*/ carries projected streams that do
-      // contain sceneSeen, and client/test/projection-parity.test.ts folds them
-      // against the same hand-derived state.json the Go fold is held to. The
-      // nil/`{}` distinction is still a live-state matter pinned separately in
-      // each language.
+      // Keep Visible's key omitted when empty, as Go's `json:",omitempty"` on
+      // Scene.Visible does and Explored above does. A world log carries no
+      // sceneSeen, so scenarios/goldens/ holds this field absent; a populated
+      // one comes only from a character log (SPEC-016).
       const visible = s.Visible ?? {};
       if (Object.keys(visible).length > 0) {
         scene.Visible = sortedMap(visible, (v) => v);

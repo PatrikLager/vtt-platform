@@ -275,23 +275,10 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
 
   // --- actor: form, and raw paste ---
   //
-  // NO CONTROLLER BOX, and its absence is the rule (visibility spec §5.1,
-  // Patrik's ruling 2026-08-24). This form used to carry a "controller
-  // participant id (optional)" input, and a DM who typed an id into it created
-  // a PARTY MEMBER: no kind was stated, nothing refused it, and the whole
-  // cloned Actor reached every player's roster with MayPerch and eyes() open
-  // on it. Assignment is a separate, manual act, and the console already has
-  // the control that performs it — the per-actor grant row further down this
-  // panel, which asks for a kind because the server refuses a grant that does
-  // not say one.
-  //
-  // A KIND BOX, and its presence is the same rule read the other way. Who
-  // holds a character is a fact about the table and is asked one panel down;
-  // WHAT a creature is is a fact about the creature, known by whoever is
-  // typing it in, and the server refuses an add_actor that does not say it
-  // (gateway validateAddActor). Blank by default for the reason the grant
-  // row's own selector is: a pre-filled answer is indistinguishable from a DM
-  // who never looked.
+  // Offer no controller box: who holds an actor is the grant row below, which
+  // asks for a kind (SPEC-013). Ask the kind here, blank by default: the server
+  // refuses an add_actor that does not state one, and a pre-filled answer
+  // hides a DM who never looked.
   const actorId = input("actor id", "actor-id");
   const actorName = input("name", "actor-name");
   const actorKind = choiceSelect("actor-kind", "actor-kind", KIND_CHOICES);

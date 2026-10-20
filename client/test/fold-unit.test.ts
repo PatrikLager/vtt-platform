@@ -5,13 +5,11 @@ import { fold, foldToDumpJSON } from "../src/fold";
 import { FoldError } from "../src/state";
 
 // The golden corpus cannot reach every fold variant, and the gap is a MEASURED
-// list rather than an argument. Across all eight `scenarios/goldens/*/
-// stream.json` AND both projected streams under `projections/*/`, five of
-// fold.ts's arms are never folded: **attackRolled, doorOpened, doorClosed,
-// tokenRemoved and actorRemoved**. (Measured 2026-09-01. It said FOUR of
-// TWENTY-TWO and omitted actorRemoved, which landed one task after
-// tokenRemoved; the arm total was 23 by then. No total is quoted now — the
-// claim needs none, and an arm count is the shape that rots by addition.)
+// list rather than an argument. Across every `scenarios/goldens/*/stream.json`,
+// five of fold.ts's arms are never folded: **attackRolled, tokenRemoved,
+// actorRemoved, tokenHidden and sceneSeen**. (Measured 2026-10-20 by listing
+// each stream's payload keys against fold.ts's cases. No total is quoted: an
+// arm count is the shape that rots by addition.)
 // Said at the level of the EVENT VARIANT, which
 // is the level that matters for parity: `attackRolled` shares its arm BODY
 // with `default:` alone, since `abilityUsed` and `adventureLoaded` have arms
@@ -31,12 +29,13 @@ import { FoldError } from "../src/state";
 // of tokenRemoved's arms — success and rejection — the same way the door tests
 // below fold doorOpened/doorClosed, and actorRemoved is covered the same way.
 //
-// SINCE 2026-09-01 THEY ARE ALSO FOLDED AS REAL PROJECTED BYTES, which is a
-// different claim from either: client/test/removal-batch-parity.test.ts folds
-// contract/testdata/removal_batch_projected_stream.json, the stream a seat
-// actually receives for a mixed-visibility remove_actor batch, and
-// internal/gateway recomputes those same bytes from the projector. That is the
-// nearest thing to corpus reach these two arms have.
+// A CHARACTER LOG'S SIDE OF A REMOVAL is folded too, which is a different claim:
+// client/test/removal-batch-parity.test.ts folds
+// contract/testdata/removal_batch_projected_stream.json, the entries a seat is
+// sent for a mixed-visibility remove_actor batch, and internal/perceive's
+// TestARemovalBatchProjectsToTheBytesBothFoldsRead derives the same entries from
+// a real state and compares them one by one. It holds a tokenHidden, a
+// sceneSeen, no tokenRemoved, and one bare actorRemoved, withdraw's (SPEC-016).
 //
 // The door pair has its own note at the terrain section, which owns why it
 // matters. Not restated here — and the reason is worth one sentence, because this
@@ -65,54 +64,19 @@ import { FoldError } from "../src/state";
 // costs nothing in coverage: every command type it uses is already covered by
 // toy-brawl" — so its absence explains none of the gap above either.
 //
-// tokenHidden/sceneSeen used to be listed here as a fourth, PERMANENT gap. That
-// is no longer true. Visibility spec §5 makes both projection-only — no command
-// produces them, so they cannot structurally reach a real LOG — but the corpus
-// gained PROJECTED halves with the keystone, and those are not logs:
-// scenarios/goldens/session-zero/projections/player/stream.json carries sceneSeen
-// twice and tokenHidden once, and client/test/projection-parity.test.ts folds
-// both arms against a hand-derived state.
-//
-// So what the hand-written cases below are for is the ARMS' EDGES. FIVE of
-// the six in this file's tokenHidden/sceneSeen section are reached by no stream
-// at all, recorded or derived: a re-sent hide (the corpus holds exactly one
-// tokenHidden), Explored unioning across messages (no single stream folds two
-// sceneSeen for one scene, and unioning is a within-stream operation), a
-// sceneSeen that is visible but carries NO terrain (all three of the corpus's
-// sceneSeen carry `tiles`; that case used to be `camp`, which lost its
-// bare-canvas shape on 2026-09-01 — the reason is now simply that every map
-// under scenarios/maps/ declares its whole grid, create_scene having left the
-// corpus on 2026-09-02), and BOTH
-// object-merge cases (no sceneSeen anywhere carries objects, and no corpus
-// stream carries a scene object at all — which is also why the sceneCreated
-// object cases in the terrain section stand on nothing but themselves).
+// tokenHidden and sceneSeen are in that list because visibility spec §5 makes
+// both projection-only: no command produces them, so no world LOG holds them.
+// The one committed stream that does is the removal fixture above, which folds a
+// hide that leaves its neighbours standing; every other case in this file's
+// tokenHidden/sceneSeen section stands on itself: a re-sent hide, Explored
+// unioning across messages, a sceneSeen carrying no terrain, and both
+// object-merge cases.
 //
 // (That count read 34 until 2026-08-24, when three cases driven by surviving
 // mutants were added and the number was RE-COUNTED rather than incremented by
 // three — it was already four short of the file, which is what a number nobody
 // recounts does. The section count read "four" on the same date and for the
 // same reason.)
-//
-// The remaining one — "tokenHidden forgets only that token", a hide that leaves
-// its neighbours standing — is no longer one of them: session-zero's projected
-// player stream places tok-goblin-archer at sequence 11 and hides it at 12 while
-// tok-fighter and tok-healer stay on the board, and projection-parity.test.ts
-// byte-compares the result against a hand-derived state holding exactly those
-// two. Kept, since a fixture and a unit test fail differently and the unit test
-// names the property; but it is coverage now, not absence.
-//
-// SCOPE IS WHERE THE sceneSeen-UNIONING PARENTHETICAL KEEPS GOING WRONG, so it
-// is written per-stream now. (Named rather than called "the middle" one, which
-// is an index into a list that has already changed size once and would have no
-// middle at all if the corpus ever gained an objects-carrying sceneSeen.)
-//
-// It read "its two sceneSeen events are one per scene" until somebody counted it
-// at the scope it is written at: its neighbours are corpus-wide, so it reads
-// corpus-wide, and corpus-wide there are THREE —
-// `camp` gets one in each projected stream. "Two" was the PLAYER stream's count,
-// borrowed from the paragraph above into a sentence whose scope had widened.
-// Unioning is a within-stream operation, so per-stream is both the scope that
-// makes the claim true and the stronger reason.
 //
 // NO LINE-DISTANCE REFERENCES ANYWHERE IN THIS FILE, and that is a rule rather
 // than a preference. Two were written during these corrections and both were
@@ -624,7 +588,8 @@ test("revoking control leaves a party member a party member", () => {
 // landed, and this comment was written on 2026-08-16 — three days after the thing
 // it says is not covered became covered.
 //
-// Counted rather than reasoned, over all eight logs and both projected streams:
+// Counted rather than reasoned, over the eight logs and two projected streams
+// the corpus held when this was written:
 //
 //   doors    — ZERO doorOpened/doorClosed events, and ZERO tiles of kind "door".
 //              Nothing folds either arm, and nothing puts a closed door in front
@@ -632,43 +597,35 @@ test("revoking control leaves a party member a party member", () => {
 //   terrain  — REACHED. adventure-night declares 1024 tiles and session-zero
 //              declares 180, so the tile loops run under fold-parity.
 //
-// So the door half of the original point stands in full: fold.ts's door handling
-// was added in Task 5 PRECISELY to keep the cross-language keystone honest and
-// still ships with no corpus stream exercising it — if the TS fold and
-// internal/engine/apply.go disagreed about doors, the keystone would not notice.
+// So the door half of the original point stood until door-watch: fold.ts's door
+// handling was added in Task 5 PRECISELY to keep the cross-language keystone
+// honest and shipped with no corpus stream exercising it; door-watch's stream
+// now takes fold-parity through both door arms.
 // The terrain cases below therefore stand on DIFFERENT ground than they used to,
 // and the parenthetical that first said so got two of its three examples wrong.
 // Counted:
 //
 //   an object's every field surviving  — UNREACHED, and comfortably so. Zero
-//       scene objects appear in any of the ten corpus streams and zero in any
+//       scene objects appear in any golden stream and zero in any
 //       state.json, so nothing pins the object round-trip but the two cases
 //       below that walk it: every field intact, and an object that arrives with
 //       no position at all (added 2026-08-24 — the corpus's silence here is
 //       exactly why three mutants of that one line lived through this file).
-//   the dump shape                     — REACHED FOR TERRAIN, unreached for the
-//       rest. adventure-night's state.json byte-compares 1024 Tiles entries and
-//       session-zero's 180; OpenDoors is empty in every one, and Objects has
-//       nothing to carry (above). That case makes three assertions — Tiles,
-//       Objects[0].RotationDegrees and OpenDoors — and the corpus reaches only
-//       the first, so it is the DOOR and OBJECT assertions it misses, not the
-//       case. (This said "the DOOR half", which undercounted its own detail one
-//       bullet after stating it.)
+//   the dump shape                     — REACHED FOR TERRAIN AND DOORS, unreached
+//       for objects. adventure-night's and session-zero's state.json
+//       byte-compare their Tiles, door-watch's holds an open door, and
+//       Objects has nothing to carry (above). That case makes three assertions
+//       — Tiles, Objects[0].RotationDegrees and OpenDoors — and the corpus
+//       reaches the first and the last, so it is the OBJECT one it misses.
 //   Explored's omission                — REACHED HARDEST OF ANYTHING HERE, and
 //       listing it as unreached was flatly wrong. Emitting `Explored: {}`
 //       unconditionally reds every log golden in the corpus. This file says
 //       exactly that in the test named "Explored reaches the dump when
 //       populated, and is OMITTED (not {}) when empty" — the very case the
 //       parenthetical was describing — and client/src/fold.ts says it a third
-//       time, which is the ONE place the current measurement is written down.
-//       (It said TEN cases — the goldens plus both projection-parity seats —
-//       which stopped being true on 2026-09-01, when both projected scenes
-//       gained complete terrain and so a non-empty Explored. That was
-//       create_scene's doing at the time; since 2026-09-02 the same two seats
-//       stay complete because their MAP FILES declare every square, which
-//       mapdef does not require of a map. Three sites gave three numbers for
-//       one measurement; the number now lives with the code it describes and
-//       the other two state the invariant instead.)
+//       time. (It once said TEN cases, counting two projected seats that the
+//       corpus no longer holds. Three sites gave three numbers for one
+//       measurement; all three now state the invariant instead.)
 //
 // The lesson is the one this file keeps re-learning: a summary written from
 // memory of the cases below it drifts from them, and the cases were right all
@@ -869,12 +826,11 @@ test("Explored reaches the dump when populated, and is OMITTED (not {}) when emp
 
 // --- tokenHidden / sceneSeen (visibility spec §6) ---------------------------
 //
-// Both arms are PROJECTION-ONLY (spec §5). HOW they nonetheless reach the corpus,
+// Both arms are PROJECTION-ONLY (spec §5). Which committed stream reaches them,
 // and WHICH of the cases below it reaches, are both the HEADER's subject and
 // neither is restated here.
 //
-// One fact, one place — the rule internal/gateway/keystone_test.go's own
-// de-duplication follows. This banner carried a second copy of the coverage split
+// One fact, one place. This banner carried a second copy of the coverage split
 // until the two were compared, and then a second copy of the recorded-versus-
 // derived argument after that; both are the header's. Pointing at the owner of a
 // fact is not the same as deferring a fact: the pointer cannot go stale into a
@@ -1008,9 +964,9 @@ test("actorRemoved removes only that actor", () => {
 // removed, so the id can come back, and a ghost condition makes the first
 // conditionApplied on the NEW actor a duplicate — which this fold refuses,
 // and Session.ingest re-folds the whole log on every event, so that throw is
-// permanent. It is reachable in production because the projector's actor
+// permanent. It is reachable in production because a character log's actor
 // introduction re-emits st.Conditions[id] behind a re-introduction
-// (internal/gateway's transitions).
+// (internal/perceive's introduce).
 test("actorRemoved takes its conditions with it, so the id can be used again", () => {
   const st = fold([
     env(1, { sessionStarted: { name: "n" } }),
@@ -1044,7 +1000,7 @@ test("sceneSeen unions into Explored and never shrinks", () => {
 // THE BARE CANVAS, and it lives here now because no corpus fixture holds it any
 // more. Until 2026-09-01 this property was pinned by a FIXTURE: session-zero's
 // `camp` declared no terrain, so its projected Explored stayed empty however
-// much of it was in sight, and client/test/projection-parity compared that
+// much of it was in sight, and a projected golden stream compared that
 // against the committed state. create_scene then began refusing a scene that
 // leaves a square undeclared, `camp` gained its nine tiles, and no projected
 // seat had an empty Tiles left to exhibit.

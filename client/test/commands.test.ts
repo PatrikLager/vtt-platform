@@ -372,10 +372,8 @@ test("rotating the link is its own command, carrying nothing", () => {
 });
 
 test("a perch names the shoulder the spectator chose", () => {
-  // The client half of set_viewpoint, which shipped without one: the command
-  // reached the contract, MayPerch and the projection in this arc's Tasks 2-6,
-  // and no control could issue it — `viewpoint` appeared exactly once in
-  // client/src, in a comment.
+  // The client half of set_viewpoint: it names the actor whose log the
+  // connection is to be sent (SPEC-015).
   const cmd = setViewpoint("act-fighter");
   expect(cmd.command.case).toBe("setViewpoint");
   expect(cmd.command.value).toMatchObject({ actorId: "act-fighter" });

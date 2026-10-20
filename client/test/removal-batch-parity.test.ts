@@ -9,15 +9,15 @@ import { fold } from "../src/fold";
 //
 // WHY THIS FILE EXISTS AT ALL. Neither remove_token nor remove_actor, and
 // neither TokenRemoved nor ActorRemoved, appears in any golden stream, any
-// scenario definition, any soak action or any cmd/vtt e2e — so fold-parity,
-// projection-parity and the golden corpus have no reach over the two events
-// this arc added, in either language. Whole-branch review on 2026-09-01
-// established by hand that Go's engine.Apply and this fold agree on a real
-// projected removal stream. This is that check, kept.
+// scenario definition, any soak action or any cmd/vtt e2e — so fold-parity
+// and the golden corpus have no reach over the two events this arc added, in
+// either language. Whole-branch review on 2026-09-01 established by hand that
+// Go's engine.Apply and this fold agree on a real projected removal stream.
+// This is that check, kept.
 //
 // THE SAME BYTES, NOT A SECOND COPY OF THE STREAM.
 // contract/testdata/removal_batch_projected_stream.json is read here and by
-// internal/gateway's TestARemovalBatchProjectsToTheBytesBothFoldsRead, which
+// internal/perceive's TestARemovalBatchProjectsToTheBytesBothFoldsRead, which
 // RECOMPUTES the projection from a real engine.State and compares it envelope
 // by envelope. So the fixture cannot drift from what the server emits, and
 // this file cannot drift from the fixture: the two folds are consuming one

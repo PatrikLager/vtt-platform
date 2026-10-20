@@ -445,9 +445,8 @@ test("the Add actor form cannot hand a character to anyone", () => {
   // Visibility spec §5.1's first rule, at the seat where a human could break
   // it. The console used to carry a "controller participant id (optional)"
   // box next to the id and the name, and typing into it created a PARTY
-  // MEMBER — the whole cloned Actor on every player's roster, plus MayPerch
-  // and eyes() open on it — with no refusal anywhere on the path, because
-  // commands.ts's addActor could not express a kind at all.
+  // MEMBER with no refusal anywhere on the path, because commands.ts's
+  // addActor could not express a kind at all.
   //
   // The box is gone rather than validated: assignment is a separate, manual
   // act (Patrik's ruling, 2026-08-24), and the console already has the
