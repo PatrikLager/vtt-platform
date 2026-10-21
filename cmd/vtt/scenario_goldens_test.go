@@ -88,7 +88,7 @@ func captureNormalizedStream(t *testing.T, scenario string) []byte {
 	}
 
 	observer := sc.Participants[0].Name
-	c, err := harness.Dial(context.Background(), boot.WSURL, boot.Tokens[observer], 0)
+	c, err := harness.Dial(context.Background(), boot.WSURL, boot.Tokens[observer], 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}

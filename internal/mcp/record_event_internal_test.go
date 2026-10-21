@@ -162,7 +162,7 @@ func TestPumpReturnsWhenContextCancelledAfterConnectionLoss(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	dialed := make(chan struct{}, 4)
-	stubDial(t, func(context.Context, string, string, int64) (*harness.Client, error) {
+	stubDial(t, func(context.Context, string, string, int64, string) (*harness.Client, error) {
 		dialed <- struct{}{}
 		return nil, errors.New("connection refused")
 	})
@@ -206,7 +206,7 @@ func TestRedialBackoffGrowsExponentially(t *testing.T) {
 	const attempts = 4 // 3 waits between them: 100 + 200 + 400
 
 	attemptCh := make(chan struct{}, attempts+2)
-	stubDial(t, func(context.Context, string, string, int64) (*harness.Client, error) {
+	stubDial(t, func(context.Context, string, string, int64, string) (*harness.Client, error) {
 		attemptCh <- struct{}{}
 		return nil, errors.New("connection refused")
 	})
@@ -262,10 +262,10 @@ func TestPumpRedialsWhenConnectionDropsWithLiveContext(t *testing.T) {
 	redialled := make(chan struct{}, 4)
 	origDial := harnessDial
 	var dials int
-	stubDial(t, func(dctx context.Context, u, tok string, after int64) (*harness.Client, error) {
+	stubDial(t, func(dctx context.Context, u, tok string, after int64, log string) (*harness.Client, error) {
 		dials++
 		if dials == 1 {
-			return origDial(dctx, u, tok, after) // the connection that will drop
+			return origDial(dctx, u, tok, after, log) // the connection that will drop
 		}
 		redialled <- struct{}{}
 		return nil, errors.New("refused") // enough to prove the attempt happened

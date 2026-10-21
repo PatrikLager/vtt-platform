@@ -467,7 +467,7 @@ announced while the old log keeps arriving. Every `cmd/vtt` scenario test
 stays green, the seed-1 soak included. The corpus's only switches are
 `scenarios/shared-control.json`'s revocations, which move a seat from a log to
 nobody, and a stream that keeps the old log then simply continues its run;
-`internal/harness`'s client drops `ViewpointChanged`, so `logBreak` sees a
+`internal/harness`'s readers skip `ViewpointChanged`, so `logBreak` sees a
 switch only when the new log restarts at 1. The gateway's
 `TestAConnectionStopsWatchingAnActorItMayNoLongerWatch` goes red on the same
 edit (VTT-348). The same blindness makes `runReconnectStep` fail a correct

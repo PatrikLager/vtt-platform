@@ -140,6 +140,6 @@ func dialerFor(wsURL string, tokens map[string]string) harness.Dialer {
 		if !ok {
 			return nil, fmt.Errorf("vtt client run: no token for participant %q", name)
 		}
-		return harness.Dial(context.Background(), wsURL, token, after)
+		return harness.Dial(context.Background(), wsURL, token, after, "")
 	}
 }

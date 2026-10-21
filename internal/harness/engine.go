@@ -25,39 +25,12 @@ import (
 // interface plus the contract, so it is transparent to which one it holds.
 type Conn interface {
 	SendCommand(ctx context.Context, cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error)
-	Events() <-chan *vttv1.Envelope
-	// CloseErr reports why the stream ended, or nil while healthy. Events()
-	// hands a consumer a closed channel and nothing else, so without this a
-	// pure reader cannot tell "the server finished" from "I was disconnected
-	// for reading too slowly" — opposite problems with opposite responses.
-	//
-	// Specifically errors.Is(CloseErr(), ErrEventsOverflow). A clean close
-	// also reports non-nil (the read error that ended the loop), so the bare
-	// nil check answers nothing the closed channel did not already.
-	//
-	// On the interface rather than behind a type assertion so a future fake
-	// cannot silently no-op it.
-	//
-	// As of 2026-08-06 every Events() consumer in this package accounts for a
-	// closed channel. Directly: drainPreExisting, the reconnect catch-up loop
-	// AND its trailing "nothing extra arrived" check, observeOnAll,
-	// recvWithin (so collectBatchRun), drainAllForSilence, and
-	// soakHistories.start. Indirectly: soak.go's drainToSequence takes a raw
-	// channel and cannot ask, so its caller drainFreshCatchUp does it instead.
-	// Verified by grepping every Events() use rather than by recollection —
-	// an earlier version of this comment claimed the conversion was complete
-	// while soakHistories.start, the evidence base for RunSoak's own denial
-	// assertion, still had the hole.
-	//
-	// FOUR of those were returning a WRONG VERDICT, not merely a vague
-	// message: a batch truncated by a teardown counted as complete; a
-	// scenario denial "proved" by the silence of a participant that could no
-	// longer hear; a soak denial proved the same way through histories that
-	// had stopped growing; and a reconnect-at-head certifying "nothing
-	// replayed" against a socket that could not replay. All four PASSED.
-	//
-	// The rule that follows, for anything added later: a bounded wait proves
-	// a negative only against a LIVE connection. If silence is your evidence,
+	Events() <-chan Delivery
+	// CloseErr reports why the stream ended, or nil while healthy: a closed
+	// Events() alone cannot tell a finished server from an overflow, so ask
+	// errors.Is(CloseErr(), ErrEventsOverflow); a clean close is non-nil too.
+	// On the interface so a fake cannot no-op it. A bounded wait proves a
+	// negative only against a LIVE connection: if silence is your evidence,
 	// ask this first.
 	CloseErr() error
 	Close() error
@@ -181,11 +154,13 @@ func drainPreExisting(conn Conn, window time.Duration) (int, error) {
 	deadline := time.After(window)
 	for {
 		select {
-		case _, ok := <-conn.Events():
+		case d, ok := <-conn.Events():
 			if !ok {
 				return n, streamEndReason(conn)
 			}
-			n++
+			if d.Envelope != nil {
+				n++
+			}
 		case <-deadline:
 			return n, nil
 		}
@@ -678,36 +653,31 @@ func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, logS
 	// observeTimeout that never elapsed.
 	var streamEnd error
 	for range want {
-		select {
-		case env, ok := <-newConn.Events():
-			if !ok {
-				streamEnd = streamEndReason(newConn)
-			} else {
-				got = append(got, env)
-			}
-		case <-time.After(observeTimeout):
-			timedOut = true
-		}
-		if timedOut || streamEnd != nil {
+		env, ok, err := recvWithin(newConn, observeTimeout)
+		if err != nil {
+			streamEnd = err
 			break
 		}
+		if !ok {
+			timedOut = true
+			break
+		}
+		got = append(got, env)
 	}
 
 	extra := false
 	if !timedOut && streamEnd == nil {
-		select {
-		case env, ok := <-newConn.Events():
-			if ok {
-				got = append(got, env)
-				extra = true
-			} else {
-				// "Nothing extra arrived" is another proof by ABSENCE, and a
-				// dead socket satisfies it by construction. Reachable with an
-				// EMPTY want (a reconnect at the head, asserting nothing
-				// replays), where the loop above never runs and so never asks.
-				streamEnd = streamEndReason(newConn)
-			}
-		case <-time.After(denialAbsenceWindow):
+		env, ok, err := recvWithin(newConn, denialAbsenceWindow)
+		switch {
+		case ok:
+			got = append(got, env)
+			extra = true
+		case err != nil:
+			// "Nothing extra arrived" is another proof by ABSENCE, and a
+			// dead socket satisfies it by construction. Reachable with an
+			// EMPTY want (a reconnect at the head, asserting nothing
+			// replays), where the loop above never runs and so never asks.
+			streamEnd = err
 		}
 	}
 
@@ -804,21 +774,20 @@ func observeOnAll(conns map[string]Conn, logSeats map[string]bool, history map[s
 		}
 		required++
 		go func() {
-			select {
-			case env, chOK := <-conn.Events():
-				if !chOK {
-					// Did not observe it, but because the stream was gone —
-					// a different fault with a different fix than a broadcast
-					// that never arrived.
-					results <- outcome{name: name, ended: true}
-					return
-				}
+			env, ok, err := recvWithin(conn, timeout)
+			switch {
+			case err != nil:
+				// Did not observe it, but because the stream was gone —
+				// a different fault with a different fix than a broadcast
+				// that never arrived.
+				results <- outcome{name: name, ended: true}
+			case !ok:
+				results <- outcome{name: name}
+			default:
 				mu.Lock()
 				history[name] = append(history[name], env)
 				mu.Unlock()
 				results <- outcome{name: name, ok: env.Sequence == wantSeq}
-			case <-time.After(timeout):
-				results <- outcome{name: name}
 			}
 		}()
 	}
@@ -1045,14 +1014,19 @@ func streamEndReason(conn Conn) error {
 // ended" turns a truncated observation into a passing assertion. This used to
 // return the same (nil, false) for both.
 func recvWithin(conn Conn, timeout time.Duration) (*vttv1.Envelope, bool, error) {
-	select {
-	case env, ok := <-conn.Events():
-		if !ok {
-			return nil, false, streamEndReason(conn)
+	deadline := time.After(timeout)
+	for {
+		select {
+		case d, ok := <-conn.Events():
+			if !ok {
+				return nil, false, streamEndReason(conn)
+			}
+			if d.Envelope != nil {
+				return d.Envelope, true, nil
+			}
+		case <-deadline:
+			return nil, false, nil
 		}
-		return env, true, nil
-	case <-time.After(timeout):
-		return nil, false, nil
 	}
 }
 
@@ -1074,20 +1048,18 @@ func drainAllForSilence(conns map[string]Conn, history map[string][]*vttv1.Envel
 	for _, name := range names {
 		name, conn := name, conns[name]
 		go func() {
-			select {
-			case env, chOK := <-conn.Events():
-				if chOK {
-					mu.Lock()
-					history[name] = append(history[name], env)
-					mu.Unlock()
-					results <- outcome{name: name, env: env}
-				} else {
-					// Silent, but NOT evidence. This used to report the same
-					// outcome as a live quiet stream, which is what let a
-					// torn-down participant satisfy a denial assertion.
-					results <- outcome{name: name, ended: true}
-				}
-			case <-time.After(window):
+			env, ok, err := recvWithin(conn, window)
+			switch {
+			case ok:
+				mu.Lock()
+				history[name] = append(history[name], env)
+				mu.Unlock()
+				results <- outcome{name: name, env: env}
+			case err != nil:
+				// Silent, but NOT evidence: never report a torn-down
+				// participant as quiet, or it satisfies a denial assertion.
+				results <- outcome{name: name, ended: true}
+			default:
 				results <- outcome{name: name}
 			}
 		}()
@@ -1207,22 +1179,27 @@ func characterSeats(ps []Participant) map[string]bool {
 	return out
 }
 
-// drainQuietInto collects everything conn has to offer, into history, until
-// nothing further arrives within quiet. Reports whether the stream ENDED,
+// drainQuietInto collects every entry conn has to offer, into history, until
+// no further entry arrives within quiet. Reports whether the stream ENDED,
 // which is a fault even for a seat that is entitled to receive nothing:
 // silence and a dead socket are different facts, and the assertions that read
 // history downstream rely on the difference.
 func drainQuietInto(name string, conn Conn, history map[string][]*vttv1.Envelope, mu *sync.Mutex, quiet time.Duration) (ended bool) {
+	silence := time.After(quiet)
 	for {
 		select {
-		case env, ok := <-conn.Events():
+		case d, ok := <-conn.Events():
 			if !ok {
 				return true
 			}
+			if d.Envelope == nil {
+				continue
+			}
 			mu.Lock()
-			history[name] = append(history[name], env)
+			history[name] = append(history[name], d.Envelope)
 			mu.Unlock()
-		case <-time.After(quiet):
+			silence = time.After(quiet)
+		case <-silence:
 			return false
 		}
 	}

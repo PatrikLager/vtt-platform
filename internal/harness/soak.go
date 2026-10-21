@@ -613,27 +613,34 @@ func drainFreshCatchUp(dial Dialer, target int64, window, timeout time.Duration)
 // bug this replaced. A head of 0 (an empty observer history) is reached
 // immediately, which degrades this to the old quiescent drain — correctly, as
 // there is then nothing to catch up to.
-func drainToSequence(events <-chan *vttv1.Envelope, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool) {
+func drainToSequence(events <-chan Delivery, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool) {
 	var out []*vttv1.Envelope
 	deadline := time.After(timeout)
 	reached := head == 0
+	quiet := time.After(window)
 	for {
 		select {
-		case env, ok := <-events:
+		case d, ok := <-events:
 			if !ok {
 				return out, reached
+			}
+			env := d.Envelope
+			if env == nil {
+				continue
 			}
 			out = append(out, env)
 			if env.GetSequence() >= head {
 				reached = true
 			}
-		case <-time.After(window):
+			quiet = time.After(window)
+		case <-quiet:
 			// Quiet. Done only if the target is already in hand; otherwise the
 			// replay is still coming and this is exactly the gap that used to
 			// end the drain early.
 			if reached {
 				return out, true
 			}
+			quiet = time.After(window)
 		case <-deadline:
 			return out, reached
 		}
@@ -726,9 +733,12 @@ func (h *soakHistories) brokenLogs(names []string) []string {
 // Events doc comment — which ends this goroutine too).
 func (h *soakHistories) start(name string, c Conn) {
 	go func() {
-		for env := range c.Events() {
+		for d := range c.Events() {
+			if d.Envelope == nil {
+				continue
+			}
 			h.mu.Lock()
-			h.data[name] = append(h.data[name], env)
+			h.data[name] = append(h.data[name], d.Envelope)
 			h.mu.Unlock()
 		}
 		// The range ended, so the stream is gone. Recorded rather than merely

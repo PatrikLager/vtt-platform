@@ -141,7 +141,7 @@ func dial(t *testing.T, fs *fakeServer, token string, after int64) *harness.Clie
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	c, err := harness.Dial(ctx, fs.wsURL(), token, after)
+	c, err := harness.Dial(ctx, fs.wsURL(), token, after, "")
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -197,8 +197,8 @@ func TestSendCommandCorrelatesByRequestIDWithInterleavedEvent(t *testing.T) {
 
 	select {
 	case env := <-c.Events():
-		if env.GetEventId() != "ev-interleaved" {
-			t.Fatalf("event id = %q, want ev-interleaved", env.GetEventId())
+		if env.Envelope.GetEventId() != "ev-interleaved" {
+			t.Fatalf("event id = %q, want ev-interleaved", env.Envelope.GetEventId())
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("want the interleaved event to still arrive on Events()")
@@ -287,8 +287,8 @@ func TestEventsStreamInOrder(t *testing.T) {
 		select {
 		case env := <-c.Events():
 			want := fmt.Sprintf("ev-%d", i)
-			if env.GetEventId() != want {
-				t.Fatalf("event[%d] = %q, want %q (out of order)", i, env.GetEventId(), want)
+			if env.Envelope.GetEventId() != want {
+				t.Fatalf("event[%d] = %q, want %q (out of order)", i, env.Envelope.GetEventId(), want)
 			}
 		case <-time.After(3 * time.Second):
 			t.Fatalf("timed out waiting for event %d", i)
@@ -437,8 +437,8 @@ func TestEventsBufferOverflowClosesConnectionAndErrorsSendCommand(t *testing.T) 
 				t.Fatalf("Events() closed early at i=%d, want %d buffered events first", i, wantBufferedEvents)
 			}
 			want := fmt.Sprintf("ev-%d", i)
-			if env.GetEventId() != want {
-				t.Fatalf("event[%d] = %q, want %q", i, env.GetEventId(), want)
+			if env.Envelope.GetEventId() != want {
+				t.Fatalf("event[%d] = %q, want %q", i, env.Envelope.GetEventId(), want)
 			}
 		case <-time.After(3 * time.Second):
 			t.Fatalf("timed out waiting for buffered event %d", i)
@@ -503,7 +503,7 @@ func TestDialErrorNeverIncludesTheRawToken(t *testing.T) {
 	// network dependency.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	_, err := harness.Dial(ctx, "ws://127.0.0.1:1/ws", secretToken, 0)
+	_, err := harness.Dial(ctx, "ws://127.0.0.1:1/ws", secretToken, 0, "")
 	if err == nil {
 		t.Fatal("Dial: want an error dialing a dead port, got nil")
 	}
@@ -648,7 +648,7 @@ func TestUnknownServerFrameIsIgnoredNotFatal(t *testing.T) {
 		}})
 	}
 
-	c, err := harness.Dial(context.Background(), fs.wsURL(), "tok", 0)
+	c, err := harness.Dial(context.Background(), fs.wsURL(), "tok", 0, "")
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
@@ -659,8 +659,8 @@ func TestUnknownServerFrameIsIgnoredNotFatal(t *testing.T) {
 		if !ok {
 			t.Fatalf("connection torn down by a frame it merely did not recognise: %v", c.CloseErr())
 		}
-		if env.GetEventId() != "after-presence" {
-			t.Fatalf("got event %q, want the one sent AFTER the unknown frame", env.GetEventId())
+		if env.Envelope.GetEventId() != "after-presence" {
+			t.Fatalf("got event %q, want the one sent AFTER the unknown frame", env.Envelope.GetEventId())
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("no event after an unknown frame — the frame was not skipped")

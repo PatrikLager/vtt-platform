@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/harness"
 )
 
@@ -38,7 +37,7 @@ func newEventsTailCmd() *cobra.Command {
 		Use:   "tail",
 		Short: "Stream envelopes as protojson lines until interrupted",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := harness.Dial(cmd.Context(), serverURL, token, after)
+			c, err := harness.Dial(cmd.Context(), serverURL, token, after, "")
 			if err != nil {
 				return fmt.Errorf("vtt events tail: %w", err)
 			}
@@ -73,11 +72,11 @@ func newEventsTailCmd() *cobra.Command {
 // (state_dump.go's drainToHead), in the sibling command reading the same
 // channel. closeErr is what tells the two closes apart; nil means no
 // connection to ask, and no evidence of truncation.
-func tailUntilDone(cmd *cobra.Command, events <-chan *vttv1.Envelope, closeErr func() error) error {
+func tailUntilDone(cmd *cobra.Command, events <-chan harness.Delivery, closeErr func() error) error {
 	out := cmd.OutOrStdout()
 	for {
 		select {
-		case env, ok := <-events:
+		case d, ok := <-events:
 			if !ok {
 				if closeErr != nil {
 					if err := closeErr(); errors.Is(err, harness.ErrEventsOverflow) {
@@ -86,7 +85,10 @@ func tailUntilDone(cmd *cobra.Command, events <-chan *vttv1.Envelope, closeErr f
 				}
 				return nil
 			}
-			line, err := protojson.Marshal(env)
+			if d.Envelope == nil {
+				continue
+			}
+			line, err := protojson.Marshal(d.Envelope)
 			if err != nil {
 				return fmt.Errorf("vtt events tail: marshal envelope: %w", err)
 			}

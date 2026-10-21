@@ -22,7 +22,7 @@ import (
 type qaWSConn struct {
 	hub      *qaWSHub
 	name     string
-	ch       chan *vttv1.Envelope
+	ch       chan harness.Delivery
 	closed   bool
 	closeErr error
 }
@@ -31,7 +31,7 @@ func (c *qaWSConn) SendCommand(_ context.Context, cmd *vttv1.ClientCommand) (*vt
 	return c.hub.handle(c, cmd)
 }
 
-func (c *qaWSConn) Events() <-chan *vttv1.Envelope { return c.ch }
+func (c *qaWSConn) Events() <-chan harness.Delivery { return c.ch }
 
 func (c *qaWSConn) CloseErr() error {
 	c.hub.mu.Lock()
@@ -63,7 +63,7 @@ func (h *qaWSHub) dial(name string, after int64) (harness.Conn, error) {
 	if _, ok := h.roles[name]; !ok {
 		return nil, fmt.Errorf("qa: no participant %q", name)
 	}
-	c := &qaWSConn{hub: h, name: name, ch: make(chan *vttv1.Envelope, 1<<14)}
+	c := &qaWSConn{hub: h, name: name, ch: make(chan harness.Delivery, 1<<14)}
 	h.conns = append(h.conns, c)
 	for _, env := range h.log {
 		if env.GetSequence() > after {
@@ -89,7 +89,7 @@ func (h *qaWSHub) deliverLocked(c *qaWSConn, env *vttv1.Envelope) {
 		return
 	}
 	select {
-	case c.ch <- env:
+	case c.ch <- harness.Delivery{Envelope: env}:
 	default:
 		h.overflow = true
 	}

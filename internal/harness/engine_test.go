@@ -23,7 +23,7 @@ import (
 // harness.Conn interface.
 type fakeConn struct {
 	name   string
-	events chan *vttv1.Envelope
+	events chan harness.Delivery
 	send   func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error)
 
 	// closeErr lets a test script WHY the stream ended, not merely that it
@@ -37,7 +37,7 @@ type fakeConn struct {
 }
 
 func newFakeConn(name string) *fakeConn {
-	return &fakeConn{name: name, events: make(chan *vttv1.Envelope, 16)}
+	return &fakeConn{name: name, events: make(chan harness.Delivery, 16)}
 }
 
 func (c *fakeConn) SendCommand(_ context.Context, cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
@@ -47,7 +47,7 @@ func (c *fakeConn) SendCommand(_ context.Context, cmd *vttv1.ClientCommand) (*vt
 	return c.send(cmd)
 }
 
-func (c *fakeConn) Events() <-chan *vttv1.Envelope { return c.events }
+func (c *fakeConn) Events() <-chan harness.Delivery { return c.events }
 
 // Close honours the Conn contract that Client documents and this fake had
 // been quietly breaking: "Events() ... is closed when the connection ends
@@ -83,7 +83,7 @@ func (c *fakeConn) trySend(env *vttv1.Envelope) {
 		return
 	}
 	select {
-	case c.events <- env:
+	case c.events <- harness.Delivery{Envelope: env}:
 	default:
 		// A full buffer is a fixture bug, and BLOCKING on it here would be
 		// the worst possible way to find out: sync.Mutex.Lock is explicitly
@@ -289,8 +289,8 @@ func TestRunScenarioReconnectCatchUpEqualityPasses(t *testing.T) {
 
 		// The redial for "player" replays exactly what it saw live.
 		reconnected := newFakeConn("player-reconnected")
-		reconnected.events <- env1
-		reconnected.events <- env2
+		reconnected.events <- harness.Delivery{Envelope: env1}
+		reconnected.events <- harness.Delivery{Envelope: env2}
 
 		dial := func(name string, after int64) (harness.Conn, error) {
 			if name == "player" && after == 0 {
@@ -340,8 +340,8 @@ func TestRunScenarioReconnectCatchUpEqualityFailsOnMismatch(t *testing.T) {
 		// The redial replays the WRONG second event (different event_id) —
 		// same count, so this fails on content, not on a timeout.
 		reconnected := newFakeConn("player-reconnected")
-		reconnected.events <- env1
-		reconnected.events <- sceneCreatedEnv("ev-2-CORRUPTED")
+		reconnected.events <- harness.Delivery{Envelope: env1}
+		reconnected.events <- harness.Delivery{Envelope: sceneCreatedEnv("ev-2-CORRUPTED")}
 
 		dial := func(name string, after int64) (harness.Conn, error) {
 			if name == "player" && after == 0 && player.isClosed() {
@@ -490,7 +490,7 @@ func TestRunScenarioErrorsOnPreExistingCatchUpEvents(t *testing.T) {
 		// connection at dial time — exactly what a real gateway's after=0
 		// catch-up replay of prior history would deliver before any command has
 		// been issued.
-		dm.events <- sessionStartedEnv("pre-existing-1")
+		dm.events <- harness.Delivery{Envelope: sessionStartedEnv("pre-existing-1")}
 		dm.send = okSend(world, 2, sceneCreatedEnv("ev-2"), "dm")
 
 		sc := &harness.Scenario{
@@ -849,7 +849,7 @@ func TestRunScenarioReconnectCatchUpNamesADeadStreamNotATimeout(t *testing.T) {
 		// The redial replays the first event, then the stream is torn down
 		// for overflow before the second.
 		reconnected := newFakeConn("player-reconnected")
-		reconnected.events <- env1
+		reconnected.events <- harness.Delivery{Envelope: env1}
 		reconnected.closeErr = harness.ErrEventsOverflow
 		_ = reconnected.Close()
 

@@ -92,9 +92,15 @@ func redactURL(s string) string {
 	return tokenQueryParamPattern.ReplaceAllString(s, "token=[redacted]")
 }
 
+// Delivery is one thing a connection was sent: an entry or a switch, never both.
+type Delivery struct {
+	Envelope  *vttv1.Envelope
+	Viewpoint *vttv1.ViewpointChanged
+}
+
 // Client is a connected wire client: one WebSocket to the gateway, demuxing
 // ServerFrame results (correlated to SendCommand callers by request_id) from
-// the broadcast event stream (Events()). The zero value is not usable; a
+// the entries and switches it hands Events(). The zero value is not usable; a
 // Client is only ever obtained from Dial.
 type Client struct {
 	conn *websocket.Conn
@@ -104,7 +110,7 @@ type Client struct {
 	readCtx context.Context
 	cancel  context.CancelFunc
 
-	events chan *vttv1.Envelope
+	events chan Delivery
 
 	mu      sync.Mutex
 	pending map[string]chan *vttv1.CommandResult
@@ -133,12 +139,10 @@ type Client struct {
 }
 
 // Dial connects to the gateway's /ws endpoint at wsURL with the given invite
-// token and catch-up cursor (after), and starts demuxing inbound frames.
-// ctx bounds only the connection handshake; the returned Client's lifetime
-// is independent of ctx (mirroring the gateway's own connection lifecycle —
-// see internal/gateway/server.go's serve, which does the same against
-// r.Context()).
-func Dial(ctx context.Context, wsURL, token string, after int64) (*Client, error) {
+// token, catch-up cursor (after) and log, none when empty (VTT-410), and
+// starts demuxing inbound frames. ctx bounds only the handshake: the returned
+// Client's lifetime is independent of it.
+func Dial(ctx context.Context, wsURL, token string, after int64, log string) (*Client, error) {
 	u, err := url.Parse(wsURL)
 	if err != nil {
 		// wsURL itself carries no token yet (added below), but this is
@@ -153,6 +157,9 @@ func Dial(ctx context.Context, wsURL, token string, after int64) (*Client, error
 	q := u.Query()
 	q.Set("token", token)
 	q.Set("after", strconv.FormatInt(after, 10))
+	if log != "" {
+		q.Set("log", log)
+	}
 	u.RawQuery = q.Encode()
 
 	conn, _, err := websocket.Dial(ctx, u.String(), nil)
@@ -174,7 +181,7 @@ func Dial(ctx context.Context, wsURL, token string, after int64) (*Client, error
 		conn:       conn,
 		readCtx:    readCtx,
 		cancel:     cancel,
-		events:     make(chan *vttv1.Envelope, eventBuffer),
+		events:     make(chan Delivery, eventBuffer),
 		pending:    make(map[string]chan *vttv1.CommandResult),
 		readerDone: make(chan struct{}),
 
@@ -247,10 +254,10 @@ func (c *Client) SendCommand(ctx context.Context, cmd *vttv1.ClientCommand) (*vt
 	}
 }
 
-// Events returns the channel of broadcast Envelopes, in wire order. It is
-// closed when the connection ends (server close, local Close, or a
-// protocol/overflow error).
-func (c *Client) Events() <-chan *vttv1.Envelope {
+// Events returns what the connection is sent, entries and switches, in wire
+// order. It is closed when the connection ends (server close, local Close, or
+// a protocol/overflow error).
+func (c *Client) Events() <-chan Delivery {
 	return c.events
 }
 
@@ -269,12 +276,10 @@ func (c *Client) Close() error {
 	return nil
 }
 
-// readLoop is the single demuxing goroutine: every inbound ServerFrame is
-// decoded here and routed to either deliverResult (result → the caller
-// blocked in SendCommand, matched by request_id) or deliverEvent (event →
-// Events(), in arrival order). It owns the only conn.Read call for this
-// connection's lifetime (required by coder/websocket: "All methods may be
-// called concurrently except for Reader and Read.").
+// readLoop is the single demuxing goroutine: a result goes to its SendCommand
+// caller by request_id, and an entry or a switch to Events() in arrival order
+// (VTT-409). It owns the only conn.Read: coder/websocket allows no concurrent
+// Read.
 func (c *Client) readLoop() {
 	defer close(c.readerDone)
 	defer close(c.events)
@@ -299,8 +304,12 @@ func (c *Client) readLoop() {
 		case *vttv1.ServerFrame_Result:
 			c.deliverResult(f.Result)
 		case *vttv1.ServerFrame_Event:
-			if !c.deliverEvent(f.Event) {
+			if !c.deliverEvent(Delivery{Envelope: f.Event}) {
 				return // overflow: deliverEvent already tore the connection down
+			}
+		case *vttv1.ServerFrame_ViewpointChanged:
+			if !c.deliverEvent(Delivery{Viewpoint: f.ViewpointChanged}) {
+				return
 			}
 		case *vttv1.ServerFrame_CatchUpHead:
 			c.setCatchUpHead(f.CatchUpHead.GetHeadSequence())
@@ -346,13 +355,13 @@ func (c *Client) deliverResult(res *vttv1.CommandResult) {
 	}
 }
 
-// deliverEvent pushes env onto Events(). It returns false if the buffer was
+// deliverEvent pushes d onto Events(). It returns false if the buffer was
 // full (eventBuffer's overflow policy: tear the connection down with
 // ErrEventsOverflow rather than block the reader goroutine — a blocked
 // reader would also stall result delivery for every in-flight SendCommand).
-func (c *Client) deliverEvent(env *vttv1.Envelope) bool {
+func (c *Client) deliverEvent(d Delivery) bool {
 	select {
-	case c.events <- env:
+	case c.events <- d:
 		return true
 	default:
 		c.teardown(ErrEventsOverflow)

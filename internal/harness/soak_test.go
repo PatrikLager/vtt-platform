@@ -216,7 +216,7 @@ func (w *soakWorld) dial(name string, after int64) (harness.Conn, error) {
 	}
 	w.dials++
 	c := newFakeConn(name)
-	c.events = make(chan *vttv1.Envelope, 8192)
+	c.events = make(chan harness.Delivery, 8192)
 	// Scripted overflow: deliver a prefix, then end the way a real client ends
 	// when deliverEvent finds its buffer full. Consumed on use so the resume
 	// dial behaves normally.
@@ -242,7 +242,7 @@ func (w *soakWorld) dial(name string, after int64) (harness.Conn, error) {
 			// the test timeout. The 8192 cap is ~8x the largest committed
 			// soak, so overflow means a fixture grew past its headroom.
 			select {
-			case c.events <- env:
+			case c.events <- harness.Delivery{Envelope: env}:
 			default:
 				panic(fmt.Sprintf("soakWorld: catch-up preload for %q exceeded the %d-envelope "+
 					"buffer at sequence %d; raise it rather than letting this block",

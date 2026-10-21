@@ -26,15 +26,15 @@ func env(seq int64) *vttv1.Envelope { return &vttv1.Envelope{Sequence: seq} }
 
 func TestDrainToSequenceSurvivesAGapLongerThanTheWindow(t *testing.T) {
 	const window = 20 * time.Millisecond
-	ch := make(chan *vttv1.Envelope, 4)
+	ch := make(chan Delivery, 4)
 
 	go func() {
-		ch <- env(1)
+		ch <- Delivery{Envelope: env(1)}
 		// Four windows of silence, exactly the shape that ended the old drain
 		// early and produced a false fold divergence.
 		time.Sleep(4 * window)
-		ch <- env(2)
-		ch <- env(3)
+		ch <- Delivery{Envelope: env(2)}
+		ch <- Delivery{Envelope: env(3)}
 	}()
 
 	got, reached := drainToSequence(ch, 3, window, 5*time.Second)
@@ -54,8 +54,8 @@ func TestDrainToSequenceReportsNotReachedRatherThanReturningShortSilently(t *tes
 	// one. The old drain returned a short slice and no signal, so the caller
 	// blamed the fold; the bool is what lets runSoakCheckpoint say "never
 	// reached sequence N" instead.
-	ch := make(chan *vttv1.Envelope, 1)
-	ch <- env(1)
+	ch := make(chan Delivery, 1)
+	ch <- Delivery{Envelope: env(1)}
 
 	got, reached := drainToSequence(ch, 99, 10*time.Millisecond, 120*time.Millisecond)
 	if reached {
@@ -71,12 +71,12 @@ func TestDrainToSequenceCollectsTheTailAfterTheTarget(t *testing.T) {
 	// just behind it, which would ALSO produce a spurious fold difference —
 	// the same bug from the other side.
 	const window = 25 * time.Millisecond
-	ch := make(chan *vttv1.Envelope, 8)
+	ch := make(chan Delivery, 8)
 	go func() {
-		ch <- env(1)
-		ch <- env(2) // target
-		ch <- env(3) // tail, already in flight
-		ch <- env(4)
+		ch <- Delivery{Envelope: env(1)}
+		ch <- Delivery{Envelope: env(2)} // target
+		ch <- Delivery{Envelope: env(3)} // tail, already in flight
+		ch <- Delivery{Envelope: env(4)}
 	}()
 
 	got, reached := drainToSequence(ch, 2, window, 5*time.Second)
@@ -91,8 +91,8 @@ func TestDrainToSequenceCollectsTheTailAfterTheTarget(t *testing.T) {
 func TestDrainToSequenceWithNoTargetDegradesToAQuiescentDrain(t *testing.T) {
 	// An empty observer history means there is nothing to catch up to, and the
 	// silence window is then the only sensible signal.
-	ch := make(chan *vttv1.Envelope, 2)
-	ch <- env(1)
+	ch := make(chan Delivery, 2)
+	ch <- Delivery{Envelope: env(1)}
 	got, reached := drainToSequence(ch, 0, 10*time.Millisecond, time.Second)
 	if !reached {
 		t.Fatal("want a head of 0 treated as already reached")
@@ -266,19 +266,19 @@ func TestFreshCatchUpIsBoundedByTheAttemptCap(t *testing.T) {
 // point of the test above: a closed Events() channel alone cannot distinguish
 // an overflow disconnect from a finished replay.
 type stubConn struct {
-	events chan *vttv1.Envelope
+	events chan Delivery
 	err    error
 }
 
 func newStubConn() *stubConn {
-	return &stubConn{events: make(chan *vttv1.Envelope, 64)}
+	return &stubConn{events: make(chan Delivery, 64)}
 }
 
-func (s *stubConn) send(e *vttv1.Envelope)         { s.events <- e }
-func (s *stubConn) finish()                        { close(s.events) }
-func (s *stubConn) Events() <-chan *vttv1.Envelope { return s.events }
-func (s *stubConn) CloseErr() error                { return s.err }
-func (s *stubConn) Close() error                   { return nil }
+func (s *stubConn) send(e *vttv1.Envelope)  { s.events <- Delivery{Envelope: e} }
+func (s *stubConn) finish()                 { close(s.events) }
+func (s *stubConn) Events() <-chan Delivery { return s.events }
+func (s *stubConn) CloseErr() error         { return s.err }
+func (s *stubConn) Close() error            { return nil }
 func (s *stubConn) SendCommand(context.Context, *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
 	return nil, nil
 }

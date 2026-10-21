@@ -552,7 +552,7 @@ func observeStateIndependently(t *testing.T, wsURL, token string) map[string]any
 	t.Helper()
 	dialCtx, dialCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer dialCancel()
-	c, err := harness.Dial(dialCtx, wsURL, token, 0)
+	c, err := harness.Dial(dialCtx, wsURL, token, 0, "")
 	if err != nil {
 		t.Fatalf("independent observation: dial: %v", err)
 	}

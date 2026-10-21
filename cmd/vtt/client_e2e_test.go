@@ -643,7 +643,7 @@ func buildVTTBinary(t *testing.T) string {
 // test has a deterministic single catch-up line to wait for.
 func seedOneEvent(t *testing.T, fx liveFixture) {
 	t.Helper()
-	c, err := harness.Dial(context.Background(), fx.wsURL, fx.dmToken, 0)
+	c, err := harness.Dial(context.Background(), fx.wsURL, fx.dmToken, 0, "")
 	if err != nil {
 		t.Fatalf("seedOneEvent: dial: %v", err)
 	}

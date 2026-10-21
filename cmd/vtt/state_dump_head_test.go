@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -20,12 +21,12 @@ func envAt(seq int64) *vttv1.Envelope { return &vttv1.Envelope{Sequence: seq} }
 
 func TestDrainToHeadSurvivesAGapLongerThanTheQuietWindow(t *testing.T) {
 	const window = 20 * time.Millisecond
-	ch := make(chan *vttv1.Envelope, 4)
+	ch := make(chan harness.Delivery, 4)
 	go func() {
-		ch <- envAt(1)
+		ch <- harness.Delivery{Envelope: envAt(1)}
 		time.Sleep(4 * window) // the ordinary mid-replay pause that used to end the read
-		ch <- envAt(2)
-		ch <- envAt(3)
+		ch <- harness.Delivery{Envelope: envAt(2)}
+		ch <- harness.Delivery{Envelope: envAt(3)}
 	}()
 
 	got, reached, _ := drainToHead(ch, nil, 0, 3, window, 5*time.Second)
@@ -41,8 +42,8 @@ func TestDrainToHeadReportsAStalledReplayRatherThanReturningShort(t *testing.T) 
 	// The bool is what lets the caller REFUSE to print. Returning a short
 	// slice with no signal is precisely how a truncated dump used to look
 	// exactly like a complete one.
-	ch := make(chan *vttv1.Envelope, 1)
-	ch <- envAt(1)
+	ch := make(chan harness.Delivery, 1)
+	ch <- harness.Delivery{Envelope: envAt(1)}
 	got, reached, _ := drainToHead(ch, nil, 0, 99, 10*time.Millisecond, 120*time.Millisecond)
 	if reached {
 		t.Fatal("want reached=false when the head never arrives")
@@ -57,11 +58,11 @@ func TestDrainToHeadCollectsTheLiveTailPastTheHead(t *testing.T) {
 	// behind it — a truncation from the other side, and one that would make a
 	// dump disagree with a fold of the same log.
 	const window = 25 * time.Millisecond
-	ch := make(chan *vttv1.Envelope, 8)
+	ch := make(chan harness.Delivery, 8)
 	go func() {
-		ch <- envAt(1)
-		ch <- envAt(2) // the announced head
-		ch <- envAt(3) // live, already in flight
+		ch <- harness.Delivery{Envelope: envAt(1)}
+		ch <- harness.Delivery{Envelope: envAt(2)} // the announced head
+		ch <- harness.Delivery{Envelope: envAt(3)} // live, already in flight
 	}()
 
 	got, reached, _ := drainToHead(ch, nil, 0, 2, window, 5*time.Second)
@@ -74,7 +75,7 @@ func TestDrainToHeadOnAnEmptyLogReturnsImmediatelyAtQuiet(t *testing.T) {
 	// Head 0 means the log was empty at subscribe time. There is nothing to
 	// wait for, so the quiet window is the right signal — the one case where
 	// it was never a guess.
-	ch := make(chan *vttv1.Envelope)
+	ch := make(chan harness.Delivery)
 	start := time.Now()
 	got, reached, _ := drainToHead(ch, nil, 0, 0, 20*time.Millisecond, 5*time.Second)
 	if !reached {
@@ -111,7 +112,7 @@ func TestHeadSequenceIsTheMaximum(t *testing.T) {
 // from that command today. It is one flag away everywhere else: events_tail.go
 // and client_run.go already take a caller-supplied after.
 func TestDrainToHeadTreatsAHeadAtTheCursorAsAlreadyCaughtUp(t *testing.T) {
-	ch := make(chan *vttv1.Envelope) // nothing will ever arrive, and nothing should need to
+	ch := make(chan harness.Delivery) // nothing will ever arrive, and nothing should need to
 	got, reached, _ := drainToHead(ch, nil, 5, 5, 20*time.Millisecond, 150*time.Millisecond)
 	if !reached {
 		t.Fatal("want reached=true when the announced head is already at the dial cursor")
@@ -126,7 +127,7 @@ func TestDrainToHeadTreatsAHeadAtTheCursorAsAlreadyCaughtUp(t *testing.T) {
 // A cursor of 5 with an announced head of 8 has three envelopes owing, and
 // reporting success without them is the original truncation bug.
 func TestDrainToHeadStillWaitsForAHeadAheadOfTheCursor(t *testing.T) {
-	ch := make(chan *vttv1.Envelope)
+	ch := make(chan harness.Delivery)
 	got, reached, _ := drainToHead(ch, nil, 5, 8, 10*time.Millisecond, 120*time.Millisecond)
 	if reached {
 		t.Fatalf("want reached=false while sequences 6-8 are still owing, got %d envelopes", len(got))
@@ -150,8 +151,8 @@ func TestDrainToHeadStillWaitsForAHeadAheadOfTheCursor(t *testing.T) {
 // way. Only the connection's CloseErr can, which is why drainToHead now takes
 // one.
 func TestDrainToHeadNamesAnOverflowRatherThanBlamingTheClock(t *testing.T) {
-	ch := make(chan *vttv1.Envelope, 1)
-	ch <- envAt(1)
+	ch := make(chan harness.Delivery, 1)
+	ch <- harness.Delivery{Envelope: envAt(1)}
 	close(ch) // torn down mid-replay, exactly as an overflow ends it
 
 	got, reached, why := drainToHead(ch, func() error { return harness.ErrEventsOverflow },
@@ -173,7 +174,7 @@ func TestDrainToHeadNamesAnOverflowRatherThanBlamingTheClock(t *testing.T) {
 // useless as one that says "timeout" for every short read — it just moves the
 // wrong answer.
 func TestDrainToHeadStillReportsATimeoutAsATimeout(t *testing.T) {
-	ch := make(chan *vttv1.Envelope) // open, silent, never closed
+	ch := make(chan harness.Delivery) // open, silent, never closed
 	_, reached, why := drainToHead(ch, func() error { return nil },
 		0, 99, 10*time.Millisecond, 80*time.Millisecond)
 
@@ -215,8 +216,8 @@ func TestDrainToHeadStillReportsATimeoutAsATimeout(t *testing.T) {
 func TestDrainToHeadCarriesTheServersOwnReasonThroughACleanClose(t *testing.T) {
 	cause := errors.New(`failed to get reader: received close frame: status = ` +
 		`StatusNormalClosure and reason = "gateway: shutting down"`)
-	ch := make(chan *vttv1.Envelope, 1)
-	ch <- envAt(1)
+	ch := make(chan harness.Delivery, 1)
+	ch <- harness.Delivery{Envelope: envAt(1)}
 	close(ch)
 
 	_, reached, why := drainToHead(ch, func() error { return cause },
@@ -248,9 +249,9 @@ func TestDrainToHeadCarriesTheServersOwnReasonThroughACleanClose(t *testing.T) {
 func TestDrainToHeadPrintsAStateWhoseStreamClosedAfterTheHead(t *testing.T) {
 	// The ordinary production path: the server sends the backlog and closes.
 	// Nothing is missing, so this must be printable and carry no stop reason.
-	ch := make(chan *vttv1.Envelope, 2)
-	ch <- envAt(1)
-	ch <- envAt(2) // the announced head
+	ch := make(chan harness.Delivery, 2)
+	ch <- harness.Delivery{Envelope: envAt(1)}
+	ch <- harness.Delivery{Envelope: envAt(2)} // the announced head
 	close(ch)
 
 	got, reached, why := drainToHead(ch, func() error { return errors.New("normal closure") },
@@ -272,13 +273,13 @@ func TestDrainToHeadPrintsAStateStillBusyAtTheDeadline(t *testing.T) {
 	// lets the window elapse, so a long enough run reaches the DEADLINE with
 	// the head long since passed. That is a complete read, not a truncation —
 	// the deadline is a backstop, not a verdict.
-	ch := make(chan *vttv1.Envelope)
+	ch := make(chan harness.Delivery)
 	stop := make(chan struct{})
 	t.Cleanup(func() { close(stop) }) // closed by the test only, exactly once
 	go func() {
 		for i := int64(1); ; i++ {
 			select {
-			case ch <- envAt(i):
+			case ch <- harness.Delivery{Envelope: envAt(i)}:
 			case <-stop:
 				return
 			}
@@ -303,7 +304,7 @@ func TestDrainToHeadPrintsAStateStillBusyAtTheDeadline(t *testing.T) {
 // A nil accessor must not panic. drainToHead is called from test helpers that
 // hold a raw channel and have no connection to ask.
 func TestDrainToHeadToleratesNoCloseErrAccessor(t *testing.T) {
-	ch := make(chan *vttv1.Envelope)
+	ch := make(chan harness.Delivery)
 	close(ch)
 	_, reached, why := drainToHead(ch, nil, 0, 99, 10*time.Millisecond, time.Second)
 	if reached {
@@ -312,4 +313,25 @@ func TestDrainToHeadToleratesNoCloseErrAccessor(t *testing.T) {
 	if why == nil {
 		t.Fatal("want a stop reason even with no accessor")
 	}
+}
+
+func TestASwitchDoesNotExtendDrainToHeadsQuietWindow(t *testing.T) {
+	const window = 100 * time.Millisecond
+	synctest.Test(t, func(t *testing.T) {
+		ch, done := make(chan harness.Delivery, 4), make(chan struct{})
+		go func() {
+			defer close(done)
+			ch <- harness.Delivery{Envelope: envAt(1)}
+			time.Sleep(80 * time.Millisecond)
+			ch <- harness.Delivery{Viewpoint: &vttv1.ViewpointChanged{ActorId: "a2"}}
+			time.Sleep(70 * time.Millisecond)
+			ch <- harness.Delivery{Envelope: envAt(2)}
+		}()
+		start := time.Now()
+		got, reached, err := drainToHead(ch, nil, 0, 1, window, time.Second)
+		if took := time.Since(start); err != nil || !reached || len(got) != 1 || took != window {
+			t.Fatalf("drained %d, reached=%t, err=%v, after %s; want 1 at %s", len(got), reached, err, took, window)
+		}
+		<-done
+	})
 }

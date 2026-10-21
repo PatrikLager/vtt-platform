@@ -65,7 +65,7 @@ func fakeWSServer(t *testing.T) string {
 
 // stubDial replaces harnessDial for the duration of the test and restores it
 // afterwards.
-func stubDial(t *testing.T, fn func(context.Context, string, string, int64) (*harness.Client, error)) {
+func stubDial(t *testing.T, fn func(context.Context, string, string, int64, string) (*harness.Client, error)) {
 	t.Helper()
 	origDial := harnessDial
 	t.Cleanup(func() { harnessDial = origDial })
@@ -74,7 +74,7 @@ func stubDial(t *testing.T, fn func(context.Context, string, string, int64) (*ha
 
 func TestRedialReturnsFalseWithoutDialingWhenContextAlreadyCanceled(t *testing.T) {
 	var calls int
-	stubDial(t, func(context.Context, string, string, int64) (*harness.Client, error) {
+	stubDial(t, func(context.Context, string, string, int64, string) (*harness.Client, error) {
 		calls++
 		return nil, errors.New("should not be reached")
 	})
@@ -102,7 +102,7 @@ func TestRedialRetriesAndResumesFromLastSeen(t *testing.T) {
 		afters []int64
 	)
 	origDial := harnessDial
-	stubDial(t, func(dctx context.Context, u, tok string, after int64) (*harness.Client, error) {
+	stubDial(t, func(dctx context.Context, u, tok string, after int64, log string) (*harness.Client, error) {
 		mu.Lock()
 		afters = append(afters, after)
 		n := len(afters)
@@ -110,7 +110,7 @@ func TestRedialRetriesAndResumesFromLastSeen(t *testing.T) {
 		if n < 3 {
 			return nil, errors.New("connection refused")
 		}
-		return origDial(dctx, u, tok, after)
+		return origDial(dctx, u, tok, after, log)
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -161,7 +161,7 @@ func TestRedialWakesImmediatelyWhenContextCanceledDuringBackoff(t *testing.T) {
 	defer cancel()
 
 	var calls int
-	stubDial(t, func(context.Context, string, string, int64) (*harness.Client, error) {
+	stubDial(t, func(context.Context, string, string, int64, string) (*harness.Client, error) {
 		calls++
 		if calls == 1 {
 			go func() {

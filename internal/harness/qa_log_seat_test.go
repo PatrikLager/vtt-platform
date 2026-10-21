@@ -31,13 +31,13 @@ type qaLSConn struct {
 	name     string
 	srv      qaLSHandler
 	mu       sync.Mutex
-	ch       chan *vttv1.Envelope
+	ch       chan harness.Delivery
 	closed   bool
 	closeErr error
 }
 
 func qaLSNewConn(name string, srv qaLSHandler) *qaLSConn {
-	return &qaLSConn{name: name, srv: srv, ch: make(chan *vttv1.Envelope, 16384)}
+	return &qaLSConn{name: name, srv: srv, ch: make(chan harness.Delivery, 16384)}
 }
 
 func (c *qaLSConn) SendCommand(_ context.Context, cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) {
@@ -47,7 +47,7 @@ func (c *qaLSConn) SendCommand(_ context.Context, cmd *vttv1.ClientCommand) (*vt
 	return c.srv.handle(c.name, cmd)
 }
 
-func (c *qaLSConn) Events() <-chan *vttv1.Envelope { return c.ch }
+func (c *qaLSConn) Events() <-chan harness.Delivery { return c.ch }
 
 func (c *qaLSConn) CloseErr() error {
 	c.mu.Lock()
@@ -83,7 +83,7 @@ func (c *qaLSConn) push(env *vttv1.Envelope) {
 		return
 	}
 	select {
-	case c.ch <- proto.Clone(env).(*vttv1.Envelope):
+	case c.ch <- harness.Delivery{Envelope: proto.Clone(env).(*vttv1.Envelope)}:
 	default:
 		c.closed = true
 		c.closeErr = harness.ErrEventsOverflow

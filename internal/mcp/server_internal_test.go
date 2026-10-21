@@ -65,8 +65,8 @@ func TestRedialClosesClientWhenContextCanceledBetweenDialSuccessAndInstall(t *te
 
 	realDial := harnessDial
 	defer func() { harnessDial = realDial }()
-	harnessDial = func(dctx context.Context, u, tok string, after int64) (*harness.Client, error) {
-		c, err := realDial(dctx, u, tok, after)
+	harnessDial = func(dctx context.Context, u, tok string, after int64, log string) (*harness.Client, error) {
+		c, err := realDial(dctx, u, tok, after, log)
 		if err == nil {
 			cancel() // the race: ctx dies the instant Dial succeeds, before redial can look at it
 		}

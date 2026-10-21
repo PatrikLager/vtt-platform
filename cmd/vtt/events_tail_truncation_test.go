@@ -10,7 +10,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/harness"
 )
 
@@ -37,8 +36,8 @@ func tailCmd(ctx context.Context, out *bytes.Buffer) *cobra.Command {
 }
 
 func TestEventsTailFailsRatherThanSilentlyTruncatingOnOverflow(t *testing.T) {
-	ch := make(chan *vttv1.Envelope, 1)
-	ch <- envAt(1)
+	ch := make(chan harness.Delivery, 1)
+	ch <- harness.Delivery{Envelope: envAt(1)}
 	close(ch) // the teardown an overflow performs
 
 	var out bytes.Buffer
@@ -62,8 +61,8 @@ func TestEventsTailStopsCleanlyWhenTheServerClosesTheStream(t *testing.T) {
 	// The other side: a tail that reached the end of the stream has not
 	// truncated anything, and turning every close into a failure would make
 	// the command useless for its ordinary job.
-	ch := make(chan *vttv1.Envelope, 1)
-	ch <- envAt(1)
+	ch := make(chan harness.Delivery, 1)
+	ch <- harness.Delivery{Envelope: envAt(1)}
 	close(ch)
 
 	var out bytes.Buffer
@@ -81,7 +80,7 @@ func TestEventsTailStopsCleanlyOnContextCancel(t *testing.T) {
 	// Ctrl-C is not a truncation either. Pinned because the overflow check
 	// sits on the same close path and a careless version would fail here too.
 	ctx, cancel := context.WithCancel(context.Background())
-	ch := make(chan *vttv1.Envelope)
+	ch := make(chan harness.Delivery)
 	var out bytes.Buffer
 
 	done := make(chan error, 1)
@@ -99,7 +98,7 @@ func TestEventsTailStopsCleanlyOnContextCancel(t *testing.T) {
 }
 
 func TestEventsTailToleratesNoCloseErrAccessor(t *testing.T) {
-	ch := make(chan *vttv1.Envelope)
+	ch := make(chan harness.Delivery)
 	close(ch)
 	var out bytes.Buffer
 	if err := tailUntilDone(tailCmd(context.Background(), &out), ch, nil); err != nil {

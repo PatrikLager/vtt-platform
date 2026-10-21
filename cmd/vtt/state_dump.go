@@ -64,7 +64,7 @@ func newStateDumpCmd() *cobra.Command {
 		Use:   "dump",
 		Short: "Catch up, fold, and print derived state as JSON",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := harness.Dial(cmd.Context(), serverURL, token, dumpAfter)
+			c, err := harness.Dial(cmd.Context(), serverURL, token, dumpAfter, "")
 			if err != nil {
 				return fmt.Errorf("vtt state dump: %w", err)
 			}
@@ -143,27 +143,34 @@ func newStateDumpCmd() *cobra.Command {
 //
 // Deliberately a sibling of internal/harness/soak.go's drainToSequence rather
 // than an import: cmd/vtt depends on harness, never the reverse.
-func drainToHead(events <-chan *vttv1.Envelope, closeErr func() error, after, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool, error) {
+func drainToHead(events <-chan harness.Delivery, closeErr func() error, after, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool, error) {
 	var out []*vttv1.Envelope
 	deadline := time.After(timeout)
 	reached := head <= after
+	quiet := time.After(window)
 	for {
 		select {
-		case env, ok := <-events:
+		case d, ok := <-events:
 			if !ok {
 				if reached {
 					return out, true, nil
 				}
 				return out, false, streamClosedReason(closeErr)
 			}
+			env := d.Envelope
+			if env == nil {
+				continue
+			}
 			out = append(out, env)
 			if env.Sequence >= head {
 				reached = true
 			}
-		case <-time.After(window):
+			quiet = time.After(window)
+		case <-quiet:
 			if reached {
 				return out, true, nil
 			}
+			quiet = time.After(window)
 		case <-deadline:
 			if reached {
 				return out, true, nil

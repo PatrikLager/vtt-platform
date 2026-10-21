@@ -216,7 +216,7 @@ func New(cfg Config) (*Server, error) {
 // until the client disconnects or ctx is canceled, mirroring
 // mcpsdk.Server.Run's own contract.
 func (s *Server) Run(ctx context.Context, transport mcpsdk.Transport) error {
-	client, err := harnessDial(ctx, s.cfg.WSURL, s.cfg.Token, 0)
+	client, err := harnessDial(ctx, s.cfg.WSURL, s.cfg.Token, 0, "")
 	if err != nil {
 		return fmt.Errorf("mcp: initial dial: %w", err)
 	}
@@ -254,14 +254,17 @@ func (s *Server) pump(ctx context.Context) {
 			client = s.currentClient()
 		}
 
-		for env := range client.Events() {
+		for d := range client.Events() {
+			if d.Envelope == nil {
+				continue
+			}
 			// recordEvent is the single accumulation hook: dedupe, history
 			// append, and lastSeq advance all happen there together (see
 			// its doc comment) — this used to be an inline dedupe-and-
 			// advance-lastSeq check only; the read tools (read_tools.go)
 			// need every drained envelope accumulated too, so recordEvent
 			// folds both jobs into one mutex-guarded operation.
-			s.recordEvent(env)
+			s.recordEvent(d.Envelope)
 		}
 
 		// Events() closed: the connection is gone.
@@ -282,7 +285,7 @@ func (s *Server) redial(ctx context.Context) bool {
 		if ctx.Err() != nil {
 			return false
 		}
-		client, err := harnessDial(ctx, s.cfg.WSURL, s.cfg.Token, s.lastSeen())
+		client, err := harnessDial(ctx, s.cfg.WSURL, s.cfg.Token, s.lastSeen(), "")
 		if err == nil {
 			// TOCTOU guard (final review Fix 6c): harnessDial's ctx bounds
 			// only the handshake (harness.Dial's own doc comment — the
