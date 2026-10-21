@@ -127,18 +127,15 @@ type Server struct {
 
 	mu      sync.Mutex
 	client  *harness.Client // nil while disconnected
-	lastSeq int64           // highest event sequence seen so far, for redial's after= cursor
-	// history is every envelope recordEvent has accumulated, in ascending
-	// sequence order with no duplicates — the single source read_tools.go's
-	// get_state and get_events_since both read (via historySnapshot) to
-	// fold/paginate, NEVER a second connection (spec §3's binding
-	// consistency rule: state must derive from this server's own live
-	// stream). Unbounded for v1: the platform's target scale is a
-	// table-top campaign's worth of events for one `vtt mcp` process
-	// lifetime, not an unbounded production log, so an in-memory slice was
-	// judged acceptable here; retention/bounding policy is a ledgered
-	// future concern, not this task's (see the task report).
+	lastSeq int64           // highest sequence seen of the log held, for redial's after= cursor
+	// history is what recordEvent kept of the log the connection holds, in
+	// ascending sequence order with no duplicates: the one source get_state and
+	// get_events_since read, never a second connection (VTT-418). Once told is
+	// set, log names that log ("" for nobody); a world connection is never told
+	// one.
 	history []*vttv1.Envelope
+	log     string
+	told    bool
 }
 
 // New validates cfg, parses ToolsJSON, builds the tool-name -> ClientCommand
@@ -209,12 +206,10 @@ func New(cfg Config) (*Server, error) {
 }
 
 // Run dials the gateway via harness.Dial and serves the MCP protocol over
-// transport for one session (one connection per Run lifetime), reconnecting
-// the underlying wire client on connection loss: redial uses after=<last
-// seen event sequence>, and tool calls made while disconnected return clean
-// MCP errors (never a crash — see handlerFor/currentClient). Run blocks
-// until the client disconnects or ctx is canceled, mirroring
-// mcpsdk.Server.Run's own contract.
+// transport for one session, redialling on connection loss (redial, VTT-420,
+// VTT-421); a tool call made while disconnected returns a clean MCP error
+// (handlerFor, currentClient). Run blocks until the client disconnects or ctx
+// is canceled, as mcpsdk.Server.Run does.
 func (s *Server) Run(ctx context.Context, transport mcpsdk.Transport) error {
 	client, err := harnessDial(ctx, s.cfg.WSURL, s.cfg.Token, 0, "")
 	if err != nil {
@@ -255,15 +250,10 @@ func (s *Server) pump(ctx context.Context) {
 		}
 
 		for d := range client.Events() {
-			if d.Envelope == nil {
+			if d.Viewpoint != nil {
+				s.recordSwitch(d.Viewpoint)
 				continue
 			}
-			// recordEvent is the single accumulation hook: dedupe, history
-			// append, and lastSeq advance all happen there together (see
-			// its doc comment) — this used to be an inline dedupe-and-
-			// advance-lastSeq check only; the read tools (read_tools.go)
-			// need every drained envelope accumulated too, so recordEvent
-			// folds both jobs into one mutex-guarded operation.
 			s.recordEvent(d.Envelope)
 		}
 
@@ -275,17 +265,19 @@ func (s *Server) pump(ctx context.Context) {
 	}
 }
 
-// redial retries harness.Dial with after=<lastSeen> until it succeeds or ctx
-// is canceled, using a simple capped exponential backoff. It installs the
-// new client via setClient on success. Returns false if ctx was canceled
-// before a connection could be established.
+// redial retries harness.Dial, naming the log held and the highest sequence
+// seen of it (VTT-420, VTT-421), until it succeeds or ctx is canceled, with a
+// simple capped exponential backoff. It installs the new client via setClient
+// on success. Returns false if ctx was canceled before a connection could be
+// established.
 func (s *Server) redial(ctx context.Context) bool {
 	backoff := redialInitialBackoff
 	for {
 		if ctx.Err() != nil {
 			return false
 		}
-		client, err := harnessDial(ctx, s.cfg.WSURL, s.cfg.Token, s.lastSeen(), "")
+		after, log := s.lastSeen()
+		client, err := harnessDial(ctx, s.cfg.WSURL, s.cfg.Token, after, log)
 		if err == nil {
 			// TOCTOU guard (final review Fix 6c): harnessDial's ctx bounds
 			// only the handshake (harness.Dial's own doc comment — the
@@ -331,20 +323,26 @@ func (s *Server) setClient(c *harness.Client) {
 	s.client = c
 }
 
-func (s *Server) lastSeen() int64 {
+func (s *Server) lastSeen() (int64, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.lastSeq
+	return s.lastSeq, s.log
 }
 
-// recordEvent is pump's single hook for turning one drained envelope into
-// accumulated server state: append to history and advance lastSeq, but ONLY
-// if env's sequence is strictly greater than the highest already recorded.
-// That guard is the SAME monotonic-dedupe invariant pump's redial already
-// relies on (redial's after=lastSeq cursor, plus store.Store's own
-// per-connection dedupe — see pump's doc comment) — reused here, not
-// reimplemented, so a redial's catch-up replay can never double-accumulate
-// an envelope this connection (or a prior one) already recorded.
+// recordSwitch keeps what is held at a switch to the log the connection holds,
+// and discards it at any other (VTT-418, VTT-419).
+func (s *Server) recordSwitch(v *vttv1.ViewpointChanged) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.told && v.GetActorId() == s.log {
+		return
+	}
+	s.history, s.lastSeq, s.log, s.told = nil, 0, v.GetActorId(), true
+}
+
+// recordEvent appends env to history and advances lastSeq when env is above
+// lastSeq, the highest of the held log since the last discard (VTT-421). Keep
+// the guard: paginateSince relies on history holding no duplicate.
 func (s *Server) recordEvent(env *vttv1.Envelope) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -355,20 +353,21 @@ func (s *Server) recordEvent(env *vttv1.Envelope) {
 	s.lastSeq = env.GetSequence()
 }
 
-// historySnapshot returns a defensive copy of the accumulated history
-// (safe for the caller to read after this call returns, without further
-// synchronization — pump may keep appending to the live s.history
-// concurrently) alongside the current lastSeq/headSequence. This is the
-// ONE read path read_tools.go's get_state and get_events_since both
-// fold/paginate from, which is what guarantees they always observe the
-// SAME accumulated stream as each other and as pump itself — never a
-// second connection (spec §3's binding consistency rule).
-func (s *Server) historySnapshot() ([]*vttv1.Envelope, int64) {
+// readSnapshot copies the history, which pump may go on appending to, with its
+// head and the log it is of, nil for a connection never told one. get_state
+// and get_events_since both read it, so they see the same stream as each other
+// and as pump, never a second connection.
+func (s *Server) readSnapshot() ([]*vttv1.Envelope, int64, *string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var log *string
+	if s.told {
+		held := s.log
+		log = &held
+	}
 	out := make([]*vttv1.Envelope, len(s.history))
 	copy(out, s.history)
-	return out, s.lastSeq
+	return out, s.lastSeq, log
 }
 
 // commandFromArgs turns an agent's raw tool arguments into the ClientCommand

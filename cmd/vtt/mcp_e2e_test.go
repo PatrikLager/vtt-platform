@@ -46,7 +46,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
-	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/harness"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 	mcppkg "github.com/PatrikLager/vtt-platform/internal/mcp"
@@ -336,24 +335,9 @@ func startMCPFixture(t *testing.T) mcpFixture {
 	}
 }
 
-// mintInviteToken opens its own short-lived identity.DB handle on
-// campaignPath (the same pattern harness_boot.go's mintInvites and
-// serve_e2e_test.go's inline CreateInvite call both use against a server
-// they didn't mint through) and mints one invite, closing the handle before
-// returning.
 func mintInviteToken(t *testing.T, campaignPath string, role identity.Role, name string) string {
 	t.Helper()
-	// campaignPath is the campaign DIRECTORY (2026-09-01-create-scene-leaves Task 4); composeServer has
-	// already created it by the time every caller of this helper runs.
-	ids, err := identity.Open(campaign.LogPath(campaignPath))
-	if err != nil {
-		t.Fatalf("identity.Open: %v", err)
-	}
-	defer ids.Close()
-	token, _, err := ids.CreateInvite(name, role)
-	if err != nil {
-		t.Fatalf("CreateInvite(%s): %v", role, err)
-	}
+	token, _ := mintParticipant(t, campaignPath, role, name)
 	return token
 }
 

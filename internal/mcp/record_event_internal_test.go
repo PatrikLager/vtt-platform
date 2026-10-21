@@ -42,7 +42,7 @@ func TestRecordEventIsIdempotentAtTheBoundary(t *testing.T) {
 
 	s.recordEvent(seqEnv(1))
 	s.recordEvent(seqEnv(2))
-	before, head := s.historySnapshot()
+	before, head, _ := s.readSnapshot()
 	if len(before) != 2 || head != 2 {
 		t.Fatalf("setup: got %d events head=%d, want 2 and 2", len(before), head)
 	}
@@ -50,7 +50,7 @@ func TestRecordEventIsIdempotentAtTheBoundary(t *testing.T) {
 	// Exactly at the boundary — the redial-overlap case.
 	s.recordEvent(seqEnv(2))
 
-	after, headAfter := s.historySnapshot()
+	after, headAfter, _ := s.readSnapshot()
 	if len(after) != 2 {
 		t.Errorf("re-recording sequence 2 appended a duplicate: history has %d events, want 2 "+
 			"— a reconnect that re-delivers an event the server already has would show the "+
@@ -70,7 +70,7 @@ func TestRecordEventIgnoresStaleSequences(t *testing.T) {
 	s.recordEvent(seqEnv(5))
 	s.recordEvent(seqEnv(3))
 
-	events, head := s.historySnapshot()
+	events, head, _ := s.readSnapshot()
 	if len(events) != 1 {
 		t.Errorf("a stale (lower) sequence was recorded: history has %d events, want 1", len(events))
 	}
@@ -86,7 +86,7 @@ func TestRecordEventAdvancesOnNewSequences(t *testing.T) {
 	for _, seq := range []int64{1, 2, 7} {
 		s.recordEvent(seqEnv(seq))
 	}
-	events, head := s.historySnapshot()
+	events, head, _ := s.readSnapshot()
 	if len(events) != 3 {
 		t.Errorf("history has %d events, want 3", len(events))
 	}

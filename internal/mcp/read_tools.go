@@ -39,7 +39,7 @@ const getStateDescription = `Return the campaign's current derived state, ` +
 	`same as get_events_since's afterSequence/limit/headSequence — see ` +
 	`that tool's description for how this differs from the protojson ` +
 	`"sequence" field inside individual event envelopes. The REST of the ` +
-	`body (everything but headSequence and wireConnected) is NOT ` +
+	`body (everything but headSequence, wireConnected and log) is NOT ` +
 	`protojson: it follows the state dump's own Go-JSON conventions ` +
 	`instead — top-level keys and the plain Go types under them (Scenes/` +
 	`Tokens/Sessions/Notes and their own fields) serialize as their exact ` +
@@ -52,12 +52,16 @@ const getStateDescription = `Return the campaign's current derived state, ` +
 	`and is the DM's and yours alone — while nested ` +
 	`Actor values use their ` +
 	`protobuf-generated snake_case tags instead (e.g. "actor_id"). ` +
-	`Neither matches protojson's camelCase; headSequence and wireConnected ` +
-	`are the two deliberately camelCase keys added on top of this body. ` +
+	`Neither matches protojson's camelCase; headSequence, wireConnected and ` +
+	`log are the keys added on top of this body, deliberately camelCase. ` +
 	`wireConnected is a plain JSON boolean: when false, this entire body ` +
 	`is a frozen snapshot (the last state received before the underlying ` +
 	`wire connection dropped) — commands will fail until reconnect, but ` +
-	`this tool keeps working off accumulated history either way.`
+	`this tool keeps working off accumulated history either way. On a ` +
+	`player's or a spectator's connection a "log" key names the actor whose ` +
+	`character log the body is the fold of ("" for nobody). Sequences ` +
+	`count within that log alone, so compare a headSequence only with one ` +
+	`answered under the same log.`
 
 const getEventsSinceDescription = `Return event envelopes recorded after ` +
 	`afterSequence, oldest first, up to limit at a time (default 50, max ` +
@@ -73,7 +77,10 @@ const getEventsSinceDescription = `Return event envelopes recorded after ` +
 	`one first. wireConnected: when false, data is a frozen snapshot (the ` +
 	`accumulated history up to the last live connection) — commands will ` +
 	`fail until reconnect, but this tool keeps paginating that history ` +
-	`either way.`
+	`either way. On a player's or a spectator's connection a "log" key ` +
+	`names the actor whose character log the events are of ("" for ` +
+	`nobody). Sequences count within that log alone, so when log differs ` +
+	`from the one your last answer named, page again from afterSequence 0.`
 
 var getStateInputSchema = map[string]any{
 	"type":       "object",
@@ -133,26 +140,17 @@ func (s *Server) registerReadTools() {
 	}, s.handleGetEventsSince)
 }
 
-// handleGetState folds Server's own accumulated history (historySnapshot —
-// never a second connection, spec §3's binding consistency rule) via
-// harness.Fold and returns the SAME JSON shape `vtt state dump` prints
-// (cmd/vtt/state_dump.go's writeDump): the folded *engine.State marshaled
-// through encoding/json — its exported fields' own Go/json-tag names (e.g.
-// Token's ID/SceneID/ActorID/X/Y, Actor's snake_case protobuf-generated
-// tags) verbatim, NOT re-shaped to protojson camelCase — with
-// "headSequence" added as a sibling top-level key. "The dump contract
-// verbatim" (task-2-brief.md) means exactly this marshaling approach,
-// deliberately duplicated rather than shared: internal/mcp cannot import
-// cmd/vtt (cmd depends on mcp, never the reverse; go-arch-lint's cmd
-// component is the only one naming mcp as a dependency) — see
-// marshalStateWithHead.
+// handleGetState folds the history the connection holds (never a second
+// connection) and returns `vtt state dump`'s JSON shape, writeDump's in
+// cmd/vtt/state_dump.go, plus wireConnected and log (marshalStateWithHead).
+// Keep the two in step by hand: internal/mcp cannot import cmd/vtt.
 func (s *Server) handleGetState(ctx context.Context, req *mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	events, head := s.historySnapshot()
+	events, head, log := s.readSnapshot()
 	st, err := harness.Fold(events)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: get_state: fold: %w", err)
 	}
-	raw, err := marshalStateWithHead(st, head, s.currentClient() != nil)
+	raw, err := marshalStateWithHead(st, head, s.currentClient() != nil, log)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: get_state: %w", err)
 	}
@@ -209,13 +207,11 @@ func describeArgsDecodeError(err error) error {
 	return err
 }
 
-// handleGetEventsSince paginates Server's accumulated history (the SAME
-// historySnapshot get_state folds — single source, spec §3) strictly after
-// args.AfterSequence, clamps/defaults the limit, and returns each
-// surviving envelope as its own protojson encoding (so the envelope's
-// internal "sequence" field is a STRING, per contract/README.md's wire
-// convention — see marshalEventsSinceResult) alongside a plain-JSON-number
-// headSequence and a more flag.
+// handleGetEventsSince pages readSnapshot's history, the one get_state folds,
+// strictly after args.AfterSequence, with the limit defaulted and clamped. Each
+// envelope is its own protojson, so its "sequence" is a STRING
+// (marshalEventsSinceResult); headSequence is a plain JSON number, and log
+// names the log when the connection was told one (VTT-422).
 func (s *Server) handleGetEventsSince(ctx context.Context, req *mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	raw := []byte(req.Params.Arguments)
 	if len(raw) == 0 {
@@ -243,25 +239,19 @@ func (s *Server) handleGetEventsSince(ctx context.Context, req *mcpsdk.CallToolR
 		limit = maxEventsSinceLimit
 	}
 
-	events, head := s.historySnapshot()
+	events, head, log := s.readSnapshot()
 	page, more := paginateSince(events, args.AfterSequence, int(limit))
 
-	out, err := marshalEventsSinceResult(page, head, more, s.currentClient() != nil)
+	out, err := marshalEventsSinceResult(page, head, more, s.currentClient() != nil, log)
 	if err != nil {
 		return nil, fmt.Errorf("mcp: get_events_since: %w", err)
 	}
 	return &mcpsdk.CallToolResult{Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: string(out)}}}, nil
 }
 
-// paginateSince returns the slice of history strictly after `after`
-// (history is guaranteed ascending-by-sequence with no duplicates —
-// Server.recordEvent's own invariant, server.go), capped at limit, plus
-// whether any further events remain beyond that cap. history is walked
-// linearly rather than binary-searched: table-scale campaign logs (this
-// task's documented retention assumption — Server.history's doc comment,
-// server.go) make the O(n) scan entirely negligible, and a linear scan
-// over a value already proven sorted needs no separate invariant of its
-// own to maintain.
+// paginateSince returns history strictly after `after`, capped at limit, and
+// whether more remains. It relies on history being ascending with no
+// duplicates, which recordEvent keeps.
 func paginateSince(history []*vttv1.Envelope, after int64, limit int) (page []*vttv1.Envelope, more bool) {
 	start := 0
 	for start < len(history) && history[start].GetSequence() <= after {
@@ -274,16 +264,10 @@ func paginateSince(history []*vttv1.Envelope, after int64, limit int) (page []*v
 	return remaining, false
 }
 
-// marshalStateWithHead is get_state's "dump contract verbatim" shaping:
-// marshal st with encoding/json, re-decode into a generic field map, add
-// "headSequence" and "wireConnected" as sibling top-level keys, re-marshal.
-// Deliberately mirrors cmd/vtt/state_dump.go's writeDump in approach byte-
-// for-byte (not shared code — see handleGetState's doc comment on why);
-// wireConnected is this package's own addition on top of that shared
-// shape (final review Fix 6a) — state_dump.go has no such notion since
-// `vtt state dump` is a one-shot process with no persistent connection to
-// report on.
-func marshalStateWithHead(st *engine.State, head int64, wireConnected bool) ([]byte, error) {
+// marshalStateWithHead marshals st as writeDump does, adds "headSequence" and
+// "wireConnected" beside its keys, and "log" when the connection was told one
+// (VTT-422). Keep it in step with writeDump in cmd/vtt/state_dump.go.
+func marshalStateWithHead(st *engine.State, head int64, wireConnected bool, log *string) ([]byte, error) {
 	raw, err := json.Marshal(st)
 	if err != nil {
 		return nil, fmt.Errorf("marshal state: %w", err)
@@ -302,6 +286,13 @@ func marshalStateWithHead(st *engine.State, head int64, wireConnected bool) ([]b
 		return nil, fmt.Errorf("marshal wireConnected: %w", err)
 	}
 	fields["wireConnected"] = wireConnectedRaw
+	if log != nil {
+		logRaw, err := json.Marshal(*log)
+		if err != nil {
+			return nil, fmt.Errorf("marshal log: %w", err)
+		}
+		fields["log"] = logRaw
+	}
 	return json.Marshal(fields)
 }
 
@@ -316,14 +307,16 @@ type eventsSinceResult struct {
 	HeadSequence  int64             `json:"headSequence"`
 	More          bool              `json:"more"`
 	WireConnected bool              `json:"wireConnected"`
+	Log           *string           `json:"log,omitempty"`
 }
 
-func marshalEventsSinceResult(events []*vttv1.Envelope, head int64, more, wireConnected bool) ([]byte, error) {
+func marshalEventsSinceResult(events []*vttv1.Envelope, head int64, more, wireConnected bool, log *string) ([]byte, error) {
 	out := eventsSinceResult{
 		Events:        make([]json.RawMessage, len(events)),
 		HeadSequence:  head,
 		More:          more,
 		WireConnected: wireConnected,
+		Log:           log,
 	}
 	for i, env := range events {
 		raw, err := protojson.Marshal(env)

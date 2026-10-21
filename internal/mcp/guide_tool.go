@@ -40,12 +40,8 @@ func (s *Server) registerGuideTool() {
 }
 
 // handleGetRulesetGuide returns s.cfg.RulesetGuide verbatim, or a clean
-// tool-level isError when the server has none configured. This is a pure,
-// connection-independent read (unlike get_state/get_events_since, it
-// never touches s.currentClient() or historySnapshot — the guide text was
-// already fully resolved at server construction, cmd/vtt/mcp.go's own
-// --ruleset boot step) so it keeps working even while the underlying wire
-// is disconnected, exactly like every other read tool in this package.
+// tool-level isError when the server has none configured. It reads no
+// connection and no history, so it works while the wire is disconnected.
 func (s *Server) handleGetRulesetGuide(ctx context.Context, req *mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.cfg.RulesetGuide == "" {
 		return &mcpsdk.CallToolResult{

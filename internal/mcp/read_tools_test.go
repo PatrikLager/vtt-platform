@@ -90,13 +90,12 @@ type tokenShape struct {
 	X, Y                 int32
 }
 
-// getStateShape mirrors internal/engine.State's exported field names for
-// the sub-shape these tests check, the same pattern cmd/vtt/client_e2e_
-// test.go's dumpStateShape uses for `vtt state dump` (get_state is the
-// SAME dump contract, per task-2-brief.md).
 type getStateShape struct {
+	Scenes       map[string]json.RawMessage
+	Actors       map[string]json.RawMessage
 	Tokens       map[string]tokenShape
-	HeadSequence int64 `json:"headSequence"`
+	HeadSequence int64           `json:"headSequence"`
+	Log          json.RawMessage `json:"log"`
 }
 
 type eventsSinceShape struct {
@@ -104,6 +103,7 @@ type eventsSinceShape struct {
 	HeadSequence  int64             `json:"headSequence"`
 	More          bool              `json:"more"`
 	WireConnected bool              `json:"wireConnected"`
+	Log           json.RawMessage   `json:"log"`
 }
 
 // --- call helpers ------------------------------------------------------------
