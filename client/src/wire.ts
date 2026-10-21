@@ -3,7 +3,7 @@
 // Correlate a result by its request_id and never by arrival order: results and
 // events come from two producers on the gateway (ServerFrame in
 // contract/vtt/v1/commands.proto). A connection holds one log at a time, and
-// a redial names it and its last sequence (SPEC-007, VTT-397, VTT-398).
+// a redial names it and its last sequence (SPEC-022, VTT-397, VTT-398).
 
 import { create, fromJson, toJson } from "@bufbuild/protobuf";
 import {

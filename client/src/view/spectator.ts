@@ -432,7 +432,7 @@ function renderTicker(log: Envelope[]): HTMLElement {
 
 /**
  * The spectator's perch: the party members the gateway lets them watch, and
- * the one the last ViewpointChanged named, "" for nobody (SPEC-015, VTT-403).
+ * the one the last ViewpointChanged named, "" for nobody (SPEC-022, VTT-403).
  */
 export interface PerchControl {
   actors: readonly { actorId: string; name: string }[];
@@ -544,7 +544,7 @@ export interface ViewExtras {
   participants?: Participant[] | undefined;
   /** Redial, offered only while the connection is closed. */
   onReconnect?: (() => void) | undefined;
-  /** The spectator's perch; absent for every other role (SPEC-015). */
+  /** The spectator's perch; absent for every other role (SPEC-022). */
   perch?: PerchControl | undefined;
   /**
    * Real pack art, resolved by pack-assets.ts and loaded by app.ts (Task

@@ -2546,7 +2546,7 @@ async function tableAs(role: string) {
 }
 
 test("only a spectator is offered a shoulder", async () => {
-  // Only a spectator chooses a shoulder by this control (SPEC-015): the DM and
+  // Only a spectator chooses a shoulder by this control (SPEC-022): the DM and
   // the agent are sent the world, and a player switches by chip or by token.
   //
   // All four roles in one test on purpose: the positive and the negative

@@ -49,7 +49,7 @@ function mayShare(who: Me): boolean {
   return who.role === "dm" || who.role === "agent";
 }
 
-/** Whether this role chooses a shoulder by the perch control (SPEC-015). */
+/** Whether this role chooses a shoulder by the perch control (SPEC-022). */
 function mayPerch(who: Me): boolean {
   return who.role === "spectator";
 }

@@ -178,12 +178,12 @@ they control is refused as unseen; `Authorize` refuses any other first
 **What this record does not decide.** Where a world subscription starts, what
 the catch-up head means, the pump's delivery and the one writer are SPEC-011's;
 the role table and the command path are SPEC-013's; `ViewpointChanged`'s and
-`WatchableChanged`'s shapes, what a client does at either and what it offers,
-and that `set_viewpoint` appends nothing are SPEC-007's; re-resolution is
-SPEC-009's; what a log holds and the append watch are SPEC-021's; what a
-character perceives is SPEC-016's; what a party member is, is
-`engine.IsPartyMember`'s; the presence registry's locks, which a promotion's
-signal takes, are SPEC-011's.
+`WatchableChanged`'s shapes and that `set_viewpoint` appends nothing are
+SPEC-007's; what a client does at either and what it offers are SPEC-022's;
+re-resolution is SPEC-009's; what a log holds and the append watch are
+SPEC-021's; what a character perceives is SPEC-016's; what a party member is,
+is `engine.IsPartyMember`'s; the presence registry's locks, which a
+promotion's signal takes, are SPEC-011's.
 
 ## Consequences
 
@@ -193,7 +193,7 @@ A client author, and whoever changes the code, are bound by these:
   until it perches; a player's watches a party member whenever they control
   one, from the pump's next re-judging of the seat.
 - A switch sends the new log from its first entry; what a client does at a
-  `ViewpointChanged` is SPEC-007's.
+  `ViewpointChanged` is SPEC-022's.
 - A player's or a spectator's reconnect names the log its cursor was read
   from (`log`); a cursor with no `log`, or with one the participant may no
   longer watch, is ignored.

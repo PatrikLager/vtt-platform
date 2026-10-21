@@ -1437,7 +1437,7 @@ test("with no participants supplied the list renders empty, not fabricated", () 
 // --- the perch: whose eyes a spectator is looking through -------------------
 //
 // The shoulders are the party members the gateway's last WatchableChanged
-// names (SPEC-015, VTT-403), never the folded log's roster: a spectator
+// names (SPEC-022, VTT-403), never the folded log's roster: a spectator
 // watching nobody holds no log at all.
 
 /** A world with two party members, an NPC, and an actor whose kind is unstated. */
@@ -1585,7 +1585,7 @@ test("a table with no party yet says so rather than rendering an empty panel", (
 });
 
 test("no perch supplied, no control at all", () => {
-  // The negative case: only a spectator chooses a shoulder (SPEC-015), and
+  // The negative case: only a spectator chooses a shoulder (SPEC-022), and
   // app.ts is what withholds the control from every other role.
   const root = document.createElement("div");
   renderSpectator(root, party(), [], "connected");
