@@ -43,9 +43,9 @@ func freshDialOf(t *testing.T, wsURL, token, log string) []*vttv1.Envelope {
 	if err != nil {
 		t.Fatalf("a fresh dial of %s: catch-up head: %v", log, err)
 	}
-	envs, reached, why := drainToHead(c.Events(), c.CloseErr, 0, head, 200*time.Millisecond, 10*time.Second)
-	if !reached || len(envs) == 0 {
-		t.Fatalf("a fresh dial of %s read %d entries of head %d: %v", log, len(envs), head, why)
+	envs, held, reached, why := drainToHead(c.Events(), c.CloseErr, 0, head, 200*time.Millisecond, 10*time.Second)
+	if !reached || len(envs) == 0 || held == nil || *held != log {
+		t.Fatalf("a fresh dial of %s read %d entries of head %d, holding %v: %v", log, len(envs), head, held, why)
 	}
 	return envs
 }

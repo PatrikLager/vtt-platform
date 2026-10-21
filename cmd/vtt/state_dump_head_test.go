@@ -29,7 +29,7 @@ func TestDrainToHeadSurvivesAGapLongerThanTheQuietWindow(t *testing.T) {
 		ch <- harness.Delivery{Envelope: envAt(3)}
 	}()
 
-	got, reached, _ := drainToHead(ch, nil, 0, 3, window, 5*time.Second)
+	got, _, reached, _ := drainToHead(ch, nil, 0, 3, window, 5*time.Second)
 	if !reached {
 		t.Fatalf("want head 3 reached across the gap, got reached=false with %d envelopes", len(got))
 	}
@@ -44,7 +44,7 @@ func TestDrainToHeadReportsAStalledReplayRatherThanReturningShort(t *testing.T) 
 	// exactly like a complete one.
 	ch := make(chan harness.Delivery, 1)
 	ch <- harness.Delivery{Envelope: envAt(1)}
-	got, reached, _ := drainToHead(ch, nil, 0, 99, 10*time.Millisecond, 120*time.Millisecond)
+	got, _, reached, _ := drainToHead(ch, nil, 0, 99, 10*time.Millisecond, 120*time.Millisecond)
 	if reached {
 		t.Fatal("want reached=false when the head never arrives")
 	}
@@ -65,7 +65,7 @@ func TestDrainToHeadCollectsTheLiveTailPastTheHead(t *testing.T) {
 		ch <- harness.Delivery{Envelope: envAt(3)} // live, already in flight
 	}()
 
-	got, reached, _ := drainToHead(ch, nil, 0, 2, window, 5*time.Second)
+	got, _, reached, _ := drainToHead(ch, nil, 0, 2, window, 5*time.Second)
 	if !reached || len(got) != 3 {
 		t.Fatalf("want the tail collected too: reached=%v, %d envelopes", reached, len(got))
 	}
@@ -77,7 +77,7 @@ func TestDrainToHeadOnAnEmptyLogReturnsImmediatelyAtQuiet(t *testing.T) {
 	// it was never a guess.
 	ch := make(chan harness.Delivery)
 	start := time.Now()
-	got, reached, _ := drainToHead(ch, nil, 0, 0, 20*time.Millisecond, 5*time.Second)
+	got, _, reached, _ := drainToHead(ch, nil, 0, 0, 20*time.Millisecond, 5*time.Second)
 	if !reached {
 		t.Fatal("want head 0 treated as already reached")
 	}
@@ -113,7 +113,7 @@ func TestHeadSequenceIsTheMaximum(t *testing.T) {
 // and client_run.go already take a caller-supplied after.
 func TestDrainToHeadTreatsAHeadAtTheCursorAsAlreadyCaughtUp(t *testing.T) {
 	ch := make(chan harness.Delivery) // nothing will ever arrive, and nothing should need to
-	got, reached, _ := drainToHead(ch, nil, 5, 5, 20*time.Millisecond, 150*time.Millisecond)
+	got, _, reached, _ := drainToHead(ch, nil, 5, 5, 20*time.Millisecond, 150*time.Millisecond)
 	if !reached {
 		t.Fatal("want reached=true when the announced head is already at the dial cursor")
 	}
@@ -128,7 +128,7 @@ func TestDrainToHeadTreatsAHeadAtTheCursorAsAlreadyCaughtUp(t *testing.T) {
 // reporting success without them is the original truncation bug.
 func TestDrainToHeadStillWaitsForAHeadAheadOfTheCursor(t *testing.T) {
 	ch := make(chan harness.Delivery)
-	got, reached, _ := drainToHead(ch, nil, 5, 8, 10*time.Millisecond, 120*time.Millisecond)
+	got, _, reached, _ := drainToHead(ch, nil, 5, 8, 10*time.Millisecond, 120*time.Millisecond)
 	if reached {
 		t.Fatalf("want reached=false while sequences 6-8 are still owing, got %d envelopes", len(got))
 	}
@@ -155,7 +155,7 @@ func TestDrainToHeadNamesAnOverflowRatherThanBlamingTheClock(t *testing.T) {
 	ch <- harness.Delivery{Envelope: envAt(1)}
 	close(ch) // torn down mid-replay, exactly as an overflow ends it
 
-	got, reached, why := drainToHead(ch, func() error { return harness.ErrEventsOverflow },
+	got, _, reached, why := drainToHead(ch, func() error { return harness.ErrEventsOverflow },
 		0, 99, 10*time.Millisecond, 30*time.Second)
 
 	if reached {
@@ -175,7 +175,7 @@ func TestDrainToHeadNamesAnOverflowRatherThanBlamingTheClock(t *testing.T) {
 // wrong answer.
 func TestDrainToHeadStillReportsATimeoutAsATimeout(t *testing.T) {
 	ch := make(chan harness.Delivery) // open, silent, never closed
-	_, reached, why := drainToHead(ch, func() error { return nil },
+	_, _, reached, why := drainToHead(ch, func() error { return nil },
 		0, 99, 10*time.Millisecond, 80*time.Millisecond)
 
 	if reached {
@@ -220,7 +220,7 @@ func TestDrainToHeadCarriesTheServersOwnReasonThroughACleanClose(t *testing.T) {
 	ch <- harness.Delivery{Envelope: envAt(1)}
 	close(ch)
 
-	_, reached, why := drainToHead(ch, func() error { return cause },
+	_, _, reached, why := drainToHead(ch, func() error { return cause },
 		0, 99, 10*time.Millisecond, 30*time.Second)
 
 	if reached {
@@ -254,7 +254,7 @@ func TestDrainToHeadPrintsAStateWhoseStreamClosedAfterTheHead(t *testing.T) {
 	ch <- harness.Delivery{Envelope: envAt(2)} // the announced head
 	close(ch)
 
-	got, reached, why := drainToHead(ch, func() error { return errors.New("normal closure") },
+	got, _, reached, why := drainToHead(ch, func() error { return errors.New("normal closure") },
 		0, 2, 10*time.Millisecond, 5*time.Second)
 
 	if !reached {
@@ -287,7 +287,7 @@ func TestDrainToHeadPrintsAStateStillBusyAtTheDeadline(t *testing.T) {
 		}
 	}()
 
-	got, reached, why := drainToHead(ch, func() error { return nil },
+	got, _, reached, why := drainToHead(ch, func() error { return nil },
 		0, 2, 40*time.Millisecond, 200*time.Millisecond)
 
 	if !reached {
@@ -306,7 +306,7 @@ func TestDrainToHeadPrintsAStateStillBusyAtTheDeadline(t *testing.T) {
 func TestDrainToHeadToleratesNoCloseErrAccessor(t *testing.T) {
 	ch := make(chan harness.Delivery)
 	close(ch)
-	_, reached, why := drainToHead(ch, nil, 0, 99, 10*time.Millisecond, time.Second)
+	_, _, reached, why := drainToHead(ch, nil, 0, 99, 10*time.Millisecond, time.Second)
 	if reached {
 		t.Fatal("want reached=false")
 	}
@@ -315,7 +315,7 @@ func TestDrainToHeadToleratesNoCloseErrAccessor(t *testing.T) {
 	}
 }
 
-func TestASwitchDoesNotExtendDrainToHeadsQuietWindow(t *testing.T) {
+func TestTheFirstViewpointChangedDoesNotExtendDrainToHeadsQuietWindow(t *testing.T) {
 	const window = 100 * time.Millisecond
 	synctest.Test(t, func(t *testing.T) {
 		ch, done := make(chan harness.Delivery, 4), make(chan struct{})
@@ -328,7 +328,7 @@ func TestASwitchDoesNotExtendDrainToHeadsQuietWindow(t *testing.T) {
 			ch <- harness.Delivery{Envelope: envAt(2)}
 		}()
 		start := time.Now()
-		got, reached, err := drainToHead(ch, nil, 0, 1, window, time.Second)
+		got, _, reached, err := drainToHead(ch, nil, 0, 1, window, time.Second)
 		if took := time.Since(start); err != nil || !reached || len(got) != 1 || took != window {
 			t.Fatalf("drained %d, reached=%t, err=%v, after %s; want 1 at %s", len(got), reached, err, took, window)
 		}

@@ -82,9 +82,9 @@ func TestFoldGoldenCorpus(t *testing.T) {
 	}
 }
 
-// dumpJSON mirrors cmd/vtt's writeDump byte-for-byte: the state's own fields
-// plus headSequence, two-space indented. Duplicated rather than exported
-// because cmd/vtt is package main and this gate must not reach into it.
+// dumpJSON mirrors cmd/vtt's writeDump of a world seat byte-for-byte: the
+// state's fields plus headSequence, two-space indented. Duplicated rather than
+// exported because cmd/vtt is package main and this gate must not reach into it.
 func dumpJSON(st any, head int64) ([]byte, error) {
 	raw, err := json.Marshal(st)
 	if err != nil {

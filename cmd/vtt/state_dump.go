@@ -43,20 +43,12 @@ func newStateCmd() *cobra.Command {
 	return cmd
 }
 
-// newStateDumpCmd catches up from sequence 0, folds (harness.Fold), and
-// prints the derived state as JSON — a point-in-time snapshot, not a live
-// guarantee (dumpQuietWindow's doc comment). The printed JSON carries one
-// field beyond the folded state itself: "headSequence", the highest
-// envelope sequence this dump actually received before folding — the
-// caller's staleness check (e.g. sub-project 6's LLM tools comparing it
-// against a sequence they already know about).
-// dumpAfter is the catch-up cursor `vtt state dump` always dials with: a dump
-// is a full snapshot from the beginning of the log, never a tail. Named rather
-// than written as a bare 0 at both call sites because drainToHead's
-// already-caught-up test is `head <= after` — the two have to agree, and a
-// literal in two places is how they would stop agreeing.
+// dumpAfter is the cursor every dump dials with; keep the dial and
+// drainToHead's head <= after test on this one name.
 const dumpAfter = 0
 
+// newStateDumpCmd prints the fold of one log as JSON with "headSequence" and,
+// for a player's or a spectator's seat, "log" (writeDump, VTT-426).
 func newStateDumpCmd() *cobra.Command {
 	var serverURL, token string
 
@@ -75,7 +67,7 @@ func newStateDumpCmd() *cobra.Command {
 				return fmt.Errorf("vtt state dump: catch-up head: %w", err)
 			}
 
-			events, reached, why := drainToHead(c.Events(), c.CloseErr, dumpAfter, head, dumpQuietWindow, dumpCatchUpTimeout)
+			events, log, reached, why := drainToHead(c.Events(), c.CloseErr, dumpAfter, head, dumpQuietWindow, dumpCatchUpTimeout)
 			if !reached {
 				// FAIL, never print. A short dump that looks complete is the
 				// failure this whole path exists to prevent; the caller can
@@ -97,7 +89,7 @@ func newStateDumpCmd() *cobra.Command {
 				return fmt.Errorf("vtt state dump: %w", err)
 			}
 
-			return writeDump(cmd.OutOrStdout(), st, headSequence(events))
+			return writeDump(cmd.OutOrStdout(), st, headSequence(events), log)
 		},
 	}
 
@@ -109,42 +101,14 @@ func newStateDumpCmd() *cobra.Command {
 	return cmd
 }
 
-// drainToHead collects envelopes until the announced catch-up head has been
-// seen AND the stream has then been quiet for window, or until timeout. The
-// bool reports whether head was reached; the error, when it was not, reports
-// WHY — and closeErr is what makes that answerable.
-//
-// A short read has two causes that call for OPPOSITE responses. The deadline
-// expiring means the SERVER is slow or the head never came. The channel
-// closing early means harness.Client tore itself down because THIS process
-// could not drain Events() fast enough (ErrEventsOverflow at 256 buffered).
-// A closed channel looks identical either way, so this used to return the same
-// (events, false) for both and the caller blamed dumpCatchUpTimeout for every
-// short read — printing a 30s timeout for a connection that died in under
-// three seconds, and sending the next reader after gateway latency when the
-// fix was on the reading side. The same misdiagnosis cost a CI investigation
-// in internal/harness/soak.go before drainFreshCatchUp started asking.
-//
-// closeErr may be nil for callers holding a raw channel with no connection to
-// ask; they get errStreamClosed without a cause, which is still not the clock.
-//
-// Both conditions matter. Stopping at head alone would drop envelopes
-// broadcast live just behind it, which is a truncation from the other side;
-// stopping at quiet alone is the bug this replaced.
-//
-// `head <= after` means there was never anything to catch up to, so the quiet
-// window is the only sensible signal — the old behaviour, correctly scoped to
-// the case where it was never a guess. Note this is NOT just head == 0:
-// Store.Subscribe answers with the cursor ITSELF when nothing newer exists, so
-// a connection dialed at after=5 against a 5-event log is told head=5 and
-// would otherwise wait out the whole timeout for a Sequence >= 5 that cannot
-// arrive — everything at or below the cursor was excluded from its backlog by
-// definition.
-//
-// Deliberately a sibling of internal/harness/soak.go's drainToSequence rather
-// than an import: cmd/vtt depends on harness, never the reverse.
-func drainToHead(events <-chan harness.Delivery, closeErr func() error, after, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool, error) {
+// drainToHead reads until it has seen head and then gone quiet for window, or
+// until timeout, and returns the entries, the log the first ViewpointChanged
+// names (nil when none comes), whether head was reached and why not. A later
+// ViewpointChanged ends the read, refused before head (SPEC-007, VTT-423 to
+// VTT-425, VTT-435). closeErr may be nil; head <= after is reached at once.
+func drainToHead(events <-chan harness.Delivery, closeErr func() error, after, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, *string, bool, error) {
 	var out []*vttv1.Envelope
+	var log *string
 	deadline := time.After(timeout)
 	reached := head <= after
 	quiet := time.After(window)
@@ -153,9 +117,20 @@ func drainToHead(events <-chan harness.Delivery, closeErr func() error, after, h
 		case d, ok := <-events:
 			if !ok {
 				if reached {
-					return out, true, nil
+					return out, log, true, nil
 				}
-				return out, false, streamClosedReason(closeErr)
+				return out, log, false, streamClosedReason(closeErr)
+			}
+			if v := d.Viewpoint; v != nil {
+				if log == nil {
+					id := v.GetActorId()
+					log = &id
+					continue
+				}
+				if reached {
+					return out, log, true, nil
+				}
+				return out, log, false, fmt.Errorf("%w: from %s to %s", errMovedBeforeHead, logOf(*log), logOf(v.GetActorId()))
 			}
 			env := d.Envelope
 			if env == nil {
@@ -168,26 +143,30 @@ func drainToHead(events <-chan harness.Delivery, closeErr func() error, after, h
 			quiet = time.After(window)
 		case <-quiet:
 			if reached {
-				return out, true, nil
+				return out, log, true, nil
 			}
 			quiet = time.After(window)
 		case <-deadline:
 			if reached {
-				return out, true, nil
+				return out, log, true, nil
 			}
-			return out, false, fmt.Errorf("%w (%s)", errCatchUpDeadline, timeout)
+			return out, log, false, fmt.Errorf("%w (%s)", errCatchUpDeadline, timeout)
 		}
 	}
 }
 
-// The two ways a catch-up read can end short. Both are sentinels so a caller
-// — or a test — can ask errors.Is instead of matching on the sentence: the
-// overflow side already had that lever (harness.ErrEventsOverflow) and the
-// timeout side did not, which made the only available assertion a
-// strings.Contains on wording that any rephrasing would break.
+func logOf(actorID string) string {
+	if actorID == "" {
+		return "nobody"
+	}
+	return actorID + "'s log"
+}
+
+// The ways a catch-up read ends short; ask errors.Is, never match the sentence.
 var (
 	errCatchUpDeadline = errors.New("no envelope reaching head arrived before the catch-up deadline")
 	errStreamClosed    = errors.New("the event stream closed")
+	errMovedBeforeHead = errors.New("the seat was moved before the catch-up reached its head")
 )
 
 // streamClosedReason names why a closed Events() channel ended the read.
@@ -224,14 +203,11 @@ func headSequence(events []*vttv1.Envelope) int64 {
 	return highest
 }
 
-// writeDump marshals st (harness.Fold's *engine.State — named only by
-// inference, see newStateDumpCmd's doc comment on why cmd/vtt never
-// imports internal/engine directly) to JSON, re-decodes it into a
-// key->raw-value map, adds "headSequence" as a sibling top-level key, and
-// writes the result indented. Round-tripping through a generic map (rather
-// than an anonymous struct embedding the state's type by name) is what
-// lets this stay generic over st's actual Go type.
-func writeDump(w io.Writer, st any, head int64) error {
+// writeDump writes st as indented JSON with "headSequence" beside its fields,
+// and "log" unless log is nil (VTT-426). Keep it in step by hand with
+// internal/mcp's marshalStateWithHead, and a world seat's dump with
+// internal/harness's dumpJSON and client/src/fold.ts's foldToDumpJSON.
+func writeDump(w io.Writer, st any, head int64, log *string) error {
 	raw, err := json.Marshal(st)
 	if err != nil {
 		return fmt.Errorf("vtt state dump: marshal state: %w", err)
@@ -245,6 +221,13 @@ func writeDump(w io.Writer, st any, head int64) error {
 		return fmt.Errorf("vtt state dump: marshal headSequence: %w", err)
 	}
 	fields["headSequence"] = headRaw
+	if log != nil {
+		logRaw, err := json.Marshal(*log)
+		if err != nil {
+			return fmt.Errorf("vtt state dump: marshal log: %w", err)
+		}
+		fields["log"] = logRaw
+	}
 
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

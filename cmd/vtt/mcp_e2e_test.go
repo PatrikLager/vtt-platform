@@ -542,13 +542,13 @@ func observeStateIndependently(t *testing.T, wsURL, token string) map[string]any
 	}
 	defer c.Close()
 
-	events := drainToCatchUpHead(t, c)
+	events, log := drainToCatchUpHead(t, c)
 	st, err := harness.Fold(events)
 	if err != nil {
 		t.Fatalf("independent observation: Fold: %v", err)
 	}
 	var buf bytes.Buffer
-	if err := writeDump(&buf, st, headSequence(events)); err != nil {
+	if err := writeDump(&buf, st, headSequence(events), log); err != nil {
 		t.Fatalf("independent observation: writeDump: %v", err)
 	}
 	return decodeGenericJSON(t, buf.String())

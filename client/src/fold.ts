@@ -550,13 +550,9 @@ function mirrorControl(ids: string[]): { controllerId: string; controllerIds: st
 }
 
 /**
- * foldToDumpJSON renders the folded state exactly as cmd/vtt's writeDump
- * does: the state's fields plus headSequence, two-space indented.
- *
- * Key ORDER is reproduced deliberately rather than left to chance. Go emits
- * the top level from a map (sorted keys) but each struct in its declared
- * field order, and the two differ. Emitting in the wrong order would fail a
- * byte comparison that is otherwise the strongest check available.
+ * foldToDumpJSON renders the fold as cmd/vtt's writeDump does a world seat's,
+ * byte for byte: keep the top level in sorted key order and each struct in its
+ * Go field order, as Go's encoder emits them.
  */
 export function foldToDumpJSON(envelopes: Envelope[]): string {
   const st = fold(envelopes);

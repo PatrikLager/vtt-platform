@@ -93,7 +93,7 @@ func captureNormalizedStream(t *testing.T, scenario string) []byte {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	events := drainToCatchUpHead(t, c)
+	events, _ := drainToCatchUpHead(t, c)
 
 	idToName := make(map[string]string, len(boot.IDs))
 	for n, id := range boot.IDs {
@@ -225,7 +225,7 @@ func maskDice(t *testing.T, raw []byte) []byte {
 // compared against goldens or against get_state, so a short read here would
 // not fail loudly — it would produce a smaller, plausible state and fail the
 // comparison as if the fold or the tool were wrong.
-func drainToCatchUpHead(t *testing.T, c *harness.Client) []*vttv1.Envelope {
+func drainToCatchUpHead(t *testing.T, c *harness.Client) ([]*vttv1.Envelope, *string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -233,7 +233,7 @@ func drainToCatchUpHead(t *testing.T, c *harness.Client) []*vttv1.Envelope {
 	if err != nil {
 		t.Fatalf("catch-up head: %v", err)
 	}
-	events, reached, why := drainToHead(c.Events(), c.CloseErr, dumpAfter, head, dumpQuietWindow, dumpCatchUpTimeout)
+	events, log, reached, why := drainToHead(c.Events(), c.CloseErr, dumpAfter, head, dumpQuietWindow, dumpCatchUpTimeout)
 	if !reached {
 		// `why`, not just the shortfall. This helper backs the golden corpus
 		// and mcp_e2e's independent observer — CI, which is exactly the
@@ -243,5 +243,5 @@ func drainToCatchUpHead(t *testing.T, c *harness.Client) []*vttv1.Envelope {
 		t.Fatalf("caught up only to sequence %d of %d — refusing to compare a truncated snapshot: %v",
 			headSequence(events), head, why)
 	}
-	return events
+	return events, log
 }

@@ -23,10 +23,10 @@ spectator chooses a shoulder and a player switches in the browser, by
 
 `internal/harness`'s client hands each `ViewpointChanged` to its reader
 (VTT-409); its scenario engine and soak hold each character seat's log and
-name it when they dial (VTT-411 to VTT-414, VTT-416, VTT-428 to VTT-431), and
-`vtt mcp` holds the log it is sent and names it (VTT-418 to VTT-422).
-`vtt state dump` does not yet: it skips the switch, and its dial names no
-`log`. The change is carried by
+name it when they dial (VTT-411 to VTT-414, VTT-416, VTT-428 to VTT-431);
+`vtt mcp` holds the log it is sent and names it (VTT-418 to VTT-422); and
+`vtt state dump` folds one log and names it (VTT-423 to VTT-426). The change
+is carried by
 `docs/superpowers/specs/2026-10-21-the-go-readers-follow-the-log-they-are-sent-design.md`.
 
 ## Principles served
