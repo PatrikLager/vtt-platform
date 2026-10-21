@@ -25,7 +25,7 @@ func TestASwitchDoesNotExtendDrainToSequencesQuietWindow(t *testing.T) {
 		ch, done := make(chan Delivery, 4), make(chan struct{})
 		go sendAroundASwitch(ch, done)
 		start := time.Now()
-		got, reached := drainToSequence(ch, 1, switchQuietWindow, time.Second)
+		got, reached := drainToSequence(ch, 1, switchQuietWindow, time.Second, nil)
 		if took := time.Since(start); !reached || len(got) != 1 || took != switchQuietWindow {
 			t.Fatalf("drained %d entries, reached=%t, after %s; want 1 at %s", len(got), reached, took, switchQuietWindow)
 		}

@@ -21,11 +21,11 @@ spectator chooses a shoulder and a player switches in the browser, by
 `client/e2e/table.spec.ts` (VTT-394, VTT-403, VTT-405) and
 `client/e2e/handover.spec.ts`, both outside `task check`.
 
-The Go readers the ticket below changes, `internal/harness`'s scenario engine
-and soak, `vtt mcp` and `vtt state dump`, do not yet hold one log: the
-harness's client hands each `ViewpointChanged` to its reader (VTT-409), but
-every reader skips it, and none of their dials names a `log`. The change is
-carried by
+`internal/harness`'s client hands each `ViewpointChanged` to its reader
+(VTT-409), and its scenario engine and soak hold each character seat's log and
+name it when they dial (VTT-411 to VTT-414, VTT-416, VTT-428 to VTT-431).
+`vtt mcp` and `vtt state dump` do not yet: they skip the switch, and their
+dials name no `log`. The change is carried by
 `docs/superpowers/specs/2026-10-21-the-go-readers-follow-the-log-they-are-sent-design.md`.
 
 ## Principles served

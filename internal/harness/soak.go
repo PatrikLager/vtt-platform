@@ -76,11 +76,10 @@ type SoakReport struct {
 	// authz-denied bucket should ever come back denied).
 	Accepted int
 	Denied   int
-	// Checkpoints counts how many incremental-fold-vs-fresh-catch-up-fold
-	// comparisons ran (periodic, every CheckEvery accepted actions, plus
-	// exactly one more at the end) — a passing soak report always shows
-	// Checkpoints > 0 for any Events large enough to accept at least one
-	// action.
+	// Checkpoints counts how many checkpoints ran (periodic, every CheckEvery
+	// accepted actions, plus exactly one more at the end) — a passing soak
+	// report always shows Checkpoints > 0 for any Events large enough to
+	// accept at least one action.
 	Checkpoints int
 	// Counts is a per-action-kind draw count (the mix-ratio bookkeeping):
 	// keys are this package's soakAction string values ("loadMap",
@@ -125,10 +124,9 @@ const (
 	soakPlayer2 = "player2"
 	soakAgent   = "agent"
 
-	// soakObserverName is the participant whose continuously-drained
-	// history serves as the checkpoint's "incremental" side (any of the
-	// four would do — every accepted broadcast reaches all of them — dm is
-	// picked arbitrarily and fixed for reproducibility of the report log).
+	// soakObserverName is the world seat whose continuously-drained history is
+	// the checkpoint's "incremental" side; dm is picked over the agent and
+	// fixed for reproducibility of the report log.
 	soakObserverName = soakDM
 )
 
@@ -192,15 +190,11 @@ func pickBucket(r float64) soakAction {
 	}
 }
 
-// RunSoak dials SoakParticipants() (after=0), then issues cfg.Events
-// actions in a seeded, mixed, authorized-by-construction sequence (see the
-// package comment), checkpointing fold-equality every cfg.CheckEvery
-// accepted actions and once more at the end. Human-readable progress is
-// written to report as actions/checkpoints complete; report may be nil
-// (io.Discard). The returned error is reserved for framework failures (a
-// participant's dial failing, a send erroring, a fold erroring) —
-// generator/assertion failures are reported through SoakReport.Pass, never
-// as a non-nil error.
+// RunSoak dials SoakParticipants(), issues cfg.Events seeded actions (the
+// package comment) and checkpoints fold equality every cfg.CheckEvery accepted
+// actions and at the end, writing progress to report, which may be nil. Its
+// error is a framework failure only (an opening dial or a send failing, the
+// observer's fold erroring); an assertion fails SoakReport.Pass.
 func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer) (*SoakReport, error) {
 	if report == nil {
 		report = io.Discard
@@ -439,9 +433,10 @@ type deniedPending struct {
 }
 
 // runSoakCheckpoint checks each of logNames' streams since the last checkpoint
-// for being one log (VTT-359), then compares the fold of the observer's
-// drained history, once it holds waitForSeq when that is above 0, with the
-// fold of a fresh after=0 catch-up: RunSoak's central proof.
+// for being one log (VTT-359, VTT-411), compares the fold of the observer's
+// drained history, once it holds waitForSeq when that is above 0, with the fold
+// of a fresh after=0 catch-up, RunSoak's central proof, and then each log
+// seat's (VTT-416, VTT-429).
 func runSoakCheckpoint(rep *SoakReport, histories *soakHistories, dial Dialer, waitForSeq int64, logNames []string, report io.Writer) error {
 	// Count first: every line this checkpoint writes carries its own number.
 	rep.Checkpoints++
@@ -483,7 +478,7 @@ func runSoakCheckpoint(rep *SoakReport, histories *soakHistories, dial Dialer, w
 	// for THAT, and keep the silence window only as the signal that the tail
 	// after the target has settled.
 	target := highestSequence(incremental)
-	freshHistory, reached := drainFreshCatchUp(dial, target, denialAbsenceWindow, freshCatchUpTimeout)
+	freshHistory, reached, _ := drainFreshCatchUp(dial, soakObserverName, "", false, target, denialAbsenceWindow, freshCatchUpTimeout)
 	if !reached {
 		// Reported as what it is. The fold comparison still runs below, but
 		// this line is what names the cause when it disagrees.
@@ -504,13 +499,50 @@ func runSoakCheckpoint(rep *SoakReport, histories *soakHistories, dial Dialer, w
 		return fmt.Errorf("harness: soak: checkpoint %d: fold fresh catch-up: %w", rep.Checkpoints, err)
 	}
 
-	if !statesEqual(incrementalState, freshState) {
+	if statesEqual(incrementalState, freshState) {
+		fmt.Fprintf(report, "[checkpoint %d] pass: incremental fold == fresh catch-up fold (%d events)\n", rep.Checkpoints, len(freshHistory))
+	} else {
 		rep.Pass = false
 		fmt.Fprintf(report, "[checkpoint %d] FAIL: incremental fold (%d events) != fresh catch-up fold (%d events)\n", rep.Checkpoints, len(incremental), len(freshHistory))
-		return nil
 	}
-	fmt.Fprintf(report, "[checkpoint %d] pass: incremental fold == fresh catch-up fold (%d events)\n", rep.Checkpoints, len(freshHistory))
+	for _, name := range logNames {
+		if why := checkLogSeat(histories, dial, name); why != "" {
+			rep.Pass = false
+			fmt.Fprintf(report, "[checkpoint %d] FAIL: %s\n", rep.Checkpoints, why)
+		}
+	}
 	return nil
+}
+
+// checkLogSeat names what a fresh dial finds wrong with the log name holds,
+// skipping a seat whose stream broke its log (VTT-416, VTT-428 to VTT-431).
+func checkLogSeat(h *soakHistories, dial Dialer, name string) string {
+	ds, broken := h.deliveries(name)
+	if broken {
+		return ""
+	}
+	log, told := heldLog(ds)
+	which := logName(log) + "'s log"
+	if !told {
+		which = "the log it was never told of"
+	}
+	live := entriesOf(ds[currentRun(ds):])
+	fresh, reached, toldOther := drainFreshCatchUp(dial, name, log, told, highestSequence(live), denialAbsenceWindow, freshCatchUpTimeout)
+	liveState, errLive := Fold(live)
+	freshState, errFresh := Fold(fresh)
+	switch {
+	case toldOther != "":
+		return fmt.Sprintf("%s's fresh dial was told %s, not %s, the log it holds", name, toldOther, logName(log))
+	case !reached:
+		return fmt.Sprintf("%s's fresh dial never reached sequence %d of %s", name, highestSequence(live), which)
+	case errLive != nil:
+		return fmt.Sprintf("%s's fold of %s failed: %v", name, which, errLive)
+	case errFresh != nil:
+		return fmt.Sprintf("%s's fresh dial of %s did not fold: %v", name, which, errFresh)
+	case !statesEqual(liveState, freshState):
+		return fmt.Sprintf("%s's fold of %s (%d entries) != a fresh dial's (%d entries)", name, which, len(live), len(fresh))
+	}
+	return ""
 }
 
 // freshCatchUpTimeout bounds the wait for a checkpoint's fresh connection to
@@ -561,8 +593,14 @@ func highestSequence(envs []*vttv1.Envelope) int64 {
 // re-dialling from 0 would double-count and from anything ahead would lose
 // envelopes silently. Attempts are bounded so a connection that overflows
 // immediately, forever, fails as a real failure rather than spinning.
-func drainFreshCatchUp(dial Dialer, target int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool) {
+func drainFreshCatchUp(dial Dialer, name, log string, told bool, target int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool, string) {
 	var all []*vttv1.Envelope
+	toldOther := ""
+	onSwitch := func(v *vttv1.ViewpointChanged) {
+		if told && v.GetActorId() != log && toldOther == "" {
+			toldOther = logName(v.GetActorId())
+		}
+	}
 	after := int64(0)
 	// ONE budget for the whole catch-up, not one per attempt. Per-attempt,
 	// eight attempts could spend 8*30s inside a single checkpoint and five
@@ -575,45 +613,41 @@ func drainFreshCatchUp(dial Dialer, target int64, window, timeout time.Duration)
 	for attempt := 0; attempt < freshCatchUpAttempts; attempt++ {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
-			return all, false
+			return all, false, toldOther
 		}
-		conn, err := dial(soakObserverName, after, "")
+		conn, err := dial(name, after, log)
 		if err != nil {
-			return all, false
+			return all, false, toldOther
 		}
-		got, reached := drainToSequence(conn.Events(), target, window, remaining)
+		got, reached := drainToSequence(conn.Events(), target, window, remaining, onSwitch)
 		overflowed := errors.Is(conn.CloseErr(), ErrEventsOverflow)
 		_ = conn.Close()
 
 		all = append(all, got...)
 		if reached {
-			return all, true
+			return all, true, toldOther
 		}
 		if !overflowed {
 			// Ended for some other reason (or simply ran out of time); a
 			// re-dial would not change that and would only mask it.
-			return all, false
+			return all, false, toldOther
 		}
 		next := highestSequence(all)
 		if next <= after {
 			// No forward progress — re-dialling the same cursor would spin.
-			return all, false
+			return all, false, toldOther
 		}
 		after = next
 	}
-	return all, false
+	return all, false, toldOther
 }
 
-// drainToSequence collects envelopes until the history has reached `head` AND
-// then gone quiet for `window`, or until `timeout` elapses. The bool reports
-// whether `head` was reached.
-//
-// The two conditions are both needed. Waiting only for `head` would stop mid
-// tail and drop envelopes that arrive after it; waiting only for quiet is the
-// bug this replaced. A head of 0 (an empty observer history) is reached
-// immediately, which degrades this to the old quiescent drain — correctly, as
-// there is then nothing to catch up to.
-func drainToSequence(events <-chan Delivery, head int64, window, timeout time.Duration) ([]*vttv1.Envelope, bool) {
+// drainToSequence collects envelopes until it has reached head AND then gone
+// quiet for window, or until timeout or the channel closes, and reports
+// whether head was reached; each switch goes to onSwitch when it is not nil.
+// It needs both: stopping at head alone drops the tail, and at quiet alone
+// truncates a slow replay. A head of 0 is reached at once.
+func drainToSequence(events <-chan Delivery, head int64, window, timeout time.Duration, onSwitch func(*vttv1.ViewpointChanged)) ([]*vttv1.Envelope, bool) {
 	var out []*vttv1.Envelope
 	deadline := time.After(timeout)
 	reached := head == 0
@@ -626,6 +660,9 @@ func drainToSequence(events <-chan Delivery, head int64, window, timeout time.Du
 			}
 			env := d.Envelope
 			if env == nil {
+				if onSwitch != nil {
+					onSwitch(d.Viewpoint)
+				}
 				continue
 			}
 			out = append(out, env)
@@ -694,7 +731,7 @@ func statesEqual(a, b *engine.State) bool {
 // it, and nothing else holds it.
 type soakHistories struct {
 	mu   sync.Mutex
-	data map[string][]*vttv1.Envelope
+	data map[string][]Delivery
 	// ended records, per participant, why its drain goroutine stopped. A
 	// participant whose stream is gone contributes SILENCE to every later
 	// absence check, and silence from a dead connection is not evidence —
@@ -702,34 +739,40 @@ type soakHistories struct {
 	ended map[string]error
 	// checked is how much of each log seat's history brokenLogs has read.
 	checked map[string]int
+	broke   map[string]bool
 }
 
 func newSoakHistories() *soakHistories {
 	return &soakHistories{
-		data:    map[string][]*vttv1.Envelope{},
+		data:    map[string][]Delivery{},
 		ended:   map[string]error{},
 		checked: map[string]int{},
+		broke:   map[string]bool{},
 	}
 }
 
 // brokenLogs describes each of names whose history since the last call breaks
-// its log (VTT-359).
+// its log (VTT-359, VTT-411), and marks it, which checkLogSeat's skip reads.
 func (h *soakHistories) brokenLogs(names []string) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	var out []string
 	for _, name := range names {
-		envs := h.data[name]
-		ds := make([]Delivery, len(envs))
-		for i, env := range envs {
-			ds[i] = Delivery{Envelope: env}
-		}
+		ds := h.data[name]
 		if why := logBreak(name, ds, h.checked[name]); why != "" {
 			out = append(out, why)
+			h.broke[name] = true
 		}
-		h.checked[name] = len(envs)
+		h.checked[name] = len(ds)
 	}
 	return out
+}
+
+// deliveries copies name's history and reports whether its stream broke its log.
+func (h *soakHistories) deliveries(name string) ([]Delivery, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]Delivery(nil), h.data[name]...), h.broke[name]
 }
 
 // start launches the one goroutine that drains name's connection for as
@@ -738,11 +781,8 @@ func (h *soakHistories) brokenLogs(names []string) []string {
 func (h *soakHistories) start(name string, c Conn) {
 	go func() {
 		for d := range c.Events() {
-			if d.Envelope == nil {
-				continue
-			}
 			h.mu.Lock()
-			h.data[name] = append(h.data[name], d.Envelope)
+			h.data[name] = append(h.data[name], d)
 			h.mu.Unlock()
 		}
 		// The range ended, so the stream is gone. Recorded rather than merely
@@ -755,13 +795,12 @@ func (h *soakHistories) start(name string, c Conn) {
 	}()
 }
 
-// snapshot returns a point-in-time copy of name's accumulated history —
-// safe for the caller to read without racing the still-running drain
-// goroutine.
+// snapshot returns a point-in-time copy of name's entries — safe for the
+// caller to read without racing the still-running drain goroutine.
 func (h *soakHistories) snapshot(name string) []*vttv1.Envelope {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return append([]*vttv1.Envelope(nil), h.data[name]...)
+	return entriesOf(h.data[name])
 }
 
 // lengths snapshots every participant's history length at once — the
@@ -770,8 +809,8 @@ func (h *soakHistories) lengths() map[string]int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	out := make(map[string]int, len(h.data))
-	for name, envs := range h.data {
-		out[name] = len(envs)
+	for name, ds := range h.data {
+		out[name] = len(ds)
 	}
 	return out
 }
@@ -783,12 +822,12 @@ func (h *soakHistories) leakedBelow(before map[string]int, witnessSeq int64, ski
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	var leaked []string
-	for name, envs := range h.data {
+	for name, ds := range h.data {
 		if skip[name] {
 			continue
 		}
-		for _, env := range envs[min(before[name], len(envs)):] {
-			if env.GetSequence() < witnessSeq {
+		for _, d := range ds[min(before[name], len(ds)):] {
+			if d.Envelope != nil && d.Envelope.GetSequence() < witnessSeq {
 				leaked = append(leaked, name)
 				break
 			}
@@ -798,20 +837,21 @@ func (h *soakHistories) leakedBelow(before map[string]int, witnessSeq int64, ski
 	return leaked
 }
 
-// grewSince waits window, then reports (sorted) which participants' history
-// is longer now than the lengths captured in before — engine.go's
+// grewSince waits window, then reports (sorted) which participants were sent
+// an entry since the lengths captured in before — engine.go's
 // drainAllForSilence semantics, reused here over the histories this type
 // already continuously maintains instead of a fresh per-call goroutine
 // race.
 func (h *soakHistories) grewSince(before map[string]int, window time.Duration) (grewNames, endedNames []string) {
 	time.Sleep(window)
-	after := h.lengths()
 	var grew []string
+	h.mu.Lock()
 	for name, n := range before {
-		if after[name] > n {
+		if ds := h.data[name]; len(entriesOf(ds[min(n, len(ds)):])) > 0 {
 			grew = append(grew, name)
 		}
 	}
+	h.mu.Unlock()
 	sort.Strings(grew)
 
 	// Independent of `before`: a torn-down participant invalidates the
@@ -835,8 +875,8 @@ func (h *soakHistories) waitFor(name string, seq int64, timeout time.Duration) b
 	deadline := time.Now().Add(timeout)
 	for {
 		h.mu.Lock()
-		for _, env := range h.data[name] {
-			if env.Sequence == seq {
+		for _, d := range h.data[name] {
+			if d.Envelope != nil && d.Envelope.Sequence == seq {
 				h.mu.Unlock()
 				return true
 			}

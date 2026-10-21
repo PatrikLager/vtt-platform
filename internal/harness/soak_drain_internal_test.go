@@ -37,7 +37,7 @@ func TestDrainToSequenceSurvivesAGapLongerThanTheWindow(t *testing.T) {
 		ch <- Delivery{Envelope: env(3)}
 	}()
 
-	got, reached := drainToSequence(ch, 3, window, 5*time.Second)
+	got, reached := drainToSequence(ch, 3, window, 5*time.Second, nil)
 	if !reached {
 		t.Fatalf("want target sequence 3 reached across a %v gap, got reached=false with %d envelopes", 4*window, len(got))
 	}
@@ -57,7 +57,7 @@ func TestDrainToSequenceReportsNotReachedRatherThanReturningShortSilently(t *tes
 	ch := make(chan Delivery, 1)
 	ch <- Delivery{Envelope: env(1)}
 
-	got, reached := drainToSequence(ch, 99, 10*time.Millisecond, 120*time.Millisecond)
+	got, reached := drainToSequence(ch, 99, 10*time.Millisecond, 120*time.Millisecond, nil)
 	if reached {
 		t.Fatal("want reached=false when the target never arrives")
 	}
@@ -79,7 +79,7 @@ func TestDrainToSequenceCollectsTheTailAfterTheTarget(t *testing.T) {
 		ch <- Delivery{Envelope: env(4)}
 	}()
 
-	got, reached := drainToSequence(ch, 2, window, 5*time.Second)
+	got, reached := drainToSequence(ch, 2, window, 5*time.Second, nil)
 	if !reached {
 		t.Fatal("want target reached")
 	}
@@ -93,7 +93,7 @@ func TestDrainToSequenceWithNoTargetDegradesToAQuiescentDrain(t *testing.T) {
 	// silence window is then the only sensible signal.
 	ch := make(chan Delivery, 2)
 	ch <- Delivery{Envelope: env(1)}
-	got, reached := drainToSequence(ch, 0, 10*time.Millisecond, time.Second)
+	got, reached := drainToSequence(ch, 0, 10*time.Millisecond, time.Second, nil)
 	if !reached {
 		t.Fatal("want a head of 0 treated as already reached")
 	}
@@ -156,7 +156,7 @@ func TestFreshCatchUpResumesAfterAnOverflowDisconnect(t *testing.T) {
 		return c, nil
 	}
 
-	got, reached := drainFreshCatchUp(dial, target, denialAbsenceWindow, freshCatchUpTimeout)
+	got, reached, _ := drainFreshCatchUp(dial, soakObserverName, "", false, target, denialAbsenceWindow, freshCatchUpTimeout)
 	if !reached {
 		t.Fatalf("catch-up did not reach %d across an overflow disconnect: %d envelopes", target, len(got))
 	}
@@ -200,7 +200,7 @@ func TestFreshCatchUpDoesNotResumeAfterANonOverflowEnd(t *testing.T) {
 		}()
 		return c, nil
 	}
-	got, reached := drainFreshCatchUp(dial, 10, 20*time.Millisecond, 2*time.Second)
+	got, reached, _ := drainFreshCatchUp(dial, soakObserverName, "", false, 10, 20*time.Millisecond, 2*time.Second)
 	if reached {
 		t.Fatal("want reached=false: a non-overflow end has no recovery path")
 	}
@@ -229,7 +229,7 @@ func TestFreshCatchUpStopsWhenAResumeMakesNoProgress(t *testing.T) {
 		}()
 		return c, nil
 	}
-	_, reached := drainFreshCatchUp(dial, 10, 20*time.Millisecond, 2*time.Second)
+	_, reached, _ := drainFreshCatchUp(dial, soakObserverName, "", false, 10, 20*time.Millisecond, 2*time.Second)
 	if reached {
 		t.Fatal("want reached=false")
 	}
@@ -253,7 +253,7 @@ func TestFreshCatchUpIsBoundedByTheAttemptCap(t *testing.T) {
 		}()
 		return c, nil
 	}
-	_, reached := drainFreshCatchUp(dial, 1000, 20*time.Millisecond, 30*time.Second)
+	_, reached, _ := drainFreshCatchUp(dial, soakObserverName, "", false, 1000, 20*time.Millisecond, 30*time.Second)
 	if reached {
 		t.Fatal("want reached=false: the target is unreachable one envelope at a time")
 	}

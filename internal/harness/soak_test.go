@@ -183,6 +183,8 @@ type soakWorld struct {
 	// 0 — the one state that distinguishes runSoakCheckpoint's
 	// `waitForSeq > 0` guard from `>= 0`.
 	denyEverything bool
+
+	logs *soakLogs
 }
 
 func newSoakWorld(ids map[string]string) *soakWorld {
@@ -204,11 +206,10 @@ func newSoakWorld(ids map[string]string) *soakWorld {
 }
 
 // dial implements harness.Dialer: preloads catch-up (every envelope with
-// Sequence > after) into a fresh fakeConn, registers it as a broadcast
-// target, and wires its send to handle. A generously-sized channel (well
-// beyond engine_test.go's 16-capacity default) avoids the fake ever
-// blocking mid-catch-up for the event counts these tests use.
-func (w *soakWorld) dial(name string, after int64, _ string) (harness.Conn, error) {
+// Sequence > after, or a player's log when logs is set) into a fresh fakeConn,
+// registers it as a broadcast target, and wires its send to handle. A
+// generously-sized channel avoids the fake ever blocking mid-catch-up.
+func (w *soakWorld) dial(name string, after int64, log string) (harness.Conn, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if _, known := w.roles[name]; !known {
@@ -217,6 +218,11 @@ func (w *soakWorld) dial(name string, after int64, _ string) (harness.Conn, erro
 	w.dials++
 	c := newFakeConn(name)
 	c.events = make(chan harness.Delivery, 8192)
+	if w.logs != nil && w.logs.dial(w, c, name, after, log) {
+		c.send = func(cmd *vttv1.ClientCommand) (*vttv1.CommandResult, error) { return w.handle(name, cmd), nil }
+		w.conns = append(w.conns, c)
+		return c, nil
+	}
 	// Scripted overflow: deliver a prefix, then end the way a real client ends
 	// when deliverEvent finds its buffer full. Consumed on use so the resume
 	// dial behaves normally.
@@ -455,6 +461,9 @@ func (w *soakWorld) broadcast(env *vttv1.Envelope) {
 			continue
 		}
 		if seq, ok := w.skipFor[c.name]; ok && seq == env.Sequence {
+			continue
+		}
+		if w.logs != nil && w.logs.deliver(c, env) {
 			continue
 		}
 		// trySend, not a bare channel send: conns keeps every connection ever

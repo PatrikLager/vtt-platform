@@ -220,12 +220,14 @@ internal/harness/one_log_test.go  0.0
 internal/harness/qa_client_switch_test.go  0.0
 internal/harness/qa_log_seat_test.go  0.0
 internal/harness/qa_one_log_test.go  0.0
+internal/harness/qa_soak_log_test.go  0.0
 internal/harness/qa_world_seat_test.go  0.0
 internal/harness/scenario.go  49.4
 internal/harness/scenario_test.go  19.8
-internal/harness/soak.go  42.3
+internal/harness/soak.go  40.5
 internal/harness/soak_drain_internal_test.go  24.6
-internal/harness/soak_test.go  34.9
+internal/harness/soak_log_seat_test.go  0.0
+internal/harness/soak_test.go  34.6
 internal/harness/states_equal_conditions_internal_test.go  17.3
 internal/harness/states_equal_notes_internal_test.go  12.5
 internal/harness/switch_quiet_internal_test.go  0.0
