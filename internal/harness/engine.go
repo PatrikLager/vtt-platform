@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
@@ -41,10 +42,10 @@ type Conn interface {
 // build here, not at some later call site.
 var _ Conn = (*Client)(nil)
 
-// Dialer connects (or reconnects) a named participant at a given catch-up
-// cursor. RunScenario calls it once per declared participant at scenario
-// start (after=0), and again for every reconnect step (after=AfterSequence).
-type Dialer func(name string, after int64) (Conn, error)
+// Dialer connects (or reconnects) a named participant at a catch-up cursor,
+// naming the log it holds or none when log is empty (VTT-414). RunScenario and
+// RunSoak dial through it.
+type Dialer func(name string, after int64, log string) (Conn, error)
 
 // denialAbsenceWindow is the mandatory wait for a denied step's "no
 // broadcast reaches ANY participant" assertion (binding, task-2-brief.md) —
@@ -138,31 +139,27 @@ func errFreshCampaignRequired(n int) error {
 	return fmt.Errorf("harness: scenario requires a fresh campaign; found %d pre-existing events (relative-sequence scenarios are a planned format extension)", n)
 }
 
-// drainPreExisting waits up to window for events already queued on conn's
-// Events() channel — the initial catch-up replay a non-fresh campaign
-// delivers immediately on dial, before any command has been issued — and
-// returns how many arrived. A genuinely fresh campaign's after=0 catch-up
-// is empty, so this window elapses in silence and returns 0 (the same
-// "bounded wait proves a negative" reasoning denialAbsenceWindow's own doc
-// comment already relies on for the denial assertion).
-// The error separates "heard nothing on a live stream" (a fresh campaign, the
-// negative this is meant to prove) from "heard nothing because the stream was
-// already gone" (no evidence either way). Silence proves freshness only from a
-// connection that could have spoken.
-func drainPreExisting(conn Conn, window time.Duration) (int, error) {
+// drainPreExisting counts the entries conn's catch-up replays within window,
+// before any command: a fresh campaign replays none (errFreshCampaignRequired).
+// It returns the switches it was sent, for the seat's history. The error
+// separates a live, silent stream from one already gone, which is no evidence.
+func drainPreExisting(conn Conn, window time.Duration) (int, []Delivery, error) {
 	n := 0
+	var switches []Delivery
 	deadline := time.After(window)
 	for {
 		select {
 		case d, ok := <-conn.Events():
 			if !ok {
-				return n, streamEndReason(conn)
+				return n, switches, streamEndReason(conn)
 			}
 			if d.Envelope != nil {
 				n++
+			} else {
+				switches = append(switches, d)
 			}
 		case <-deadline:
-			return n, nil
+			return n, switches, nil
 		}
 	}
 }
@@ -208,10 +205,10 @@ type ProbeResult struct {
 
 // RunScenario dials every participant at after=0, fills {{id:<name>}} from ids,
 // runs sc.Steps and checks sc.Probes on the first participant's fold. A step
-// fails when a world seat misses its event (VTT-381), a denied command reaches
-// a world seat or none can show it did not (VTT-358), a log seat's log breaks
-// (VTT-359) or a replay differs from what its seat saw live (VTT-360, VTT-382).
-// report may be nil; the error is the framework's, never an assertion's.
+// fails when a world seat misses its event (VTT-381), a denial reaches a world
+// seat or none can show it did not (VTT-358), a log breaks (VTT-359, VTT-411),
+// a redial is told another log (VTT-412) or a replay differs (VTT-382,
+// VTT-413). report may be nil; the error is the framework's, not an assertion's.
 func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]string, report io.Writer) (*Report, error) {
 	if report == nil {
 		report = io.Discard
@@ -222,11 +219,11 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 	}
 
 	conns := make(map[string]Conn, len(sc.Participants))
-	history := make(map[string][]*vttv1.Envelope, len(sc.Participants))
+	history := make(map[string][]Delivery, len(sc.Participants))
 	logSeats := characterSeats(sc.Participants)
 	worldSeat := slices.ContainsFunc(sc.Participants, func(p Participant) bool { return !logSeats[p.Name] })
 	for _, p := range sc.Participants {
-		c, err := dial(p.Name, 0)
+		c, err := dial(p.Name, 0, "")
 		if err != nil {
 			return nil, fmt.Errorf("harness: dial participant %q: %w", p.Name, err)
 		}
@@ -248,7 +245,8 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 	// (Fold's own probe evaluation below makes the same "participant 0
 	// stands in for the group" choice).
 	if len(sc.Participants) > 0 {
-		n, err := drainPreExisting(conns[sc.Participants[0].Name], denialAbsenceWindow)
+		n, switches, err := drainPreExisting(conns[sc.Participants[0].Name], denialAbsenceWindow)
+		history[sc.Participants[0].Name] = switches
 		if err != nil {
 			return nil, fmt.Errorf("harness: cannot confirm a fresh campaign: %w", err)
 		}
@@ -339,7 +337,7 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 
 	if len(sc.Participants) > 0 {
 		first := sc.Participants[0].Name
-		state, err := Fold(history[first])
+		state, err := Fold(probeLog(history[first], logSeats[first]))
 		if err != nil {
 			return nil, fmt.Errorf("harness: fold participant %q's observed events for probes: %w", first, err)
 		}
@@ -359,7 +357,7 @@ func RunScenario(ctx context.Context, sc *Scenario, dial Dialer, ids map[string]
 // runStep runs one step and fails it when a log seat's stream breaks its log
 // in what the step drained (VTT-359).
 func runStep(ctx context.Context, i int, st Step, dial Dialer, conns map[string]Conn,
-	logSeats map[string]bool, history map[string][]*vttv1.Envelope) StepResult {
+	logSeats map[string]bool, history map[string][]Delivery) StepResult {
 	var sr StepResult
 	lens := historyLens(history)
 	switch {
@@ -437,11 +435,11 @@ func markNoWorldSeat(rep *Report, idx int) {
 	rep.Pass = false
 }
 
-// historyLens snapshots how many envelopes each participant has observed.
-func historyLens(history map[string][]*vttv1.Envelope) map[string]int {
+// historyLens snapshots how long each participant's history is.
+func historyLens(history map[string][]Delivery) map[string]int {
 	out := make(map[string]int, len(history))
-	for name, envs := range history {
-		out[name] = len(envs)
+	for name, ds := range history {
+		out[name] = len(ds)
 	}
 	return out
 }
@@ -450,9 +448,9 @@ func historyLens(history map[string][]*vttv1.Envelope) map[string]int {
 // below witnessSeq: one the denied command before the witness produced. Keep
 // the character seats in skip out of it: their sequences need not be the
 // world's (VTT-321).
-func leakedSince(history map[string][]*vttv1.Envelope, lens map[string]int, witnessSeq int64, skip map[string]bool) []string {
+func leakedSince(history map[string][]Delivery, lens map[string]int, witnessSeq int64, skip map[string]bool) []string {
 	var leaked []string
-	for name, envs := range history {
+	for name, ds := range history {
 		if skip[name] {
 			continue
 		}
@@ -460,8 +458,8 @@ func leakedSince(history map[string][]*vttv1.Envelope, lens map[string]int, witn
 		// connection actually replayed, so it can be SHORTER than a pending
 		// denial's snapshot. Indexing that unguarded panicked — the soak twin
 		// (leakedBelow) has always had this guard; this copy did not.
-		for _, env := range envs[min(lens[name], len(envs)):] {
-			if env.GetSequence() < witnessSeq {
+		for _, d := range ds[min(lens[name], len(ds)):] {
+			if d.Envelope != nil && d.Envelope.GetSequence() < witnessSeq {
 				leaked = append(leaked, name)
 				break
 			}
@@ -473,7 +471,7 @@ func leakedSince(history map[string][]*vttv1.Envelope, lens map[string]int, witn
 
 // runCommandStep sends st.Command on the issuing participant's connection and
 // checks it against st.Expect: a denial (VTT-358) or an acceptance (VTT-381).
-func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn, logSeats map[string]bool, history map[string][]*vttv1.Envelope) StepResult {
+func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn, logSeats map[string]bool, history map[string][]Delivery) StepResult {
 	sr := StepResult{Index: idx, By: st.By, Kind: "command"}
 
 	conn, ok := conns[st.By]
@@ -529,6 +527,15 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 	// Accepted-command expectation.
 	if !result.Ok {
 		sr.Detail = fmt.Sprintf("want ok=true, got ok=false (error %q)", result.Error)
+		return sr
+	}
+	if result.Sequence == 0 {
+		// Appended nothing, so no world seat has an event to observe (VTT-415).
+		if ended := drainLogSeats(conns, logSeats, history, denialAbsenceWindow); len(ended) > 0 {
+			sr.Detail = fmt.Sprintf("unobservable — stream ended for: %s", strings.Join(ended, ", "))
+			return sr
+		}
+		sr.Pass = true
 		return sr
 	}
 
@@ -605,13 +612,11 @@ func isBatchCommand(cmd *vttv1.ClientCommand) bool {
 	}
 }
 
-// runReconnectStep redials st.By at st.Reconnect.AfterSequence and compares the
-// replay with what the seat saw live: after the cursor for a world seat
-// (VTT-382), its current log from 1 for a log seat (VTT-360). Expect a false
-// failure once a scenario switches a log seat and then reconnects it: a redial
-// naming no log opens on the default (VTT-340). history[st.By] becomes what the
-// redial actually sent.
-func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, logSeats map[string]bool, history map[string][]*vttv1.Envelope) StepResult {
+// runReconnectStep redials st.By at st.Reconnect.AfterSequence, naming the log
+// it holds (VTT-414), and compares the replay with what the seat saw live
+// (VTT-382, VTT-412, VTT-413). history[st.By] becomes what replayWanted keeps,
+// then what the redial sent.
+func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, logSeats map[string]bool, history map[string][]Delivery) StepResult {
 	sr := StepResult{Index: idx, By: st.By, Kind: "reconnect"}
 	name := st.By
 
@@ -621,31 +626,73 @@ func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, logS
 		return sr
 	}
 	after := st.Reconnect.AfterSequence
-
-	var prefix, want []*vttv1.Envelope
 	if logSeats[name] {
-		run := currentRun(history[name])
-		prefix, want = history[name][:run], history[name][run:]
-	} else {
-		for _, env := range history[name] {
-			if env.Sequence > after {
-				want = append(want, env)
-			} else {
-				prefix = append(prefix, env)
-			}
-		}
+		// Drain first, or a first step's reconnect loses its opening (VTT-414).
+		var mu sync.Mutex
+		drainQuietInto(name, oldConn, history, &mu, denialAbsenceWindow)
 	}
+	prefix, want, log := replayWanted(history[name], after, logSeats[name])
 
 	_ = oldConn.Close()
 
-	newConn, err := dial(name, after)
+	newConn, err := dial(name, after, log)
 	if err != nil {
 		sr.Detail = fmt.Sprintf("redial: %v", err)
 		return sr
 	}
 	conns[name] = newConn
 
-	got := make([]*vttv1.Envelope, 0, len(want))
+	got, detail := readReplay(newConn, want, log, logSeats[name])
+	history[name] = append(append([]Delivery{}, prefix...), got...)
+	if detail != "" {
+		sr.Detail = detail
+		return sr
+	}
+	sr.Pass = true
+	return sr
+}
+
+// replayWanted splits ds at a reconnect after the cursor: what the seat keeps,
+// the entries the redial must send, and the log it names. A world seat keeps
+// what is at or below the cursor. A log seat holding an actor's log names it
+// and is sent its current run above the cursor; one holding nobody, or never
+// told, names none and is sent its whole current run, since the cursor is then
+// ignored (VTT-349).
+func replayWanted(ds []Delivery, after int64, logSeat bool) (prefix []Delivery, want []*vttv1.Envelope, log string) {
+	from := 0
+	if logSeat {
+		from = currentRun(ds)
+		if held, told := heldLog(ds); told && held != "" {
+			log = held
+		} else {
+			return ds[:from], entriesOf(ds[from:]), ""
+		}
+	}
+	prefix = append(prefix, ds[:from]...)
+	for _, d := range ds[from:] {
+		if d.Envelope != nil && d.Envelope.GetSequence() > after {
+			want = append(want, d.Envelope)
+		} else {
+			prefix = append(prefix, d)
+		}
+	}
+	return prefix, want, log
+}
+
+// readReplay reads a redial's replay of want, and names what is wrong with it,
+// if anything: a switch to another log than log when that names an actor, a
+// short or long replay, or an entry that differs, compared whole for a log
+// seat, since a log's own entries carry no event id (SPEC-021).
+func readReplay(conn Conn, want []*vttv1.Envelope, log string, whole bool) ([]Delivery, string) {
+	var got []Delivery
+	var entries []*vttv1.Envelope
+	toldOther := ""
+	onSwitch := func(v *vttv1.ViewpointChanged) {
+		got = append(got, Delivery{Viewpoint: v})
+		if log != "" && v.GetActorId() != log && toldOther == "" {
+			toldOther = logName(v.GetActorId())
+		}
+	}
 	timedOut := false
 	// Tracked apart from timedOut. Setting that flag on a channel close is the
 	// misdiagnosis this separation exists to stop: it reported "before timing
@@ -653,7 +700,7 @@ func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, logS
 	// observeTimeout that never elapsed.
 	var streamEnd error
 	for range want {
-		env, ok, err := recvWithin(newConn, observeTimeout)
+		env, ok, err := recvEntry(conn, observeTimeout, onSwitch)
 		if err != nil {
 			streamEnd = err
 			break
@@ -662,15 +709,15 @@ func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, logS
 			timedOut = true
 			break
 		}
-		got = append(got, env)
+		got, entries = append(got, Delivery{Envelope: env}), append(entries, env)
 	}
 
 	extra := false
 	if !timedOut && streamEnd == nil {
-		env, ok, err := recvWithin(newConn, denialAbsenceWindow)
+		env, ok, err := recvEntry(conn, denialAbsenceWindow, onSwitch)
 		switch {
 		case ok:
-			got = append(got, env)
+			got, entries = append(got, Delivery{Envelope: env}), append(entries, env)
 			extra = true
 		case err != nil:
 			// "Nothing extra arrived" is another proof by ABSENCE, and a
@@ -681,72 +728,128 @@ func runReconnectStep(idx int, st Step, dial Dialer, conns map[string]Conn, logS
 		}
 	}
 
-	history[name] = append(append([]*vttv1.Envelope{}, prefix...), got...)
-
 	switch {
+	case toldOther != "":
+		return got, fmt.Sprintf("redial: told %s, not %s, the log the seat held", toldOther, log)
 	case streamEnd != nil:
-		sr.Detail = fmt.Sprintf("catch-up: got %d/%d events before the stream ended: %v", len(got), len(want), streamEnd)
-		return sr
+		return got, fmt.Sprintf("catch-up: got %d/%d events before the stream ended: %v", len(entries), len(want), streamEnd)
 	case timedOut:
-		sr.Detail = fmt.Sprintf("catch-up: got %d/%d events before timing out", len(got), len(want))
-		return sr
+		return got, fmt.Sprintf("catch-up: got %d/%d events before timing out", len(entries), len(want))
 	case extra:
-		sr.Detail = fmt.Sprintf("catch-up: got %d events, want exactly %d (extra arrived)", len(got), len(want))
-		return sr
-	case len(got) != len(want):
-		sr.Detail = fmt.Sprintf("catch-up length = %d, want %d", len(got), len(want))
-		return sr
+		return got, fmt.Sprintf("catch-up: got %d events, want exactly %d (extra arrived)", len(entries), len(want))
 	}
+	return got, replayDiffers(entries, want, whole)
+}
+
+// replayDiffers names the first entry of got that is not want's, compared whole
+// or by event id and sequence, or returns "".
+func replayDiffers(got, want []*vttv1.Envelope, whole bool) string {
 	for i := range want {
 		if got[i].EventId != want[i].EventId || got[i].Sequence != want[i].Sequence {
-			sr.Detail = fmt.Sprintf("catch-up[%d] = %q at sequence %d, want %q at %d (matching live-observed order)",
+			return fmt.Sprintf("catch-up[%d] = %q at sequence %d, want %q at %d (matching live-observed order)",
 				i, got[i].EventId, got[i].Sequence, want[i].EventId, want[i].Sequence)
-			return sr
+		}
+		if whole && !proto.Equal(got[i], want[i]) {
+			return fmt.Sprintf("catch-up[%d] at sequence %d is not, compared whole, the entry the seat was sent live",
+				i, got[i].Sequence)
 		}
 	}
-	sr.Pass = true
-	return sr
+	return ""
 }
 
-// currentRun is the index at which envs' current log starts: its last envelope
-// of sequence 1, or len(envs) for a seat that has been sent none.
-func currentRun(envs []*vttv1.Envelope) int {
-	for i := len(envs) - 1; i >= 0; i-- {
-		if envs[i].GetSequence() == 1 {
-			return i
+// entriesOf is ds's entries, in order.
+func entriesOf(ds []Delivery) []*vttv1.Envelope {
+	var out []*vttv1.Envelope
+	for _, d := range ds {
+		if d.Envelope != nil {
+			out = append(out, d.Envelope)
 		}
 	}
-	return len(envs)
+	return out
 }
 
-// logBreak is the first index at or after from whose envelope neither continues
-// the run before it nor starts a log at 1, or -1 (VTT-359).
-func logBreak(envs []*vttv1.Envelope, from int) int {
-	for i := max(from, 0); i < len(envs); i++ {
-		seq := envs[i].GetSequence()
-		if seq != 1 && (i == 0 || seq != envs[i-1].GetSequence()+1) {
-			return i
+// probeLog is what the probes fold: a log seat's current run, or a world
+// seat's every entry.
+func probeLog(ds []Delivery, logSeat bool) []*vttv1.Envelope {
+	if logSeat {
+		return entriesOf(ds[currentRun(ds):])
+	}
+	return entriesOf(ds)
+}
+
+// heldLog is the log ds's last switch names, "" for nobody, and whether ds has
+// a switch at all.
+func heldLog(ds []Delivery) (log string, told bool) {
+	for i := len(ds) - 1; i >= 0; i-- {
+		if v := ds[i].Viewpoint; v != nil {
+			return v.GetActorId(), true
 		}
 	}
-	return -1
+	return "", false
 }
 
-// describeBreak names where envs, name's history, stops being one log.
-func describeBreak(name string, envs []*vttv1.Envelope, i int) string {
-	if i == 0 {
-		return fmt.Sprintf("%s's stream opens at sequence %d, not at its log's first entry", name, envs[0].GetSequence())
+// logName is how a message names a log: its actor, or nobody.
+func logName(actorID string) string {
+	if actorID == "" {
+		return "nobody"
 	}
-	return fmt.Sprintf("%s's stream breaks its log: sequence %d after %d", name, envs[i].GetSequence(), envs[i-1].GetSequence())
+	return actorID
+}
+
+// currentRun is the index at which ds's current log starts: after its last
+// switch to another log, or at its last entry of sequence 1 after that switch,
+// whichever is later; len(ds) when there is neither (VTT-413).
+func currentRun(ds []Delivery) int {
+	start, held, told := len(ds), "", false
+	for i, d := range ds {
+		if v := d.Viewpoint; v != nil {
+			if id := v.GetActorId(); !told || id != held {
+				start, held, told = i+1, id, true
+			}
+		} else if d.Envelope.GetSequence() == 1 {
+			start = i
+		}
+	}
+	return start
+}
+
+// logBreak describes the first entry at or after from that neither continues
+// its run nor starts a log at 1, the first after a switch to another log
+// included, or returns "" (VTT-359, VTT-411).
+func logBreak(name string, ds []Delivery, from int) string {
+	var prev int64
+	held, told, fresh := "", false, false
+	for i, d := range ds {
+		if v := d.Viewpoint; v != nil {
+			if id := v.GetActorId(); !told || id != held {
+				held, told, prev, fresh = id, true, 0, true
+			}
+			continue
+		}
+		seq := d.Envelope.GetSequence()
+		if seq != 1 && seq != prev+1 && i >= from {
+			switch {
+			case fresh:
+				return fmt.Sprintf("%s's stream breaks its log: sequence %d straight after a switch to %s", name, seq, logName(held))
+			case prev == 0:
+				return fmt.Sprintf("%s's stream opens at sequence %d, not at its log's first entry", name, seq)
+			default:
+				return fmt.Sprintf("%s's stream breaks its log: sequence %d after %d", name, seq, prev)
+			}
+		}
+		prev, fresh = seq, false
+	}
+	return ""
 }
 
 // brokenLogs describes, by name, each log seat whose history after lens breaks
 // its log.
-func brokenLogs(history map[string][]*vttv1.Envelope, logSeats map[string]bool, lens map[string]int) []string {
+func brokenLogs(history map[string][]Delivery, logSeats map[string]bool, lens map[string]int) []string {
 	var out []string
 	for _, name := range slices.Sorted(maps.Keys(logSeats)) {
-		envs := history[name]
-		if i := logBreak(envs, min(lens[name], len(envs))); i >= 0 {
-			out = append(out, describeBreak(name, envs, i))
+		ds := history[name]
+		if why := logBreak(name, ds, min(lens[name], len(ds))); why != "" {
+			out = append(out, why)
 		}
 	}
 	return out
@@ -756,7 +859,7 @@ func brokenLogs(history map[string][]*vttv1.Envelope, logSeats map[string]bool, 
 // bounded by timeout, records it into history, and names the seats that saw
 // nothing in time or the wrong sequence, and those whose stream ended. A log
 // seat is drained into history instead: one event gives it zero or more entries.
-func observeOnAll(conns map[string]Conn, logSeats map[string]bool, history map[string][]*vttv1.Envelope, wantSeq int64, timeout, quietWindow time.Duration) (missingNames, endedNames []string) {
+func observeOnAll(conns map[string]Conn, logSeats map[string]bool, history map[string][]Delivery, wantSeq int64, timeout, quietWindow time.Duration) (missingNames, endedNames []string) {
 	names := sortedParticipantNames(conns)
 	type outcome struct {
 		name  string
@@ -785,7 +888,7 @@ func observeOnAll(conns map[string]Conn, logSeats map[string]bool, history map[s
 				results <- outcome{name: name}
 			default:
 				mu.Lock()
-				history[name] = append(history[name], env)
+				history[name] = append(history[name], Delivery{Envelope: env})
 				mu.Unlock()
 				results <- outcome{name: name, ok: env.Sequence == wantSeq}
 			}
@@ -806,27 +909,8 @@ func observeOnAll(conns map[string]Conn, logSeats map[string]bool, history map[s
 	// Drain the log seats AFTER the world seats have observed, never beside
 	// them: the drain stops at a quiet window, so an entry that lands late
 	// would be missed by a drain running in parallel. The reconnect and log
-	// checks read what it records (VTT-359, VTT-360).
-	if len(names) > required {
-		var wg sync.WaitGroup
-		var endedMu sync.Mutex
-		for _, name := range names {
-			if !logSeats[name] {
-				continue
-			}
-			name, conn := name, conns[name]
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				if drainQuietInto(name, conn, history, &mu, quietWindow) {
-					endedMu.Lock()
-					ended = append(ended, name)
-					endedMu.Unlock()
-				}
-			}()
-		}
-		wg.Wait()
-	}
+	// checks read what it records (VTT-359, VTT-413).
+	ended = append(ended, drainLogSeats(conns, logSeats, history, quietWindow)...)
 
 	sort.Strings(missing)
 	sort.Strings(ended)
@@ -838,7 +922,7 @@ func observeOnAll(conns map[string]Conn, logSeats map[string]bool, history map[s
 // ends at a quiet window. Every world seat's run must hold the same event ids
 // in order; a log seat is drained instead. Steps run one at a time, so every
 // event observed here belongs to the batch, and each is recorded into history.
-func observeBatchOnAll(conns map[string]Conn, logSeats map[string]bool, history map[string][]*vttv1.Envelope, firstSeq int64, firstTimeout, quietWindow time.Duration) (missing []string, detail string) {
+func observeBatchOnAll(conns map[string]Conn, logSeats map[string]bool, history map[string][]Delivery, firstSeq int64, firstTimeout, quietWindow time.Duration) (missing []string, detail string) {
 	all := sortedParticipantNames(conns)
 	// Drain a log seat rather than match it, as observeOnAll does: its entries
 	// for a batch may be fewer than the batch, or none.
@@ -865,21 +949,7 @@ func observeBatchOnAll(conns map[string]Conn, logSeats map[string]bool, history 
 	}
 
 	// Drain the log seats AFTER, for observeOnAll's reason.
-	if len(all) > len(names) {
-		var wg sync.WaitGroup
-		for _, name := range all {
-			if !logSeats[name] {
-				continue
-			}
-			name, conn := name, conns[name]
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				drainQuietInto(name, conn, history, &mu, quietWindow)
-			}()
-		}
-		wg.Wait()
-	}
+	drainLogSeats(conns, logSeats, history, quietWindow)
 
 	for _, name := range names {
 		if o := byName[name]; o.err != "" {
@@ -941,10 +1011,10 @@ type batchOutcome struct {
 // recorded into history under mu, regardless of outcome (ground truth for
 // any later step or probe, matching observeOnAll's own per-event recording
 // contract).
-func collectBatchRun(name string, conn Conn, history map[string][]*vttv1.Envelope, mu *sync.Mutex, firstSeq int64, firstTimeout, quietWindow time.Duration) batchOutcome {
+func collectBatchRun(name string, conn Conn, history map[string][]Delivery, mu *sync.Mutex, firstSeq int64, firstTimeout, quietWindow time.Duration) batchOutcome {
 	record := func(env *vttv1.Envelope) {
 		mu.Lock()
-		history[name] = append(history[name], env)
+		history[name] = append(history[name], Delivery{Envelope: env})
 		mu.Unlock()
 	}
 
@@ -1014,6 +1084,12 @@ func streamEndReason(conn Conn) error {
 // ended" turns a truncated observation into a passing assertion. This used to
 // return the same (nil, false) for both.
 func recvWithin(conn Conn, timeout time.Duration) (*vttv1.Envelope, bool, error) {
+	return recvEntry(conn, timeout, nil)
+}
+
+// recvEntry is recvWithin, handing each switch it skips to onSwitch when that
+// is not nil.
+func recvEntry(conn Conn, timeout time.Duration, onSwitch func(*vttv1.ViewpointChanged)) (*vttv1.Envelope, bool, error) {
 	deadline := time.After(timeout)
 	for {
 		select {
@@ -1023,6 +1099,9 @@ func recvWithin(conn Conn, timeout time.Duration) (*vttv1.Envelope, bool, error)
 			}
 			if d.Envelope != nil {
 				return d.Envelope, true, nil
+			}
+			if onSwitch != nil {
+				onSwitch(d.Viewpoint)
 			}
 		case <-deadline:
 			return nil, false, nil
@@ -1035,7 +1114,7 @@ func recvWithin(conn Conn, timeout time.Duration) (*vttv1.Envelope, bool, error)
 // window*count) and returns the names of any that received an event —
 // recording whatever arrived into history either way, since it really was
 // received over the wire.
-func drainAllForSilence(conns map[string]Conn, history map[string][]*vttv1.Envelope, window time.Duration) (leakedNames, endedNames []string) {
+func drainAllForSilence(conns map[string]Conn, history map[string][]Delivery, window time.Duration) (leakedNames, endedNames []string) {
 	names := sortedParticipantNames(conns)
 	type outcome struct {
 		name  string
@@ -1048,11 +1127,15 @@ func drainAllForSilence(conns map[string]Conn, history map[string][]*vttv1.Envel
 	for _, name := range names {
 		name, conn := name, conns[name]
 		go func() {
-			env, ok, err := recvWithin(conn, window)
+			env, ok, err := recvEntry(conn, window, func(v *vttv1.ViewpointChanged) {
+				mu.Lock()
+				history[name] = append(history[name], Delivery{Viewpoint: v})
+				mu.Unlock()
+			})
 			switch {
 			case ok:
 				mu.Lock()
-				history[name] = append(history[name], env)
+				history[name] = append(history[name], Delivery{Envelope: env})
 				mu.Unlock()
 				results <- outcome{name: name, env: env}
 			case err != nil:
@@ -1179,12 +1262,12 @@ func characterSeats(ps []Participant) map[string]bool {
 	return out
 }
 
-// drainQuietInto collects every entry conn has to offer, into history, until
-// no further entry arrives within quiet. Reports whether the stream ENDED,
-// which is a fault even for a seat that is entitled to receive nothing:
-// silence and a dead socket are different facts, and the assertions that read
-// history downstream rely on the difference.
-func drainQuietInto(name string, conn Conn, history map[string][]*vttv1.Envelope, mu *sync.Mutex, quiet time.Duration) (ended bool) {
+// drainQuietInto collects what conn has to offer, switches included, into
+// history, until no further entry arrives within quiet. Reports whether the
+// stream ENDED, which is a fault even for a seat that is entitled to receive
+// nothing: silence and a dead socket are different facts, and the assertions
+// that read history downstream rely on the difference.
+func drainQuietInto(name string, conn Conn, history map[string][]Delivery, mu *sync.Mutex, quiet time.Duration) (ended bool) {
 	silence := time.After(quiet)
 	for {
 		select {
@@ -1192,15 +1275,40 @@ func drainQuietInto(name string, conn Conn, history map[string][]*vttv1.Envelope
 			if !ok {
 				return true
 			}
-			if d.Envelope == nil {
-				continue
-			}
 			mu.Lock()
-			history[name] = append(history[name], d.Envelope)
+			history[name] = append(history[name], d)
 			mu.Unlock()
-			silence = time.After(quiet)
+			if d.Envelope != nil {
+				silence = time.After(quiet)
+			}
 		case <-silence:
 			return false
 		}
 	}
+}
+
+// drainLogSeats runs drainQuietInto on every log seat at once, and names those
+// whose stream ended.
+func drainLogSeats(conns map[string]Conn, logSeats map[string]bool, history map[string][]Delivery, quiet time.Duration) []string {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var ended []string
+	for _, name := range sortedParticipantNames(conns) {
+		if !logSeats[name] {
+			continue
+		}
+		name, conn := name, conns[name]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if drainQuietInto(name, conn, history, &mu, quiet) {
+				mu.Lock()
+				ended = append(ended, name)
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	sort.Strings(ended)
+	return ended
 }

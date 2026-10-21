@@ -146,7 +146,7 @@ func TestBuildDialerLiveModeReturnsIDsAndNoopTeardown(t *testing.T) {
 // not a nil-token dial that fails later with something opaque.
 func TestDialerForRejectsUnknownParticipant(t *testing.T) {
 	dial := dialerFor("ws://localhost:8080/ws", map[string]string{"dm": "tok-dm"})
-	_, err := dial("nobody", 0)
+	_, err := dial("nobody", 0, "")
 	if err == nil {
 		t.Fatal("want error dialing a participant with no token")
 	}

@@ -108,7 +108,7 @@ func TestDeniedCommandLeakFailsTheDeniedStep(t *testing.T) {
 			},
 		}
 
-		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		dial := func(name string, _ int64, _ string) (harness.Conn, error) { return world[name], nil }
 		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
 		if err != nil {
 			t.Fatalf("RunScenario: %v", err)
@@ -183,7 +183,7 @@ func TestDeniedThenCleanAcceptPasses(t *testing.T) {
 			},
 		}
 
-		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		dial := func(name string, _ int64, _ string) (harness.Conn, error) { return world[name], nil }
 		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
 		if err != nil {
 			t.Fatalf("RunScenario: %v", err)
@@ -228,7 +228,7 @@ func TestTrailingDenialStillProvesAbsence(t *testing.T) {
 			},
 		}
 
-		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		dial := func(name string, _ int64, _ string) (harness.Conn, error) { return world[name], nil }
 		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
 		if err != nil {
 			t.Fatalf("RunScenario: %v", err)
@@ -298,7 +298,7 @@ func TestConsecutiveDenialsBlameTheEarliestOutstandingDenial(t *testing.T) {
 			},
 		}
 
-		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		dial := func(name string, _ int64, _ string) (harness.Conn, error) { return world[name], nil }
 		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
 		if err != nil {
 			t.Fatalf("RunScenario: %v", err)
@@ -381,7 +381,7 @@ func TestDenialFollowedByReconnectDoesNotPanic(t *testing.T) {
 		}
 
 		agentDials := 0
-		dial := func(name string, _ int64) (harness.Conn, error) {
+		dial := func(name string, _ int64, _ string) (harness.Conn, error) {
 			if name == "agent" {
 				agentDials++
 				if agentDials > 1 {
@@ -443,7 +443,7 @@ func TestDefaultLogNamesTheDeniedStep(t *testing.T) {
 		}
 
 		var log bytes.Buffer
-		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		dial := func(name string, _ int64, _ string) (harness.Conn, error) { return world[name], nil }
 		if _, err := harness.RunScenario(context.Background(), sc, dial, nil, &log); err != nil {
 			t.Fatalf("RunScenario: %v", err)
 		}
@@ -479,7 +479,7 @@ func TestADenialWithNoWorldSeatIsUnprovable(t *testing.T) {
 			Steps: []harness.Step{{By: "player", Command: []byte(`{"startSession":{"name":"denied"}}`),
 				Expect: &harness.Expect{DeniedContaining: "not authorized"}}},
 		}
-		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		dial := func(name string, _ int64, _ string) (harness.Conn, error) { return world[name], nil }
 		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
 		if err != nil {
 			t.Fatalf("RunScenario: %v", err)
@@ -564,7 +564,7 @@ func runDenialThenAccept(t *testing.T, world map[string]*fakeConn) *harness.Repo
 			{By: "dm", Command: []byte(`{"startSession":{"name":"ok"}}`), Expect: &harness.Expect{OK: true}},
 		},
 	}
-	dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+	dial := func(name string, _ int64, _ string) (harness.Conn, error) { return world[name], nil }
 	rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
 	if err != nil {
 		t.Fatalf("RunScenario: %v", err)

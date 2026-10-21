@@ -76,7 +76,7 @@ func TestStepLinesAreEmittedAsTheRunProgresses(t *testing.T) {
 			},
 		}
 
-		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		dial := func(name string, _ int64, _ string) (harness.Conn, error) { return world[name], nil }
 		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, &log)
 		if err != nil {
 			t.Fatalf("RunScenario: %v", err)
@@ -132,7 +132,7 @@ func TestSingleDenialLeakDoesNotClaimARange(t *testing.T) {
 					Expect: &harness.Expect{OK: true}},
 			},
 		}
-		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		dial := func(name string, _ int64, _ string) (harness.Conn, error) { return world[name], nil }
 		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
 		if err != nil {
 			t.Fatalf("RunScenario: %v", err)
@@ -212,7 +212,7 @@ func TestScenarioReportCountersMatchStepResults(t *testing.T) {
 			},
 		}
 		var log bytes.Buffer
-		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		dial := func(name string, _ int64, _ string) (harness.Conn, error) { return world[name], nil }
 		rep, err := harness.RunScenario(context.Background(), sc, dial, nil, &log)
 		if err != nil {
 			t.Fatalf("RunScenario: %v", err)
@@ -258,7 +258,7 @@ func TestReconnectCatchUpExcludesTheCursorEvent(t *testing.T) {
 		}
 
 		// A correct server: replays strictly what follows the cursor.
-		dial := func(name string, after int64) (harness.Conn, error) {
+		dial := func(name string, after int64, _ string) (harness.Conn, error) {
 			if name == "agent" && after > 0 {
 				fresh := newFakeConn("agent-redialled")
 				for _, env := range events[:sent] {
@@ -301,7 +301,7 @@ func TestUnresolvedPlaceholderIsNamedExactly(t *testing.T) {
 					Expect: &harness.Expect{OK: true}},
 			},
 		}
-		dial := func(string, int64) (harness.Conn, error) { return newFakeConn("dm"), nil }
+		dial := func(string, int64, string) (harness.Conn, error) { return newFakeConn("dm"), nil }
 		_, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
 		if err == nil {
 			t.Fatal("an unresolved {{id:...}} must be a hard error, not dispatched literally")
@@ -330,7 +330,7 @@ func TestPlaceholderAtOffsetZeroIsStillDetected(t *testing.T) {
 				{By: "dm", Command: []byte(`{{id:ghost}}`), Expect: &harness.Expect{OK: true}},
 			},
 		}
-		dial := func(string, int64) (harness.Conn, error) { return newFakeConn("dm"), nil }
+		dial := func(string, int64, string) (harness.Conn, error) { return newFakeConn("dm"), nil }
 		_, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
 		if err == nil {
 			t.Fatal("a placeholder at offset 0 must still be caught; resolution is a byte scan " +
@@ -359,7 +359,7 @@ func TestEmptyPlaceholderNameIsReportedAsEmpty(t *testing.T) {
 					Expect: &harness.Expect{OK: true}},
 			},
 		}
-		dial := func(string, int64) (harness.Conn, error) { return newFakeConn("dm"), nil }
+		dial := func(string, int64, string) (harness.Conn, error) { return newFakeConn("dm"), nil }
 		_, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard)
 		if err == nil {
 			t.Fatal("{{id:}} is unresolvable and must error")
@@ -423,7 +423,7 @@ func TestSoakLoneDenialLeakDoesNotClaimARange(t *testing.T) {
 func TestEmptyParticipantListDoesNotPanic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		sc := &harness.Scenario{Name: "no-participants"}
-		dial := func(string, int64) (harness.Conn, error) {
+		dial := func(string, int64, string) (harness.Conn, error) {
 			t.Error("dial must not be called when there are no participants")
 			return nil, nil
 		}
@@ -459,7 +459,7 @@ func TestEveryDialledConnectionIsClosed(t *testing.T) {
 				{By: "dm", Command: []byte(`{"startSession":{"name":"s"}}`), Expect: &harness.Expect{OK: true}},
 			},
 		}
-		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		dial := func(name string, _ int64, _ string) (harness.Conn, error) { return world[name], nil }
 		if _, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard); err != nil {
 			t.Fatalf("RunScenario: %v", err)
 		}
@@ -500,7 +500,7 @@ func TestAuthoredRequestIdIsPreserved(t *testing.T) {
 					Expect: &harness.Expect{OK: true}},
 			},
 		}
-		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		dial := func(name string, _ int64, _ string) (harness.Conn, error) { return world[name], nil }
 		if _, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard); err != nil {
 			t.Fatalf("RunScenario: %v", err)
 		}
@@ -532,7 +532,7 @@ func TestUnsetRequestIdGetsTheStepDefault(t *testing.T) {
 				{By: "dm", Command: []byte(`{"startSession":{"name":"s"}}`), Expect: &harness.Expect{OK: true}},
 			},
 		}
-		dial := func(name string, _ int64) (harness.Conn, error) { return world[name], nil }
+		dial := func(name string, _ int64, _ string) (harness.Conn, error) { return world[name], nil }
 		if _, err := harness.RunScenario(context.Background(), sc, dial, nil, io.Discard); err != nil {
 			t.Fatalf("RunScenario: %v", err)
 		}

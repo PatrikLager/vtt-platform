@@ -355,6 +355,36 @@ holds until the main goroutine blocks, so it reds on the recipe at every
 GOMAXPROCS (60 of 60 across 1, 2 and 8, observed 2026-10-17 by the fix's
 reading review).
 
+## 2026-10-17 — the harness could not see a log seat switched on its old subscription
+
+**The harness cannot see a log seat switched on its old subscription.**
+Recipe: in `seat.watch` (`internal/gateway/seat.go`), at the top of its loop,
+set `shown` and `told` and return when `s.unsub` is not nil, so a switch is
+announced while the old log keeps arriving. Every `cmd/vtt` scenario test
+stays green, the seed-1 soak included. The corpus's only switches are
+`scenarios/shared-control.json`'s revocations, which move a seat from a log to
+nobody, and a stream that keeps the old log then simply continues its run;
+`internal/harness`'s readers skip `ViewpointChanged`, so `logBreak` sees a
+switch only when the new log restarts at 1. The gateway's
+`TestAConnectionStopsWatchingAnActorItMayNoLongerWatch` goes red on the same
+edit (VTT-348). The same blindness makes `runReconnectStep` fail a correct
+server once a scenario switches a log seat and then reconnects it: the redial
+opens on the default (VTT-340), and the harness compares it with the log the
+seat was switched to. Labels: `test data missing`, `outside the tool`.
+Closing it needs the harness to know a seat's viewpoint, by surfacing
+`ViewpointChanged` through `Conn` or by passing `log` through the `Dialer`,
+which the fourth per-character-logs ticket carries. Recorded 2026-10-17 by
+ticket 3b's Task 6, whose deliberate break found it.
+
+**Closed by** `scenarios/a-player-switches-and-reconnects.json`, run by
+`TestScenarioLibraryRunsSelfContained`, which fails under the recipe at its
+first narration, "player's stream breaks its log: sequence 5 straight after a
+switch to act-bram", and at its first reconnect (observed 2026-10-21 on the
+commit that closes it). The scenario engine now holds each seat's switches
+(VTT-411, held by `TestASeatThatAnnouncesASwitchAndKeepsTheOldLogFailsTheStep`
+in `internal/harness/one_log_test.go`), and its reconnect names the log the
+seat holds (VTT-414).
+
 ## 2026-10-18 — a promotion re-judged a seat only at the next append's wake
 
 **A promotion re-judges a seat only at the next append's wake.**
@@ -459,25 +489,6 @@ with bun reporting an unhandled error between tests (observed 2026-10-20 on
 `982b4cc`).
 
 ## Open debt
-
-**The harness cannot see a log seat switched on its old subscription.**
-Recipe: in `seat.watch` (`internal/gateway/seat.go`), at the top of its loop,
-set `shown` and `told` and return when `s.unsub` is not nil, so a switch is
-announced while the old log keeps arriving. Every `cmd/vtt` scenario test
-stays green, the seed-1 soak included. The corpus's only switches are
-`scenarios/shared-control.json`'s revocations, which move a seat from a log to
-nobody, and a stream that keeps the old log then simply continues its run;
-`internal/harness`'s readers skip `ViewpointChanged`, so `logBreak` sees a
-switch only when the new log restarts at 1. The gateway's
-`TestAConnectionStopsWatchingAnActorItMayNoLongerWatch` goes red on the same
-edit (VTT-348). The same blindness makes `runReconnectStep` fail a correct
-server once a scenario switches a log seat and then reconnects it: the redial
-opens on the default (VTT-340), and the harness compares it with the log the
-seat was switched to. Labels: `test data missing`, `outside the tool`.
-Closing it needs the harness to know a seat's viewpoint, by surfacing
-`ViewpointChanged` through `Conn` or by passing `log` through the `Dialer`,
-which the fourth per-character-logs ticket carries. Recorded 2026-10-17 by
-ticket 3b's Task 6, whose deliberate break found it.
 
 **`migrateLocked`'s re-read error arm is unreachable through `testdb`.**
 `migrateLocked` in `internal/identity` re-reads the table's shape under the

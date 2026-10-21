@@ -135,7 +135,7 @@ func TestFreshCatchUpResumesAfterAnOverflowDisconnect(t *testing.T) {
 	const target = 10
 	var dialedAfter []int64
 
-	dial := func(name string, after int64) (Conn, error) {
+	dial := func(name string, after int64, _ string) (Conn, error) {
 		dialedAfter = append(dialedAfter, after)
 		c := newStubConn()
 		go func() {
@@ -190,7 +190,7 @@ func TestFreshCatchUpDoesNotResumeAfterANonOverflowEnd(t *testing.T) {
 	// dials and a generic timeout message. Only an overflow has a documented
 	// recovery; everything else must surface as itself.
 	dials := 0
-	dial := func(name string, after int64) (Conn, error) {
+	dial := func(name string, after int64, _ string) (Conn, error) {
 		dials++
 		c := newStubConn()
 		go func() {
@@ -220,7 +220,7 @@ func TestFreshCatchUpStopsWhenAResumeMakesNoProgress(t *testing.T) {
 	// futile by construction. (This expectation was wrong when first written —
 	// it said 2 — and the test corrected it.)
 	dials := 0
-	dial := func(name string, after int64) (Conn, error) {
+	dial := func(name string, after int64, _ string) (Conn, error) {
 		dials++
 		c := newStubConn()
 		go func() {
@@ -243,7 +243,7 @@ func TestFreshCatchUpIsBoundedByTheAttemptCap(t *testing.T) {
 	// Forward progress every time, but never enough: without the cap this
 	// loops until the deadline instead of failing as a real failure.
 	dials := 0
-	dial := func(name string, after int64) (Conn, error) {
+	dial := func(name string, after int64, _ string) (Conn, error) {
 		dials++
 		c := newStubConn()
 		go func() {

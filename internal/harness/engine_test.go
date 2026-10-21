@@ -98,6 +98,19 @@ func (c *fakeConn) trySend(env *vttv1.Envelope) {
 	}
 }
 
+func (c *fakeConn) trySwitch(actorID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return
+	}
+	select {
+	case c.events <- harness.Delivery{Viewpoint: &vttv1.ViewpointChanged{ActorId: actorID}}:
+	default:
+		panic(fmt.Sprintf("fakeConn %s: events buffer full (cap %d)", c.name, cap(c.events)))
+	}
+}
+
 // isClosed reports whether Close has been called, for the tests that assert
 // on reconnect behaviour.
 func (c *fakeConn) isClosed() bool {
@@ -292,7 +305,7 @@ func TestRunScenarioReconnectCatchUpEqualityPasses(t *testing.T) {
 		reconnected.events <- harness.Delivery{Envelope: env1}
 		reconnected.events <- harness.Delivery{Envelope: env2}
 
-		dial := func(name string, after int64) (harness.Conn, error) {
+		dial := func(name string, after int64, _ string) (harness.Conn, error) {
 			if name == "player" && after == 0 {
 				// First call (scenario start) uses the plain fixed dialer path;
 				// distinguish by whether this is the reconnect (after Close).
@@ -300,7 +313,7 @@ func TestRunScenarioReconnectCatchUpEqualityPasses(t *testing.T) {
 					return reconnected, nil
 				}
 			}
-			return fixedDialer(world)(name, after)
+			return fixedDialer(world)(name, after, "")
 		}
 
 		sc := &harness.Scenario{
@@ -343,11 +356,11 @@ func TestRunScenarioReconnectCatchUpEqualityFailsOnMismatch(t *testing.T) {
 		reconnected.events <- harness.Delivery{Envelope: env1}
 		reconnected.events <- harness.Delivery{Envelope: sceneCreatedEnv("ev-2-CORRUPTED")}
 
-		dial := func(name string, after int64) (harness.Conn, error) {
+		dial := func(name string, after int64, _ string) (harness.Conn, error) {
 			if name == "player" && after == 0 && player.isClosed() {
 				return reconnected, nil
 			}
-			return fixedDialer(world)(name, after)
+			return fixedDialer(world)(name, after, "")
 		}
 
 		sc := &harness.Scenario{
@@ -715,7 +728,7 @@ func rawCmd(t *testing.T, oneofJSON string) []byte {
 // every test that uses this directly — reconnect tests build a bespoke
 // Dialer instead, see TestRunScenarioReconnect*).
 func fixedDialer(world map[string]*fakeConn) harness.Dialer {
-	return func(name string, after int64) (harness.Conn, error) {
+	return func(name string, after int64, _ string) (harness.Conn, error) {
 		c, ok := world[name]
 		if !ok {
 			return nil, fmt.Errorf("fixedDialer: no fakeConn for participant %q", name)
@@ -853,11 +866,11 @@ func TestRunScenarioReconnectCatchUpNamesADeadStreamNotATimeout(t *testing.T) {
 		reconnected.closeErr = harness.ErrEventsOverflow
 		_ = reconnected.Close()
 
-		dial := func(name string, after int64) (harness.Conn, error) {
+		dial := func(name string, after int64, _ string) (harness.Conn, error) {
 			if name == "player" && after == 0 && player.isClosed() {
 				return reconnected, nil
 			}
-			return fixedDialer(world)(name, after)
+			return fixedDialer(world)(name, after, "")
 		}
 
 		sc := &harness.Scenario{
@@ -906,11 +919,11 @@ func TestRunScenarioReconnectAtHeadStillNoticesADeadRedial(t *testing.T) {
 		reconnected.closeErr = harness.ErrEventsOverflow
 		_ = reconnected.Close()
 
-		dial := func(name string, after int64) (harness.Conn, error) {
+		dial := func(name string, after int64, _ string) (harness.Conn, error) {
 			if name == "player" && player.isClosed() {
 				return reconnected, nil
 			}
-			return fixedDialer(world)(name, after)
+			return fixedDialer(world)(name, after, "")
 		}
 
 		sc := &harness.Scenario{
@@ -1161,9 +1174,12 @@ func TestACharacterSeatsEnvelopeOutOfItsLogFailsTheStep(t *testing.T) {
 	})
 }
 
-// VTT-360
+// VTT-413
 func TestACharacterSeatsReconnectIsComparedWithItsCurrentLog(t *testing.T) {
-	entry := func(id string, seq int64) *vttv1.Envelope { return &vttv1.Envelope{EventId: id, Sequence: seq} }
+	entry := func(id string, seq int64) *vttv1.Envelope {
+		return &vttv1.Envelope{EventId: id, Sequence: seq,
+			Payload: &vttv1.Envelope_NarrationAdded{NarrationAdded: &vttv1.NarrationAdded{Text: "entry"}}}
+	}
 	replay := func(t *testing.T, envs ...*vttv1.Envelope) harness.StepResult {
 		t.Helper()
 		var got harness.StepResult
@@ -1175,7 +1191,7 @@ func TestACharacterSeatsReconnectIsComparedWithItsCurrentLog(t *testing.T) {
 			for _, env := range envs {
 				redial.trySend(env)
 			}
-			dial := func(name string, after int64) (harness.Conn, error) {
+			dial := func(name string, after int64, _ string) (harness.Conn, error) {
 				if name == "player" && old.isClosed() {
 					return redial, nil
 				}

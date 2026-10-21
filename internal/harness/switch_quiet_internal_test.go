@@ -37,12 +37,12 @@ func TestASwitchDoesNotExtendDrainQuietIntosWindow(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		conn, done := newStubConn(), make(chan struct{})
 		go sendAroundASwitch(conn.events, done)
-		history := map[string][]*vttv1.Envelope{}
+		history := map[string][]Delivery{}
 		var mu sync.Mutex
 		start := time.Now()
 		ended := drainQuietInto("p", conn, history, &mu, switchQuietWindow)
-		if took := time.Since(start); ended || len(history["p"]) != 1 || took != switchQuietWindow {
-			t.Fatalf("drained %d entries, ended=%t, after %s; want 1 at %s", len(history["p"]), ended, took, switchQuietWindow)
+		if took := time.Since(start); ended || len(entriesOf(history["p"])) != 1 || took != switchQuietWindow {
+			t.Fatalf("drained %d entries, ended=%t, after %s; want 1 at %s", len(entriesOf(history["p"])), ended, took, switchQuietWindow)
 		}
 		<-done
 	})

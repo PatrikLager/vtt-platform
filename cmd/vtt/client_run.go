@@ -135,11 +135,11 @@ func buildDialer(sc *harness.Scenario, serverURL, tokensPath string) (harness.Di
 // harness.Dialer: the same shape RunScenario calls at scenario start and
 // on every reconnect step, regardless of which mode built it.
 func dialerFor(wsURL string, tokens map[string]string) harness.Dialer {
-	return func(name string, after int64) (harness.Conn, error) {
+	return func(name string, after int64, log string) (harness.Conn, error) {
 		token, ok := tokens[name]
 		if !ok {
 			return nil, fmt.Errorf("vtt client run: no token for participant %q", name)
 		}
-		return harness.Dial(context.Background(), wsURL, token, after, "")
+		return harness.Dial(context.Background(), wsURL, token, after, log)
 	}
 }

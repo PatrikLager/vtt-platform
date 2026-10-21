@@ -208,7 +208,7 @@ func newSoakWorld(ids map[string]string) *soakWorld {
 // target, and wires its send to handle. A generously-sized channel (well
 // beyond engine_test.go's 16-capacity default) avoids the fake ever
 // blocking mid-catch-up for the event counts these tests use.
-func (w *soakWorld) dial(name string, after int64) (harness.Conn, error) {
+func (w *soakWorld) dial(name string, after int64, _ string) (harness.Conn, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if _, known := w.roles[name]; !known {

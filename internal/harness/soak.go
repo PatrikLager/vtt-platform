@@ -222,7 +222,7 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 	logNames := make([]string, 0, len(participants))
 	conns := make(map[string]Conn, len(participants))
 	for _, p := range participants {
-		c, err := dial(p.Name, 0)
+		c, err := dial(p.Name, 0, "")
 		if err != nil {
 			return nil, fmt.Errorf("harness: soak: dial participant %q: %w", p.Name, err)
 		}
@@ -245,7 +245,7 @@ func RunSoak(ctx context.Context, cfg SoakConfig, dial Dialer, report io.Writer)
 	// drain goroutines below start consuming Events() — every participant's
 	// after=0 catch-up replays the same history, so one representative
 	// check is sufficient.
-	preExisting, err := drainPreExisting(conns[soakObserverName], denialAbsenceWindow)
+	preExisting, _, err := drainPreExisting(conns[soakObserverName], denialAbsenceWindow)
 	if err != nil {
 		return nil, fmt.Errorf("harness: soak: cannot confirm a fresh campaign: %w", err)
 	}
@@ -577,7 +577,7 @@ func drainFreshCatchUp(dial Dialer, target int64, window, timeout time.Duration)
 		if remaining <= 0 {
 			return all, false
 		}
-		conn, err := dial(soakObserverName, after)
+		conn, err := dial(soakObserverName, after, "")
 		if err != nil {
 			return all, false
 		}
@@ -720,8 +720,12 @@ func (h *soakHistories) brokenLogs(names []string) []string {
 	var out []string
 	for _, name := range names {
 		envs := h.data[name]
-		if i := logBreak(envs, h.checked[name]); i >= 0 {
-			out = append(out, describeBreak(name, envs, i))
+		ds := make([]Delivery, len(envs))
+		for i, env := range envs {
+			ds[i] = Delivery{Envelope: env}
+		}
+		if why := logBreak(name, ds, h.checked[name]); why != "" {
+			out = append(out, why)
 		}
 		h.checked[name] = len(envs)
 	}

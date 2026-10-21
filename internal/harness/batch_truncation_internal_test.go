@@ -30,8 +30,8 @@ func envSeq(seq int64) *vttv1.Envelope { return &vttv1.Envelope{Sequence: seq} }
 
 // collectOne runs collectBatchRun against a scripted conn with the history
 // plumbing the real caller supplies.
-func collectOne(conn Conn, firstSeq int64, firstTimeout, quiet time.Duration) (batchOutcome, map[string][]*vttv1.Envelope) {
-	history := map[string][]*vttv1.Envelope{}
+func collectOne(conn Conn, firstSeq int64, firstTimeout, quiet time.Duration) (batchOutcome, map[string][]Delivery) {
+	history := map[string][]Delivery{}
 	var mu sync.Mutex
 	return collectBatchRun("observer", conn, history, &mu, firstSeq, firstTimeout, quiet), history
 }
@@ -164,7 +164,7 @@ func TestDrainAllForSilenceReportsAnEndedStreamRatherThanCountingItSilent(t *tes
 	dead.err = ErrEventsOverflow
 	dead.finish()
 
-	history := map[string][]*vttv1.Envelope{}
+	history := map[string][]Delivery{}
 	leaked, ended := drainAllForSilence(
 		map[string]Conn{"live": live, "dead": dead}, history, 50*time.Millisecond)
 
@@ -180,7 +180,7 @@ func TestDrainAllForSilenceStillProvesSilenceOnLiveConnections(t *testing.T) {
 	// The guard against the mirror-image bug: if every live-but-quiet stream
 	// were reported as "ended", no denial assertion could ever pass.
 	a, b := newStubConn(), newStubConn()
-	history := map[string][]*vttv1.Envelope{}
+	history := map[string][]Delivery{}
 	leaked, ended := drainAllForSilence(
 		map[string]Conn{"a": a, "b": b}, history, 50*time.Millisecond)
 
@@ -194,7 +194,7 @@ func TestDrainAllForSilenceStillCatchesARealLeak(t *testing.T) {
 	noisy := newStubConn()
 	noisy.send(envSeq(9))
 
-	history := map[string][]*vttv1.Envelope{}
+	history := map[string][]Delivery{}
 	leaked, ended := drainAllForSilence(
 		map[string]Conn{"quiet": quiet, "noisy": noisy}, history, 50*time.Millisecond)
 
@@ -218,7 +218,7 @@ func TestObserveOnAllSeparatesADeadStreamFromAMissedEvent(t *testing.T) {
 	dead.err = ErrEventsOverflow
 	dead.finish()
 
-	history := map[string][]*vttv1.Envelope{}
+	history := map[string][]Delivery{}
 	// No log seats: this pins the world seats' contract, the one that answers
 	// who did not see this event. A log seat's has its own test below.
 	missing, ended := observeOnAll(
@@ -244,7 +244,7 @@ func TestDrainPreExistingReportsADeadStreamRatherThanCallingItFresh(t *testing.T
 	dead.err = ErrEventsOverflow
 	dead.finish()
 
-	n, err := drainPreExisting(dead, 50*time.Millisecond)
+	n, _, err := drainPreExisting(dead, 50*time.Millisecond)
 	if n != 0 {
 		t.Fatalf("nothing arrived, want n=0, got %d", n)
 	}
@@ -258,7 +258,7 @@ func TestDrainPreExistingReportsADeadStreamRatherThanCallingItFresh(t *testing.T
 
 func TestDrainPreExistingStillProvesFreshnessOnALiveStream(t *testing.T) {
 	live := newStubConn() // open, silent: a genuinely fresh campaign
-	n, err := drainPreExisting(live, 50*time.Millisecond)
+	n, _, err := drainPreExisting(live, 50*time.Millisecond)
 	if n != 0 || err != nil {
 		t.Fatalf("want (0, nil) for a live silent stream, got (%d, %v)", n, err)
 	}
@@ -268,7 +268,7 @@ func TestDrainPreExistingStillCountsRealBacklog(t *testing.T) {
 	conn := newStubConn()
 	conn.send(envSeq(1))
 	conn.send(envSeq(2))
-	n, err := drainPreExisting(conn, 50*time.Millisecond)
+	n, _, err := drainPreExisting(conn, 50*time.Millisecond)
 	if n != 2 || err != nil {
 		t.Fatalf("want (2, nil) for a replayed backlog, got (%d, %v)", n, err)
 	}
@@ -343,7 +343,7 @@ func TestSoakHistoriesStillCatchARealLeak(t *testing.T) {
 
 // One event may send a log seat no entry or several: keep a log seat out of
 // missing, and keep what it is sent reaching history, which the log and
-// reconnect checks read (VTT-359, VTT-360).
+// reconnect checks read (VTT-359, VTT-413).
 func TestObserveOnAllNeverRequiresALogSeatToSeeAnything(t *testing.T) {
 	silent := newStubConn() // a log seat sent nothing
 	watching := newStubConn()
@@ -352,7 +352,7 @@ func TestObserveOnAllNeverRequiresALogSeatToSeeAnything(t *testing.T) {
 	dm := newStubConn()
 	dm.send(envSeq(7))
 
-	history := map[string][]*vttv1.Envelope{}
+	history := map[string][]Delivery{}
 	missing, ended := observeOnAll(
 		map[string]Conn{"silent": silent, "watching": watching, "dm": dm},
 		map[string]bool{"silent": true, "watching": true},
@@ -386,7 +386,7 @@ func TestObserveOnAllStillNamesALogSeatWhoseStreamDied(t *testing.T) {
 	dm := newStubConn()
 	dm.send(envSeq(7))
 
-	history := map[string][]*vttv1.Envelope{}
+	history := map[string][]Delivery{}
 	missing, ended := observeOnAll(
 		map[string]Conn{"dead": dead, "dm": dm},
 		map[string]bool{"dead": true},

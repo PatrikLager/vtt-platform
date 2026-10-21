@@ -57,7 +57,7 @@ type qaWSHub struct {
 	serve    func(c *qaWSConn, cmd *vttv1.ClientCommand) *vttv1.CommandResult
 }
 
-func (h *qaWSHub) dial(name string, after int64) (harness.Conn, error) {
+func (h *qaWSHub) dial(name string, after int64, _ string) (harness.Conn, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if _, ok := h.roles[name]; !ok {

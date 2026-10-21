@@ -1,0 +1,23 @@
+{
+  "name": "a-player-switches-and-reconnects",
+  "participants": [
+    {"name": "dm", "role": "dm"},
+    {"name": "player", "role": "player"}
+  ],
+  "steps": [
+    {"by": "dm", "command": {"startSession": {"name": "Two Shoulders"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-ash", "name": "Ash", "kind": "ACTOR_KIND_PARTY_MEMBER"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-bram", "name": "Bram", "kind": "ACTOR_KIND_PARTY_MEMBER"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-ash", "participantId": "{{id:player}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-bram", "participantId": "{{id:player}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
+    {"by": "player", "command": {"setViewpoint": {"actorId": "act-bram"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addNarration": {"text": "Bram hears the door before Ash does."}}, "expect": {"ok": true}},
+    {"by": "player", "reconnect": {"afterSequence": 0}},
+    {"by": "dm", "command": {"addNarration": {"text": "The door opens."}}, "expect": {"ok": true}},
+    {"by": "player", "reconnect": {"afterSequence": 4}}
+  ],
+  "probes": [
+    {"sessionCount": {"open": 1, "total": 1}},
+    {"actorExists": {"actorId": "act-bram"}}
+  ]
+}

@@ -185,7 +185,7 @@ func (s *qaLSScript) handle(name string, cmd *vttv1.ClientCommand) (*vttv1.Comma
 	return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: a.world[0]}, nil
 }
 
-func (s *qaLSScript) dial(name string, after int64) (harness.Conn, error) {
+func (s *qaLSScript) dial(name string, after int64, _ string) (harness.Conn, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	role, ok := s.roles[name]
@@ -510,7 +510,7 @@ func qaLSSwitchedSeat(role string) *qaLSBuilder {
 		accept("dm", qaLSTo("p", qaLSLog("b", 2)...))
 }
 
-// VTT-360
+// VTT-413
 func TestQALSReconnectAfterASwitchComparesWithTheCurrentLogOnly(t *testing.T) {
 	for _, role := range []string{"player"} {
 		for _, after := range []int64{1, 5, 9} {
@@ -525,7 +525,7 @@ func TestQALSReconnectAfterASwitchComparesWithTheCurrentLogOnly(t *testing.T) {
 	}
 }
 
-// VTT-360
+// VTT-413
 func TestQALSReconnectAfterASwitchInsideOneStep(t *testing.T) {
 	rep := qaLSScenario(qaLSP("dm", "dm"), qaLSP("p", "player")).
 		accept("dm", nil).
@@ -547,7 +547,7 @@ func TestQALSReconnectClosesThenRedialsWithTheCursor(t *testing.T) {
 	}
 }
 
-// VTT-360
+// VTT-413
 func TestQALSReconnectReplayThatDiffersFails(t *testing.T) {
 	b1, b2 := qaLSEntry("b", 1), qaLSEntry("b", 2)
 	idSwapped1, idSwapped2 := proto.Clone(b1).(*vttv1.Envelope), proto.Clone(b2).(*vttv1.Envelope)
@@ -577,15 +577,15 @@ func TestQALSReconnectReplayThatDiffersFails(t *testing.T) {
 	}
 }
 
-// VTT-360
-func TestQALSReconnectComparesByEventIDAndSequenceOnly(t *testing.T) {
+// VTT-413
+func TestQALSReconnectComparesWholeEntries(t *testing.T) {
 	b1, b2 := qaLSEntry("b", 1), qaLSEntry("b", 2)
 	b1.Payload, b2.Payload = qaLSNote("b-reworded-1"), qaLSNote("b-reworded-2")
 	rep := qaLSSwitchedSeat("player").reconnect("p", 5, []*vttv1.Envelope{b1, b2}).run(t)
-	qaLSWantSteps(t, rep, true, true, true, true, true, true)
+	qaLSWantSteps(t, rep, true, true, true, true, true, false)
 }
 
-// VTT-360
+// VTT-413
 func TestQALSReconnectWithoutASwitchIgnoresTheCursor(t *testing.T) {
 	for _, after := range []int64{0, 2, 6} {
 		t.Run(fmt.Sprintf("after=%d", after), func(t *testing.T) {
@@ -601,7 +601,7 @@ func TestQALSReconnectWithoutASwitchIgnoresTheCursor(t *testing.T) {
 	}
 }
 
-// VTT-360
+// VTT-413
 func TestQALSReconnectTwiceAfterASwitch(t *testing.T) {
 	rep := qaLSSwitchedSeat("player").
 		reconnect("p", 5, qaLSLog("b", 1, 2)).
@@ -612,7 +612,7 @@ func TestQALSReconnectTwiceAfterASwitch(t *testing.T) {
 	qaLSWantSteps(t, rep, true, true, true, true, true, true, true, true, true)
 }
 
-// VTT-360
+// VTT-413
 func TestQALSReconnectOfASeatSentNothing(t *testing.T) {
 	base := func() *qaLSBuilder {
 		return qaLSScenario(qaLSP("dm", "dm"), qaLSP("p", "player")).
@@ -966,7 +966,7 @@ func (s *qaLSSoak) handle(name string, cmd *vttv1.ClientCommand) (*vttv1.Command
 	return &vttv1.CommandResult{RequestId: cmd.GetRequestId(), Ok: true, Sequence: base}, nil
 }
 
-func (s *qaLSSoak) dial(name string, after int64) (harness.Conn, error) {
+func (s *qaLSSoak) dial(name string, after int64, _ string) (harness.Conn, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	role, ok := s.roles[name]
