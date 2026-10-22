@@ -247,6 +247,7 @@ func TestResolveV2WardShiftFailAppliesAndNoOpRemoves(t *testing.T) {
 // proving v2's targeting compiles into a genuinely usable multi-target
 // bound, not just a value that happens to round-trip through
 // diffCompiledPower.
+// VTT-437
 func TestResolveV2WardShiftMultiTarget(t *testing.T) {
 	rs := loadV2Fixture(t)
 	st := newTestState()

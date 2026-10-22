@@ -244,6 +244,19 @@ func TestResolveUnknownTarget(t *testing.T) {
 	wantNoEvents(t, envs)
 }
 
+// VTT-437
+func TestResolveRefusesATokenIDAsATarget(t *testing.T) {
+	rs := fixtureRuleset(t)
+	st := newTestState()
+	putActor(st, "a", map[string]int32{"brawn": 3}, nil)
+	putActor(st, "b", map[string]int32{"guard": 10}, map[string]*vttv1.Resource{"vigor": res(0, 0)})
+	putToken(st, "ta", "s1", "a", 0, 0)
+	putToken(st, "tb", "s1", "b", 1, 0)
+	envs, err := rules.Resolve(rs, st, useAbility("a", "jab", "tb"), &queueRoller{})
+	wantErr(t, err, `unknown target actor "tb"`)
+	wantNoEvents(t, envs)
+}
+
 func TestResolveNoTargets(t *testing.T) {
 	rs := fixtureRuleset(t)
 	st := newTestState()
