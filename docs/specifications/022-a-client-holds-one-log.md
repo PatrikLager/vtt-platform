@@ -15,15 +15,23 @@ outside the reason it gives for a log it cannot fold is held by
 `client/test/qa-window-number.test.ts` and `client/e2e/table.spec.ts`
 (VTT-393), the last outside `task check`; that it holds one log and a redial
 names it, by `client/test/wire.test.ts`, `client/test/session.test.ts`,
-`client/test/app.test.ts`, `client/test/qa-one-log.test.ts` and
-`client/test/qa-switch.test.ts` (VTT-394 to VTT-398, VTT-407); that a player
+`client/test/app.test.ts`, `client/test/qa-one-log.test.ts`,
+`client/test/qa-switch.test.ts`, `client/test/qa-remembered-log.test.ts` and
+`client/test/qa-reload-viewpoint.test.ts` (VTT-394 to VTT-398, VTT-407); that
+until its first `ViewpointChanged` a page names the actor the last one sent to
+a page in its tab under its token named, and no `log` when none was, whatever
+another token's or another tab's pages were sent, by
+`client/test/wire.test.ts`, `client/test/app.test.ts`,
+`client/test/qa-remembered-log.test.ts` and
+`client/test/qa-reload-viewpoint.test.ts` (VTT-442 to VTT-444); that a player
 and a spectator are offered the party members a `WatchableChanged` names and
 switch between them, by `client/test/app.test.ts`,
 `client/test/player.test.ts`, `client/test/spectator-view.test.ts` and
 `client/test/qa-switch.test.ts` (VTT-402 to VTT-406, VTT-408); that a
-spectator chooses a shoulder and a player switches in the browser, by
-`client/e2e/table.spec.ts` (VTT-394, VTT-403, VTT-405) and
-`client/e2e/handover.spec.ts`, both outside `task check`.
+spectator chooses a shoulder and a player switches in the browser, and that
+a reload keeps either, by `client/e2e/table.spec.ts` (VTT-394, VTT-403,
+VTT-405, VTT-442, VTT-444) and `client/e2e/handover.spec.ts` (VTT-442), both
+outside `task check`.
 
 That `internal/harness`'s client hands its reader every entry and each switch
 and that a dial names a log is held by
@@ -69,22 +77,41 @@ reason it gives for a log it cannot fold (VTT-393; the owner's rulings of
 ### What the browser client holds, and what it offers
 
 The browser client holds one log (`client/src/wire.ts`,
-`client/src/session.ts`): the
-world for the DM and the agent, otherwise the log of the actor the last
-`ViewpointChanged` named, or none for nobody. A `ViewpointChanged` naming
-another actor than the one whose log it holds, or nobody while it holds one,
-discards what it folded and folds what follows (VTT-394); one naming the actor
-whose log it holds keeps it (VTT-396). An entry of sequence 1, once it has been
-sent an entry of its log since it last discarded, discards what it folded and
-folds from that entry (VTT-395), so a redial the gateway opens on the held log
-from its first entry is folded afresh. Its cursor is the highest sequence it
-has been sent of that log since it last discarded: an entry above it raises it,
-a discard returns it to 0, and nothing else moves it, `CatchUpHead` included
-(VTT-398). A redial dials `after` at that cursor and `log` naming the actor
-whose log it holds, and no `log` for the world or for nobody (VTT-397). A
-discard clears the reason the window gives for a log it could not fold, and
-keeps the last `WatchableChanged`. The window shows as watched the actor the
-last `ViewpointChanged` named, whatever a command's result said (VTT-407).
+`client/src/session.ts`): the world for the DM and the agent, otherwise the log
+of the actor the last `ViewpointChanged` named, and none for nobody or before
+the first one. A `ViewpointChanged` naming another actor than the one whose log
+it holds, or nobody while it holds one, discards what it folded and folds what
+follows (VTT-394); one naming the actor whose log it holds keeps it (VTT-396).
+An entry of sequence 1, once it has been sent an entry of its log since it last
+discarded, discards what it folded and folds from that entry (VTT-395), so a
+redial the gateway opens on the held log from its first entry is folded afresh.
+Its cursor is the highest sequence it has been sent of that log since it last
+discarded: an entry above it raises it, a discard returns it to 0, and nothing
+else moves it, `CatchUpHead` included (VTT-398). A redial dials `after` at that
+cursor. For the world it names no `log`, since a DM's or an agent's connection
+is sent no `ViewpointChanged` (SPEC-015) and no promotion makes a participant a
+DM or an agent (SPEC-009), so nothing is remembered under its token; once a
+`ViewpointChanged` has arrived, it names in `log` the actor whose log it holds,
+and no `log` for nobody (VTT-397). A discard clears the reason the window gives
+for a log it could not fold, and keeps the last `WatchableChanged`. The window
+shows as watched the actor the last `ViewpointChanged` named, whatever a
+command's result said (VTT-407).
+
+A tab remembers, per token, whose eyes its pages last looked through (the
+owner's ruling of 2026-10-22). `startSession` in `client/src/app.ts` writes the
+actor each `ViewpointChanged` names, `""` for nobody, to its tab's
+`sessionStorage` under `vtt.viewpoint.` followed by its token
+(`Session.onViewpoint`), and hands what it finds there to the page's `Session`.
+Until the page's first `ViewpointChanged`, every dial, a reconnect included,
+names that actor in `log` with `after` 0, and no `log` when it is nobody
+(VTT-442). The 0 is the cursor's: a player's or a spectator's connection is
+sent its `ViewpointChanged` before any entry (SPEC-015). Until its first
+`ViewpointChanged`, a page none of whose earlier pages in its tab under its
+token was sent one names no `log`, whatever a page under another token in its
+tab (VTT-443) or a page under its token in another tab (VTT-444) was sent.
+Until its first `ViewpointChanged` a page shows nobody as watched, not the
+remembered actor either (VTT-407). Whether the named log is opened is the
+gateway's (SPEC-015).
 
 A player's panel offers a chip for each party member the last
 `WatchableChanged` names, in its order, and marks the one they watch (VTT-402);
@@ -208,6 +235,18 @@ each entry it is sent, and no switch.
 - A client that holds a character's log names it on a redial: the gateway
   ignores the cursor of a dial that names no `log` and opens on the default,
   from its first entry (SPEC-015).
+- A reload under the same token keeps the viewpoint: a page loaded afresh in
+  a tab opens on the actor the last `ViewpointChanged` sent to a page in that
+  tab under its token named, while the participant may still watch it
+  (SPEC-015). Nothing promises it outlives the tab (VTT-444), and a
+  duplicated or restored tab, which a browser may give a copy of the tab's
+  storage, is neither promised it nor refused it.
+- The browser client has no logout: nothing calls `Auth.clear`
+  (`git grep -n 'Auth.clear\|auth.clear' client/src` finds only the warning
+  in `startSession`). The key carries the token, so a logout must remove the
+  key with the token; a page under that token in that tab then names no
+  `log`, which VTT-442 forbids, so a logout withdraws VTT-442 and brings a new
+  id.
 - Whom a connection may watch is the gateway's to decide. The browser client
   offers a switch only to a party member the last `WatchableChanged` names, or
   to nobody on a spectator's perch: every `set_viewpoint` it sends goes through
@@ -236,4 +275,5 @@ VTT-393, VTT-394, VTT-395, VTT-396, VTT-397, VTT-398, VTT-402, VTT-403,
 VTT-404, VTT-405, VTT-406, VTT-407, VTT-408, VTT-409, VTT-410, VTT-411,
 VTT-412, VTT-413, VTT-414, VTT-415, VTT-416, VTT-418, VTT-419, VTT-420,
 VTT-421, VTT-422, VTT-423, VTT-424, VTT-425, VTT-426, VTT-427, VTT-428,
-VTT-429, VTT-430, VTT-431, VTT-432, VTT-433, VTT-434, VTT-435.
+VTT-429, VTT-430, VTT-431, VTT-432, VTT-433, VTT-434, VTT-435, VTT-442,
+VTT-443, VTT-444.
