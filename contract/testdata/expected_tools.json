@@ -222,6 +222,7 @@
           "type": "string"
         },
         "targetIds": {
+          "description": "The ACTOR ids of the creatures the ability is aimed at, never a token's id: a token is only where an actor stands on a scene, and an id that names no actor is refused. Each target must have a token in the caster's scene within the ability's range.",
           "items": {
             "type": "string"
           },

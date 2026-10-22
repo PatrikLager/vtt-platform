@@ -89,6 +89,8 @@ message EndSession {}
 message UseAbility {
   string actor_id = 1;
   string ability_id = 2;
+  // Actor ids, never token ids: rules.Resolve looks each one up among the
+  // folded actors and refuses one it does not find (SPEC-018).
   repeated string target_ids = 3;
 }
 

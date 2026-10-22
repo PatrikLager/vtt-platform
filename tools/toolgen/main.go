@@ -153,6 +153,13 @@ var manifest = []toolSpec{
 		name:        "use_ability",
 		description: "Use one of the loaded ruleset's abilities as an actor against explicit targets.",
 		descriptor:  (&vttv1.UseAbility{}).ProtoReflect().Descriptor(),
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.UseAbility": {
+				fieldDocs: map[string]string{
+					"targetIds": "The ACTOR ids of the creatures the ability is aimed at, never a token's id: a token is only where an actor stands on a scene, and an id that names no actor is refused. Each target must have a token in the caster's scene within the ability's range.",
+				},
+			},
+		},
 	},
 	{
 		message:     "vtt.v1.RemoveCondition",

@@ -459,6 +459,8 @@ message SessionEnded {}
 message AbilityUsed {
   string actor_id = 1;
   string ability_id = 2;
+  // Actor ids, as UseAbility.target_ids names them: the projection forwards
+  // this event by the actors it names (SPEC-016).
   repeated string target_ids = 3;
   message Roll {
     string expression = 1;

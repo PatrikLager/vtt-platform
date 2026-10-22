@@ -1793,12 +1793,14 @@ func (*SessionEnded) Descriptor() ([]byte, []int) {
 }
 
 type AbilityUsed struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ActorId        string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	AbilityId      string                 `protobuf:"bytes,2,opt,name=ability_id,json=abilityId,proto3" json:"ability_id,omitempty"`
-	TargetIds      []string               `protobuf:"bytes,3,rep,name=target_ids,json=targetIds,proto3" json:"target_ids,omitempty"`
-	Rolls          []*AbilityUsed_Roll    `protobuf:"bytes,4,rep,name=rolls,proto3" json:"rolls,omitempty"`
-	OutcomeSummary string                 `protobuf:"bytes,5,opt,name=outcome_summary,json=outcomeSummary,proto3" json:"outcome_summary,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ActorId   string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	AbilityId string                 `protobuf:"bytes,2,opt,name=ability_id,json=abilityId,proto3" json:"ability_id,omitempty"`
+	// Actor ids, as UseAbility.target_ids names them: the projection forwards
+	// this event by the actors it names (SPEC-016).
+	TargetIds      []string            `protobuf:"bytes,3,rep,name=target_ids,json=targetIds,proto3" json:"target_ids,omitempty"`
+	Rolls          []*AbilityUsed_Roll `protobuf:"bytes,4,rep,name=rolls,proto3" json:"rolls,omitempty"`
+	OutcomeSummary string              `protobuf:"bytes,5,opt,name=outcome_summary,json=outcomeSummary,proto3" json:"outcome_summary,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }

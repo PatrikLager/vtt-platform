@@ -504,6 +504,22 @@ func TestMoveTokenReasonSaysOnlyTheDMAndTheAgentReadIt(t *testing.T) {
 	}
 }
 
+// VTT-437
+func TestUseAbilitySaysItsTargetsAreActors(t *testing.T) {
+	tool := findTool(t, "use_ability")
+	props := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	prop, ok := props["targetIds"].(map[string]any)
+	if !ok {
+		t.Fatalf("use_ability properties[\"targetIds\"] missing or not an object: %#v", props["targetIds"])
+	}
+	desc, _ := prop["description"].(string)
+	for _, want := range []string{"ACTOR ids", "never a token's id", "names no actor is refused"} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("use_ability targetIds description = %q, want it to contain %q", desc, want)
+		}
+	}
+}
+
 // VTT-276
 func TestAddActorAndStartSessionStateTheNameBound(t *testing.T) {
 	props := func(tool map[string]any) map[string]any {

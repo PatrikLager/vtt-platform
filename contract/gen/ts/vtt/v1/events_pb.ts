@@ -925,6 +925,9 @@ export type AbilityUsed = Message<"vtt.v1.AbilityUsed"> & {
   abilityId: string;
 
   /**
+   * Actor ids, as UseAbility.target_ids names them: the projection forwards
+   * this event by the actors it names (SPEC-016).
+   *
    * @generated from field: repeated string target_ids = 3;
    */
   targetIds: string[];

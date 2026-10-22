@@ -282,6 +282,9 @@ export type UseAbility = Message<"vtt.v1.UseAbility"> & {
   abilityId: string;
 
   /**
+   * Actor ids, never token ids: rules.Resolve looks each one up among the
+   * folded actors and refuses one it does not find (SPEC-018).
+   *
    * @generated from field: repeated string target_ids = 3;
    */
   targetIds: string[];
