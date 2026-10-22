@@ -3,7 +3,7 @@
 // Correlate a result by its request_id and never by arrival order: results and
 // events come from two producers on the gateway (ServerFrame in
 // contract/vtt/v1/commands.proto). A connection holds one log at a time, and
-// a redial names it and its last sequence (SPEC-022, VTT-397, VTT-398).
+// a redial names it, or until then the log handed in (SPEC-022, VTT-397, VTT-442).
 
 import { create, fromJson, toJson } from "@bufbuild/protobuf";
 import {
@@ -44,6 +44,7 @@ export class Wire {
   private presenceHandlers: ((batch: PresenceEvent[], replace: boolean) => void)[] = [];
   private restartHandlers: (() => void)[] = [];
   private watchableHandlers: ((actors: WatchableActor[]) => void)[] = [];
+  private viewpointHandlers: ((actorId: string) => void)[] = [];
   // null until a ViewpointChanged names one: the DM's and the agent's world.
   private log: string | null = null;
   private lastSeq = 0n;
@@ -52,6 +53,7 @@ export class Wire {
   constructor(
     private readonly url: string,
     private readonly token: string,
+    private readonly remembered: string | null = null,
   ) {}
 
   /** The highest sequence this wire has been sent of the log it holds. */
@@ -59,7 +61,7 @@ export class Wire {
     return this.lastSeq;
   }
 
-  /** The actor whose log this wire holds, "" for nobody, null for the world. */
+  /** The actor whose log this wire holds, "" for nobody, null for the world or before a ViewpointChanged. */
   get viewpoint(): string | null {
     return this.log;
   }
@@ -83,6 +85,11 @@ export class Wire {
   /** Called with each set of party members the gateway says this connection may watch (VTT-402). */
   onWatchable(fn: (actors: WatchableActor[]) => void): void {
     this.watchableHandlers.push(fn);
+  }
+
+  /** Called with the actor each ViewpointChanged names, "" for nobody (VTT-442). */
+  onViewpoint(fn: (actorId: string) => void): void {
+    this.viewpointHandlers.push(fn);
   }
 
   /**
@@ -119,13 +126,14 @@ export class Wire {
     for (const fn of this.statusHandlers) fn(s);
   }
 
-  /** Dial, naming the log this wire holds and the last sequence it was sent. */
+  /** Dial, naming the log held, or before any ViewpointChanged the one handed in, and the cursor. */
   connect(): Promise<void> {
     this.status("connecting");
     // Keep the token in the query: a browser sets no header on a WebSocket
     // handshake (internal/gateway/metadata.go reads the header elsewhere).
     let u = `${this.url}?token=${encodeURIComponent(this.token)}&after=${this.lastSeq}`;
-    if (this.log) u += `&log=${encodeURIComponent(this.log)}`;
+    const log = this.log ?? this.remembered;
+    if (log) u += `&log=${encodeURIComponent(log)}`;
     const ws = new WebSocket(u);
     this.ws = ws;
 
@@ -161,7 +169,7 @@ export class Wire {
     });
   }
 
-  /** Redial, naming the log this wire holds and the last sequence it was sent. */
+  /** Redial, naming the log held, or before any ViewpointChanged the one handed in, and the cursor. */
   async reconnect(): Promise<void> {
     // Forget the socket before closing it: the message handler reads which
     // socket is current, and close() cancels no event already queued.
@@ -215,9 +223,11 @@ export class Wire {
       }
       case "viewpointChanged": {
         const actorId = frame.frame.value.actorId;
-        if (actorId === this.log) return;
-        this.log = actorId;
-        this.reset();
+        if (actorId !== this.log) {
+          this.log = actorId;
+          this.reset();
+        }
+        for (const fn of this.viewpointHandlers) fn(actorId);
         return;
       }
       case "watchableChanged": {

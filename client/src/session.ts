@@ -32,8 +32,8 @@ export class Session {
   private errorHandlers: ((e: Error) => void)[] = [];
   private presenceHandlers: ((batch: PresenceEvent[]) => void)[] = [];
 
-  constructor(url: string, token: string) {
-    this.wire = new Wire(url, token);
+  constructor(url: string, token: string, remembered: string | null = null) {
+    this.wire = new Wire(url, token, remembered);
     this.wire.onEvent((e) => this.ingest(e));
     this.wire.onPresence((batch, replace) => this.presence(batch, replace));
     this.wire.onRestart(() => this.empty());
@@ -71,7 +71,7 @@ export class Session {
     return this.wire.head;
   }
 
-  /** The actor the last ViewpointChanged named, "" for nobody or the world (VTT-407). */
+  /** The actor the last ViewpointChanged named, "" for nobody, the world or before one (VTT-407). */
   get viewpoint(): string {
     return this.wire.viewpoint ?? "";
   }
@@ -100,6 +100,11 @@ export class Session {
     this.changeHandlers.push(fn);
   }
 
+  /** Called with the actor each ViewpointChanged names, "" for nobody (VTT-442). */
+  onViewpoint(fn: (actorId: string) => void): void {
+    this.wire.onViewpoint(fn);
+  }
+
   /**
    * Raw presence batches, for a caller that needs more than the resulting
    * list.
@@ -126,7 +131,7 @@ export class Session {
     return this.wire.connect();
   }
 
-  /** Redial, naming the log held and the last sequence it was sent (VTT-397). */
+  /** Redial, naming the log held, or before any ViewpointChanged the one handed in, and the cursor (VTT-397, VTT-398, VTT-442). */
   reconnect(): Promise<void> {
     return this.wire.reconnect();
   }

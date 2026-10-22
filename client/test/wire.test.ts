@@ -239,6 +239,101 @@ test("a redial while watching nobody names no log", async () => {
   }
 });
 
+// VTT-442
+test("a wire handed a remembered log names it, from after 0, on every dial until a ViewpointChanged arrives", async () => {
+  const gw = fakeGateway(() => {});
+  try {
+    const wire = new Wire(gw.url, "tok-1", "a2");
+    await wire.connect();
+    expect(queryOf(gw, 0).get("log")).toBe("a2");
+    expect(queryOf(gw, 0).get("after")).toBe("0");
+
+    await wire.reconnect();
+    await until(() => gw.queries.length === 2, "the redial to reach the gateway");
+    expect(queryOf(gw, 1).get("log")).toBe("a2");
+    expect(queryOf(gw, 1).get("after")).toBe("0");
+    wire.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+// VTT-442, VTT-397
+test("a ViewpointChanged naming another log replaces the remembered one on the next dial", async () => {
+  const gw = fakeGateway(() => {});
+  try {
+    const wire = new Wire(gw.url, "tok-1", "a2");
+    await wire.connect();
+    gw.sockets[0].send(viewpointJSON("a1"));
+    for (const seq of [1, 2]) gw.sockets[0].send(JSON.stringify({ event: envelopeJSON(seq) }));
+    await until(() => wire.head === 2n, "a1's log to reach sequence 2");
+
+    await wire.reconnect();
+    await until(() => gw.queries.length === 2, "the redial to reach the gateway");
+    expect(queryOf(gw, 1).get("log")).toBe("a1");
+    expect(queryOf(gw, 1).get("after")).toBe("2");
+    wire.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+// VTT-442, VTT-397
+test("a ViewpointChanged naming nobody leaves the next dial naming no log, though a log was remembered", async () => {
+  const gw = fakeGateway(() => {});
+  try {
+    const wire = new Wire(gw.url, "tok-spectator", "a2");
+    await wire.connect();
+    gw.sockets[0].send(viewpointJSON(""));
+    await until(() => wire.viewpoint === "", "the ViewpointChanged naming nobody");
+
+    await wire.reconnect();
+    await until(() => gw.queries.length === 2, "the redial to reach the gateway");
+    expect(queryOf(gw, 1).has("log")).toBe(false);
+    expect(queryOf(gw, 1).get("after")).toBe("0");
+    wire.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+// VTT-407
+test("a wire handed a remembered log shows no viewpoint until a ViewpointChanged names one", async () => {
+  const gw = fakeGateway(() => {});
+  try {
+    const wire = new Wire(gw.url, "tok-1", "a2");
+    await wire.connect();
+    expect(wire.viewpoint).toBeNull();
+
+    gw.sockets[0].send(viewpointJSON("a1"));
+    await until(() => wire.viewpoint !== null, "the ViewpointChanged");
+    expect(wire.viewpoint).toBe("a1");
+    wire.close();
+  } finally {
+    gw.stop();
+  }
+});
+
+// VTT-442
+test("each ViewpointChanged reaches onViewpoint, nobody's included", async () => {
+  const gw = fakeGateway(() => {});
+  try {
+    const wire = new Wire(gw.url, "tok-1");
+    const told: string[] = [];
+    let sentinel = false;
+    wire.onViewpoint((id) => told.push(id));
+    wire.onWatchable(() => (sentinel = true));
+    await wire.connect();
+    for (const id of ["a1", "a1", ""]) gw.sockets[0].send(viewpointJSON(id));
+    gw.sockets[0].send(JSON.stringify({ watchableChanged: {} }));
+    await until(() => sentinel, "the frame sent after the three ViewpointChanged frames");
+    expect(told).toEqual(["a1", "a1", ""]);
+    wire.close();
+  } finally {
+    gw.stop();
+  }
+});
+
 test("a reconnect before anything was ever seen still resumes from zero", async () => {
   const gw = fakeGateway(() => {});
   try {
