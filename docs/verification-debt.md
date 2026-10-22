@@ -488,6 +488,42 @@ offering Reconnect" in `client/test/app.test.ts`, both red under the recipe,
 with bun reporting an unhandled error between tests (observed 2026-10-20 on
 `982b4cc`).
 
+## 2026-10-22 — a player's ability was aimed at the token, not the creature
+
+**The player panel sent the target token's id as `UseAbility.target_ids`.**
+`rules.Resolve` reads each target as an actor id and refuses one that names no
+actor, so every ability a player aimed from the browser was refused with
+`unknown target actor`, a DM's, aiming as an actor granted to them, included.
+Every token in the shipped adventures has an id of its own (`tok-cutter` shows
+`act-cutter`). It reached the table: the alpha test of 2026-10-22 found it as
+S-1 (`docs/superpowers/notes/2026-10-22-alpha-one-findings.md`). Recipe: in
+`client/src/view/player.ts`, in `renderPlayerPanel`'s target button, replace
+`useAbility(actorId, armed.id, [t.ActorID])` with `useAbility(actorId,
+armed.id, [t.ID])`, then run `task build:client`. Tier-1 `bun test` should have
+caught it and instead pinned it: "a target button sends the ability at that
+token, then disarms" in `client/test/spectator-view.test.ts` gave the token and
+its actor different ids and expected the token's. Nothing that test's author
+would read said otherwise: no requirement row, no comment on the contract's
+`UseAbility.target_ids` and no description in `use_ability`'s tool definition
+said which id the field holds, and the contract's own examples
+(`contract/testdata/use_ability_command.json` and
+`ability_used_envelope.json`) put token ids in both fields. SPEC-016 and
+SPEC-018's table, both written after the test (`0c8b6e3`), said it only in
+passing, of `AbilityUsed.target_ids`. `task e2e`, which runs outside
+`task check`, had no test in which a player used an ability. Labels: `spec
+silent`, `test data missing`.
+
+**Closed by** VTT-436's ten tests and two of VTT-441's, all red under the
+recipe: "a target button sends the ability at that token's actor, then
+disarms" in `client/test/spectator-view.test.ts`, "a player's ability reaches
+the creature they aim it at" in `client/e2e/table.spec.ts` (refused, as at the
+table), and VTT-436's eight QA tests with VTT-441's "qaAT: the command names
+the caster as actorId and the armed ability as abilityId" and "qaAT: with no
+actor selected the first controlled actor by id casts, from its own token" in
+`client/test/qa-ability-target.test.ts` (observed 2026-10-22, in `80007aa`'s
+breaks). VTT-437 says in the contract and in the tool which id the field holds,
+and `0b62fa0` made the contract's examples name actors.
+
 ## Open debt
 
 **`migrateLocked`'s re-read error arm is unreachable through `testdb`.**
