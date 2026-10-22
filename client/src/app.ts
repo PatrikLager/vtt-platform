@@ -143,7 +143,10 @@ function runJoin(root: HTMLElement, auth: Auth, secret: string): void {
 }
 
 function startSession(root: HTMLElement, token: string): Session {
-  const session = new Session(gatewayURL(), token);
+  // The key carries the token: a logout (Auth.clear) must remove both (SPEC-022).
+  const remembered = `vtt.viewpoint.${token}`;
+  const session = new Session(gatewayURL(), token, sessionStorage.getItem(remembered));
+  session.onViewpoint((id) => sessionStorage.setItem(remembered, id));
   let status = "connecting";
   let me: Me | null = null;
 

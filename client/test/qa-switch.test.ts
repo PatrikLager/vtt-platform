@@ -87,6 +87,7 @@ function envelope(seq: number, payload: Frame): Frame {
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   setURL("http://localhost/");
 });
 

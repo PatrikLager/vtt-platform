@@ -142,6 +142,34 @@ test("a spectator chooses a shoulder and is shown that log", async ({ page }) =>
   await expect(page.locator(".tick")).toHaveCount(0);
 });
 
+// VTT-442 VTT-444
+test("a spectator's reload keeps the shoulder, and another tab does not", async ({ page, context }) => {
+  await openAs(page, "spectator");
+  const perch = page.locator(".perch");
+  await perch.locator(".shoulder", { hasText: "Human Fighter" }).click();
+  await expect(perch.locator(".perched-on")).toHaveText("Perched on: Human Fighter", { timeout: 10_000 });
+
+  // No click after the reload: the page asks for the shoulder its tab last had.
+  await page.reload();
+  await expect(page.locator(".conn")).toHaveText("connected", { timeout: 15_000 });
+  await expect(perch.locator(".perched-on")).toHaveText("Perched on: Human Fighter", { timeout: 10_000 });
+  await expect(page.locator('[data-token-id="tok-fighter"]')).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".feed .mechanical")).not.toHaveCount(0, { timeout: 10_000 });
+  await expect(page.locator(".feed .empty")).toHaveCount(0);
+  await page.screenshot(shot("04c-spectator-reloaded-on-the-shoulder"));
+
+  // Another tab of the same profile and token: it remembers nothing, so its
+  // dials name no log.
+  const other = await context.newPage();
+  const dials: string[] = [];
+  other.on("websocket", (ws) => dials.push(ws.url()));
+  await openAs(other, "spectator");
+  await expect(other.locator(".perch .perched-on")).toHaveText("Perched on: nobody", { timeout: 10_000 });
+  expect(dials.length).toBeGreaterThan(0);
+  for (const url of dials) expect(new URL(url).searchParams.has("log")).toBe(false);
+  await other.close();
+});
+
 // VTT-393
 test("the story feed and ticker record what happened", async ({ page }) => {
   await openAs(page, "player");

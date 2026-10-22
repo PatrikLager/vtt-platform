@@ -25,6 +25,7 @@ function setURL(url: string) {
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   setURL("http://localhost/");
 });
 

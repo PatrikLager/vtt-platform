@@ -18,6 +18,7 @@ function setURL(url: string) {
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   setURL("http://localhost/");
 });
 
@@ -3005,4 +3006,131 @@ test("no role's window shows a log sequence number", async () => {
     expect(leaks).toEqual([]);
     s?.close();
   }
+});
+
+// --- a reload keeps the viewpoint, per tab -----------------------------------
+
+const PAIR: [string, string][] = [["a1", "Lera"], ["a2", "Bram"]];
+const dialed = (sock: FakeSocket) => new URL(sock.url).searchParams;
+
+// VTT-442
+test("a page loaded afresh in the tab dials naming the party member its last page watched, from after 0", async () => {
+  const first = await dialAs("player");
+  opensOn(first.sock, "a2", PAIR);
+  seedBram(first.sock);
+  await settle();
+  first.s?.close();
+
+  const again = await dialAs("player");
+  expect(dialed(again.sock).get("log")).toBe("a2");
+  expect(dialed(again.sock).get("after")).toBe("0");
+  again.s?.close();
+});
+
+// VTT-442, VTT-397, VTT-407
+test("a remembered party member the gateway refuses gives way to the one it names, and the next dial names that one", async () => {
+  sessionStorage.setItem("vtt.viewpoint.tok", "a2");
+  const { r, s, sock } = await dialAs("player");
+  expect(dialed(sock).get("log")).toBe("a2");
+  opensOn(sock, "a1");
+  seedTable(sock);
+  await settle();
+  expect(chips(r).map((b) => [b.textContent, b.className])).toEqual([["Lera", "chip sel"]]);
+
+  sock.close();
+  await settle();
+  (r.querySelector(".reconnect") as HTMLButtonElement).click();
+  expect(dialed(FakeSocket.instances[1]!).get("log")).toBe("a1");
+  s?.close();
+});
+
+// VTT-443
+test("a page under another token in the tab names no log the earlier token's page was told", async () => {
+  const first = await dialAs("player");
+  opensOn(first.sock, "a2", PAIR);
+  await settle();
+  first.s?.close();
+
+  setURL("http://localhost/?token=tok-dm");
+  stubMetadata({ "/api/me": { participantId: "p-dm", name: "DM", role: "dm" } });
+  useFakeSocket();
+  const dm = boot(root());
+  expect(dialed(FakeSocket.instances[0]!).has("log")).toBe(false);
+  dm?.close();
+
+  setURL("http://localhost/");
+  localStorage.setItem("vtt.token", "tok-s");
+  stubMetadata({ "/api/me": { participantId: "p-s", name: "Watcher", role: "spectator" } });
+  useFakeSocket();
+  const spectator = boot(root());
+  expect(dialed(FakeSocket.instances[0]!).has("log")).toBe(false);
+  spectator?.close();
+});
+
+// VTT-444
+test("a page in another tab names no log the first tab's page was told", async () => {
+  const first = await dialAs("spectator");
+  opensOn(first.sock, "a2", PAIR);
+  await settle();
+  first.s?.close();
+
+  sessionStorage.clear();
+  const other = await dialAs("spectator");
+  expect(dialed(other.sock).has("log")).toBe(false);
+  other.s?.close();
+});
+
+// VTT-442, VTT-407
+test("until the gateway names a viewpoint the window shows nobody as watched, a failed dial included, and Reconnect still names the remembered log", async () => {
+  sessionStorage.setItem("vtt.viewpoint.tok", "a2");
+  localStorage.setItem("vtt.token", "tok");
+  stubMetadata({ "/api/me": { participantId: "p", name: "Watcher", role: "spectator" } });
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.onerror?.();
+  sock.close();
+  await settle();
+  expect(r.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: nobody");
+
+  (r.querySelector(".reconnect") as HTMLButtonElement).click();
+  const redial = FakeSocket.instances[1]!;
+  expect(dialed(redial).get("log")).toBe("a2");
+  redial.open();
+  redial.deliver({ watchableChanged: { actors: PAIR.map(([actorId, name]) => ({ actorId, name })) } });
+  await settle();
+  expect(r.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: nobody");
+  s?.close();
+});
+
+// VTT-442
+test("a spectator who left the shoulder reloads on nobody", async () => {
+  const first = await dialAs("spectator");
+  opensOn(first.sock, "a2", PAIR);
+  first.sock.deliver(viewpointFrame(""));
+  await settle();
+  first.s?.close();
+
+  const again = await dialAs("spectator");
+  expect(dialed(again.sock).has("log")).toBe(false);
+  again.s?.close();
+});
+
+// VTT-442
+test("a page sent the set but no viewpoint leaves the next page the party member the page before it watched", async () => {
+  const first = await dialAs("player");
+  opensOn(first.sock, "a2", PAIR);
+  await settle();
+  first.s?.close();
+
+  const between = await dialAs("player");
+  between.sock.deliver({ presenceSnapshot: { present: [] } });
+  between.sock.deliver({ watchableChanged: { actors: PAIR.map(([actorId, name]) => ({ actorId, name })) } });
+  await settle();
+  between.s?.close();
+
+  const again = await dialAs("player");
+  expect(dialed(again.sock).get("log")).toBe("a2");
+  again.s?.close();
 });

@@ -83,6 +83,7 @@ async function settle() {
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   setURL("http://localhost/");
 });
 

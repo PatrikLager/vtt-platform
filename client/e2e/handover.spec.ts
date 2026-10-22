@@ -45,6 +45,7 @@ async function openAs(page: Page, role: keyof typeof tokens) {
 const FIRST = "act-hand-a";
 const SECOND = "act-hand-b";
 
+// VTT-442
 test("a DM hands a second character over, and the player keeps both across a reconnect",
   async ({ browser }) => {
     // Two CONTEXTS, not two pages: a page shares localStorage with its
@@ -156,6 +157,14 @@ test("a DM hands a second character over, and the player keeps both across a rec
     await expect(player.locator(`[data-token-id="tok-${SECOND}"]`)).toBeVisible({ timeout: 10_000 });
     await expect(player.getByText("Cannot derive state")).toHaveCount(0);
     await player.screenshot(shot("h6b-player-switches-to-bram"));
+
+    // A reload comes back on Bram, who is not first by id: Ash is the default.
+    await player.reload();
+    await expect(player.locator(".conn")).toHaveText("connected", { timeout: 15_000 });
+    await expect(panel.getByRole("button", { name: "Bram" })).toHaveClass("chip sel", { timeout: 10_000 });
+    await expect(panel.getByRole("button", { name: "Ash" })).toHaveClass("chip");
+    await expect(player.locator(`[data-token-id="tok-${SECOND}"]`)).toBeVisible({ timeout: 10_000 });
+    await player.screenshot(shot("h6b2-player-reloaded-on-bram"));
 
     await panel.getByRole("button", { name: "Ash" }).click();
     await expect(panel.getByRole("button", { name: "Ash" })).toHaveClass("chip sel", { timeout: 10_000 });
