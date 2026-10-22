@@ -116,7 +116,8 @@ window, or the owner's words. Nothing was fixed during the walk.
 - **A-11. The player panel aims a multi-target ability at one target.** A
   click on a target button sends one `use_ability` with that one target, so
   Hunter's Flurry, which may strike several, is only ever used on one from the
-  browser. Found by the first ticket's independent QA.
+  browser. Found by the first ticket's independent QA, and deferred by the
+  owner (below).
 - **A-2, more of the same.** The Story also prints bare payload names,
   `sceneSeen` and `actorControlGranted`, for events `describe` has no wording
   for, and the Events ticker prints `narrationAdded` as well. Seen in the first
@@ -181,6 +182,12 @@ Asked during and after the walk, 2026-10-22.
   each ruleset, and its equipment, items and magic are a conversation for later
   ("vi går vidare med stats samtalet vid en annan tidpunkt"). A-1 belongs
   there.
+- **Deferred: kinds of effect.** A-11 is rules handling. Distinct kinds of
+  effect have to be created, damage in an area and several different targets
+  among them, and the owner placed that later ("den är en regelhantering. Vi
+  behöver "skapa" distinkta "typer av effekter", det känns mer som en senare
+  fråga - men tänk att man ska kunna göra skada inom ett område, flera olika
+  mål, etc.").
 
 ## The order of work
 
