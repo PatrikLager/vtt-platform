@@ -444,3 +444,5 @@ checked: `docs/specifications/008-requirement-ids-come-from-the-dispenser.md`.
 | VTT-433 | A `PresenceSnapshot`, `PresenceChanged` or `WatchableChanged` neither ends the read of `vtt state dump` nor enters its fold. | cmd/vtt/qa_state_dump_switch_test.go#TestQASDSFramesTakenByKind |
 | VTT-434 | `vtt state dump`'s `headSequence` is the highest sequence among the entries it folded, those it was sent after its head included. | cmd/vtt/qa_state_dump_switch_test.go#TestQASDSSwitchAfterHeadPrintsHeldLog, cmd/vtt/qa_state_dump_switch_test.go#TestQASDSFramesTakenByKind |
 | VTT-435 | `vtt state dump` folds no entry sent after a `ViewpointChanged` that follows the first, one naming the log it holds included. | cmd/vtt/state_dump_switch_test.go#TestADumpToldItsOwnLogAgainFoldsNothingAfterIt |
+| VTT-436 | The player panel aims an ability at the actor the clicked token shows, never at the token. | **OPEN — no test yet** |
+| VTT-437 | `UseAbility.target_ids` and `AbilityUsed.target_ids` name actors. | **OPEN — no test yet** |
