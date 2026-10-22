@@ -154,7 +154,7 @@ export function renderPlayerPanel(
       const b = el("button", "chip", label);
       b.dataset["action"] = "use-ability";
       b.addEventListener("click", () => {
-        send(useAbility(actorId, armed.id, [t.ID]));
+        send(useAbility(actorId, armed.id, [t.ActorID]));
         ui.selectedAbilityId = "";
         rerender();
       });

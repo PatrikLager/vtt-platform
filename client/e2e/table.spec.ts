@@ -229,3 +229,48 @@ test("a spectator's command is refused by the server", async ({ page }) => {
   }, tokens.spectator);
   expect(status).toBe("spectator");
 });
+
+// VTT-436
+test("a player's ability reaches the creature they aim it at", async ({ page, browser }) => {
+  // Last in this file: the grant below makes the Human Fighter the player's
+  // default view, and "a player sees their own panel and can move their token"
+  // expects Lera's.
+  const dmCtx = await browser.newContext();
+  const dm = await dmCtx.newPage();
+  await openAs(dm, "dm");
+  const grantRow = dm.locator('.control-actor[data-actor="act-fighter"]');
+  await expect(grantRow).toBeVisible({ timeout: 10_000 });
+  await grantRow.locator(".grant-target").selectOption(ids.player);
+  await grantRow.locator(".grant-kind").selectOption("ACTOR_KIND_PARTY_MEMBER");
+  await grantRow.locator("button.grant").click();
+  await dm.waitForTimeout(400);
+  await expectNoRefusal(dm, "grant the fighter");
+  await dmCtx.close();
+
+  const sent: unknown[] = [];
+  page.on("websocket", (ws) =>
+    ws.on("framesent", (f) => {
+      try {
+        const cmd = JSON.parse(String(f.payload));
+        if (cmd.useAbility) sent.push(cmd.useAbility);
+      } catch {
+        // Not a command frame.
+      }
+    }),
+  );
+  await openAs(page, "player");
+  const panel = page.locator(".player");
+  await panel.locator("button.chip", { hasText: "Human Fighter" }).click();
+  await expect(panel.locator("button.chip.sel", { hasText: "Human Fighter" })).toBeVisible({ timeout: 10_000 });
+  await panel.locator("button.chip", { hasText: "Longsword Strike" }).click();
+  await panel.locator('[data-action="use-ability"]', { hasText: "Goblin Cutter" }).click();
+
+  const used = page.locator(".feed .mechanical", { hasText: "act-fighter used longsword-strike" });
+  await expect(used.or(page.locator(".toast")).first()).toBeVisible({ timeout: 10_000 });
+  await expectNoRefusal(page, "use ability");
+  expect(sent).toEqual([{ actorId: "act-fighter", abilityId: "longsword-strike", targetIds: ["act-cutter"] }]);
+  await expect(used).toHaveCount(1);
+  const hp = await page.locator(".feed .mechanical", { hasText: /^act-cutter hp → / }).allTextContents();
+  for (const row of hp) expect(Number(row.replace(/^act-cutter hp → /, ""))).toBeLessThan(8);
+  await page.screenshot(shot("08-player-ability-resolved"));
+});

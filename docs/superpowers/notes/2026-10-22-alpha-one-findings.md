@@ -113,6 +113,15 @@ window, or the owner's words. Nothing was fixed during the walk.
   and `rules.Resolve` checks the range. A player who knows an unseen creature's
   id can aim at it, and the answer tells them whether that id exists.
 
+- **A-11. The player panel aims a multi-target ability at one target.** A
+  click on a target button sends one `use_ability` with that one target, so
+  Hunter's Flurry, which may strike several, is only ever used on one from the
+  browser. Found by the first ticket's independent QA.
+- **A-2, more of the same.** The Story also prints bare payload names,
+  `sceneSeen` and `actorControlGranted`, for events `describe` has no wording
+  for, and the Events ticker prints `narrationAdded` as well. Seen in the first
+  ticket's e2e screenshot.
+
 ### Observations
 
 - **A-4. Two tokens may share a square.** `engine.State.Blocked` reads terrain

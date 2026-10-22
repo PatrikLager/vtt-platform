@@ -303,6 +303,7 @@ test("a participant controlling nothing is told so, not shown empty controls", (
   expect(panel(st, [atWill]).node.textContent).toContain("do not control");
 });
 
+// VTT-438
 test("an unaffordable ability is shown but DISABLED, not hidden", () => {
   // A player needs to know the ability exists and why it is unavailable.
   const node = panel(world(), [costly]).node;
@@ -1184,7 +1185,8 @@ test("with no token there is no move hint either", () => {
 
 // --- targets ----------------------------------------------------------------
 
-test("a target button sends the ability at that token, then disarms", () => {
+// VTT-436
+test("a target button sends the ability at that token's actor, then disarms", () => {
   const st = world();
   st.Actors["a2"] = {
     actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-them", controllerIds: ["p-them"], kind: ActorKind.UNSPECIFIED,
@@ -1195,7 +1197,7 @@ test("a target button sends the ability at that token, then disarms", () => {
   expect(p.sent).toHaveLength(1);
   expect(p.sent[0]!.command.case).toBe("useAbility");
   expect(p.sent[0]!.command.value).toEqual(
-    expect.objectContaining({ actorId: "a1", abilityId: "swing", targetIds: ["t2"] }),
+    expect.objectContaining({ actorId: "a1", abilityId: "swing", targetIds: ["a2"] }),
   );
   expect(p.ui.selectedAbilityId).toBe("");
   expect(p.repaints()).toBe(1);
