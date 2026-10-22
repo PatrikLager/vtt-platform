@@ -33,7 +33,7 @@ test("moveToken matches the committed client_command fixture", () => {
 });
 
 test("useAbility matches the committed fixture, targets included", () => {
-  const cmd = useAbility("tok-ursus", "reckless-strike", ["tok-goblin-2", "tok-goblin-3"]);
+  const cmd = useAbility("act-ursus", "reckless-strike", ["act-goblin-2", "act-goblin-3"]);
   sameShape(
     toJson(ClientCommandSchema, cmd) as Record<string, unknown>,
     fixture("use_ability_command.json"),
@@ -73,7 +73,7 @@ test("every constructed command carries a request id", () => {
   // Without one the result is uncorrelatable and Wire.send never resolves.
   for (const cmd of [
     moveToken("t1", { x: 0, y: 0 }),
-    useAbility("a1", "ab", ["t2"]),
+    useAbility("a1", "ab", ["a2"]),
     addNarration("x"),
     upsertNote("k", "t", "x", NoteVisibility.SECRET),
   ]) {
