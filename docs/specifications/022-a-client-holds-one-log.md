@@ -3,15 +3,15 @@
 ## Status
 
 Accepted. The browser client implements it in `client/src/wire.ts`,
-`client/src/session.ts`, `client/src/app.ts`, `client/src/view/spectator.ts`
-and `client/src/view/player.ts`; the Go readers in
-`internal/harness/client.go`, `internal/harness/engine.go`,
-`internal/harness/soak.go`, `cmd/vtt/client_run.go`'s `dialerFor`,
-`internal/mcp/server.go`, `internal/mcp/read_tools.go` and
-`cmd/vtt/state_dump.go`. That the browser client's window shows no sequence
-outside the reason it gives for a log it cannot fold is held by
-`client/test/app.test.ts`'s "no role's window shows a log sequence number",
-`client/test/spectator-view.test.ts`,
+`client/src/session.ts`, `client/src/app.ts`, `client/src/metadata.ts`,
+`client/src/view/spectator.ts`, `client/src/view/feed.ts` and
+`client/src/view/player.ts`; the Go readers in `internal/harness/client.go`,
+`internal/harness/engine.go`, `internal/harness/soak.go`,
+`cmd/vtt/client_run.go`'s `dialerFor`, `internal/mcp/server.go`,
+`internal/mcp/read_tools.go` and `cmd/vtt/state_dump.go`. That the browser
+client's window shows no sequence outside the reason it gives for a log it
+cannot fold is held by `client/test/app.test.ts`'s "no role's window shows a
+log sequence number", `client/test/spectator-view.test.ts`,
 `client/test/qa-window-number.test.ts` and `client/e2e/table.spec.ts`
 (VTT-393), the last outside `task check`; that it holds one log and a redial
 names it, by `client/test/wire.test.ts`, `client/test/session.test.ts`,
@@ -23,15 +23,22 @@ a page in its tab under its token named, and no `log` when none was, whatever
 another token's or another tab's pages were sent, by
 `client/test/wire.test.ts`, `client/test/app.test.ts`,
 `client/test/qa-remembered-log.test.ts` and
-`client/test/qa-reload-viewpoint.test.ts` (VTT-442 to VTT-444); that a player
-and a spectator are offered the party members a `WatchableChanged` names and
-switch between them, by `client/test/app.test.ts`,
-`client/test/player.test.ts`, `client/test/spectator-view.test.ts` and
-`client/test/qa-switch.test.ts` (VTT-402 to VTT-406, VTT-408); that a
-spectator chooses a shoulder and a player switches in the browser, and that
-a reload keeps either, by `client/e2e/table.spec.ts` (VTT-394, VTT-403,
-VTT-405, VTT-442, VTT-444) and `client/e2e/handover.spec.ts` (VTT-442), both
-outside `task check`.
+`client/test/qa-reload-viewpoint.test.ts` (VTT-442 to VTT-444); that only a
+DM's and an agent's window shows the Events panel, the newest entries of the
+log it holds, newest first and bounded, while every role's window shows in the
+Story each entry of the log it holds, both outside the reason it gives for a
+log it cannot fold, by `client/test/app.test.ts`,
+`client/test/spectator-view.test.ts` and `client/test/qa-events-panel.test.ts`
+(VTT-445 to VTT-449); that a player and a spectator are offered the party
+members a `WatchableChanged` names and switch between them, by
+`client/test/app.test.ts`, `client/test/player.test.ts`,
+`client/test/spectator-view.test.ts` and `client/test/qa-switch.test.ts`
+(VTT-402 to VTT-406, VTT-408); that a spectator chooses a shoulder and a player
+switches in the browser, and that a reload keeps either, by
+`client/e2e/table.spec.ts` (VTT-394, VTT-403, VTT-405, VTT-442, VTT-444) and
+`client/e2e/handover.spec.ts` (VTT-442), both outside `task check`; and that a
+player's and a spectator's page shows no Events panel and a DM's does, by
+`client/e2e/table.spec.ts` (VTT-445, VTT-446), also outside it.
 
 That `internal/harness`'s client hands its reader every entry and each switch
 and that a dial names a log is held by
@@ -73,6 +80,27 @@ The window a client draws, `renderSpectator` in
 role, shows what happened as text and no sequence, to any role, except in the
 reason it gives for a log it cannot fold (VTT-393; the owner's rulings of
 2026-10-19). Why the wire carries sequences at all is SPEC-007's.
+
+Every role's window shows the Story, which `renderSpectator` draws with
+`renderFeed` from `buildFeed` (`client/src/view/feed.ts`): each entry of the
+log the window holds (VTT-449). Only a DM's and an agent's window shows the
+Events panel, by the owner's ruling B-3 of 2026-10-22, and the agent counts as
+the DM there, as it does for the DM's console, by the owner's ruling "Ja, som
+DM-konsolen" of 2026-10-23. The panel, `renderTicker`, draws one row per entry,
+`describe`'s text, for the newest entries of the log the window holds, the
+newest first (VTT-447), and no more rows than the fixed number `renderTicker`
+keeps (VTT-448). `paint` in `startSession` asks `renderSpectator` for the panel
+through `ViewExtras.ticker`, which it sets to `isDM`, true when the role the
+page last read from `/api/me` is `dm` or `agent`, the predicate the console is
+drawn by. So a page draws no panel until `/api/me` has answered one of those
+two: neither a player's, nor a spectator's, nor one that read any other role or
+none, nor one whose first read has not answered or has failed (VTT-445). A page
+whose last read answered `dm` or `agent` draws it (VTT-446). The page reads its
+role when its session starts (`startSession`) and again at a presence frame
+naming its own participant, once a first read has answered; while a re-read is
+pending, and after one fails, it keeps the role last read. While the window
+gives the reason it cannot fold its log, that reason is all `paint` draws, so
+neither the Story nor the panel is shown (VTT-446, VTT-449).
 
 ### What the browser client holds, and what it offers
 
@@ -232,6 +260,12 @@ each entry it is sent, and no switch.
 
 ## Consequences
 
+- The Events panel is no boundary: it shows only entries of the log the window
+  holds, and the window's Story shows each of them. What a connection is sent
+  is SPEC-015's.
+- A page whose first read of `/api/me` fails is not read again until it is
+  loaded again, so a DM's or an agent's page whose first read fails shows no
+  Events panel until it is loaded again.
 - A client that holds a character's log names it on a redial: the gateway
   ignores the cursor of a dial that names no `log` and opens on the default,
   from its first entry (SPEC-015).
@@ -276,4 +310,4 @@ VTT-404, VTT-405, VTT-406, VTT-407, VTT-408, VTT-409, VTT-410, VTT-411,
 VTT-412, VTT-413, VTT-414, VTT-415, VTT-416, VTT-418, VTT-419, VTT-420,
 VTT-421, VTT-422, VTT-423, VTT-424, VTT-425, VTT-426, VTT-427, VTT-428,
 VTT-429, VTT-430, VTT-431, VTT-432, VTT-433, VTT-434, VTT-435, VTT-442,
-VTT-443, VTT-444.
+VTT-443, VTT-444, VTT-445, VTT-446, VTT-447, VTT-448, VTT-449.
