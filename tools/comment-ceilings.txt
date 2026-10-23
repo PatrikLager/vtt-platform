@@ -174,6 +174,7 @@ internal/gateway/note_validate_test.go  0.0
 internal/gateway/presence.go  15.6
 internal/gateway/presence_internal_test.go  29.3
 internal/gateway/qa_cmd_id_bound_test.go  0.0
+internal/gateway/qa_controls_none_test.go  0.0
 internal/gateway/qa_creature_test.go  0.0
 internal/gateway/qa_id_bound_test.go  0.0
 internal/gateway/qa_issuer_test.go  0.9
@@ -204,8 +205,8 @@ internal/gateway/server_visibility_test.go  15.5
 internal/gateway/static_test.go  15.6
 internal/gateway/viewpoint.go  9.5
 internal/gateway/viewpoint_test.go  9.1
-internal/gateway/watch_test.go  1.7
-internal/gateway/watchable_test.go  3.3
+internal/gateway/watch_test.go  1.6
+internal/gateway/watchable_test.go  2.7
 internal/harness/batch_test.go  30.3
 internal/harness/batch_truncation_internal_test.go  24.7
 internal/harness/client.go  46.8

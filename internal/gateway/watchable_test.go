@@ -287,3 +287,59 @@ func TestAPerchedPlayerGrantedAPartyMemberMovesToTheFirst(t *testing.T) {
 	ivo.requireEntries(f, "x8's log after the switch", "x8", 0)
 	ivo.quietAll(300 * time.Millisecond)
 }
+
+// VTT-454
+func TestTheSetSaysWhetherTheParticipantControlsNoPartyMember(t *testing.T) {
+	f := newGWFixture(t)
+	appendEvents(t, f.campaign,
+		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "pet", Name: "Pet", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}},
+		&vttv1.ActorControlGranted{ActorId: "pet", ParticipantId: participantID(t, f, f.otherPlayerToken),
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
+	noneToken, _, err := f.ids.CreateInvite("Nell", identity.RolePlayer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coToken, coID, err := f.ids.CreateInvite("Mira", identity.RolePlayer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendEvents(t, f.campaign, &vttv1.ActorControlGranted{ActorId: "a1", ParticipantId: coID,
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	for _, c := range []struct {
+		who, token string
+		want       bool
+	}{
+		{"a player who controls a1", f.playerToken, false},
+		{"a player who controls only a non-party actor", f.otherPlayerToken, true},
+		{"a player who controls nothing", noneToken, true},
+		{"a spectator who controls nothing", f.spectatorToken, true},
+		{"a player who holds a1 after another player", coToken, false},
+	} {
+		w := f.watch(c.token, 0, "")
+		if head := w.mustAny(); head.GetCatchUpHead() == nil {
+			t.Fatalf("%s: the first frame is %v, want the catch-up head", c.who, head)
+		}
+		set := w.mustAny().GetWatchableChanged()
+		if set == nil || set.GetControlsNoPartyMember() != c.want {
+			t.Errorf("%s: the opening set is %v, want controls_no_party_member %v", c.who, set, c.want)
+		}
+	}
+}
+
+// VTT-455 VTT-454
+func TestARevocationOfATablesOnlyPartyMemberSendsTheSetAgain(t *testing.T) {
+	f := newGWFixture(t)
+	lera := f.watch(f.playerToken, 0, "")
+	lera.openWithSet("a1:Hero", "a1")
+	lera.requireEntries(f, "a1's log at the opening", "a1", 0)
+	seen := len(logOf(t, f, "a1"))
+
+	appendEvents(t, f.campaign, &vttv1.ActorControlRevoked{ActorId: "a1", ParticipantId: f.playerID})
+	set := lera.mustAny()
+	requireSet(t, "after the revocation", set, "a1:Hero")
+	if !set.GetWatchableChanged().GetControlsNoPartyMember() {
+		t.Fatal("the set after the revocation does not say the player controls no party member")
+	}
+	lera.requireEntries(f, "the revocation's entry after the set", "a1", seen)
+	lera.quietAll(300 * time.Millisecond)
+}

@@ -133,7 +133,8 @@ message LoadMap { string map_id = 1; }
 
 // SetViewpoint names the character log a player's or a spectator's connection
 // is sent from here on, and appends nothing. An empty actor_id is nobody,
-// which only a spectator may ask for (SPEC-007, SPEC-015).
+// which a player who controls a party member may not ask for (SPEC-007,
+// SPEC-015).
 message SetViewpoint {
   string actor_id = 1;
 }
@@ -324,11 +325,15 @@ message ViewpointChanged {
   string actor_id = 1;
 }
 
-// WatchableChanged names every party member this connection may watch, sent
-// at its opening and again whenever that set changes; never to a DM or an
-// agent, and never in a log (SPEC-007, SPEC-015).
+// WatchableChanged names every party member this connection may watch and
+// whether its participant controls none, sent at its opening and again
+// whenever either changes; never to a DM or an agent, and never in a log
+// (SPEC-007, SPEC-015).
 message WatchableChanged {
   repeated WatchableActor actors = 1;
+  // Keep false meaning the participant controls a party member: a client draws
+  // a player the perch by true (SPEC-022).
+  bool controls_no_party_member = 2;
 }
 
 message WatchableActor {

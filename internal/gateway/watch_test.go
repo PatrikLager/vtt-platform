@@ -752,7 +752,7 @@ func TestAPromotedSpectatorKeepsWatchingAPartyMemberTheyHold(t *testing.T) {
 	w.quiet(300 * time.Millisecond)
 }
 
-// VTT-456 VTT-400
+// VTT-456 VTT-400 VTT-454
 func TestAPlayerWhoseLastPartyMemberIsRevokedKeepsWatchingIt(t *testing.T) {
 	f := newGWFixture(t)
 	appendEvents(t, f.campaign, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a2", Name: "Ash",
@@ -765,7 +765,11 @@ func TestAPlayerWhoseLastPartyMemberIsRevokedKeepsWatchingIt(t *testing.T) {
 
 	appendEvents(t, f.campaign, &vttv1.ActorControlRevoked{ActorId: "a1",
 		ParticipantId: participantID(t, f, f.playerToken)})
-	requireSet(t, "after the revocation", lera.mustAny(), "a1:Hero a2:Ash")
+	set := lera.mustAny()
+	requireSet(t, "after the revocation", set, "a1:Hero a2:Ash")
+	if !set.GetWatchableChanged().GetControlsNoPartyMember() {
+		t.Fatal("the set after the revocation does not say the player controls no party member")
+	}
 	appendEvents(t, f.campaign, &vttv1.NarrationAdded{Text: "the room is quiet"})
 	lera.requireEntries(f, "a1's log after the revocation", "a1", seen)
 	lera.quietAll(300 * time.Millisecond)

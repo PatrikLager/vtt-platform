@@ -509,6 +509,12 @@ func qappWatchable(pairs ...string) *vttv1.WatchableChanged {
 	return w
 }
 
+func qappWatchableNone(pairs ...string) *vttv1.WatchableChanged {
+	w := qappWatchable(pairs...)
+	w.ControlsNoPartyMember = true
+	return w
+}
+
 func qappRefusalShape(r *vttv1.CommandResult, id string) string {
 	if id == "" {
 		return r.GetError()
@@ -664,7 +670,7 @@ func TestQAPPAPlayerWithoutAPartyMemberOpensOnTheLogItNames(t *testing.T) {
 	}
 }
 
-// VTT-399 VTT-452 VTT-401
+// VTT-399 VTT-452 VTT-401 VTT-454
 func TestQAPPAPlayerWithoutAPartyMemberIsToldEveryPartyMember(t *testing.T) {
 	tb := qappNewTable(t)
 	pTok, pID := tb.invite("Pia", identity.RolePlayer)
@@ -676,7 +682,7 @@ func TestQAPPAPlayerWithoutAPartyMemberIsToldEveryPartyMember(t *testing.T) {
 	tb.addActor("np-m", "Mold", qappNonParty)
 
 	_, got := tb.dial("p", pTok, "").waitWatchable(0)
-	if want := qappWatchable("pm-a", "Alma", "pm-b", "Bert", "pm-c", "Cato"); !proto.Equal(got, want) {
+	if want := qappWatchableNone("pm-a", "Alma", "pm-b", "Bert", "pm-c", "Cato"); !proto.Equal(got, want) {
 		t.Fatalf("a player with no party member is told %v, want %v", got, want)
 	}
 	_, got = tb.dial("q", qTok, "").waitWatchable(0)
@@ -698,7 +704,7 @@ func TestQAPPAPlayerWithoutAPartyMemberIsToldEveryPartyMember(t *testing.T) {
 	}
 }
 
-// VTT-400 VTT-452 VTT-456
+// VTT-400 VTT-452 VTT-456 VTT-454
 func TestQAPPTheWatchableSetFollowsThePlayersControl(t *testing.T) {
 	tb := qappNewTable(t)
 	pTok, pID := tb.invite("Pia", identity.RolePlayer)
@@ -723,7 +729,7 @@ func TestQAPPTheWatchableSetFollowsThePlayersControl(t *testing.T) {
 		}
 		return i
 	}
-	at := step("revoking pm-b, the last party member", qappWatchable("pm-a", "Alma", "pm-b", "Bert", "pm-c", "Cato"),
+	at := step("revoking pm-b, the last party member", qappWatchableNone("pm-a", "Alma", "pm-b", "Bert", "pm-c", "Cato"),
 		tb.revokeEnv("pm-b", pID))
 	tb.expectWatching("pm-b", at+1, cn)
 
@@ -735,9 +741,9 @@ func TestQAPPTheWatchableSetFollowsThePlayersControl(t *testing.T) {
 		t.Fatalf("an unchanged set was sent again: %v; frames:\n%s", ws, cn.dump())
 	}
 
-	step("adding pm-e", qappWatchable("pm-a", "Alma", "pm-b", "Bert", "pm-c", "Cato", "pm-e", "Edda"),
+	step("adding pm-e", qappWatchableNone("pm-a", "Alma", "pm-b", "Bert", "pm-c", "Cato", "pm-e", "Edda"),
 		tb.actorEnv("pm-e", "Edda", qappParty))
-	step("making pm-c non-party", qappWatchable("pm-a", "Alma", "pm-b", "Bert", "pm-e", "Edda"),
+	step("making pm-c non-party", qappWatchableNone("pm-a", "Alma", "pm-b", "Bert", "pm-e", "Edda"),
 		tb.grantEnv("pm-c", qID, qappNonParty))
 	step("granting pm-e", qappWatchable("pm-e", "Edda"),
 		tb.grantEnv("pm-e", pID, qappParty))

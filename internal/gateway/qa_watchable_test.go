@@ -269,7 +269,7 @@ func TestQAWatchableASpectatorsOpeningNamesEveryPartyMember(t *testing.T) {
 	qaWatchableOpenLog(t, f, f.watch(f.spectatorToken, 0, "b1"), "b1", all)
 }
 
-// VTT-399: "even when there are none"
+// VTT-399 VTT-454: "even when there are none"
 func TestQAWatchableAConnectionWithNoneIsSentAnEmptySet(t *testing.T) {
 	f := newGWFixture(t)
 	appendEvents(t, f.campaign,
@@ -310,8 +310,8 @@ func TestQAWatchableAConnectionWithNoneIsSentAnEmptySet(t *testing.T) {
 			if err := json.Compact(&compact, body); err != nil {
 				t.Fatal(err)
 			}
-			if compact.String() != "{}" {
-				t.Fatalf("the empty set arrives as %s, want {}", b)
+			if compact.String() != `{"controlsNoPartyMember":true}` {
+				t.Fatalf("the empty set arrives as %s, want only the flag", b)
 			}
 			found = true
 		case <-deadline:

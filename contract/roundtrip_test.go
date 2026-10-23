@@ -163,13 +163,17 @@ func TestServerFrameWatchableChangedRoundTrip(t *testing.T) {
 	roundTrip(t, "server_frame_watchable_changed.json", &vttv1.ServerFrame{})
 }
 
-// Keep the empty case: a connection that may watch nobody is still told so
-// (VTT-399), and the arm's presence is the frame.
+// Keep the empty case: the arm's presence is the frame (VTT-399).
 func TestServerFrameWatchableChangedToNoneRoundTrip(t *testing.T) {
 	roundTrip(t, "server_frame_watchable_changed_none.json", &vttv1.ServerFrame{})
 }
 
-// protojson omits an empty repeated field, so the empty set goes out as
+// VTT-454
+func TestServerFrameWatchableChangedControlsNoneRoundTrip(t *testing.T) {
+	roundTrip(t, "server_frame_watchable_changed_controls_none.json", &vttv1.ServerFrame{})
+}
+
+// protojson omits empty fields, so an empty message serializes as
 // {"watchableChanged":{}}; a reader that takes the absent "actors" key for no
 // frame keeps the last set it was told (VTT-399).
 func TestAnEmptyWatchableSetStillSerializesAsItsFrame(t *testing.T) {
@@ -189,7 +193,7 @@ func TestAnEmptyWatchableSetStillSerializesAsItsFrame(t *testing.T) {
 		t.Fatalf("an empty set must still identify itself as one, got %s", raw)
 	}
 	if m, isMap := set.(map[string]any); !isMap || len(m) != 0 {
-		t.Fatalf("want an empty object for a connection that may watch nobody, got %v", set)
+		t.Fatalf("want an empty object for an empty message, got %v", set)
 	}
 	var back vttv1.ServerFrame
 	if err := protojson.Unmarshal(raw, &back); err != nil {

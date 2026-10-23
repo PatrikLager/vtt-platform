@@ -1075,7 +1075,8 @@ func (x *LoadMap) GetMapId() string {
 
 // SetViewpoint names the character log a player's or a spectator's connection
 // is sent from here on, and appends nothing. An empty actor_id is nobody,
-// which only a spectator may ask for (SPEC-007, SPEC-015).
+// which a player who controls a party member may not ask for (SPEC-007,
+// SPEC-015).
 type SetViewpoint struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
@@ -2048,14 +2049,18 @@ func (x *ViewpointChanged) GetActorId() string {
 	return ""
 }
 
-// WatchableChanged names every party member this connection may watch, sent
-// at its opening and again whenever that set changes; never to a DM or an
-// agent, and never in a log (SPEC-007, SPEC-015).
+// WatchableChanged names every party member this connection may watch and
+// whether its participant controls none, sent at its opening and again
+// whenever either changes; never to a DM or an agent, and never in a log
+// (SPEC-007, SPEC-015).
 type WatchableChanged struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Actors        []*WatchableActor      `protobuf:"bytes,1,rep,name=actors,proto3" json:"actors,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Actors []*WatchableActor      `protobuf:"bytes,1,rep,name=actors,proto3" json:"actors,omitempty"`
+	// Keep false meaning the participant controls a party member: a client draws
+	// a player the perch by true (SPEC-022).
+	ControlsNoPartyMember bool `protobuf:"varint,2,opt,name=controls_no_party_member,json=controlsNoPartyMember,proto3" json:"controls_no_party_member,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *WatchableChanged) Reset() {
@@ -2093,6 +2098,13 @@ func (x *WatchableChanged) GetActors() []*WatchableActor {
 		return x.Actors
 	}
 	return nil
+}
+
+func (x *WatchableChanged) GetControlsNoPartyMember() bool {
+	if x != nil {
+		return x.ControlsNoPartyMember
+	}
+	return false
 }
 
 type WatchableActor struct {
@@ -2598,9 +2610,10 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"\vCatchUpHead\x12#\n" +
 	"\rhead_sequence\x18\x01 \x01(\x03R\fheadSequence\"-\n" +
 	"\x10ViewpointChanged\x12\x19\n" +
-	"\bactor_id\x18\x01 \x01(\tR\aactorId\"B\n" +
+	"\bactor_id\x18\x01 \x01(\tR\aactorId\"{\n" +
 	"\x10WatchableChanged\x12.\n" +
-	"\x06actors\x18\x01 \x03(\v2\x16.vtt.v1.WatchableActorR\x06actors\"?\n" +
+	"\x06actors\x18\x01 \x03(\v2\x16.vtt.v1.WatchableActorR\x06actors\x127\n" +
+	"\x18controls_no_party_member\x18\x02 \x01(\bR\x15controlsNoPartyMember\"?\n" +
 	"\x0eWatchableActor\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"\xcd\x03\n" +

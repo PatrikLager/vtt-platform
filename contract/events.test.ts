@@ -27,6 +27,7 @@ const cases = [
   ["server_frame_viewpoint_changed_nobody.json", ServerFrameSchema],
   ["server_frame_watchable_changed.json", ServerFrameSchema],
   ["server_frame_watchable_changed_none.json", ServerFrameSchema],
+  ["server_frame_watchable_changed_controls_none.json", ServerFrameSchema],
   ["ability_used_envelope.json", EnvelopeSchema],
   ["use_ability_command.json", ClientCommandSchema],
   ["narration_added_envelope.json", EnvelopeSchema],

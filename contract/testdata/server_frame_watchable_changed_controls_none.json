@@ -1,0 +1,11 @@
+{
+  "watchableChanged": {
+    "actors": [
+      {
+        "actorId": "act-hero",
+        "name": "Hero"
+      }
+    ],
+    "controlsNoPartyMember": true
+  }
+}
