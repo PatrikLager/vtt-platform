@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { fixture } from "./setup";
 
 // End-to-end against the SHIPPED binary: embedded client, wire, HTTP
@@ -49,12 +49,15 @@ test("the token in the URL is stored and then removed from the address bar", asy
   expect(await page.evaluate(() => localStorage.getItem("vtt.token"))).toBe(tokens.spectator);
 });
 
+// VTT-445
 test("a spectator sees the table and no controls", async ({ page }) => {
   await openAs(page, "spectator");
   await expect(page.locator(".feed")).toBeVisible();
-  await expect(page.locator(".ticker")).toBeVisible();
   await expect(page.locator(".notes")).toBeVisible();
-  // Role gating, from the outside: a spectator gets neither panel.
+  // Role gating, from the outside: a spectator gets neither panel, nor the
+  // DM's Events panel. Read once the perch shows the role is known.
+  await expect(page.locator(".perch")).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".ticker")).toHaveCount(0);
   await expect(page.locator(".player")).toHaveCount(0);
   await expect(page.locator(".dm")).toHaveCount(0);
   await page.screenshot(shot("01-spectator"));
@@ -132,14 +135,16 @@ test("a spectator chooses a shoulder and is shown that log", async ({ page }) =>
 
   await perch.locator(".shoulder", { hasText: "Human Fighter" }).click();
   await expect(perch.locator(".perched-on")).toHaveText("Perched on: Human Fighter", { timeout: 10_000 });
-  await expect(page.locator(".tick")).not.toHaveCount(0, { timeout: 10_000 });
+  await expect(page.locator(".feed .mechanical")).not.toHaveCount(0, { timeout: 10_000 });
+  await expect(page.locator(".ticker")).toHaveCount(0);
   await expect(page.getByText("Cannot derive state")).toHaveCount(0);
   await page.screenshot(shot("04b-spectator-on-a-shoulder"));
 
   // Leaving the shoulder empties the board: no log follows to start it again.
   await perch.locator(".unperch").click();
   await expect(perch.locator(".perched-on")).toHaveText("Perched on: nobody", { timeout: 10_000 });
-  await expect(page.locator(".tick")).toHaveCount(0);
+  await expect(page.locator(".feed .mechanical")).toHaveCount(0);
+  await expect(page.locator(".feed .empty")).toBeVisible();
 });
 
 // VTT-442 VTT-444
@@ -170,20 +175,39 @@ test("a spectator's reload keeps the shoulder, and another tab does not", async 
   await other.close();
 });
 
-// VTT-393
-test("the story feed and ticker record what happened", async ({ page }) => {
+// VTT-393 VTT-445 VTT-446
+test("the story feed and ticker record what happened", async ({ page, browser }) => {
+  const drawn = async (rows: Locator) =>
+    (await rows.evaluateAll((els) =>
+      els.flatMap((r) => [getComputedStyle(r, "::before").content, getComputedStyle(r, "::after").content]),
+    )).filter((c) => c !== "none" && c !== "normal");
+
   await openAs(page, "player");
   // Lera's log, replayed from its first entry, holds what she saw of the
   // adventure "a DM starts a session and loads an adventure" loaded: the replay
-  // path working. Each ticker row is its description alone.
-  await expect(page.locator(".tick")).not.toHaveCount(0, { timeout: 10_000 });
-  await expect(page.locator(".tick", { hasText: /^tok-lera placed at \d+,\d+$/ })).toHaveCount(1);
-  await expect(page.locator(".tick", { hasText: /#\d/ })).toHaveCount(0);
-  const drawn = await page.locator(".tick").evaluateAll((rows) =>
-    rows.flatMap((r) => [getComputedStyle(r, "::before").content, getComputedStyle(r, "::after").content]),
-  );
-  expect(drawn.filter((c) => c !== "none" && c !== "normal")).toEqual([]);
-  await page.screenshot(shot("04-player-feed-and-ticker"));
+  // path working. A player's window has no Events panel, and each Story row is
+  // its description alone.
+  await expect(page.locator(".player")).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator(".ticker")).toHaveCount(0);
+  const rows = page.locator(".feed .mechanical");
+  await expect(rows).not.toHaveCount(0, { timeout: 10_000 });
+  await expect(rows.filter({ hasText: /^tok-lera placed at \d+,\d+$/ })).toHaveCount(1);
+  await expect(rows.filter({ hasText: /#\d/ })).toHaveCount(0);
+  expect(await drawn(rows)).toEqual([]);
+  await page.screenshot(shot("04-player-feed"));
+
+  // The DM's window has the panel, and each of its rows is its description
+  // alone too.
+  const ctx = await browser.newContext();
+  const dm = await ctx.newPage();
+  await openAs(dm, "dm");
+  await expect(dm.locator(".dm")).toBeVisible({ timeout: 10_000 });
+  const ticks = dm.locator(".ticker .tick");
+  await expect(ticks).not.toHaveCount(0, { timeout: 10_000 });
+  await expect(ticks.filter({ hasText: /#\d/ })).toHaveCount(0);
+  expect(await drawn(ticks)).toEqual([]);
+  await dm.screenshot(shot("04d-dm-ticker"));
+  await ctx.close();
 });
 
 test("a player sees their own panel and can move their token", async ({ page }) => {

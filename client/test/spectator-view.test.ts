@@ -12,7 +12,7 @@ import {
   type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderSpectator, describe as describeEvent, CELL, boardCamera, paneSize,
-  DEFAULT_PANE_W, DEFAULT_PANE_H } from "../src/view/spectator";
+  DEFAULT_PANE_W, DEFAULT_PANE_H, type ViewExtras } from "../src/view/spectator";
 import { newState, type State } from "../src/state";
 import { ActorKind, NoteVisibility } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderPlayerPanel, type PlayerUIState } from "../src/view/player";
@@ -46,11 +46,13 @@ function world(): State {
   return st;
 }
 
-function render(st: State, log: Envelope[] = []): HTMLElement {
+function render(st: State, log: Envelope[] = [], extras: ViewExtras = {}): HTMLElement {
   const root = document.createElement("div");
-  renderSpectator(root, st, log, "connected");
+  renderSpectator(root, st, log, "connected", extras);
   return root;
 }
+
+const DM: ViewExtras = { ticker: true };
 
 test("the board draws a disc per token, with its initial", () => {
   const root = render(world());
@@ -118,23 +120,24 @@ test("empty state reads honestly rather than rendering a blank panel", () => {
   expect(root.querySelector(".notes")?.textContent).toContain("No notes");
 });
 
+// VTT-447
 test("the ticker shows the newest event first", () => {
   const log = [
     env(1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) }),
     env(2, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "s1", name: "H", gridWidth: 6, gridHeight: 4 }) }),
   ];
-  const ticks = render(world(), log).querySelectorAll(".tick");
+  const ticks = render(world(), log, DM).querySelectorAll(".tick");
   expect(ticks[0]!.textContent).toBe('scene "H"');
 });
 
-// VTT-393
+// VTT-393 VTT-447
 test("each ticker row is its event's description alone, newest first", () => {
   const log = [
     env(1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) }),
     env(2, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "s1", name: "H", gridWidth: 6, gridHeight: 4 }) }),
     env(3, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t1", to: { x: 3, y: 4 } }) }),
   ];
-  const ticks = Array.from(render(world(), log).querySelectorAll(".ticker .tick"));
+  const ticks = Array.from(render(world(), log, DM).querySelectorAll(".ticker .tick"));
   expect(ticks.map((r) => r.textContent)).toEqual(["t1 moved to 3,4", 'scene "H"', "session started — S"]);
   for (const r of ticks) {
     expect(r.getAttributeNames()).toEqual(["class"]);
@@ -142,11 +145,12 @@ test("each ticker row is its event's description alone, newest first", () => {
   }
 });
 
+// VTT-448
 test("the ticker is bounded — an all-night session must not render thousands of rows", () => {
   const log = Array.from({ length: 200 }, (_, i) =>
     env(i + 1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) }),
   );
-  const ticks = render(world(), log).querySelectorAll(".tick").length;
+  const ticks = render(world(), log, DM).querySelectorAll(".tick").length;
   expect(ticks).toBeLessThanOrEqual(40);
   // Paired lower bound: a ticker that rendered nothing at all would satisfy
   // the cap on its own, so the cap alone proves nothing.
@@ -157,7 +161,7 @@ test("the ticker is bounded — an all-night session must not render thousands o
 test("the feed and the ticker show a move's reason", () => {
   const log = [env(6, { case: "tokenMoved", value: create(TokenMovedSchema, {
     tokenId: "t1", to: { x: 3, y: 4 }, reason: "the floor gives way" }) })];
-  const root = render(world(), log);
+  const root = render(world(), log, DM);
   expect(root.querySelector(".feed .mechanical")?.textContent).toBe("t1 moved to 3,4 — the floor gives way");
   expect(root.querySelector(".ticker .tick")?.textContent).toBe("t1 moved to 3,4 — the floor gives way");
 });
@@ -932,7 +936,7 @@ test("notes are listed in sorted key order, headed, and say so when empty", () =
 
 test("each ticker row carries its description, under the Events heading", () => {
   const log = [env(7, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) })];
-  const root = render(world(), log);
+  const root = render(world(), log, DM);
   expect(Array.from(root.querySelectorAll("h2")).some((n) => n.textContent === "Events")).toBe(true);
   expect(root.querySelector(".tick")?.textContent).toBe("session started — S");
 });
@@ -1025,11 +1029,23 @@ test("doorsArmed omitted entirely reads the same as false, not as undefined leak
 });
 
 test("the ticker section carries its class, and headings carry none", () => {
-  const root = render(world(), [env(1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) })]);
+  const root = render(world(), [env(1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) })], DM);
   expect(root.querySelector(".ticker")).not.toBeNull();
   // `if (cls) n.className = cls` -> always-assign writes undefined, which
   // stringifies to a literal "undefined" class on every unstyled element.
   for (const h of Array.from(root.querySelectorAll("h2"))) expect(h.className).toBe("");
+});
+
+// VTT-445 VTT-449
+test("a window not asked for the Events panel draws none, and its Story still shows the log", () => {
+  // More entries than the Events panel shows, so a bounded Story goes red.
+  const log = Array.from({ length: 45 }, (_, i) =>
+    env(i + 1, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t1", to: { x: i % 6, y: i % 4 } }) }),
+  );
+  const root = render(world(), log);
+  expect(root.querySelectorAll("section.ticker").length).toBe(0);
+  expect(Array.from(root.querySelectorAll("h2"), (h) => h.textContent)).not.toContain("Events");
+  expect(Array.from(root.querySelectorAll(".feed .mechanical"), (n) => n.textContent)).toEqual(log.map(describeEvent));
 });
 
 test("a scene keyed by the empty string is still rendered", () => {

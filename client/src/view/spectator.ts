@@ -1,6 +1,3 @@
-// The spectator floor (client spec §4): scene grid, story feed, notes panel,
-// session status, event ticker.
-//
 // Deliberately thin. Everything with a decision in it — which cell a click
 // lands on, how narration groups with the events it describes — lives in
 // grid.ts and feed.ts, where it is unit-tested without a browser. What is
@@ -422,8 +419,7 @@ function renderNotes(st: State): HTMLElement {
 function renderTicker(log: Envelope[]): HTMLElement {
   const wrap = el("section", "ticker");
   wrap.appendChild(el("h2", undefined, "Events"));
-  // Newest first, and bounded: an all-night session is thousands of events and
-  // a spectator only ever looks at the recent tail.
+  // Keep it bounded: an all-night session is thousands of events.
   for (const e of log.slice(-40).reverse()) {
     wrap.appendChild(el("p", "tick", describe(e)));
   }
@@ -536,6 +532,8 @@ export interface ViewExtras {
   panel?: HTMLElement | undefined;
   /** DM console, for dm and agent roles only. */
   console?: HTMLElement | undefined;
+  /** Whether to draw the Events panel: for dm and agent roles only (VTT-445). */
+  ticker?: boolean | undefined;
   /** Board click handler, when the viewer may act. */
   onCell?: ((c: { x: number; y: number }) => void) | undefined;
   /** Transient message from the last command. */
@@ -598,8 +596,8 @@ export function renderSpectator(
     renderGrid(st, sceneId, extras.images ?? NO_IMAGES, extras.doorsArmed ?? false, pane, extras.onCell, extras.getContext),
     renderFeed(buildFeed(log)),
     renderNotes(st),
-    renderTicker(log),
   ];
+  if (extras.ticker) nodes.push(renderTicker(log));
   // Only the spectator is ever given one, and a spectator has neither a panel
   // nor a console, so this never actually competes with them for position.
   if (extras.perch) nodes.push(renderPerch(extras.perch));

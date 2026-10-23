@@ -50,7 +50,7 @@ const BASE = "tok-a moved to 7,5";
 function render(log: Envelope[]): HTMLElement {
   const root = document.createElement("div");
   document.body.appendChild(root);
-  renderSpectator(root, newState(), log, "connected");
+  renderSpectator(root, newState(), log, "connected", { ticker: true });
   return root;
 }
 

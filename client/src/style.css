@@ -177,10 +177,9 @@ h3 { margin: 0 0 2px; font-size: 14px; }
    role's rows; the rows are empty but `gap` still applies between the tracks,
    and adding a sixth would have put dead space above the board on every DM's
    and every player's page. Only a spectator is ever sent this control, so
-   only a spectator's grid changes — and since the perch is the only panel a
-   spectator has, this template names no others. `:has()` takes its argument's
-   specificity, so #app:has(.perch) outranks the bare #app rules whatever
-   order they land in. */
+   only a spectator's grid changes. `:has()` takes its argument's specificity,
+   so #app:has(.perch) outranks the bare #app rules whatever order they land
+   in. */
 .perch { grid-area: perch; }
 #app:has(.perch) { grid-template-areas: "status status" "perch feed" "board feed" "notes ticker"; }
 .perch .shoulder, .perch .unperch {

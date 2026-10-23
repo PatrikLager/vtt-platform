@@ -559,9 +559,11 @@ test.each(["world", "character"] as const)("renderSpectator over a %s log writes
   renderSpectator(el, fold(log), log, "open", {
     participants: [{ participantId: "p-me", displayName: "Mira" }],
     getContext: () => recordingContext(calls),
+    ticker: kind === "world",
   });
 
   expectLogDrawn(el);
+  if (kind === "world") expect(el.querySelectorAll(".ticker .tick").length).toBeGreaterThan(0);
   expect(leaks(shown(el), seqs)).toEqual([]);
   expect(calls.length).toBeGreaterThan(0);
   const written = calls

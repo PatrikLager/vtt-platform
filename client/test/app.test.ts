@@ -2966,7 +2966,7 @@ test("a player's move moves the character they watch", async () => {
   s?.close();
 });
 
-// VTT-393
+// VTT-393 VTT-445 VTT-446 VTT-449
 test("no role's window shows a log sequence number", async () => {
   const seqs = [7001, 7002, 7003, 7004, 7005, 7006];
   const shows = (t: string, n: number) =>
@@ -2994,7 +2994,9 @@ test("no role's window shows a log sequence number", async () => {
 
     expect(r.querySelector(panel[role]!)).not.toBeNull();
     expect(r.textContent).toContain("The lamps gutter.");
-    expect(r.querySelectorAll(".ticker .tick").length).toBe(6);
+    expect(r.querySelectorAll(".feed .mechanical").length).toBe(5);
+    if (role === "dm" || role === "agent") expect(r.querySelectorAll(".ticker .tick").length).toBe(6);
+    else expect(r.querySelectorAll("section.ticker").length).toBe(0);
     const shown = [
       r.textContent ?? "",
       ...Array.from(r.querySelectorAll("[title], [aria-label]")).flatMap((n) => [
@@ -3133,4 +3135,52 @@ test("a page sent the set but no viewpoint leaves the next page the party member
   const again = await dialAs("player");
   expect(dialed(again.sock).get("log")).toBe("a2");
   again.s?.close();
+});
+
+// --- the Events panel is the DM's -------------------------------------------
+
+const storyRows = (r: HTMLElement) => Array.from(r.querySelectorAll(".feed .mechanical"), (n) => n.textContent);
+
+// VTT-445 VTT-449
+test("a player's and a spectator's window draws no Events panel, and its Story shows what it was sent", async () => {
+  const own: Record<string, string> = { player: ".player", spectator: ".perch" };
+  for (const role of ["player", "spectator"]) {
+    const { r, s, sock } = await dialAs(role);
+    opensOn(sock, "a1");
+    seedTable(sock);
+    await settle();
+    expect(r.querySelectorAll(own[role]!).length).toBe(1);
+    expect(storyRows(r)).toHaveLength(5);
+    expect(r.querySelectorAll("section.ticker").length).toBe(0);
+    expect(Array.from(r.querySelectorAll("h2"), (h) => h.textContent)).not.toContain("Events");
+    s?.close();
+  }
+});
+
+// VTT-445 VTT-449
+test("a page whose /api/me answers no role draws no Events panel, and its Story shows what it was sent", async () => {
+  localStorage.setItem("vtt.token", "tok");
+  stubMetadata({});
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  seedTable(sock);
+  await settle();
+  expect(storyRows(r)).toHaveLength(5);
+  expect(r.querySelectorAll("section.ticker").length).toBe(0);
+  s?.close();
+});
+
+// VTT-446 VTT-447 VTT-449
+test("a DM's and an agent's window draws a row in the Events panel for each entry it was sent, newest first", async () => {
+  for (const role of ["dm", "agent"]) {
+    const { r, s } = await tableAs(role);
+    expect(r.querySelectorAll(".dm").length).toBe(1);
+    const ticks = Array.from(r.querySelectorAll(".ticker .tick"), (n) => n.textContent);
+    expect(ticks).toEqual(storyRows(r).reverse());
+    expect(ticks[0]).toBe("t1 placed at 1,1");
+    s?.close();
+  }
 });

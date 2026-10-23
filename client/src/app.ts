@@ -402,6 +402,7 @@ function startSession(root: HTMLElement, token: string): Session {
             toggleDoors,
           })
         : undefined,
+      ticker: isDM,
       // Keep armed doors a door command or nothing, never a move or a switch:
       // doorCommandFor returns null unarmed, and an armed click it finds no
       // workable door for must end at null.
