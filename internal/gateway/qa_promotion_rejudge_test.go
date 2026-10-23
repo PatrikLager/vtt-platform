@@ -11,6 +11,7 @@ import (
 
 	"github.com/coder/websocket"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
@@ -284,13 +285,15 @@ func qaRejudgeNewTable(t *testing.T) *qaRejudgeTable {
 }
 
 // VTT-340 VTT-342 VTT-367 VTT-036
-func TestQARejudgePromotedSpectatorOnAnothersPartyMemberWatchesNobody(t *testing.T) {
+func TestQARejudgePromotedSpectatorOnAnothersPartyMemberMovesToTheirOwn(t *testing.T) {
 	tb := qaRejudgeNewTable(t)
 	e := tb.env
 	_, pid := e.invite(t, "p1", identity.RolePlayer)
 	sTok, sid := e.invite(t, "s1", identity.RoleSpectator)
 	e.addActor(t, tb.dm, "a1", qaRejudgeParty)
 	e.grant(t, tb.dm, "a1", pid, qaRejudgeParty)
+	e.addActor(t, tb.dm, "c1", qaRejudgeParty)
+	e.grant(t, tb.dm, "c1", sid, qaRejudgeParty)
 	e.narrate(t, tb.dm)
 
 	s, o := e.open(t, sTok, "a1")
@@ -300,7 +303,16 @@ func TestQARejudgePromotedSpectatorOnAnothersPartyMemberWatchesNobody(t *testing
 	before := e.logHead(t)
 	e.promote(t, tb.dm, sid, identity.RolePlayer)
 
-	s.mustViewpoint(t, "")
+	s.mustViewpoint(t, "c1")
+	held, err := e.c.CharacterLog("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, entry := range held {
+		if got := s.mustEvent(t); !proto.Equal(got, entry.Env) {
+			t.Fatalf("after the move, entry %d is %v, want c1's %v", i+1, got, entry.Env)
+		}
+	}
 	s.mustQuiet(t)
 	if after := e.logHead(t); after != before {
 		t.Fatalf("log head moved from %d to %d", before, after)
@@ -355,6 +367,8 @@ func TestQARejudgeBothConnectionsOfAPromotedSpectatorAreRejudged(t *testing.T) {
 	sTok, sid := e.invite(t, "s1", identity.RoleSpectator)
 	e.addActor(t, tb.dm, "a1", qaRejudgeParty)
 	e.grant(t, tb.dm, "a1", pid, qaRejudgeParty)
+	e.addActor(t, tb.dm, "c1", qaRejudgeParty)
+	e.grant(t, tb.dm, "c1", sid, qaRejudgeParty)
 	e.narrate(t, tb.dm)
 
 	s1, o1 := e.open(t, sTok, "a1")
@@ -364,8 +378,8 @@ func TestQARejudgeBothConnectionsOfAPromotedSpectatorAreRejudged(t *testing.T) {
 	}
 	e.promote(t, tb.dm, sid, identity.RolePlayer)
 
-	s1.mustViewpoint(t, "")
-	s2.mustViewpoint(t, "")
+	s1.mustViewpoint(t, "c1")
+	s2.mustViewpoint(t, "c1")
 }
 
 // VTT-388 VTT-342
@@ -472,4 +486,31 @@ func TestQARejudgeASpectatorPromotedToSpectatorKeepsItsPerch(t *testing.T) {
 	}
 	e.promote(t, tb.dm, sid, identity.RoleSpectator)
 	s.mustQuiet(t)
+}
+
+// VTT-452 VTT-388 VTT-036
+func TestQARejudgePromotedSpectatorWhoControlsNoneKeepsItsPerch(t *testing.T) {
+	tb := qaRejudgeNewTable(t)
+	e := tb.env
+	_, pid := e.invite(t, "p1", identity.RolePlayer)
+	sTok, sid := e.invite(t, "s1", identity.RoleSpectator)
+	e.addActor(t, tb.dm, "a1", qaRejudgeParty)
+	e.grant(t, tb.dm, "a1", pid, qaRejudgeParty)
+	e.narrate(t, tb.dm)
+
+	s, o := e.open(t, sTok, "a1")
+	if o.viewpoint != "a1" || len(o.events) == 0 {
+		t.Fatalf("spectator did not open on a1's log: %+v", o)
+	}
+	before := e.logHead(t)
+	e.promote(t, tb.dm, sid, identity.RolePlayer)
+
+	s.mustQuiet(t)
+	if after := e.logHead(t); after != before {
+		t.Fatalf("log head moved from %d to %d", before, after)
+	}
+	e.narrate(t, tb.dm)
+	if ev := s.mustEvent(t); ev.GetNarrationAdded() == nil {
+		t.Fatalf("the next entry after the promotion is %v, want a1's narration", ev)
+	}
 }

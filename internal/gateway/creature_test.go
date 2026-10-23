@@ -14,7 +14,7 @@ func grantKind(actorID, participantID string, kind vttv1.ActorKind) *vttv1.Clien
 		GrantActorControl: &vttv1.GrantActorControl{ActorId: actorID, ParticipantId: participantID, Kind: kind}}}
 }
 
-// VTT-316 VTT-317 VTT-318 VTT-321 VTT-326 VTT-340 VTT-342 VTT-343 VTT-350 VTT-391
+// VTT-316 VTT-317 VTT-318 VTT-321 VTT-326 VTT-340 VTT-342 VTT-450 VTT-350 VTT-391
 func TestACreatureGrantedToAPlayerAsAPartyMemberIsRunAsOne(t *testing.T) {
 	f := newGWFixture(t)
 	ivo := participantID(t, f, f.otherPlayerToken)

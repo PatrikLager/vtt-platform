@@ -501,7 +501,7 @@ func ownershipFixture() *engine.State {
 	return st
 }
 
-// VTT-028 VTT-139 VTT-140 VTT-343 VTT-344
+// VTT-028 VTT-139 VTT-140 VTT-450 VTT-344
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
 	if len(authzCases) != 88 {
 		t.Fatalf("authzCases has %d entries, want 88 (22 commands x 4 roles)", len(authzCases))

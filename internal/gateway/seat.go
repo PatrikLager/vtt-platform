@@ -42,7 +42,7 @@ type seat struct {
 	shown     string
 	judgedAs  identity.Role
 	watchable *vttv1.WatchableChanged
-	// Read told from any goroutine; watch stores it before a frame names it (VTT-351).
+	// Read told from any goroutine; watch stores it before a frame names it (VTT-453).
 	told atomic.Pointer[string]
 }
 
@@ -209,13 +209,13 @@ func (b *perchBox) take() (actorID string, ok bool) {
 	return actorID, ok
 }
 
-// judgedBy is the told viewpoint while p may watch it, else p's default (VTT-351).
+// judgedBy is the told one while it is p's party member, else p's default (VTT-453).
 func (s *seat) judgedBy(p *identity.Participant, actors map[string]*vttv1.Actor) string {
 	viewpoint := ""
 	if told := s.told.Load(); told != nil {
 		viewpoint = *told
 	}
-	if MayWatch(p, viewpoint, actors) != nil {
+	if !ownPartyMember(actors[viewpoint], p.ID) {
 		return defaultViewpoint(p, actors)
 	}
 	return viewpoint

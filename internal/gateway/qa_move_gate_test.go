@@ -359,7 +359,7 @@ func qaMGWantRefused(t *testing.T, what string, r *vttv1.CommandResult, want str
 	}
 }
 
-// VTT-340 VTT-350 VTT-351
+// VTT-340 VTT-350 VTT-453
 func TestQAMGTheDefaultViewpointJudgesEveryControlledTokensMove(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("pat", identity.RolePlayer)
@@ -373,7 +373,7 @@ func TestQAMGTheDefaultViewpointJudgesEveryControlledTokensMove(t *testing.T) {
 	qaMGWantOK(t, "pc-a's token onto (0,0), which pc-a sees", pat.move("tok-a", 0, 0))
 }
 
-// VTT-339 VTT-350 VTT-351
+// VTT-339 VTT-350 VTT-453
 func TestQAMGTwoConnectionsOfOnePlayerAreEachJudgedByTheirOwnCharacter(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("pat", identity.RolePlayer)
@@ -399,7 +399,7 @@ func TestQAMGTwoConnectionsOfOnePlayerAreEachJudgedByTheirOwnCharacter(t *testin
 	qaMGWantRefused(t, "connection one (pc-b): pc-z's token onto (9,0)", one.move("tok-z", 9, 0), qaMGUnseen)
 }
 
-// VTT-350 VTT-351
+// VTT-350 VTT-453
 func TestQAMGAWatchedCharacterWithoutATokenSeesNothing(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("pat", identity.RolePlayer)
@@ -447,7 +447,7 @@ func TestQAMGAClosedDoorHidesTheRoomBeyondIt(t *testing.T) {
 	qaMGWantRefused(t, "door closed again: pc-b's token onto (5,1)", pat.move("tok-b", 5, 1), qaMGUnseen)
 }
 
-// VTT-342 VTT-350 VTT-351
+// VTT-342 VTT-350 VTT-453
 func TestQAMGASwitchedViewpointJudgesTheMovesAfterTheSwitch(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("pat", identity.RolePlayer)
@@ -468,7 +468,7 @@ func TestQAMGASwitchedViewpointJudgesTheMovesAfterTheSwitch(t *testing.T) {
 	qaMGWantRefused(t, "after the switch back to pc-a, pc-b's token onto (6,0)", pat.move("tok-b", 6, 0), qaMGUnseen)
 }
 
-// VTT-339 VTT-350 VTT-351 VTT-368
+// VTT-339 VTT-350 VTT-453 VTT-368
 func TestQAMGAConnectionOpenedOnALogJudgesByThatCharacter(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("pat", identity.RolePlayer)
@@ -496,7 +496,7 @@ func TestQAMGAConnectionOpenedOnALogJudgesByThatCharacter(t *testing.T) {
 	}
 }
 
-// VTT-340 VTT-351
+// VTT-340 VTT-453
 func TestQAMGALogThePlayerMayNotWatchOpensOnTheFirstPartyMember(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("pat", identity.RolePlayer)
@@ -516,7 +516,7 @@ func TestQAMGALogThePlayerMayNotWatchOpensOnTheFirstPartyMember(t *testing.T) {
 	}
 }
 
-// VTT-340 VTT-342 VTT-351
+// VTT-340 VTT-342 VTT-453
 func TestQAMGRevokingTheWatchedCharacterJudgesByTheFirstPartyMember(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("pat", identity.RolePlayer)
@@ -534,7 +534,7 @@ func TestQAMGRevokingTheWatchedCharacterJudgesByTheFirstPartyMember(t *testing.T
 	qaMGWantRefused(t, "after the switch to pc-a, pc-z's token onto (8,0)", pat.move("tok-z", 8, 0), qaMGUnseen)
 }
 
-// VTT-340 VTT-351
+// VTT-340 VTT-453
 func TestQAMGMakingTheWatchedCharacterNonPartyJudgesByTheFirstPartyMember(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("pat", identity.RolePlayer)
@@ -552,7 +552,7 @@ func TestQAMGMakingTheWatchedCharacterNonPartyJudgesByTheFirstPartyMember(t *tes
 	qaMGWantOK(t, "after the switch to pc-a, pc-a's token onto (2,2)", pat.move("tok-a", 2, 2))
 }
 
-// VTT-340 VTT-351
+// VTT-340 VTT-453
 func TestQAMGRemovingTheWatchedCharacterJudgesByTheFirstPartyMember(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("pat", identity.RolePlayer)
@@ -570,7 +570,7 @@ func TestQAMGRemovingTheWatchedCharacterJudgesByTheFirstPartyMember(t *testing.T
 	qaMGWantRefused(t, "after the switch to pc-a, pc-z's token onto (8,0)", pat.move("tok-z", 8, 0), qaMGUnseen)
 }
 
-// VTT-340 VTT-342 VTT-370
+// VTT-370 VTT-453 VTT-456
 func TestQAMGLosingTheOnlyPartyMemberLeavesNoTokenMovable(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("pat", identity.RolePlayer)
@@ -584,12 +584,27 @@ func TestQAMGLosingTheOnlyPartyMemberLeavesNoTokenMovable(t *testing.T) {
 	tb.revoke("pc-b", pid)
 	qaMGWantRefused(t, "at the snapshot after the revoke, the pet's token onto (4,2)", pat.move("tok-pet", 4, 2), qaMGUnseen)
 
-	pat.expectViewpoint("")
-	qaMGWantRefused(t, "watching nobody, the pet's token onto (4,2)", pat.move("tok-pet", 4, 2), qaMGUnseen)
-	qaMGWantRefused(t, "watching nobody, the pet's token onto (5,1)", pat.move("tok-pet", 5, 1), qaMGUnseen)
+	tb.append(&vttv1.Envelope{Payload: &vttv1.Envelope_NarrationAdded{NarrationAdded: &vttv1.NarrationAdded{
+		Text: "pat stays on pc-b"}}})
+	pat.waitFor("pc-b's narration", func() bool {
+		for _, f := range pat.frames {
+			if f.GetEvent().GetNarrationAdded().GetText() == "pat stays on pc-b" {
+				return true
+			}
+		}
+		return false
+	})
+	pat.mu.Lock()
+	switches := len(pat.viewpointsLocked()) - pat.consumed
+	pat.mu.Unlock()
+	if switches != 0 {
+		t.Fatalf("the revocation moved pat off pc-b: %d more ViewpointChanged", switches)
+	}
+	qaMGWantRefused(t, "on pc-b after the revoke, the pet's token onto (4,2)", pat.move("tok-pet", 4, 2), qaMGUnseen)
+	qaMGWantRefused(t, "on pc-b after the revoke, the pet's token onto (5,1)", pat.move("tok-pet", 5, 1), qaMGUnseen)
 }
 
-// VTT-340 VTT-370
+// VTT-340 VTT-370 VTT-452 VTT-453
 func TestQAMGAPlayerControllingOnlyANonPartyActorMovesNoToken(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("gil", identity.RolePlayer)
@@ -598,14 +613,18 @@ func TestQAMGAPlayerControllingOnlyANonPartyActorMovesNoToken(t *testing.T) {
 
 	for _, log := range []string{"", "npc-pet", "pc-c"} {
 		gil := tb.dial("gil-log-"+log, tok, log)
-		gil.expectViewpoint("")
+		if log == "pc-c" {
+			gil.expectViewpoint("pc-c")
+		} else {
+			gil.expectViewpoint("")
+		}
 		qaMGWantRefused(t, "log="+log+": the pet's token onto (2,1)", gil.move("tok-pet", 2, 1), qaMGUnseen)
 		qaMGWantRefused(t, "log="+log+": the pet's token onto (1,0)", gil.move("tok-pet", 1, 0), qaMGUnseen)
 		qaMGWantRefused(t, "log="+log+": the pet's token onto the crate at (0,2)", gil.move("tok-pet", 0, 2), qaMGUnseen)
 	}
 }
 
-// VTT-340 VTT-342 VTT-351 VTT-370
+// VTT-340 VTT-342 VTT-453 VTT-370
 func TestQAMGAFirstPartyMemberGrantedMidConnectionMovesWithoutReconnecting(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("nia", identity.RolePlayer)
@@ -623,7 +642,7 @@ func TestQAMGAFirstPartyMemberGrantedMidConnectionMovesWithoutReconnecting(t *te
 	qaMGWantRefused(t, "after the grant, pc-c's token onto (4,0)", nia.move("tok-c", 4, 0), qaMGUnseen)
 }
 
-// VTT-351
+// VTT-453
 func TestQAMGAFirstPartyMemberGrantedMidConnectionJudgesTheNextMoveAtItsSnapshot(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("nia", identity.RolePlayer)
@@ -638,7 +657,7 @@ func TestQAMGAFirstPartyMemberGrantedMidConnectionJudgesTheNextMoveAtItsSnapshot
 	qaMGWantOK(t, "at the snapshot after the grant, pc-c's token onto (0,0)", nia.move("tok-c", 0, 0))
 }
 
-// VTT-350 VTT-351
+// VTT-350 VTT-453
 func TestQAMGPartyMembersOnDifferentScenesJudgeOnlyTheirOwnScene(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("quinn", identity.RolePlayer)
@@ -656,7 +675,7 @@ func TestQAMGPartyMembersOnDifferentScenesJudgeOnlyTheirOwnScene(t *testing.T) {
 	qaMGWantRefused(t, "watching pc-f, pc-e's token onto s1 (2,2)", quinn.move("tok-e", 2, 2), qaMGUnseen)
 }
 
-// VTT-343 VTT-351
+// VTT-450 VTT-453
 func TestQAMGARefusedSetViewpointLeavesTheMoveJudgedByTheCharacterShown(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("pat", identity.RolePlayer)
@@ -773,4 +792,21 @@ func TestQAMGAPlayerMovesOnlyTokensTheyControlAndASpectatorNone(t *testing.T) {
 	sid.waitCatchUpHead()
 	qaMGWantRefused(t, "spectator: the goblin onto (1,0)", sid.move("tok-goblin", 1, 0), "")
 	qaMGWantRefused(t, "spectator: pc-a onto (1,0)", sid.move("tok-a", 1, 0), "")
+}
+
+// VTT-370 VTT-452 VTT-453
+func TestQAMGAPerchedPlayerMovesNoToken(t *testing.T) {
+	tb := qaMGNewTable(t)
+	_, ann := tb.invite("ann", identity.RolePlayer)
+	tok, pid := tb.invite("gil", identity.RolePlayer)
+	tb.character("pc-c", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "tok-c", "s1", 0, 0, ann)
+	tb.character("npc-pet", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, "tok-pet", "s1", 1, 1, pid)
+
+	gil := tb.dial("gil", tok, "")
+	gil.expectViewpoint("")
+	qaMGWantOK(t, "the perch on ann's pc-c", gil.setViewpoint("pc-c"))
+	gil.expectViewpoint("pc-c")
+	qaMGWantRefused(t, "on pc-c, the pet's token onto (2,1)", gil.move("tok-pet", 2, 1), qaMGUnseen)
+	qaMGWantRefused(t, "on pc-c, the pet's token onto (1,0)", gil.move("tok-pet", 1, 0), qaMGUnseen)
+	qaMGWantRefused(t, "on pc-c, the pet's token onto the crate at (0,2)", gil.move("tok-pet", 0, 2), qaMGUnseen)
 }

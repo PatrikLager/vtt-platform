@@ -188,14 +188,13 @@ func (w *qaOpeningWorld) worldHead() int64 {
 }
 
 type qaOpeningWatch struct {
-	t         *testing.T
-	c         *qaOpeningClient
-	gotHead   bool
-	sawVC     bool
-	cur       string
-	vcs       []string
-	sinceVC   []*vttv1.Envelope
-	forbidden string
+	t       *testing.T
+	c       *qaOpeningClient
+	gotHead bool
+	sawVC   bool
+	cur     string
+	vcs     []string
+	sinceVC []*vttv1.Envelope
 }
 
 func (s *qaOpeningWatch) feed(f *vttv1.ServerFrame) {
@@ -221,9 +220,6 @@ func (s *qaOpeningWatch) feed(f *vttv1.ServerFrame) {
 		}
 		if s.cur == "" {
 			s.t.Fatalf("entry %d sent while the connection watches nobody; viewpoints so far %q", e.GetSequence(), s.vcs)
-		}
-		if n := e.GetNarrationAdded(); n != nil && n.GetText() == s.forbidden {
-			s.t.Fatalf("entry %q appended after the promotion was sent; viewpoints so far %q", n.GetText(), s.vcs)
 		}
 		s.sinceVC = append(s.sinceVC, e)
 		if want := int64(len(s.sinceVC)); e.GetSequence() != want {
@@ -335,7 +331,7 @@ func qaOpeningCases() []struct {
 }
 
 // VTT-340 VTT-341 VTT-342 VTT-367 VTT-036
-func TestQAOpeningAPromotedSpectatorOnAnothersPartyMemberEndsWatchingNobody(t *testing.T) {
+func TestQAOpeningAPromotedSpectatorOnAnothersPartyMemberEndsWatchingTheirOwn(t *testing.T) {
 	for _, tc := range qaOpeningCases() {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -343,22 +339,41 @@ func TestQAOpeningAPromotedSpectatorOnAnothersPartyMemberEndsWatchingNobody(t *t
 			w.invite("p1", "p1", identity.RolePlayer)
 			w.invite("s1", "s1", identity.RoleSpectator)
 			w.partyMember("a1", "p1")
+			w.partyMember("c1", "s1")
 			w.narrate(qaOpeningEarly)
 			w.narrate(qaOpeningEarly)
 			before := w.worldHead()
 
 			watch, promoted := qaOpeningLaunch(w, tc.mode, tc.delay, "s1", "player", "a1")
-			watch.forbidden = qaOpeningLate
 			if err := promoted(); err != nil {
 				t.Fatalf("promote: %v", err)
 			}
 			if got := w.worldHead(); got != before {
 				t.Fatalf("a promotion appended: world head %d, was %d", got, before)
 			}
-			watch.until(func() bool { return watch.sawVC && watch.cur == "" }, "came to watch nobody")
+			own, err := w.camp.CharacterLog("c1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			watch.until(func() bool { return watch.sawVC && watch.cur == "c1" && len(watch.sinceVC) >= len(own) },
+				"came to watch c1 from its first entry")
 			w.narrate(qaOpeningLate)
+			watch.until(func() bool { return len(watch.sinceVC) > len(own) }, "was sent c1's next entry")
 			watch.quiet()
 			t.Logf("viewpoints %q", watch.vcs)
+			want, err := w.camp.CharacterLog("c1")
+			if err != nil || len(watch.sinceVC) != len(want) {
+				t.Fatalf("c1's log holds %d entries (err %v), %d were sent after the last ViewpointChanged",
+					len(want), err, len(watch.sinceVC))
+			}
+			for i, e := range watch.sinceVC {
+				if !proto.Equal(e, want[i].Env) {
+					t.Fatalf("entry %d is %v, c1's log holds %v there", i+1, e, want[i].Env)
+				}
+			}
+			if last := watch.vcs[len(watch.vcs)-1]; last != "c1" {
+				t.Fatalf("last ViewpointChanged names %q, want c1", last)
+			}
 		})
 	}
 }

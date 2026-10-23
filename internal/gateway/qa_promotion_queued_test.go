@@ -246,8 +246,9 @@ func qaQueuedSetup(t *testing.T) *qaQueuedWorld {
 }
 
 // VTT-342 VTT-367 VTT-341 VTT-036
-func TestQAQueuedPromotedSpectatorOnAnothersPartyMemberMovesToNobody(t *testing.T) {
+func TestQAQueuedPromotedSpectatorOnAnothersPartyMemberMovesToTheirOwn(t *testing.T) {
 	w := qaQueuedSetup(t)
+	qaQueuedAppend(t, w.c, qaQueuedActor("c1"), qaQueuedGrant("c1", w.ids["s1"]))
 	log, err := w.c.CharacterLog("a1")
 	if err != nil || len(log) < qaQueuedEntries {
 		t.Fatalf("fixture: %d entries, %v", len(log), err)
@@ -263,8 +264,8 @@ func TestQAQueuedPromotedSpectatorOnAnothersPartyMemberMovesToNobody(t *testing.
 	}
 	dm.promote(w, w.ids["s1"], "player")
 	time.Sleep(200 * time.Millisecond)
-	if v := qaQueuedDrain(s, &got); v != "" {
-		t.Fatalf("moved to %q, want nobody", v)
+	if v := qaQueuedDrain(s, &got); v != "c1" {
+		t.Fatalf("moved to %q, want c1", v)
 	}
 	t.Logf("sent %d of %d entries before the switch", len(got), len(log))
 	if len(got) >= len(log) {
@@ -272,6 +273,21 @@ func TestQAQueuedPromotedSpectatorOnAnothersPartyMemberMovesToNobody(t *testing.
 	}
 	qaQueuedPrefixEqual(t, got, log)
 	qaQueuedAppend(t, w.c, qaQueuedNarrate(1))
+	own, err := w.c.CharacterLog("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fresh []*vttv1.Envelope
+	for len(fresh) < len(own) {
+		f := s.mustNext()
+		if f.GetViewpointChanged() != nil {
+			t.Fatalf("a further switch: %v", f)
+		}
+		if e := f.GetEvent(); e != nil {
+			fresh = append(fresh, e)
+		}
+	}
+	qaQueuedPrefixEqual(t, fresh, own)
 	s.quiet()
 	if h := qaQueuedWorldHead(t, w.c); h != head+1 {
 		t.Fatalf("promotion appended: head %d then %d (one narration of ours)", head, h)

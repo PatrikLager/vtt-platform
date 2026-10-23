@@ -636,19 +636,19 @@ func TestQACreatureGrantOpensTheCreaturesOwnLog(t *testing.T) {
 	}
 }
 
-// VTT-343 VTT-342 VTT-391 VTT-340
+// VTT-450 VTT-342 VTT-391 VTT-340
 func TestQACreatureSetViewpointNeedsAPartyMemberTheyControl(t *testing.T) {
 	tb, pTok, pID := qaCreatureSetup(t)
 	pl := qaCreatureDial(t, tb.base, pTok, nil)
 	tb.narrate("sync")
 	pl.expectSwitch(0, qaCreatureHero, tb.log(qaCreatureHero), "VTT-340 open")
 
-	// VTT-343
+	// VTT-450
 	tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, pID, vttv1.ActorKind_ACTOR_KIND_NON_PARTY))
 	m := pl.mark()
 	nonParty := pl.send(qaCreatureView(qaCreatureGoblin))
 	if nonParty.GetOk() {
-		t.Errorf("VTT-343: set_viewpoint on a non-party goblin the player controls was accepted")
+		t.Errorf("VTT-450: set_viewpoint on a non-party goblin the player controls was accepted")
 	}
 	absent := pl.send(qaCreatureView("actor-absent"))
 	// VTT-347
@@ -665,29 +665,31 @@ func TestQACreatureSetViewpointNeedsAPartyMemberTheyControl(t *testing.T) {
 	// VTT-340 VTT-193
 	pl.expectStay(m, tb.log(qaCreatureHero), "VTT-340 stay")
 
-	// VTT-343
-	p2Tok, _ := tb.invite("QA Other Player", identity.RolePlayer)
+	// VTT-450
+	p2Tok, p2ID := tb.invite("QA Other Player", identity.RolePlayer)
+	tb.dm.mustOK(qaCreatureAddActor("actor-a-own", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER))
+	tb.dm.mustOK(qaCreatureGrant("actor-a-own", p2ID, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER))
 	p2 := qaCreatureDial(t, tb.base, p2Tok, nil)
 	notTheirs := p2.send(qaCreatureView(qaCreatureGoblin))
 	if notTheirs.GetOk() {
-		t.Errorf("VTT-343: set_viewpoint on a goblin the player does not control was accepted")
+		t.Errorf("VTT-450: set_viewpoint on a goblin the player does not control was accepted")
 	}
 	// VTT-347
 	if strings.ReplaceAll(notTheirs.GetError(), qaCreatureGoblin, "actor-absent") != absent.GetError() {
 		t.Errorf("VTT-347: refusals differ: not theirs %q, absent %q", notTheirs.GetError(), absent.GetError())
 	}
 
-	// VTT-343 VTT-342
+	// VTT-450 VTT-342
 	m = pl.mark()
 	if r := pl.send(qaCreatureView(qaCreatureGoblin)); !r.GetOk() {
-		t.Fatalf("VTT-343: set_viewpoint on the goblin granted as a party member refused: %s", r.GetError())
+		t.Fatalf("VTT-450: set_viewpoint on the goblin granted as a party member refused: %s", r.GetError())
 	}
 	tb.narrate("sync on the goblin")
 	pl.expectSwitch(m, qaCreatureGoblin, tb.log(qaCreatureGoblin), "VTT-342 perch on the goblin")
 
 	m = pl.mark()
 	if r := pl.send(qaCreatureView(qaCreatureHero)); !r.GetOk() {
-		t.Fatalf("VTT-343: set_viewpoint back to the hero refused: %s", r.GetError())
+		t.Fatalf("VTT-450: set_viewpoint back to the hero refused: %s", r.GetError())
 	}
 	n := tb.narrate("sync back on the hero")
 	pl.expectSwitch(m, qaCreatureHero, tb.log(qaCreatureHero), "VTT-342 perch back on the hero")
@@ -723,7 +725,7 @@ func TestQACreatureMoveGateJudgesByTheWatchedCharactersEyes(t *testing.T) {
 
 	m := pl.mark()
 	if r := pl.send(qaCreatureView(qaCreatureGoblin)); !r.GetOk() {
-		t.Fatalf("VTT-343: set_viewpoint on the goblin refused: %s", r.GetError())
+		t.Fatalf("VTT-450: set_viewpoint on the goblin refused: %s", r.GetError())
 	}
 	tb.narrate("sync on the goblin")
 	pl.expectSwitch(m, qaCreatureGoblin, tb.log(qaCreatureGoblin), "VTT-342")
@@ -746,14 +748,14 @@ func qaCreatureRunning(t *testing.T) (tb *qaCreatureTable, pl *qaCreatureConn, p
 	pl.expectSwitch(0, qaCreatureHero, tb.log(qaCreatureHero), "VTT-340 open")
 	m := pl.mark()
 	if r := pl.send(qaCreatureView(qaCreatureGoblin)); !r.GetOk() {
-		t.Fatalf("VTT-343: set_viewpoint on the goblin refused: %s", r.GetError())
+		t.Fatalf("VTT-450: set_viewpoint on the goblin refused: %s", r.GetError())
 	}
 	tb.narrate("sync on the goblin")
 	pl.expectSwitch(m, qaCreatureGoblin, tb.log(qaCreatureGoblin), "VTT-342")
 	return tb, pl, pTok, pID
 }
 
-// VTT-391 VTT-316 VTT-326 VTT-340 VTT-342 VTT-343 VTT-350
+// VTT-391 VTT-316 VTT-326 VTT-340 VTT-342 VTT-450 VTT-350
 func TestQACreatureANonPartyGrantEndsTheRun(t *testing.T) {
 	tb, pl, _, pID := qaCreatureRunning(t)
 	before := tb.log(qaCreatureGoblin)
@@ -776,9 +778,9 @@ func TestQACreatureANonPartyGrantEndsTheRun(t *testing.T) {
 		}
 	}
 	qaCreaturePrefix(t, before, after, "VTT-326")
-	// VTT-343
+	// VTT-450
 	if r := pl.send(qaCreatureView(qaCreatureGoblin)); r.GetOk() {
-		t.Errorf("VTT-343: set_viewpoint on the goblin after its non-party grant was accepted")
+		t.Errorf("VTT-450: set_viewpoint on the goblin after its non-party grant was accepted")
 	}
 	// VTT-350
 	if r := pl.send(qaCreatureMove(qaCreatureTokGob, 5, 0)); r.GetOk() || r.GetError() != unseenSquare {
@@ -1006,7 +1008,7 @@ func TestQACreatureASecondPartyGrantResumesTheOldLog(t *testing.T) {
 			// VTT-342
 			m = pl.mark()
 			if r := pl.send(qaCreatureView(qaCreatureGoblin)); !r.GetOk() {
-				t.Fatalf("VTT-343: set_viewpoint on the resumed goblin refused: %s", r.GetError())
+				t.Fatalf("VTT-450: set_viewpoint on the resumed goblin refused: %s", r.GetError())
 			}
 			tb.narrate("sync on the resumed goblin")
 			pl.expectSwitch(m, qaCreatureGoblin, tb.log(qaCreatureGoblin), "VTT-342 the resumed log")
@@ -1014,7 +1016,7 @@ func TestQACreatureASecondPartyGrantResumesTheOldLog(t *testing.T) {
 	}
 }
 
-// VTT-318 VTT-316 VTT-321 VTT-326 VTT-343
+// VTT-318 VTT-316 VTT-321 VTT-326 VTT-450
 func TestQACreatureAnActorAddedAgainUnderItsIdContinuesItsLog(t *testing.T) {
 	tb, pl, _, pID := qaCreatureRunning(t)
 	m := pl.mark()
@@ -1037,7 +1039,7 @@ func TestQACreatureAnActorAddedAgainUnderItsIdContinuesItsLog(t *testing.T) {
 
 	m = pl.mark()
 	if r := pl.send(qaCreatureView(qaCreatureGoblin)); !r.GetOk() {
-		t.Fatalf("VTT-343: set_viewpoint on the goblin added again refused: %s", r.GetError())
+		t.Fatalf("VTT-450: set_viewpoint on the goblin added again refused: %s", r.GetError())
 	}
 	tb.narrate("sync on the goblin added again")
 	pl.expectSwitch(m, qaCreatureGoblin, tb.log(qaCreatureGoblin), "VTT-342 the continued log")

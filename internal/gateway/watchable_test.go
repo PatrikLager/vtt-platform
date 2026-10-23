@@ -129,7 +129,7 @@ func TestAConnectionIsToldWhomItMayWatchBeforeItsOpeningViewpoint(t *testing.T) 
 	spectator.openWithSet("a1:Hero p2:Quill", "")
 
 	other := f.watch(f.otherPlayerToken, 0, "")
-	other.openWithSet("", "")
+	other.openWithSet("a1:Hero p2:Quill", "")
 
 	player.quietAll(300 * time.Millisecond)
 	spectator.quietAll(100 * time.Millisecond)
@@ -161,8 +161,8 @@ func TestTheSetIsSentAgainWhenItChanges(t *testing.T) {
 
 	appendEvents(t, f.campaign, &vttv1.ActorControlGranted{ActorId: "a2", ParticipantId: f.playerID,
 		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
-	requireSet(t, "after a2 left the party", w.mustAny(), "")
-	requireViewpoint(t, "after the empty set", w.mustAny(), "")
+	requireSet(t, "after a2 left the party", w.mustAny(), "a1:Hero")
+	requireViewpoint(t, "after that set", w.mustAny(), "")
 
 	appendEvents(t, f.campaign, partyMemberOf("a3", f.playerID)...)
 	requireSet(t, "after a grant to a player watching nobody", w.mustAny(), "a3:a3")
@@ -170,7 +170,7 @@ func TestTheSetIsSentAgainWhenItChanges(t *testing.T) {
 	w.requireEntries(f, "a3's log from its first entry", "a3", 0)
 
 	appendEvents(t, f.campaign, &vttv1.ActorRemoved{ActorId: "a3"})
-	requireSet(t, "after the removal", w.mustAny(), "")
+	requireSet(t, "after the removal", w.mustAny(), "a1:Hero")
 	requireViewpoint(t, "after the removal's set", w.mustAny(), "")
 	w.quietAll(300 * time.Millisecond)
 }
@@ -209,13 +209,16 @@ func TestASpectatorIsToldOfEveryPartyMember(t *testing.T) {
 func TestAPromotionTellsTheSeatTheNewRolesSet(t *testing.T) {
 	f := newGWFixture(t)
 	dm := f.watch(f.dmToken, 0, "")
+	id := participantID(t, f, f.spectatorToken)
+	appendEvents(t, f.campaign, partyMemberOf("c1", id)...)
 	w := f.watch(f.spectatorToken, 0, "a1")
-	w.openWithSet("a1:Hero", "a1")
+	w.openWithSet("a1:Hero c1:c1", "a1")
 	w.requireEntries(f, "a1's log", "a1", 0)
 
-	promote(t, dm, participantID(t, f, f.spectatorToken), identity.RolePlayer)
-	requireSet(t, "after the promotion to a player who controls nothing", w.mustAny(), "")
-	requireViewpoint(t, "after the promoted role's set", w.mustAny(), "")
+	promote(t, dm, id, identity.RolePlayer)
+	requireSet(t, "after the promotion to a player who controls c1", w.mustAny(), "c1:c1")
+	requireViewpoint(t, "after the promoted role's set", w.mustAny(), "c1")
+	w.requireEntries(f, "c1's log from its first entry", "c1", 0)
 	w.quietAll(300 * time.Millisecond)
 }
 
@@ -241,4 +244,46 @@ func TestTheDMAndTheAgentAreToldNoSet(t *testing.T) {
 			t.Fatalf("%s was not sent the grant, so its silence shows nothing", who)
 		}
 	}
+}
+
+// VTT-452 VTT-339 VTT-342 VTT-399
+func TestAPlayerWhoControlsNoPartyMemberPerchesAndReopensOnIt(t *testing.T) {
+	f := newGWFixture(t)
+	appendEvents(t, f.campaign, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "p2", Name: "Quill",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
+
+	ivo := f.watch(f.otherPlayerToken, 0, "")
+	ivo.openWithSet("a1:Hero p2:Quill", "")
+	if r := ivo.command(setViewpoint("a1")); !r.GetOk() {
+		t.Fatalf("a player who controls no party member was refused a1: %s", r.GetError())
+	}
+	requireViewpoint(t, "after the perch", ivo.mustAny(), "a1")
+	ivo.requireEntries(f, "a1's log after the perch", "a1", 0)
+
+	again := f.watch(f.otherPlayerToken, 0, "a1")
+	again.openWithSet("a1:Hero p2:Quill", "a1")
+	again.requireEntries(f, "a1's log on a dial naming it", "a1", 0)
+	ivo.quietAll(300 * time.Millisecond)
+}
+
+// VTT-340 VTT-400 VTT-452
+func TestAPerchedPlayerGrantedAPartyMemberMovesToTheFirst(t *testing.T) {
+	f := newGWFixture(t)
+	appendEvents(t, f.campaign, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "p2", Name: "Quill",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
+
+	ivo := f.watch(f.otherPlayerToken, 0, "")
+	ivo.openWithSet("a1:Hero p2:Quill", "")
+	if r := ivo.command(setViewpoint("p2")); !r.GetOk() {
+		t.Fatalf("a player who controls no party member was refused p2: %s", r.GetError())
+	}
+	requireViewpoint(t, "after the perch", ivo.mustAny(), "p2")
+	ivo.requireEntries(f, "p2's log after the perch", "p2", 0)
+
+	ivoID := participantID(t, f, f.otherPlayerToken)
+	appendEvents(t, f.campaign, append(partyMemberOf("x9", ivoID), partyMemberOf("x8", ivoID)...)...)
+	requireSet(t, "after the grants", ivo.mustAny(), "x8:x8 x9:x9")
+	requireViewpoint(t, "after the set", ivo.mustAny(), "x8")
+	ivo.requireEntries(f, "x8's log after the switch", "x8", 0)
+	ivo.quietAll(300 * time.Millisecond)
 }

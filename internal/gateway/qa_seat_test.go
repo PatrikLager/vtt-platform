@@ -643,7 +643,7 @@ func (q *qaSeatConn) refused(t *testing.T, actor, want string) string {
 	return r.GetError()
 }
 
-// VTT-343 VTT-346 VTT-347 VTT-193
+// VTT-450 VTT-451 VTT-347 VTT-193
 func TestQASeatARefusedPlayerPerchLeavesTheWatcherWhereItWas(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	q := tb.dial(t, identity.RolePlayer, "after=0")

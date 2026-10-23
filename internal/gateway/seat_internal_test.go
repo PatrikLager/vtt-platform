@@ -117,6 +117,7 @@ func TestNoEntryCausedByTheLossIsSent(t *testing.T) {
 	t.Cleanup(func() { c.Close() })
 	seatAppend(t, c, "hall", &vttv1.SceneCreated{SceneId: "s", Name: "Hall", GridWidth: 4, GridHeight: 4})
 	seatParty(t, c, "a1", "p-1")
+	seatParty(t, c, "a2", "p-1")
 	seatAppend(t, c, "t1", &vttv1.TokenPlaced{TokenId: "t1", SceneId: "s", ActorId: "a1",
 		Position: &vttv1.GridPosition{X: 1, Y: 1}})
 
@@ -139,8 +140,8 @@ func TestNoEntryCausedByTheLossIsSent(t *testing.T) {
 	if env := seatTake(t, s.events, "the revoke's entry"); env.GetEventId() != "lost" {
 		t.Fatalf("fixture: the revoke's entry is %v", env)
 	}
-	if send, moved, err := s.admit(); send || !moved || err != nil || s.shown != "" {
-		t.Fatalf("the loss's own entry: send=%v moved=%v err=%v shown=%q, want it dropped and the seat on nobody",
+	if send, moved, err := s.admit(); send || !moved || err != nil || s.shown != "a2" {
+		t.Fatalf("the loss's own entry: send=%v moved=%v err=%v shown=%q, want it dropped and the seat on a2",
 			send, moved, err, s.shown)
 	}
 }
@@ -357,7 +358,7 @@ func seatServer(t *testing.T) (*Server, *campaign.Campaign, *identity.Participan
 	return New(c, ids), c, &identity.Participant{ID: playerID, Role: identity.RolePlayer}
 }
 
-// VTT-343
+// VTT-450
 func TestAPerchTheActorsNoLongerAllowIsNotApplied(t *testing.T) {
 	s, c, p := seatServer(t)
 	seatParty(t, c, "a1", p.ID)
@@ -430,7 +431,7 @@ func seatMove(tokenID string, x int32) *vttv1.ClientCommand {
 }
 
 // Start no pump here: the seat must not have read the grant's wake.
-// VTT-351
+// VTT-453
 func TestAMoveRightAfterAGrantIsJudgedByTheNewCharacter(t *testing.T) {
 	s, c, p := seatServer(t)
 	seatRooms(t, c)
@@ -450,7 +451,7 @@ func TestAMoveRightAfterAGrantIsJudgedByTheNewCharacter(t *testing.T) {
 }
 
 // Start no pump here: the seat must still show ana when the move is judged.
-// VTT-351
+// VTT-453
 func TestAMoveRightAfterARevocationIsNotJudgedByTheLostCharacter(t *testing.T) {
 	s, c, p := seatServer(t)
 	seatRooms(t, c)
@@ -473,7 +474,7 @@ func TestAMoveRightAfterARevocationIsNotJudgedByTheLostCharacter(t *testing.T) {
 }
 
 // Start no pump here: the move must be judged before any frame is sent.
-// VTT-351
+// VTT-453
 func TestAMoveOnAConnectionOpenedOnALogIsJudgedByThatLog(t *testing.T) {
 	s, c, p := seatServer(t)
 	seatRooms(t, c)
@@ -659,6 +660,7 @@ func TestAPromotionAsTheSeatOpensSendsNoEntryOfTheShoulder(t *testing.T) {
 	s, c, p := seatServer(t)
 	seatParty(t, c, "x1", p.ID)
 	spec := seatSpectator(t, s)
+	seatParty(t, c, "c1", spec.ID)
 	_, out := pumpUnderTest(t, s, spec, "x1", seatPromote(t, s, spec.ID))
 	if vc := frameOf(t, out).GetViewpointChanged(); vc == nil || vc.GetActorId() != "x1" {
 		t.Fatalf("the seat announced %v first, want the x1 it opened on", vc)
@@ -668,14 +670,23 @@ func TestAPromotionAsTheSeatOpensSendsNoEntryOfTheShoulder(t *testing.T) {
 		if f.GetEvent() != nil {
 			t.Fatalf("promoted as it opened, the spectator was sent x1's entry %v", f.GetEvent())
 		}
-		if vc := f.GetViewpointChanged(); vc != nil && vc.GetActorId() == "" {
+		if vc := f.GetViewpointChanged(); vc != nil && vc.GetActorId() == "c1" {
 			break
 		}
 	}
 	seatAppend(t, c, "after", &vttv1.NarrationAdded{Text: "x1 hears this"})
+	held, err := c.CharacterLog("c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, e := range held {
+		if got := frameOf(t, out).GetEvent(); !proto.Equal(got, e.Env) {
+			t.Fatalf("c1's entry %d is %v, want %v", i+1, got, e.Env)
+		}
+	}
 	select {
 	case b := <-out:
-		t.Fatalf("watching nobody, the connection was sent %s", b)
+		t.Fatalf("after c1's log the connection was sent %s", b)
 	case <-time.After(300 * time.Millisecond):
 	}
 }
@@ -723,6 +734,7 @@ func seatOpenedOnX1(t *testing.T) (*Server, *seat, *identity.Participant, *vttv1
 	s, c, p := seatServer(t)
 	seatParty(t, c, "x1", p.ID)
 	spec := seatSpectator(t, s)
+	seatParty(t, c, "c1", spec.ID)
 	sub, head, err := openSeat(c, spec, "x1", 0, 64, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -742,8 +754,8 @@ func seatNoEntryOfX1(t *testing.T, ps *pumpState, sub *seat, out chan []byte, en
 	if !ps.onEntry(env) {
 		t.Fatal("the pump stopped on an entry of a log the new role may not watch")
 	}
-	if vc := frameOf(t, out).GetViewpointChanged(); vc == nil || vc.GetActorId() != "" || sub.shown != "" {
-		t.Fatalf("the seat shows %q after %v, want nobody", sub.shown, vc)
+	if vc := frameOf(t, out).GetViewpointChanged(); vc == nil || vc.GetActorId() != "c1" || sub.shown != "c1" {
+		t.Fatalf("the seat shows %q after %v, want c1", sub.shown, vc)
 	}
 	if len(out) != 0 {
 		t.Fatalf("x1's entry was queued for a player who may not watch x1 (%d frames)", len(out))
@@ -773,4 +785,23 @@ func TestARoleReadAfterAdmitStillJudgesTheEntry(t *testing.T) {
 		return player, nil
 	})
 	seatNoEntryOfX1(t, ps, sub, out, env)
+}
+
+// VTT-399 VTT-452
+func TestWatchableNamesEveryPartyMemberForAPlayerWhoControlsNone(t *testing.T) {
+	actors := map[string]*vttv1.Actor{
+		"a1":  {ActorId: "a1", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, ControllerIds: []string{"p-1"}},
+		"a2":  {ActorId: "a2", Name: "Ash", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
+		"gob": {ActorId: "gob", Name: "Goblin", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
+		"pet": {ActorId: "pet", Name: "Pet", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY, ControllerIds: []string{"p-3"}},
+	}
+	for _, id := range []string{"p-2", "p-3"} {
+		got := ""
+		for _, a := range watchable(&identity.Participant{ID: id, Role: identity.RolePlayer}, actors).GetActors() {
+			got += a.GetActorId() + ":" + a.GetName() + " "
+		}
+		if got != "a1:Hero a2:Ash " {
+			t.Errorf("%s controls no party member: the set is %q, want every party member", id, got)
+		}
+	}
 }
