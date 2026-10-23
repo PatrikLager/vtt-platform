@@ -49,9 +49,9 @@ function mayShare(who: Me): boolean {
   return who.role === "dm" || who.role === "agent";
 }
 
-/** Whether this role chooses a shoulder by the perch control (SPEC-022). */
-function mayPerch(who: Me): boolean {
-  return who.role === "spectator";
+/** Whether this window chooses a shoulder by the perch control (SPEC-022, VTT-458). */
+function mayPerch(who: Me, controlsNone: boolean): boolean {
+  return who.role === "spectator" || (who.role === "player" && controlsNone);
 }
 
 export function boot(root: HTMLElement): Session | null {
@@ -363,9 +363,9 @@ function startSession(root: HTMLElement, token: string): Session {
       root.appendChild(p);
       return;
     }
-    const canAct = me !== null && (me.role === "player" || me.role === "dm" || me.role === "agent");
+    const perches = me !== null && mayPerch(me, session.controlsNoPartyMember);
+    const canAct = !perches && me !== null && (me.role === "player" || me.role === "dm" || me.role === "agent");
     const isDM = me !== null && (me.role === "dm" || me.role === "agent");
-    const isSpectator = me !== null && mayPerch(me);
     const isPlayer = me !== null && me.role === "player";
     // A player acts as the character they watch, and an armed ability is
     // that character's: both follow the ViewpointChanged (VTT-408).
@@ -420,7 +420,7 @@ function startSession(root: HTMLElement, token: string): Session {
         : undefined,
       toast: toast || undefined,
       participants: session.participants,
-      perch: isSpectator
+      perch: perches
         ? { actors: watchable, current: session.viewpoint, onPerch: (id) => void switchTo(id) }
         : undefined,
       onReconnect: () => {
@@ -430,7 +430,7 @@ function startSession(root: HTMLElement, token: string): Session {
       // BOARD-VISIBLE, not only console/panel-visible (Task 4, spec §8): a DM
       // who arms doors, walks away and comes back must be able to see why
       // their clicks have stopped moving tokens, from the board alone.
-      doorsArmed: ui.doorsArmed,
+      doorsArmed: canAct && ui.doorsArmed,
     });
   };
 

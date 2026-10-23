@@ -29,6 +29,7 @@ export class Session {
   private present = new Map<string, Participant>();
   private fail = "";
   private set: WatchableActor[] = [];
+  private none = false;
   private errorHandlers: ((e: Error) => void)[] = [];
   private presenceHandlers: ((batch: PresenceEvent[]) => void)[] = [];
 
@@ -37,8 +38,9 @@ export class Session {
     this.wire.onEvent((e) => this.ingest(e));
     this.wire.onPresence((batch, replace) => this.presence(batch, replace));
     this.wire.onRestart(() => this.empty());
-    this.wire.onWatchable((actors) => {
+    this.wire.onWatchable((actors, none) => {
       this.set = actors;
+      this.none = none;
       for (const fn of this.changeHandlers) fn();
     });
   }
@@ -76,9 +78,14 @@ export class Session {
     return this.wire.viewpoint ?? "";
   }
 
-  /** The party members the gateway last said this connection may watch; a reset keeps them (VTT-402). */
+  /** The party members the gateway last said this connection may watch; a reset keeps them (VTT-457). */
   get watchable(): readonly WatchableActor[] {
     return this.set;
+  }
+
+  /** Whether the last set said this participant controls no party member; a reset keeps it (VTT-458). */
+  get controlsNoPartyMember(): boolean {
+    return this.none;
   }
 
   /** Why the log this session holds cannot be folded, or "" (VTT-393). */

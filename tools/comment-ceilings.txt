@@ -12,7 +12,7 @@ client/src/join.ts  53.1
 client/src/main.ts  83.4
 client/src/metadata.ts  50.0
 client/src/player.ts  48.2
-client/src/session.ts  35.8
+client/src/session.ts  35.2
 client/src/state.ts  62.3
 client/src/view/art-assets.ts  68.9
 client/src/view/camera.ts  50.0
@@ -23,9 +23,9 @@ client/src/view/feed.ts  36.1
 client/src/view/grid.ts  45.7
 client/src/view/join.ts  34.3
 client/src/view/pack-assets.ts  62.7
-client/src/view/player.ts  27.6
+client/src/view/player.ts  23.2
 client/src/view/scene-plan.ts  52.9
-client/src/view/spectator.ts  45.9
+client/src/view/spectator.ts  45.2
 client/src/wire.ts  30.0
 cmd/vtt/adventures.go  57.9
 cmd/vtt/adventures_test.go  25.2

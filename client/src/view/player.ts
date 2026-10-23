@@ -19,25 +19,11 @@ import { currentSceneId, mayWorkDoor } from "./doors";
 export interface PlayerUIState {
   selectedActorId: string;
   selectedAbilityId: string;
-  /**
-   * Whether a board click works a door instead of moving a token (Task 4).
-   *
-   * ONE BIT, THREE ROUTES TO IT — not one shared object. app.ts hands THIS
-   * PANEL the real PlayerUIState object, so this file's own toggle mutates
-   * `ui.doorsArmed` directly. The DM console and the board each get only a
-   * COPY of the current boolean (`doorsArmed: ui.doorsArmed`) read fresh at
-   * every paint(); the console's own toggle writes back through a separate
-   * `toggleDoors` closure app.ts owns (view/dm.ts's DMDeps), not through this
-   * object at all. The conclusion the sharing exists for still holds — arm
-   * it from either panel and the other panel and the board (spectator.ts's
-   * armed indication) agree at the next paint — but it holds because all
-   * three read the SAME app.ts-owned bit each time, not because they hold
-   * the same reference.
-   */
+  /** Whether a board click works a door instead of moving a token (SPEC-022). */
   doorsArmed: boolean;
 }
 
-/** A player's switch between the party members the gateway lets them watch (VTT-402). */
+/** A player's switch between the party members the gateway lets them watch (VTT-457). */
 export interface Switcher {
   actors: readonly { actorId: string; name: string }[];
   onSwitch: (actorId: string) => void;
@@ -245,7 +231,7 @@ export function moveCommandFor(
 /**
  * A player's board click: a switch to a party member the gateway lets them
  * watch whose token is on the cell, nothing on the watched one's own token,
- * else a move of it (VTT-406, VTT-408).
+ * else a move of it (VTT-460, VTT-408).
  */
 export function playerClickFor(
   st: State,

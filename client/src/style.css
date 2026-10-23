@@ -163,11 +163,11 @@ h3 { margin: 0 0 2px; font-size: 14px; }
   overflow-y: auto;
 }
 
-/* The spectator's perch (visibility spec §3.1.1).
+/* The perch (visibility spec §3.1.1).
 
-   Its own row, and it sits ABOVE the board rather than below it: for the one
-   role that has this control, it is what decides whether the board has
-   anything on it at all. An unperched spectator's board is empty by design,
+   Its own row, and it sits ABOVE the board rather than below it: for a window
+   that has this control, it is what decides whether the board has anything on
+   it at all. A board perched on nobody is empty by design,
    so a control placed under it would sit below a blank pane with nothing on
    the page to explain the blankness.
 
@@ -176,8 +176,8 @@ h3 { margin: 0 0 2px; font-size: 14px; }
    the whole template unconditionally, so every role carries every other
    role's rows; the rows are empty but `gap` still applies between the tracks,
    and adding a sixth would have put dead space above the board on every DM's
-   and every player's page. Only a spectator is ever sent this control, so
-   only a spectator's grid changes. `:has()` takes its argument's specificity,
+   and every player's page. Only a window that perches is sent this control,
+   so only its grid changes. `:has()` takes its argument's specificity,
    so #app:has(.perch) outranks the bare #app rules whatever order they land
    in. */
 .perch { grid-area: perch; }

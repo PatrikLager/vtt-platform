@@ -43,7 +43,7 @@ export class Wire {
   private statusHandlers: ((s: WireStatus) => void)[] = [];
   private presenceHandlers: ((batch: PresenceEvent[], replace: boolean) => void)[] = [];
   private restartHandlers: (() => void)[] = [];
-  private watchableHandlers: ((actors: WatchableActor[]) => void)[] = [];
+  private watchableHandlers: ((actors: WatchableActor[], controlsNoPartyMember: boolean) => void)[] = [];
   private viewpointHandlers: ((actorId: string) => void)[] = [];
   // null until a ViewpointChanged names one: the DM's and the agent's world.
   private log: string | null = null;
@@ -82,8 +82,8 @@ export class Wire {
     this.restartHandlers.push(fn);
   }
 
-  /** Called with each set of party members the gateway says this connection may watch (VTT-402). */
-  onWatchable(fn: (actors: WatchableActor[]) => void): void {
+  /** Called with each set the gateway sends this connection (VTT-454, VTT-458). */
+  onWatchable(fn: (actors: WatchableActor[], controlsNoPartyMember: boolean) => void): void {
     this.watchableHandlers.push(fn);
   }
 
@@ -231,7 +231,7 @@ export class Wire {
         return;
       }
       case "watchableChanged": {
-        for (const fn of this.watchableHandlers) fn(frame.frame.value.actors);
+        for (const fn of this.watchableHandlers) fn(frame.frame.value.actors, frame.frame.value.controlsNoPartyMember);
         return;
       }
       case "presenceSnapshot": {

@@ -169,14 +169,14 @@ function crowded(): State {
 
 const watching = (actorId: string) => ({ selectedActorId: actorId, selectedAbilityId: "", doorsArmed: false });
 
-// VTT-406
+// VTT-460
 test("a click on a listed party member's token switches to it", () => {
   const cmd = playerClickFor(crowded(), me, watching("mine"), ["mine", "also-mine"], { x: 3, y: 3 });
   expect(cmd?.command.case).toBe("setViewpoint");
   expect((cmd!.command.value as any).actorId).toBe("also-mine");
 });
 
-// VTT-406
+// VTT-460
 test("two listed party members on one cell switch to the lowest id", () => {
   const cmd = playerClickFor(crowded(), me, watching("mine"), ["zed", "mine", "also-mine"], { x: 3, y: 3 });
   expect((cmd!.command.value as any).actorId).toBe("also-mine");
@@ -193,7 +193,7 @@ test("a click on a square with no listed party member moves the watched characte
   expect((cmd!.command.value as any).tokenId).toBe("t-mine");
 });
 
-// VTT-406, VTT-408
+// VTT-460, VTT-408
 test("a token the set does not name moves the watched character onto its square", () => {
   const cmd = playerClickFor(crowded(), me, watching("mine"), ["mine"], { x: 3, y: 3 });
   expect(cmd!.command.case).toBe("moveToken");
@@ -201,7 +201,7 @@ test("a token the set does not name moves the watched character onto its square"
   expect((cmd!.command.value as any).to).toMatchObject({ x: 3, y: 3 });
 });
 
-// VTT-406
+// VTT-460
 test("a listed party member on the same row or column, not the same square, does not switch", () => {
   const st = world();
   st.Tokens["t-also"] = { ID: "t-also", SceneID: "s1", ActorID: "also-mine", X: 5, Y: 5 };
@@ -211,7 +211,7 @@ test("a listed party member on the same row or column, not the same square, does
   }
 });
 
-// VTT-406
+// VTT-460
 test("a listed party member's token in another scene does not switch", () => {
   const st = world();
   st.Tokens["t-also"] = { ID: "t-also", SceneID: "s2", ActorID: "also-mine", X: 4, Y: 4 };

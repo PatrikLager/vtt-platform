@@ -427,8 +427,8 @@ function renderTicker(log: Envelope[]): HTMLElement {
 }
 
 /**
- * The spectator's perch: the party members the gateway lets them watch, and
- * the one the last ViewpointChanged named, "" for nobody (SPEC-022, VTT-403).
+ * The perch: the party members the gateway lets this window watch, and
+ * the one the last ViewpointChanged named, "" for nobody (VTT-403, VTT-458).
  */
 export interface PerchControl {
   actors: readonly { actorId: string; name: string }[];
@@ -542,7 +542,7 @@ export interface ViewExtras {
   participants?: Participant[] | undefined;
   /** Redial, offered only while the connection is closed. */
   onReconnect?: (() => void) | undefined;
-  /** The spectator's perch; absent for every other role (SPEC-022). */
+  /** The perch, for a window that chooses a shoulder by it (SPEC-022, VTT-458). */
   perch?: PerchControl | undefined;
   /**
    * Real pack art, resolved by pack-assets.ts and loaded by app.ts (Task
@@ -558,13 +558,7 @@ export interface ViewExtras {
    * comment on the parameter this threads into for the full reasoning.
    */
   getContext?: ((canvas: HTMLCanvasElement) => CanvasRenderingContext2D | null) | undefined;
-  /**
-   * Whether the door tool is armed on THIS board (Task 4, spec §8) — the
-   * same bit app.ts's `ui.doorsArmed` shares with the DM console and the
-   * player panel, threaded here so the board shows it too. Omitted (or
-   * false) draws the board exactly as before this task; renderGrid's own
-   * comment covers what "armed" adds.
-   */
+  /** Whether this board shows the door tool armed: false where it cannot act. */
   doorsArmed?: boolean | undefined;
 }
 
@@ -598,8 +592,7 @@ export function renderSpectator(
     renderNotes(st),
   ];
   if (extras.ticker) nodes.push(renderTicker(log));
-  // Only the spectator is ever given one, and a spectator has neither a panel
-  // nor a console, so this never actually competes with them for position.
+  // Never draw the perch with a panel or console: #app:has(.perch) names neither.
   if (extras.perch) nodes.push(renderPerch(extras.perch));
   if (extras.panel) nodes.push(extras.panel);
   if (extras.console) nodes.push(extras.console);

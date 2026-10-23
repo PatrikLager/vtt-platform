@@ -16,6 +16,10 @@ import { fixture } from "./setup";
 
 const { base, tokens, ids } = fixture("handover");
 
+// The second test starts where the first leaves the table, so run them in order
+// and skip the second when the first fails.
+test.describe.configure({ mode: "serial" });
+
 // Leave the table as this file found it: it opens a session, and a rerun of
 // this same file would otherwise find "End session" where it expects "Start".
 // See joining.spec.ts for the measurement.
@@ -45,7 +49,7 @@ async function openAs(page: Page, role: keyof typeof tokens) {
 const FIRST = "act-hand-a";
 const SECOND = "act-hand-b";
 
-// VTT-442
+// VTT-442 VTT-458
 test("a DM hands a second character over, and the player keeps both across a reconnect",
   async ({ browser }) => {
     // Two CONTEXTS, not two pages: a page shares localStorage with its
@@ -103,11 +107,16 @@ test("a DM hands a second character over, and the player keeps both across a rec
     }
     await expect(dm.locator(`[data-token-id="tok-${SECOND}"]`)).toBeVisible({ timeout: 10_000 });
 
-    // The player holds NOTHING yet, and is told so rather than shown an empty
-    // list. Asserted before any grant, so every change after it means
-    // something.
+    // The player holds NOTHING yet, so they watch as a spectator does: the
+    // perch, on nobody, offering both characters (the owner's ruling B-4).
+    // Asserted before any grant, so every change after it means something.
     const panel = player.locator(".player");
-    await expect(panel.locator(".empty")).toHaveText("You do not control an actor yet.", { timeout: 10_000 });
+    const perch = player.locator(".perch");
+    await expect(perch).toBeVisible({ timeout: 10_000 });
+    await expect(perch.locator(".perched-on")).toHaveText("Perched on: nobody");
+    await expect(perch.getByRole("button", { name: "Ash" })).toBeVisible({ timeout: 10_000 });
+    await expect(perch.getByRole("button", { name: "Bram" })).toBeVisible();
+    await expect(panel).toHaveCount(0);
     await player.screenshot(shot("h2-player-holds-nothing-yet"));
 
     // --- beat 3: THE DM ASSIGNS, through their own console ---------------
@@ -191,6 +200,56 @@ test("a DM hands a second character over, and the player keeps both across a rec
     await back.screenshot(shot("h8-player-back-with-both"));
 
     await backCtx.close();
+    await dmCtx.close();
+  });
+
+// "a DM hands a second character over, and the player keeps both across a
+// reconnect" leaves Lera holding Ash and Bram. Revoking both leaves her on Ash,
+// her last (the owner's ruling "Stay on Tobbe"), with the perch.
+// VTT-458 VTT-456 VTT-452 VTT-459
+test("the DM takes a player's only character back, and the player chooses another shoulder",
+  async ({ browser }) => {
+    const dmCtx = await browser.newContext();
+    const playerCtx = await browser.newContext();
+    const dm = await dmCtx.newPage();
+    const player = await playerCtx.newPage();
+    await openAs(dm, "dm");
+    await openAs(player, "player");
+    const panel = player.locator(".player");
+    await expect(panel.getByRole("button", { name: "Ash" })).toHaveClass("chip sel", { timeout: 15_000 });
+
+    for (const actorId of [SECOND, FIRST]) {
+      const row = dm.locator(`.control-actor[data-actor="${actorId}"]`);
+      await row.locator('[data-action="revoke-actor-control"]').click();
+      await dm.waitForTimeout(400);
+      await expectNoRefusal(dm, `revoke ${actorId}`);
+      await expect(row.locator(".held-who")).toHaveCount(0, { timeout: 10_000 });
+    }
+
+    const perch = player.locator(".perch");
+    await expect(perch).toBeVisible({ timeout: 10_000 });
+    await expect(perch.locator(".perched-on")).toHaveText("Perched on: Ash");
+    await expect(panel).toHaveCount(0);
+    await player.screenshot(shot("h11-player-perched-after-the-revoke"));
+
+    // Off every shoulder first, so what Bram's log shows is shown by the switch.
+    await perch.getByRole("button", { name: "No shoulder" }).click();
+    await expect(perch.locator(".perched-on")).toHaveText("Perched on: nobody", { timeout: 10_000 });
+    await expect(player.locator(".feed .mechanical")).toHaveCount(0, { timeout: 10_000 });
+    await expect(player.locator(`[data-token-id="tok-${SECOND}"]`)).toHaveCount(0);
+
+    await perch.getByRole("button", { name: "Bram" }).click();
+    await expect(perch.locator(".perched-on")).toHaveText("Perched on: Bram", { timeout: 10_000 });
+    await expect(player.locator(`[data-token-id="tok-${SECOND}"]`)).toBeVisible({ timeout: 10_000 });
+    await expect(player.locator(".feed .mechanical")).not.toHaveCount(0, { timeout: 10_000 });
+    await player.screenshot(shot("h12-player-on-bram"));
+
+    // VTT-442, for a player who controls no party member.
+    await player.reload();
+    await expect(player.locator(".conn")).toHaveText("connected", { timeout: 15_000 });
+    await expect(player.locator(".perch .perched-on")).toHaveText("Perched on: Bram", { timeout: 10_000 });
+
+    await playerCtx.close();
     await dmCtx.close();
   });
 

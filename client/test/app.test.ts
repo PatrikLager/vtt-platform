@@ -2546,9 +2546,10 @@ async function tableAs(role: string) {
   return { r, s, sock };
 }
 
-test("only a spectator is offered a shoulder", async () => {
-  // Only a spectator chooses a shoulder by this control (SPEC-022): the DM and
-  // the agent are sent the world, and a player switches by chip or by token.
+test("a player who controls a party member, the DM and the agent are offered no shoulder", async () => {
+  // A window chooses a shoulder by this control as a spectator, or as a player
+  // who controls no party member (SPEC-022): the DM and the agent are sent the
+  // world, and a player who controls one switches by chip or by token.
   //
   // All four roles in one test on purpose: the positive and the negative
   // differ by one branch, and a test that only asserted the spectator's
@@ -2561,6 +2562,16 @@ test("only a spectator is offered a shoulder", async () => {
     const other = await tableAs(role);
     expect(other.r.querySelector(".perch")).toBeNull();
     expect(other.r.textContent).not.toContain("Perched on");
+    other.s?.close();
+  }
+
+  // The gateway sends the DM and the agent no set (VTT-401); this pins the client.
+  for (const role of ["dm", "agent"]) {
+    const other = await tableAs(role);
+    other.sock.deliver(watchableNone([["a1", "Lera"]]));
+    await settle();
+    expect(other.r.querySelectorAll(".dm").length).toBe(1);
+    expect(other.r.querySelectorAll(".perch").length).toBe(0);
     other.s?.close();
   }
 });
@@ -2887,7 +2898,7 @@ async function twoMemberTable(viewpoint: string, set: [string, string][], abilit
 const chips = (r: HTMLElement) =>
   Array.from(r.querySelector(".player .row")?.querySelectorAll("button") ?? []);
 
-// VTT-402, VTT-404
+// VTT-457, VTT-404
 test("a player is offered exactly the party members the set names", async () => {
   // The fold shows Bram under this player's control, and the set names a Quill
   // the fold has never introduced: the chips are the set's.
@@ -2897,7 +2908,7 @@ test("a player is offered exactly the party members the set names", async () => 
   s?.close();
 });
 
-// VTT-405, VTT-406
+// VTT-405, VTT-460
 test("a player switches by a button and by a click on the token", async () => {
   const { r, s, sock } = await twoMemberTable("a1", [["a1", "Lera"], ["a2", "Bram"]]);
   chips(r).find((b) => b.textContent === "Bram")!.click();
@@ -3008,6 +3019,119 @@ test("no role's window shows a log sequence number", async () => {
     expect(leaks).toEqual([]);
     s?.close();
   }
+});
+
+// --- a player who controls no party member perches -------------------------
+
+/** Boot a player whose sets are delivered by the caller, and return the socket. */
+async function playerWithSets() {
+  localStorage.setItem("vtt.token", "tok");
+  stubMetadata({
+    "/api/me": { participantId: "p", name: "Mira", role: "player" },
+    "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
+    "/api/adventures": { adventures: [] },
+  });
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  return { r, s, sock };
+}
+
+const watchableNone = (actors: [string, string][]) =>
+  ({ watchableChanged: { actors: actors.map(([actorId, name]) => ({ actorId, name })), controlsNoPartyMember: true } });
+
+// VTT-458 VTT-459
+test("a player whose set says they control no party member is offered the perch, and no player panel", async () => {
+  const { r, s, sock } = await playerWithSets();
+  sock.deliver(watchableNone([["a1", "Lera"], ["a2", "Bram"]]));
+  sock.deliver({ viewpointChanged: {} });
+  await settle();
+
+  const perch = r.querySelector(".perch");
+  expect(perch?.querySelector("h2")?.textContent).toBe("Whose eyes");
+  expect(Array.from(perch!.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Bram", "Lera", "No shoulder"]);
+  expect(r.querySelectorAll(".player").length).toBe(0);
+
+  (Array.from(perch!.querySelectorAll(".shoulder")).find((b) => b.textContent === "Lera") as HTMLButtonElement).click();
+  await settle();
+  (perch!.querySelector(".unperch") as HTMLButtonElement).click();
+  await settle();
+  const sent = sock.sent.map((raw) => JSON.parse(raw));
+  expect(sent).toHaveLength(2);
+  expect(sent[0].setViewpoint).toMatchObject({ actorId: "a1" });
+  expect(sent[1].setViewpoint.actorId ?? "").toBe("");
+
+  sock.deliver({ viewpointChanged: { actorId: "a1" } });
+  seedTable(sock, "a1", "q");
+  await settle();
+  expect(r.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: Lera");
+  expect(r.querySelectorAll(".player").length).toBe(0);
+  s?.close();
+});
+
+// VTT-457 VTT-458
+test("the set's flag moves a player between the perch and the player panel", async () => {
+  const { r, s, sock } = await playerWithSets();
+  opensOn(sock, "a1");
+  seedTable(sock);
+  await settle();
+  expect(r.querySelectorAll(".player").length).toBe(1);
+  expect(r.querySelectorAll(".perch").length).toBe(0);
+
+  sock.deliver(watchableNone([["a1", "Lera"]]));
+  await settle();
+  expect(r.querySelectorAll(".perch").length).toBe(1);
+  expect(r.querySelectorAll(".player").length).toBe(0);
+
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Lera" }] } });
+  await settle();
+  expect(r.querySelectorAll(".player").length).toBe(1);
+  expect(r.querySelectorAll(".perch").length).toBe(0);
+  s?.close();
+});
+
+test("a player who perches while doors are armed is shown no armed board", async () => {
+  const { r, s, sock } = await playerTableWithDoor();
+  arm(r);
+  await settle();
+  expect(r.querySelectorAll(".grid.armed").length).toBe(1);
+
+  sock.deliver(watchableNone([["a1", "Lera"]]));
+  await settle();
+  expect(r.querySelectorAll(".perch").length).toBe(1);
+  expect(r.querySelectorAll(".grid.armed").length).toBe(0);
+  expect(r.textContent).not.toContain("Doors armed");
+  s?.close();
+});
+
+// VTT-461
+test("a perched player's board click sends nothing, on a listed party member's token or on an empty square", async () => {
+  const { r, s, sock } = await playerWithSets();
+  sock.deliver(watchableNone([["a1", "Lera"], ["a2", "Bram"]]));
+  sock.deliver({ viewpointChanged: { actorId: "a2" } });
+  sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+  sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 4, gridHeight: 4 } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera" } } }));
+  sock.deliver(envelope(4, { actorControlGranted: { actorId: "a1", participantId: "q", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
+  sock.deliver(envelope(5, { actorAdded: { actor: { actorId: "a2", name: "Bram" } } }));
+  sock.deliver(envelope(6, { actorControlGranted: { actorId: "a2", participantId: "q2", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
+  sock.deliver(envelope(7, { actorAdded: { actor: { actorId: "np", name: "Pet" } } }));
+  sock.deliver(envelope(8, { actorControlGranted: { actorId: "np", participantId: "p", kind: "ACTOR_KIND_NON_PARTY" } }));
+  sock.deliver(envelope(9, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }));
+  sock.deliver(envelope(10, { tokenPlaced: { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 1, y: 0 } } }));
+  sock.deliver(envelope(11, { tokenPlaced: { tokenId: "t3", sceneId: "s1", actorId: "np", position: { x: 3, y: 3 } } }));
+  await settle();
+  expect(r.querySelectorAll(".perch").length).toBe(1);
+  expect(r.querySelectorAll('[data-token-id="t1"]').length).toBe(1);
+
+  clickBoard(r, 210, 130);
+  await settle();
+  clickBoard(r, 330, 250);
+  await settle();
+  expect(sock.sent).toHaveLength(0);
+  s?.close();
 });
 
 // --- a reload keeps the viewpoint, per tab -----------------------------------

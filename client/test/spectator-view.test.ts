@@ -1603,8 +1603,8 @@ test("a table with no party yet says so rather than rendering an empty panel", (
 });
 
 test("no perch supplied, no control at all", () => {
-  // The negative case: only a spectator chooses a shoulder (SPEC-022), and
-  // app.ts is what withholds the control from every other role.
+  // The negative case: a window chooses a shoulder only when app.ts supplies
+  // the perch (SPEC-022), so no perch supplied means no control.
   const root = document.createElement("div");
   renderSpectator(root, party(), [], "connected");
   expect(root.querySelector(".perch")).toBeNull();
