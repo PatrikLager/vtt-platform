@@ -122,6 +122,10 @@ export interface Token {
   ActorID: string;
   X: number;
   Y: number;
+  Name?: string;
+  Notes?: string;
+  GMName?: string;
+  GMNotes?: string;
 }
 
 export interface Session {

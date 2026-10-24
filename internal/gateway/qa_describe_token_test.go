@@ -44,7 +44,7 @@ func qadtDescribe(tokenID, name, notes, gmName, gmNotes string) *vttv1.ClientCom
 	}
 }
 
-// SPEC-013 "One function, one table": "The DM and the agent hold every row but `set_viewpoint`".
+// SPEC-013: "The DM and the agent hold every row but `set_viewpoint`".
 func TestQADTDMAndAgentMayDescribeAToken(t *testing.T) {
 	st := qadtState("p-player")
 	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent} {
@@ -58,8 +58,8 @@ func TestQADTDMAndAgentMayDescribeAToken(t *testing.T) {
 	}
 }
 
-// VTT-463
 // SPEC-013 "Refusal by default": "the message names the role and the command".
+// VTT-463
 func TestQADTPlayerIsRefusedEvenForATokenWhoseActorTheyControl(t *testing.T) {
 	st := qadtState("p-player")
 	p := &identity.Participant{ID: "p-player", Name: "Ann", Role: identity.RolePlayer}
@@ -86,8 +86,8 @@ func TestQADTPlayerIsRefusedEvenForATokenWhoseActorTheyControl(t *testing.T) {
 	}
 }
 
-// VTT-463
 // SPEC-013 "Refusal by default": "the message names the role and the command".
+// VTT-463
 func TestQADTSpectatorIsRefused(t *testing.T) {
 	st := qadtState("p-spec")
 	p := &identity.Participant{ID: "p-spec", Name: "Sam", Role: identity.RoleSpectator}
@@ -106,7 +106,7 @@ func TestQADTSpectatorIsRefused(t *testing.T) {
 	}
 }
 
-// SPEC-013 "The player half": "For every role but player, `Authorize` returns after those two checks."
+// SPEC-013: "For every role but player, `Authorize` returns after those two checks".
 func TestQADTAuthorizeLeavesAnUnknownTokenToTheFoldForTheDM(t *testing.T) {
 	st := qadtState("p-player")
 	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent} {
@@ -236,7 +236,7 @@ func TestQADTTheFourTextsAreNotBoundedByAuthorizeOrToEvent(t *testing.T) {
 	}
 }
 
-// SPEC-007 "The event envelope has no `type` field": "The `oneof payload` inlines one key per variant".
+// SPEC-007: "The `oneof payload` inlines one key per variant".
 func TestQADTDescribeTokenDecodesFromTheWire(t *testing.T) {
 	raw := []byte(`{"requestId":"r1","describeToken":{"tokenId":"qadt-tok","name":"n1","notes":"no1","gmName":"g1","gmNotes":"gn1"}}`)
 	cmd, err := gateway.DecodeCommand(raw)

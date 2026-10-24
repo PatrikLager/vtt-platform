@@ -129,6 +129,8 @@ func (m *Model) env(payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: p}
 	case *vttv1.TokenRemoved:
 		e.Payload = &vttv1.Envelope_TokenRemoved{TokenRemoved: p}
+	case *vttv1.TokenDescribed:
+		e.Payload = &vttv1.Envelope_TokenDescribed{TokenDescribed: p}
 	case *vttv1.NarrationAdded:
 		e.Payload = &vttv1.Envelope_NarrationAdded{NarrationAdded: p}
 	case *vttv1.NoteUpserted:
@@ -166,29 +168,10 @@ func (m *Model) canPlaceToken() bool { return len(m.scenes) > 0 && len(m.actors)
 func (m *Model) canMoveToken() bool  { return len(m.tokenIDs) > 0 }
 
 // Step draws one valid action given what the model believes, and updates that
-// belief for the draws it expects to succeed.
-//
-// THE BANDS are the thresholds below, on one uniform draw, in order: create
-// scene [0, 0.05), add actor [0.05, 0.15), place token [0.15, 0.28) when a
-// scene and an actor exist, move token [0.28, 0.52) when a token is on the
-// board, add narration [0.52, 0.60), upsert note [0.60, 0.64), delete note
-// [0.64, 0.68), then the four add/remove pairs — open door [0.68, 0.72), close
-// door [0.72, 0.76), grant control [0.76, 0.79), revoke control [0.79, 0.82),
-// apply condition [0.82, 0.86), remove condition [0.86, 0.91), remove token
-// [0.91, 0.94), remove actor [0.94, 0.96) — and the remainder [0.96, 1.0)
-// starts or ends a session, or adds an actor when one is already open.
-//
-// A GUARDED CASE HANDS ITS DRAW DOWNWARD rather than redrawing: when no token
-// is on the board the [0.28, 0.52) draw falls to narration, and when the roster
-// is empty the condition and control bands fall to remove token. That is why
-// band width alone does not predict a count, and why remove condition is wider
-// than the neighbours it is drawn beside.
-//
-// AN EXTRA rng DRAW MOVES THE WHOLE WALK. Changing which element an action
-// picks is free; changing how many random numbers it consumes reshuffles every
-// action after it. Measured: gating a preference behind one extra rng.Float64()
-// took removeCondition from one draw per walk to zero and red the coverage
-// guard, on logic that was correct.
+// belief for the draws it expects to succeed. Its bands are the switch's
+// thresholds on one uniform draw, and a guarded band hands its draw downward.
+// Keep each action's count of rng draws: one more reshuffles every walk after
+// it.
 func (m *Model) Step(rng *rand.Rand, idx int) Action {
 	r := rng.Float64()
 	switch {
@@ -198,8 +181,10 @@ func (m *Model) Step(rng *rand.Rand, idx int) Action {
 		return m.addActor()
 	case r < 0.28 && m.canPlaceToken():
 		return m.placeToken(rng)
-	case r < 0.52 && m.canMoveToken():
+	case r < 0.48 && m.canMoveToken():
 		return m.moveToken(rng, idx)
+	case r < 0.52 && m.canMoveToken():
+		return m.describeToken(rng, idx)
 	case r < 0.60:
 		return m.addNarration(rng, idx)
 	case r < 0.64:
@@ -278,8 +263,19 @@ func (m *Model) placeToken(rng *rand.Rand) Action {
 	return Action{Env: m.env(&vttv1.TokenPlaced{
 		TokenId: id, SceneId: scene, ActorId: actor,
 		Position: &vttv1.GridPosition{X: x, Y: y},
+		Name:     "seen " + id, GmName: "true " + id,
 	}), Kind: "placeToken", Anchors: true}
 }
+
+func (m *Model) describeToken(rng *rand.Rand, idx int) Action {
+	id := m.tokenIDs[rng.Intn(len(m.tokenIDs))]
+	return Action{Env: m.env(&vttv1.TokenDescribed{
+		TokenId: id, Name: "rewritten " + id, GmName: "true " + id,
+		Notes: describeNotes[idx%len(describeNotes)], GmNotes: describeNotes[idx/2%len(describeNotes)],
+	}), Kind: "describeToken", Anchors: true}
+}
+
+var describeNotes = []string{"", "prop-notes"}
 
 func (m *Model) moveToken(rng *rand.Rand, idx int) Action {
 	id := m.tokenIDs[rng.Intn(len(m.tokenIDs))]

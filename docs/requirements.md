@@ -487,8 +487,8 @@ checked: `docs/specifications/008-requirement-ids-come-from-the-dispenser.md`.
 | VTT-476 | No Story line is a payload's name. | **OPEN — no test yet** |
 | VTT-477 | An ability's Story line names the ability, each target as the window names it, each outcome's result and roll total, and never the total the roll was compared with. | **OPEN — no test yet** |
 | VTT-478 | A token in a character log's sight arrives in it with its name and notes. | **OPEN — no test yet** |
-| VTT-479 | A `describe_token` from the DM or the agent replaces its token's name, notes, GM name and GM notes, each with the value it carries, an empty one included. | **OPEN — no test yet** |
-| VTT-480 | A `describe_token` naming no token is refused and appends nothing. | **OPEN — no test yet** |
+| VTT-479 | A `describe_token` from the DM or the agent replaces its token's name, notes, GM name and GM notes, each with the value it carries, an empty one included. | internal/engine/apply_test.go#TestATokenDescribedReplacesAllFourTexts, client/test/fold-unit.test.ts#a token's description replaces all four texts, an emptied one included, internal/gateway/server_test.go#TestADMsDescribeAppendsOneTokenDescribedCarryingEveryField |
+| VTT-480 | A `describe_token` naming no token is refused and appends nothing. | internal/engine/apply_test.go#TestADescriptionOfNoTokenIsRefusedAndChangesNothing, client/test/fold-rejections.test.ts#describing an unknown token is rejected, internal/gateway/server_test.go#TestADescribeOfNoTokenIsRefusedAndAppendsNothing |
 | VTT-481 | An actor whose kind changed while out of a character log's sight, so that what the log may be sent of it differs from what the log holds, is withdrawn and introduced afresh when it next comes into sight. | **OPEN — no test yet** |
 | VTT-482 | A DM's or an agent's `use_ability` is not judged by sight. | **OPEN — no test yet** |
 | VTT-483 | A token's card shows its GM name and GM notes in a DM's or an agent's browser window, and in no other. | **OPEN — no test yet** |

@@ -87,6 +87,10 @@ type Scene struct {
 type Token struct {
 	ID, SceneID, ActorID string
 	X, Y                 int32
+	Name                 string `json:",omitempty"`
+	Notes                string `json:",omitempty"`
+	GMName               string `json:",omitempty"`
+	GMNotes              string `json:",omitempty"`
 }
 
 type Session struct {

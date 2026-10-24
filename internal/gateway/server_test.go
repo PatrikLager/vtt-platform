@@ -2789,3 +2789,51 @@ func TestABlockedMoveRefusalStopsGrowingWithTheSceneryKind(t *testing.T) {
 			"any constant refusal:\n  %s", long)
 	}
 }
+
+// VTT-480
+func TestADescribeOfNoTokenIsRefusedAndAppendsNothing(t *testing.T) {
+	f := newGWFixture(t)
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+	before := f.head(t)
+
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "describe-ghost",
+		Command: &vttv1.ClientCommand_DescribeToken{DescribeToken: &vttv1.DescribeToken{
+			TokenId: "ghost", Name: "a hunched goblin",
+		}},
+	})
+	if res := readResult(t, dm); res.GetOk() {
+		t.Fatal("a describe_token of a token the world does not hold must be refused")
+	}
+	if after := f.head(t); after != before {
+		t.Fatalf("the refused describe_token appended (log head %d → %d)", before, after)
+	}
+}
+
+// VTT-479 VTT-260
+func TestADMsDescribeAppendsOneTokenDescribedCarryingEveryField(t *testing.T) {
+	f := newGWFixture(t)
+	dm := f.dial(f.dmToken, 0)
+	expectCatchUpHead(t, dm)
+	expectPresenceSnapshot(t, dm)
+	before := f.head(t)
+
+	sendCommand(t, dm, &vttv1.ClientCommand{
+		RequestId: "describe-t1",
+		Command: &vttv1.ClientCommand_DescribeToken{DescribeToken: &vttv1.DescribeToken{
+			TokenId: "t1", Name: "a cloaked figure", Notes: "hooded", GmName: "Hero", GmNotes: "the player's own",
+		}},
+	})
+	if res := readResult(t, dm); !res.GetOk() {
+		t.Fatalf("describe_token refused: %q", res.GetError())
+	}
+	if after := f.head(t); after != before+1 {
+		t.Fatalf("log head %d → %d, want one event appended", before, after)
+	}
+	tok := f.campaign.State().Tokens["t1"]
+	if tok.Name != "a cloaked figure" || tok.Notes != "hooded" || tok.GMName != "Hero" || tok.GMNotes != "the player's own" {
+		t.Fatalf("token t1 = %+v, want every field the command gave", tok)
+	}
+}

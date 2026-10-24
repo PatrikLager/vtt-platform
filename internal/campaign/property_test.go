@@ -204,7 +204,7 @@ func applyDrawn(t *testing.T, c *campaign.Campaign, m *eventgen.Model, a eventge
 func assertKindCoverage(t *testing.T, scope string, counts map[string]int) {
 	t.Helper()
 	for _, kind := range []string{
-		"sceneCreated", "addActor", "placeToken", "moveToken", "startSession", "endSession",
+		"sceneCreated", "addActor", "placeToken", "moveToken", "describeToken", "startSession", "endSession",
 		"addNarration", "upsertNote", "deleteNote",
 		// The four add/remove pairs. Listed here for the reason the originals
 		// are: a walk that never drew one proves nothing about it, however

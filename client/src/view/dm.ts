@@ -396,6 +396,10 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
       const gmName = input("GM name", `describe-gm-name:${id}`);
       const gmNotes = textarea("GM notes", `describe-gm-notes:${id}`);
       const boxes = [name, notes, gmName, gmNotes];
+      const tok = d.st.Tokens[id]!;
+      for (const [box, present] of [[name, tok.Name], [notes, tok.Notes], [gmName, tok.GMName], [gmNotes, tok.GMNotes]] as const) {
+        if (draft[box.dataset["field"]!] === undefined) box.value = present ?? "";
+      }
       row.append(el("span", "describe-id", id), ...boxes, button("Describe", () => {
         d.send(describeToken(id, name.value, notes.value, gmName.value, gmNotes.value));
         clearDraft(...boxes.map((b) => b.dataset["field"]!));

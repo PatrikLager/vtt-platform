@@ -1,0 +1,72 @@
+{
+  "Actors": {
+    "act-cutter": {
+      "actor_id": "act-cutter",
+      "name": "Goblin Cutter",
+      "kind": 2
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "Scenes": {
+    "scn-ravine": {
+      "ID": "scn-ravine",
+      "Name": "Ravine",
+      "GridWidth": 2,
+      "GridHeight": 1,
+      "Tiles": {
+        "0,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        },
+        "1,0": {
+          "Kind": "floor",
+          "Material": "stone",
+          "Art": ""
+        }
+      },
+      "Objects": [],
+      "OpenDoors": {}
+    }
+  },
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Night",
+      "StartSeq": 1,
+      "EndSeq": 0
+    }
+  ],
+  "Tokens": {
+    "tok-cutter": {
+      "ID": "tok-cutter",
+      "SceneID": "scn-ravine",
+      "ActorID": "act-cutter",
+      "X": 0,
+      "Y": 0,
+      "Name": "an angry goblin",
+      "GMName": "Goblin Cutter",
+      "GMNotes": "Wakes at any noise."
+    },
+    "tok-full": {
+      "ID": "tok-full",
+      "SceneID": "scn-ravine",
+      "ActorID": "act-cutter",
+      "X": 1,
+      "Y": 0,
+      "Name": "a goblin with a bow",
+      "Notes": "It keeps to the rocks \u0026 shoots \u003cfirst\u003e.",
+      "GMName": "Goblin Archer",
+      "GMNotes": "Shoots first.\u2028Flees\u2029late."
+    },
+    "tok-plain": {
+      "ID": "tok-plain",
+      "SceneID": "scn-ravine",
+      "ActorID": "act-cutter",
+      "X": 1,
+      "Y": 0
+    }
+  },
+  "headSequence": 7
+}

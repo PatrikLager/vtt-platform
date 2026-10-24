@@ -27,6 +27,8 @@ func env(seq int64, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: p}
 	case *vttv1.TokenRemoved:
 		e.Payload = &vttv1.Envelope_TokenRemoved{TokenRemoved: p}
+	case *vttv1.TokenDescribed:
+		e.Payload = &vttv1.Envelope_TokenDescribed{TokenDescribed: p}
 	case *vttv1.ActorRemoved:
 		e.Payload = &vttv1.Envelope_ActorRemoved{ActorRemoved: p}
 	case *vttv1.AttackRolled:
@@ -1355,4 +1357,38 @@ func TestAnEmptySessionMoveSceneOrActorKeyIsRefused(t *testing.T) {
 		refusesUnchanged(t, seedScene(t), env(3, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a1",
 			Attributes: map[string]int32{"attr_a": 1, "": 1}}}), "engine: attribute name must be 1-128 bytes, got 0")
 	})
+}
+
+// TestATokenPlacedKeepsItsFourTexts pins the placement's texts in the fold.
+func TestATokenPlacedKeepsItsFourTexts(t *testing.T) {
+	st := seedActor(t)
+	must(t, engine.Apply(st, env(4, &vttv1.TokenPlaced{TokenId: "t1", SceneId: "scn", ActorId: "a1",
+		Position: &vttv1.GridPosition{X: 1, Y: 1},
+		Name:     "a hunched goblin", Notes: "asleep", GmName: "Goblin Cutter", GmNotes: "wakes easily"})))
+	want := engine.Token{ID: "t1", SceneID: "scn", ActorID: "a1", X: 1, Y: 1,
+		Name: "a hunched goblin", Notes: "asleep", GMName: "Goblin Cutter", GMNotes: "wakes easily"}
+	if got := st.Tokens["t1"]; got != want {
+		t.Fatalf("token = %+v, want %+v", got, want)
+	}
+}
+
+// VTT-479
+func TestATokenDescribedReplacesAllFourTexts(t *testing.T) {
+	st := seedActor(t)
+	must(t, engine.Apply(st, env(4, &vttv1.TokenPlaced{TokenId: "t1", SceneId: "scn", ActorId: "a1",
+		Position: &vttv1.GridPosition{X: 1, Y: 1},
+		Name:     "a hunched goblin", Notes: "asleep", GmName: "Goblin Cutter", GmNotes: "wakes easily"})))
+	must(t, engine.Apply(st, env(5, &vttv1.TokenDescribed{TokenId: "t1",
+		Name: "an angry goblin", GmName: "Goblin Cutter", GmNotes: "flees"})))
+	want := engine.Token{ID: "t1", SceneID: "scn", ActorID: "a1", X: 1, Y: 1,
+		Name: "an angry goblin", Notes: "", GMName: "Goblin Cutter", GMNotes: "flees"}
+	if got := st.Tokens["t1"]; got != want {
+		t.Fatalf("token = %+v, want %+v: every text replaced, the emptied notes included", got, want)
+	}
+}
+
+// VTT-480
+func TestADescriptionOfNoTokenIsRefusedAndChangesNothing(t *testing.T) {
+	refusesUnchanged(t, seedToken(t), env(5, &vttv1.TokenDescribed{TokenId: "ghost", Name: "x"}),
+		`engine: described unknown token "ghost"`)
 }

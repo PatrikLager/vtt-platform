@@ -1,4 +1,6 @@
 import { test, expect } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fromJson } from "@bufbuild/protobuf";
 import { ActorKind, EnvelopeSchema, NoteVisibility, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { fold, foldToDumpJSON } from "../src/fold";
@@ -1215,7 +1217,9 @@ test("a token whose id names a prototype member is placed and moved like any oth
   ]);
 
   expect(Object.keys(st.Tokens)).toEqual(["toString"]);
-  expect(st.Tokens["toString"]).toEqual({ ID: "toString", SceneID: "s1", ActorID: "a1", X: 3, Y: 2 });
+  expect(st.Tokens["toString"]).toEqual({
+    ID: "toString", SceneID: "s1", ActorID: "a1", X: 3, Y: 2, Name: "", Notes: "", GMName: "", GMNotes: "",
+  });
 });
 
 test("__proto__ is an ordinary map key, not the map's prototype", () => {
@@ -1235,4 +1239,38 @@ test("__proto__ is an ordinary map key, not the map's prototype", () => {
   expect(st.Scenes["__proto__"]!.ID).toBe("__proto__");
   expect(Object.keys(st.Notes)).toEqual(["__proto__"]);
   expect(st.Notes["__proto__"]!.Title).toBe("T");
+});
+
+// --- a token's four texts -----------------------------------------------------
+
+const textedWorld = [
+  env(1, { sessionStarted: { name: "S" } }),
+  env(2, { sceneCreated: { sceneId: "s1", name: "N", gridWidth: 4, gridHeight: 4 } }),
+  env(3, { actorAdded: { actor: { actorId: "a1", name: "Goblin Cutter" } } }),
+  env(4, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 },
+    name: "a hunched goblin", notes: "asleep", gmName: "Goblin Cutter", gmNotes: "wakes easily" } }),
+];
+
+test("a placed token keeps its four texts", () => {
+  expect(fold(textedWorld).Tokens["t1"]).toEqual({
+    ID: "t1", SceneID: "s1", ActorID: "a1", X: 1, Y: 1,
+    Name: "a hunched goblin", Notes: "asleep", GMName: "Goblin Cutter", GMNotes: "wakes easily",
+  });
+});
+
+// VTT-479
+test("a token's description replaces all four texts, an emptied one included", () => {
+  const st = fold([...textedWorld,
+    env(5, { tokenDescribed: { tokenId: "t1", name: "an angry goblin", gmName: "Goblin Cutter", gmNotes: "flees" } })]);
+  expect(st.Tokens["t1"]).toEqual({
+    ID: "t1", SceneID: "s1", ActorID: "a1", X: 1, Y: 1,
+    Name: "an angry goblin", Notes: "", GMName: "Goblin Cutter", GMNotes: "flees",
+  });
+});
+
+test("the dump of a named token matches the committed dump, as Go's writeDump does", () => {
+  const log = JSON.parse(readFileSync(join(import.meta.dir, "../../contract/testdata/named_token_log.json"), "utf8"))
+    .map((e: unknown) => fromJson(EnvelopeSchema, e as never));
+  expect(foldToDumpJSON(log)).toBe(
+    readFileSync(join(import.meta.dir, "../../contract/testdata/named_token_dump.json"), "utf8"));
 });

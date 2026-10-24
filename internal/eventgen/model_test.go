@@ -68,7 +68,7 @@ func TestTheSameSeedDrawsTheSameWalk(t *testing.T) {
 // default seed — this speaks for several.
 func TestAWalkDrawsEveryKind(t *testing.T) {
 	want := []string{
-		"sceneCreated", "addActor", "placeToken", "moveToken", "startSession", "endSession",
+		"sceneCreated", "addActor", "placeToken", "moveToken", "describeToken", "startSession", "endSession",
 		"addNarration", "upsertNote", "deleteNote",
 		"openDoor", "closeDoor", "grantControl", "revokeControl",
 		"applyCondition", "removeCondition", "removeToken", "removeActor",
@@ -281,5 +281,36 @@ func TestModelViewsAreCopies(t *testing.T) {
 		if m.Tokens()[0] == "clobbered" {
 			t.Error("Tokens() hands out the model's own slice")
 		}
+	}
+}
+
+// TestAPlacementIsNamedForItsTokenAndARewriteNamesAPlacedOne pins the texts the
+// model draws: a placement's come from its id, and a rewrite aims at a token the
+// walk placed.
+func TestAPlacementIsNamedForItsTokenAndARewriteNamesAPlacedOne(t *testing.T) {
+	_, envs := walk(t, 1, 400)
+	placed := map[string]bool{}
+	rewrites := 0
+	notes, gmNotes := map[string]bool{}, map[string]bool{}
+	for _, e := range envs {
+		if tp := e.GetTokenPlaced(); tp != nil {
+			placed[tp.GetTokenId()] = true
+			if tp.GetName() != "seen "+tp.GetTokenId() || tp.GetGmName() != "true "+tp.GetTokenId() {
+				t.Fatalf("placement %q is named %q / %q, want its id's", tp.GetTokenId(), tp.GetName(), tp.GetGmName())
+			}
+		}
+		if td := e.GetTokenDescribed(); td != nil {
+			rewrites++
+			notes[td.GetNotes()], gmNotes[td.GetGmNotes()] = true, true
+			if !placed[td.GetTokenId()] {
+				t.Fatalf("a rewrite names %q, which the walk never placed", td.GetTokenId())
+			}
+		}
+	}
+	if rewrites == 0 {
+		t.Fatal("seed 1 drew no rewrite in 400 actions")
+	}
+	if len(notes) != 2 || len(gmNotes) != 2 {
+		t.Fatalf("rewrites drew notes %v and GM notes %v, want each both empty and set", notes, gmNotes)
 	}
 }

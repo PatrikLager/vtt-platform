@@ -524,6 +524,39 @@ actor selected the first controlled actor by id casts, from its own token" in
 breaks). VTT-437 says in the contract and in the tool which id the field holds,
 and `0b62fa0` made the contract's examples name actors.
 
+## 2026-10-24 — the browser's dump did not escape what Go's does
+
+**`foldToDumpJSON` in `client/src/fold.ts` wrote `<`, `>`, `&`, U+2028 and
+U+2029 raw, while `writeDump` in `cmd/vtt/state_dump.go` escapes them.** The
+function's doc says it renders the fold "as cmd/vtt's writeDump does a world
+seat's, byte for byte". `encoding/json` escapes `<`, `>` and `&` under its HTML
+escaping, which `writeDump` leaves on, and U+2028 and U+2029 always, so any dump
+holding one of the five in a string differed. It never reached the table: only
+the dump-parity tests compare the two. Phase 4a's QA of Task 3 of
+`docs/superpowers/plans/2026-10-24-a-token-carries-what-a-player-may-see-of-it.md`
+found it, with a token's notes holding `<trap> & "pit"`.
+
+Recipe: in `foldToDumpJSON`'s return, replace
+`.replace(/[<>&\u2028\u2029]/g, goEscape) + "\n"` with ` + "\n"`. Then delete
+`goEscape` and its comment, or `task client:typecheck` refuses the unused
+function.
+
+The gate that should have caught it is `client/test/fold-parity.test.ts` over
+`scenarios/goldens/`. No golden stream holds any of the five characters, so the
+keystone only compared strings that never needed escaping. Labels: `test data
+missing`.
+
+**Closed by** two tests, both red under the recipe (observed 2026-10-24):
+- "the dump of a named token matches the committed dump, as Go's writeDump does"
+  in `client/test/fold-unit.test.ts`, over
+  `contract/testdata/named_token_log.json`, which holds all five;
+- QA's "qaTT: the TS dump of texts holding < > & and U+2028 is Go's bytes" in
+  `client/test/qa-token-texts.test.ts`.
+
+`TestTheDumpOfANamedTokenCarriesItsTexts` in `cmd/vtt` holds the committed
+dump to `writeDump`'s bytes, so the first test compares against what Go
+writes.
+
 ## Open debt
 
 **`migrateLocked`'s re-read error arm is unreachable through `testdb`.**

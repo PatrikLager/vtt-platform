@@ -1,0 +1,19 @@
+[
+  { "eventId": "evt-1", "sequence": "1", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "sessionStarted": { "name": "Night" } },
+  { "eventId": "evt-2", "sequence": "2", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "sceneCreated": { "sceneId": "scn-ravine", "name": "Ravine", "gridWidth": 2, "gridHeight": 1,
+      "tiles": { "0,0": { "kind": "floor", "material": "stone" }, "1,0": { "kind": "floor", "material": "stone" } } } },
+  { "eventId": "evt-3", "sequence": "3", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "actorAdded": { "actor": { "actorId": "act-cutter", "name": "Goblin Cutter", "kind": "ACTOR_KIND_NON_PARTY" } } },
+  { "eventId": "evt-4", "sequence": "4", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "tokenPlaced": { "tokenId": "tok-cutter", "sceneId": "scn-ravine", "actorId": "act-cutter", "position": { "x": 0, "y": 0 },
+      "name": "a hunched goblin", "notes": "It sleeps against the rock.", "gmName": "Goblin Cutter", "gmNotes": "Wakes at any noise." } },
+  { "eventId": "evt-5", "sequence": "5", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "tokenPlaced": { "tokenId": "tok-plain", "sceneId": "scn-ravine", "actorId": "act-cutter", "position": { "x": 1, "y": 0 } } },
+  { "eventId": "evt-6", "sequence": "6", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "tokenDescribed": { "tokenId": "tok-cutter", "name": "an angry goblin", "gmName": "Goblin Cutter", "gmNotes": "Wakes at any noise." } },
+  { "eventId": "evt-7", "sequence": "7", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "tokenPlaced": { "tokenId": "tok-full", "sceneId": "scn-ravine", "actorId": "act-cutter", "position": { "x": 1, "y": 0 },
+      "name": "a goblin with a bow", "notes": "It keeps to the rocks & shoots <first>.", "gmName": "Goblin Archer", "gmNotes": "Shoots first.\u2028Flees\u2029late." } }
+]

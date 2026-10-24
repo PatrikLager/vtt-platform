@@ -251,7 +251,18 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		st.Tokens[tp.TokenId] = Token{
 			ID: tp.TokenId, SceneID: tp.SceneId, ActorID: tp.ActorId,
 			X: tp.Position.X, Y: tp.Position.Y,
+			Name: tp.Name, Notes: tp.Notes, GMName: tp.GmName, GMNotes: tp.GmNotes,
 		}
+		return nil
+
+	case *vttv1.Envelope_TokenDescribed:
+		td := p.TokenDescribed
+		tok, ok := st.Tokens[td.TokenId]
+		if !ok {
+			return fmt.Errorf("engine: described unknown token %q", td.TokenId)
+		}
+		tok.Name, tok.Notes, tok.GMName, tok.GMNotes = td.Name, td.Notes, td.GmName, td.GmNotes
+		st.Tokens[td.TokenId] = tok
 		return nil
 
 	case *vttv1.Envelope_TokenMoved:

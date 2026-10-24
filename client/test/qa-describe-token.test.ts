@@ -6,7 +6,8 @@ import { describeToken } from "../src/commands";
 import { newState, type State } from "../src/state";
 import { renderDMConsole, type DMDeps } from "../src/view/dm";
 
-// "Plan" below is docs/superpowers/plans/2026-10-24-a-token-carries-what-a-player-may-see-of-it.md.
+// "Plan" below is
+// docs/superpowers/plans/2026-10-24-a-token-carries-what-a-player-may-see-of-it.md.
 type Cmd = ReturnType<typeof describeToken>;
 type Field = HTMLInputElement | HTMLTextAreaElement;
 
@@ -100,7 +101,8 @@ afterEach(() => {
 });
 
 describe("describe_token builder", () => {
-  // Plan D16: "The button sends `describeToken(id, name, notes, gmName, gmNotes)` as typed"
+  // Plan D16: "The button sends `describeToken(id, name, notes, gmName, gmNotes)` as
+  // typed"
   test("qaDT: describeToken builds describe_token from its five arguments in order", () => {
     const c = describeToken("qadt-t", "a hooded figure", "it hums", "Mirela", "a spy");
     expect(described(c)).toEqual({
@@ -123,7 +125,8 @@ describe("describe_token builder", () => {
     });
   });
 
-  // SPEC-007 "The event envelope has no `type` field": "The `oneof payload` inlines one key per variant"
+  // SPEC-007 "The event envelope has no `type` field": "The `oneof payload` inlines
+  // one key per variant"
   test("qaDT: describeToken goes on the wire under the describeToken key", () => {
     const json = toJson(ClientCommandSchema, describeToken("qadt-t", "n", "no", "g", "gn")) as Record<string, unknown>;
     expect(json["describeToken"]).toEqual({ tokenId: "qadt-t", name: "n", notes: "no", gmName: "g", gmNotes: "gn" });
@@ -152,8 +155,9 @@ describe("the DM console's describe control", () => {
     }
   });
 
+  // Plan D16: "inputs `describe-name:<id>` and `describe-gm-name:<id>`; textareas
+  // `describe-notes:<id>` and `describe-gm-notes:<id>`".
   // VTT-464
-  // Plan D16: "inputs `describe-name:<id>` and `describe-gm-name:<id>`; textareas `describe-notes:<id>` and `describe-gm-notes:<id>`"
   test("qaDT: names are inputs and notes are textareas", () => {
     const root = draw(deps(stateWith(["qadt-kind"]), []));
     expect(must(root, "describe-name:qadt-kind").tagName).toBe("INPUT");
@@ -178,8 +182,8 @@ describe("the DM console's describe control", () => {
     });
   });
 
+  // Plan D2: "An empty string in `DescribeToken` clears that field".
   // VTT-464
-  // Plan D2: "An empty string in `DescribeToken` clears that field."
   test("qaDT: an emptied field, and one never typed in, are sent empty", async () => {
     const sent: Cmd[] = [];
     const root = draw(deps(stateWith(["qadt-empty"]), sent));
@@ -223,7 +227,8 @@ describe("the DM console's describe control", () => {
     expect(rowValues(draw(d), "qadt-draft")).toEqual(["n", "no", "g", "gn"]);
   });
 
-  // Plan D16: "The button sends `describeToken(id, name, notes, gmName, gmNotes)` as typed, and clears that row's four drafts."
+  // Plan D16: "The button sends `describeToken(id, name, notes, gmName, gmNotes)` as
+  // typed, and clears that row's four drafts."
   test("qaDT: sending clears that row's four drafts and leaves another row's", async () => {
     const d = deps(stateWith(["qadt-keep", "qadt-clear"]), []);
     const root = draw(d);

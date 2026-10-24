@@ -1928,3 +1928,23 @@ test("a typed describe field survives a repaint until sent, and Describe clears 
   expect(after.field("describe-gm-notes:t2").value).toBe("the leader");
   type(after, { "describe-gm-notes:t2": "" });
 });
+
+test("a describe field with no draft shows the token's present text", () => {
+  const st = newState();
+  st.Tokens["t9"] = {
+    ID: "t9", SceneID: "s1", ActorID: "a1", X: 0, Y: 0,
+    Name: "a hunched goblin", Notes: "asleep", GMName: "Goblin Cutter", GMNotes: "wakes easily",
+  };
+  const h = harness(st);
+  expect(h.field("describe-name:t9").value).toBe("a hunched goblin");
+  expect(h.field("describe-notes:t9").value).toBe("asleep");
+  expect(h.field("describe-gm-name:t9").value).toBe("Goblin Cutter");
+  expect(h.field("describe-gm-notes:t9").value).toBe("wakes easily");
+
+  type(h, { "describe-name:t9": "an angry goblin" });
+  expect(harness(st).field("describe-name:t9").value).toBe("an angry goblin");
+  type(harness(st), { "describe-name:t9": "" });
+  expect(harness(st).field("describe-name:t9").value).toBe("");
+  (harness(st).node.querySelector('.describe-row[data-token="t9"] [data-action="describe-token"]') as HTMLButtonElement).click();
+  expect(harness(st).field("describe-name:t9").value).toBe("a hunched goblin");
+});

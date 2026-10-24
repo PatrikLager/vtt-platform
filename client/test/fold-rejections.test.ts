@@ -167,6 +167,12 @@ test("removing an unknown token is rejected", () => {
     'unknown token "ghost" removed');
 });
 
+// VTT-480
+test("describing an unknown token is rejected", () => {
+  rejects([...placeable, env(4, { tokenDescribed: { tokenId: "ghost", name: "x" } })],
+    'unknown token "ghost" described');
+});
+
 // actorRemoved (retraction-leaves Task 9, spec §5.2). Two guards, and the
 // second is the one that makes remove_actor's batch atomic: engine.Apply's
 // ActorRemoved arm refuses an actor whose tokens are still on the board, so

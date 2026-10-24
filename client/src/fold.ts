@@ -216,6 +216,10 @@ function apply(st: State, env: Envelope): void {
         ActorID: v.actorId,
         X: v.position.x,
         Y: v.position.y,
+        Name: v.name,
+        Notes: v.notes,
+        GMName: v.gmName,
+        GMNotes: v.gmNotes,
       };
       return;
     }
@@ -228,6 +232,16 @@ function apply(st: State, env: Envelope): void {
       checkLen("move scene id", v.sceneId, 1, 128);
       tok.X = v.to.x;
       tok.Y = v.to.y;
+      return;
+    }
+    case "tokenDescribed": {
+      const v = p.value;
+      const tok = st.Tokens[v.tokenId];
+      if (!tok) throw new FoldError(`unknown token "${v.tokenId}" described`);
+      tok.Name = v.name;
+      tok.Notes = v.notes;
+      tok.GMName = v.gmName;
+      tok.GMNotes = v.gmNotes;
       return;
     }
     case "tokenRemoved": {
@@ -619,16 +633,22 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
       StartSeq: s.StartSeq,
       EndSeq: s.EndSeq,
     })),
-    Tokens: sortedMap(st.Tokens, (t) => ({
-      ID: t.ID,
-      SceneID: t.SceneID,
-      ActorID: t.ActorID,
-      X: t.X,
-      Y: t.Y,
-    })),
+    Tokens: sortedMap(st.Tokens, (t) => {
+      const tok: Record<string, unknown> = { ID: t.ID, SceneID: t.SceneID, ActorID: t.ActorID, X: t.X, Y: t.Y };
+      if (t.Name) tok["Name"] = t.Name;
+      if (t.Notes) tok["Notes"] = t.Notes;
+      if (t.GMName) tok["GMName"] = t.GMName;
+      if (t.GMNotes) tok["GMNotes"] = t.GMNotes;
+      return tok;
+    }),
     headSequence: head,
   };
-  return JSON.stringify(out, null, 2) + "\n";
+  return JSON.stringify(out, null, 2).replace(/[<>&\u2028\u2029]/g, goEscape) + "\n";
+}
+
+// Match encoding/json: < > & by its HTML escaping, U+2028 and U+2029 always.
+function goEscape(c: string): string {
+  return "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0");
 }
 
 function sortedMap<T, U>(m: Record<string, T>, f: (v: T) => U): Record<string, U> {
