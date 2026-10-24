@@ -1,0 +1,22 @@
+{
+  "eventId": "evt-ability-outcomes-1",
+  "sequence": "45",
+  "occurredAt": "2026-10-24T09:02:00Z",
+  "sessionId": "sess-1",
+  "actorRole": "player",
+  "participantId": "p-1",
+  "abilityUsed": {
+    "actorId": "act-fighter",
+    "abilityId": "longsword-strike",
+    "targetIds": ["act-cutter", "act-archer"],
+    "rolls": [
+      { "expression": "1d20 + @caster.str", "results": [14], "total": 17 },
+      { "expression": "1d20 + @caster.str", "results": [3], "total": 6 }
+    ],
+    "outcomeSummary": "Longsword Strike on act-cutter: hit (17 vs 15); Longsword Strike on act-archer: miss (6 vs 14)",
+    "outcomes": [
+      { "targetId": "act-cutter", "result": "hit", "total": 17 },
+      { "targetId": "act-archer", "result": "miss", "total": 6 }
+    ]
+  }
+}

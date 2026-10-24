@@ -1855,3 +1855,76 @@ test("a holder whose only name is empty falls back to the id, not to blank", () 
 
   expect(h.node.querySelector(".control-actor .held-who")!.textContent).toBe("p-ana");
 });
+
+// --- describing tokens --------------------------------------------------------
+
+function tableWithTokens(...ids: string[]): State {
+  const st = newState();
+  for (const id of ids) st.Tokens[id] = { ID: id, SceneID: "s1", ActorID: "a1", X: 0, Y: 0 };
+  return st;
+}
+
+// VTT-464
+test("the console draws a describe row per token of the world, by id", () => {
+  const h = harness(tableWithTokens("t2", "t1"));
+  const rows = Array.from(h.node.querySelectorAll(".describe-row")) as HTMLElement[];
+  expect(rows.map((r) => r.dataset["token"])).toEqual(["t1", "t2"]);
+  const g = rows[0]!.parentElement!;
+  expect(g.className).toBe("dmgroup");
+  expect(g.querySelector("h3")!.textContent).toBe("Describe tokens");
+  for (const r of rows) {
+    const id = r.dataset["token"]!;
+    expect(r.className).toBe("row describe-row");
+    expect(r.querySelector(".describe-id")!.textContent).toBe(id);
+    for (const [f, cls] of [["name", ""], ["notes", "wide"], ["gm-name", ""], ["gm-notes", "wide"]] as const) {
+      const box = r.querySelector(`[data-field="describe-${f}:${id}"]`) as HTMLInputElement;
+      expect(box.placeholder.length).toBeGreaterThan(0);
+      expect(box.className).toBe(cls);
+      expect(box.tagName).toBe(cls === "wide" ? "TEXTAREA" : "INPUT");
+    }
+    expect(r.querySelector('[data-action="describe-token"]')!.textContent).toBe("Describe");
+  }
+});
+
+test("a table with no tokens draws no Describe tokens group", () => {
+  const h = harness(newState());
+  const titles = Array.from(h.node.querySelectorAll("h3")).map((t) => t.textContent);
+  expect(titles).not.toContain("Describe tokens");
+  expect(h.node.querySelector(".describe-row")).toBeNull();
+});
+
+// VTT-464
+test("Describe sends describe_token for its row's token with the four fields as typed, empty ones included", () => {
+  const h = harness(tableWithTokens("t1", "t2"));
+  fill(h, { "describe-name:t1": "a hunched goblin ", "describe-gm-name:t1": "Goblin Cutter", "describe-gm-notes:t1": "wakes easily" });
+  const row = h.node.querySelector('.describe-row[data-token="t1"]')!;
+  (row.querySelector('[data-action="describe-token"]') as HTMLButtonElement).click();
+
+  expect(h.sent).toHaveLength(1);
+  const c = h.sent[0]!.command;
+  expect(c.case).toBe("describeToken");
+  if (c.case !== "describeToken") return;
+  expect({ ...c.value }).toMatchObject({
+    tokenId: "t1", name: "a hunched goblin ", notes: "", gmName: "Goblin Cutter", gmNotes: "wakes easily",
+  });
+});
+
+function type(h: ReturnType<typeof harness>, values: Record<string, string>) {
+  fill(h, values);
+  for (const f of Object.keys(values)) h.field(f).dispatchEvent(new Event("input"));
+}
+
+test("a typed describe field survives a repaint until sent, and Describe clears only its own row", () => {
+  const h = harness(tableWithTokens("t1", "t2"));
+  type(h, { "describe-notes:t1": "asleep", "describe-gm-notes:t2": "the leader" });
+
+  const again = harness(tableWithTokens("t1", "t2"));
+  expect(again.field("describe-notes:t1").value).toBe("asleep");
+  expect(again.field("describe-gm-notes:t2").value).toBe("the leader");
+
+  (again.node.querySelector('.describe-row[data-token="t1"] [data-action="describe-token"]') as HTMLButtonElement).click();
+  const after = harness(tableWithTokens("t1", "t2"));
+  expect(after.field("describe-notes:t1").value).toBe("");
+  expect(after.field("describe-gm-notes:t2").value).toBe("the leader");
+  type(after, { "describe-gm-notes:t2": "" });
+});

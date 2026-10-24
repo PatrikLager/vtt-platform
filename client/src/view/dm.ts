@@ -13,7 +13,7 @@ import type { AdventureMeta, JoinLink, MapMeta, Roster } from "../metadata";
 import { ActorKind, NoteVisibility } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
-  startSession, endSession, placeToken, removeToken, loadAdventure, loadMap,
+  startSession, endSession, placeToken, describeToken, removeToken, loadAdventure, loadMap,
   upsertNote, deleteNote, removeCondition, parseActorJSON, addActor, removeActor,
   grantActorControl, revokeActorControl,
   setJoinDoor,
@@ -147,6 +147,18 @@ function input(placeholder: string, field: string, cls = ""): HTMLInputElement {
   });
   if (cls) i.className = cls;
   return i;
+}
+
+function textarea(placeholder: string, field: string): HTMLTextAreaElement {
+  const t = document.createElement("textarea");
+  t.placeholder = placeholder;
+  t.dataset["field"] = field;
+  t.className = "wide";
+  t.value = draft[field] ?? "";
+  t.addEventListener("input", () => {
+    draft[field] = t.value;
+  });
+  return t;
 }
 
 function button(label: string, onClick: () => void, action?: string): HTMLButtonElement {
@@ -370,6 +382,28 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
       }, "remove-token"),
     ),
   );
+
+  // --- describe tokens ---
+  const ids = Object.keys(d.st.Tokens).sort();
+  if (ids.length > 0) {
+    const g = el("div", "dmgroup");
+    g.appendChild(el("h3", undefined, "Describe tokens"));
+    for (const id of ids) {
+      const row = el("div", "row describe-row");
+      row.dataset["token"] = id;
+      const name = input("what players see", `describe-name:${id}`);
+      const notes = textarea("notes players see", `describe-notes:${id}`);
+      const gmName = input("GM name", `describe-gm-name:${id}`);
+      const gmNotes = textarea("GM notes", `describe-gm-notes:${id}`);
+      const boxes = [name, notes, gmName, gmNotes];
+      row.append(el("span", "describe-id", id), ...boxes, button("Describe", () => {
+        d.send(describeToken(id, name.value, notes.value, gmName.value, gmNotes.value));
+        clearDraft(...boxes.map((b) => b.dataset["field"]!));
+      }, "describe-token"));
+      g.appendChild(row);
+    }
+    wrap.appendChild(g);
+  }
 
   // --- doors ---
   //

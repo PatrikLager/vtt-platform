@@ -93,7 +93,7 @@ test("request ids are unique across commands", () => {
 // --- DM commands (T8) -------------------------------------------------------
 
 import {
-  startSession, endSession, addActor, placeToken,
+  startSession, endSession, addActor, placeToken, describeToken,
   loadAdventure, deleteNote, removeCondition, parseActorJSON,
 } from "../src/commands";
 
@@ -128,6 +128,14 @@ test("a zero position is still sent as a position, not omitted", () => {
   // position object, or the server sees "no position" and rejects the place.
   const pt = toJson(ClientCommandSchema, placeToken("t1", "s1", "a1", { x: 0, y: 0 })) as Record<string, any>;
   expect(pt["placeToken"]).toHaveProperty("position");
+});
+
+test("describeToken carries the token and all four texts", () => {
+  const c = describeToken("t1", "a hunched goblin", "asleep", "Goblin Cutter", "wakes easily");
+  expect(c.command.case).toBe("describeToken");
+  expect(toJson(ClientCommandSchema, c) as Record<string, any>).toMatchObject({
+    describeToken: { tokenId: "t1", name: "a hunched goblin", notes: "asleep", gmName: "Goblin Cutter", gmNotes: "wakes easily" },
+  });
 });
 
 test("removeCondition names the actor and the condition", () => {

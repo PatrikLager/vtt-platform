@@ -86,6 +86,18 @@ func TestUpsertNoteCommandRoundTrip(t *testing.T) {
 func TestNoteUpsertedEnvelopeRoundTrip(t *testing.T) {
 	roundTrip(t, "note_upserted_envelope.json", &vttv1.Envelope{})
 }
+func TestTokenPlacedWithTextEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "token_placed_with_text_envelope.json", &vttv1.Envelope{})
+}
+func TestTokenDescribedEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "token_described_envelope.json", &vttv1.Envelope{})
+}
+func TestDescribeTokenCommandRoundTrip(t *testing.T) {
+	roundTrip(t, "describe_token_command.json", &vttv1.ClientCommand{})
+}
+func TestAbilityUsedWithOutcomesEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "ability_used_with_outcomes_envelope.json", &vttv1.Envelope{})
+}
 func TestTokenMovedReasonEnvelopeRoundTrip(t *testing.T) {
 	roundTrip(t, "token_moved_reason_envelope.json", &vttv1.Envelope{})
 }

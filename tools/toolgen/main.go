@@ -102,12 +102,28 @@ var manifest = []toolSpec{
 		description: "Place an actor's token on a scene's grid.",
 		descriptor:  (&vttv1.PlaceToken{}).ProtoReflect().Descriptor(),
 		overrides: map[protoreflect.FullName]fieldOverride{
+			// The fabrication trap again: none of the four texts is proto3
+			// `optional`, so the derived list would require them all, and a
+			// placement that needs none would be told to invent four.
 			"vtt.v1.PlaceToken": {
+				requiredOverride: []string{"tokenId", "sceneId", "actorId", "position"},
 				fieldDocs: map[string]string{
 					"tokenId": "The new token's id, unique in the campaign. At most 128 bytes of UTF-8; a longer id refuses the command.",
+					"name":    "Optional; what every player and spectator whose character sees this token is told it is, such as \"a sleeping creature\". Never the creature's true name unless the characters know it.",
+					"notes":   "Optional; what they are told of it beside its name.",
+					"gmName":  "Optional; the DM's and the agent's alone: no player or spectator is ever sent it.",
+					"gmNotes": "Optional; the DM's and the agent's alone: no player or spectator is ever sent it.",
 				},
 			},
 		},
+	},
+	{
+		message:     "vtt.v1.DescribeToken",
+		name:        "describe_token",
+		description: "Rewrite a placed token's name, notes, GM name and GM notes, all four at once: a field sent empty is cleared, so send the present value of any you keep. Players and spectators whose character sees the token are sent its new name and notes; the GM name and GM notes reach only the DM and the agent. DM/agent only.",
+		descriptor:  (&vttv1.DescribeToken{}).ProtoReflect().Descriptor(),
+		// No requiredOverride: every field is required, since an omitted text
+		// and an emptied one are the same bytes on the wire and both clear it.
 	},
 	{
 		message:     "vtt.v1.RemoveToken",
@@ -156,7 +172,7 @@ var manifest = []toolSpec{
 		overrides: map[protoreflect.FullName]fieldOverride{
 			"vtt.v1.UseAbility": {
 				fieldDocs: map[string]string{
-					"targetIds": "The ACTOR ids of the creatures the ability is aimed at, never a token's id: a token is only where an actor stands on a scene, and an id that names no actor is refused. Each target must have a token in the caster's scene within the ability's range.",
+					"targetIds": "The ACTOR ids of the creatures the ability is aimed at, never a token's id: a token is only where an actor stands on a scene, and an id that names no actor is refused. Each target must have a token in the caster's scene within the ability's range. A player's every target must be an actor the character judging their moves sees; any other is refused exactly as an id that names no actor is.",
 				},
 			},
 		},

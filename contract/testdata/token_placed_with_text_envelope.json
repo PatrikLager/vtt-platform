@@ -1,0 +1,18 @@
+{
+  "eventId": "evt-place-text-1",
+  "sequence": "12",
+  "occurredAt": "2026-10-24T09:00:00Z",
+  "sessionId": "sess-1",
+  "actorRole": "dm",
+  "participantId": "p-dm",
+  "tokenPlaced": {
+    "tokenId": "tok-cutter",
+    "sceneId": "ravine",
+    "actorId": "act-cutter",
+    "position": { "x": 4, "y": 7 },
+    "name": "a hunched goblin",
+    "notes": "It sleeps against the rock.",
+    "gmName": "Goblin Cutter",
+    "gmNotes": "Wakes at any noise louder than a whisper."
+  }
+}

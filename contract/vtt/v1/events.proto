@@ -413,6 +413,29 @@ message TokenPlaced {
   string scene_id = 2;
   string actor_id = 3;
   GridPosition position = 4;
+  string name = 5;
+  string notes = 6;
+  // Never forward gm_name to a player or spectator: only the DM and the agent
+  // are sent it (SPEC-016).
+  string gm_name = 7;
+  // Never forward gm_notes to a player or spectator: only the DM and the
+  // agent are sent it (SPEC-016).
+  string gm_notes = 8;
+}
+
+// TokenDescribed is a placed token's whole description as of this event,
+// produced by DescribeToken: each text replaces the token's, an empty one
+// included.
+message TokenDescribed {
+  string token_id = 1;
+  string name = 2;
+  string notes = 3;
+  // Never forward gm_name to a player or spectator: only the DM and the agent
+  // are sent it (SPEC-016).
+  string gm_name = 4;
+  // Never forward gm_notes to a player or spectator: only the DM and the
+  // agent are sent it (SPEC-016).
+  string gm_notes = 5;
 }
 
 // TokenRemoved takes a token off the board, for good, going forward
@@ -469,6 +492,15 @@ message AbilityUsed {
   }
   repeated Roll rolls = 4;
   string outcome_summary = 5;
+  // One per target of an ability with a resolution: the branch it resolved
+  // and the resolution roll's total, and nothing of what that total was
+  // compared with.
+  message Outcome {
+    string target_id = 1;
+    string result = 2;
+    int32 total = 3;
+  }
+  repeated Outcome outcomes = 6;
 }
 message ResourceChanged {
   string actor_id = 1;
@@ -574,5 +606,6 @@ message Envelope {
     // 33 is the next-free slot after token_removed = 32 (retraction-leaves
     // Task 9 report).
     ActorRemoved actor_removed = 33;
+    TokenDescribed token_described = 34;
   }
 }

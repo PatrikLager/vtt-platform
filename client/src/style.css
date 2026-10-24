@@ -202,7 +202,7 @@ h3 { margin: 0 0 2px; font-size: 14px; }
   background: #0d0f13; color: var(--ink); border: 1px solid var(--line);
   border-radius: 4px; padding: 4px 6px; font: inherit; width: 110px;
 }
-.dm input.wide { width: 240px; }
+.dm input.wide, .dm textarea.wide { width: 240px; }
 .dm input.tiny { width: 48px; }
 .dm .paste { width: 100%; min-height: 60px; font-family: ui-monospace, monospace; font-size: 12px; }
 .dm .chip {

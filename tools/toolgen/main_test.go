@@ -583,3 +583,59 @@ func TestAddActorStatesTheBoundOnItsModuleAndKeys(t *testing.T) {
 		}
 	}
 }
+
+// TestPlaceTokenOffersTheFourTextsAsOptional pins place_token's required list
+// to the four of a bare placement, and has each text say who is sent it.
+func TestPlaceTokenOffersTheFourTextsAsOptional(t *testing.T) {
+	schema := findTool(t, "place_token")["inputSchema"].(map[string]any)
+	want := []any{"tokenId", "sceneId", "actorId", "position"}
+	if got := schema["required"]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("place_token required = %v, want %v", got, want)
+	}
+	props := schema["properties"].(map[string]any)
+	for field, wants := range map[string][]string{
+		"name":    {"Optional", "every player and spectator"},
+		"notes":   {"Optional", "what they are told of it"},
+		"gmName":  {"Optional", "no player or spectator is ever sent it"},
+		"gmNotes": {"Optional", "no player or spectator is ever sent it"},
+	} {
+		p, ok := props[field].(map[string]any)
+		if !ok {
+			t.Fatalf("place_token has no %s property", field)
+		}
+		desc, _ := p["description"].(string)
+		for _, w := range wants {
+			if !strings.Contains(desc, w) {
+				t.Fatalf("place_token %s description = %q, want it to contain %q", field, desc, w)
+			}
+		}
+	}
+}
+
+// TestDescribeTokenStatesAllFourAtOnce pins describe_token's whole-description
+// shape: every field required, and an empty one said to clear.
+func TestDescribeTokenStatesAllFourAtOnce(t *testing.T) {
+	tool := findTool(t, "describe_token")
+	want := []any{"tokenId", "name", "notes", "gmName", "gmNotes"}
+	if got := tool["inputSchema"].(map[string]any)["required"]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("describe_token required = %v, want %v", got, want)
+	}
+	desc, _ := tool["description"].(string)
+	for _, w := range []string{"all four at once", "a field sent empty is cleared", "DM/agent only"} {
+		if !strings.Contains(desc, w) {
+			t.Fatalf("describe_token description = %q, want it to contain %q", desc, w)
+		}
+	}
+}
+
+// TestUseAbilitySaysAPlayersTargetMustBeSeen pins the sight gate's sentence in
+// use_ability's targetIds doc.
+func TestUseAbilitySaysAPlayersTargetMustBeSeen(t *testing.T) {
+	props := findTool(t, "use_ability")["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	desc, _ := props["targetIds"].(map[string]any)["description"].(string)
+	for _, w := range []string{"A player's every target must be an actor the character judging their moves sees", "exactly as an id that names no actor is"} {
+		if !strings.Contains(desc, w) {
+			t.Fatalf("use_ability targetIds description = %q, want it to contain %q", desc, w)
+		}
+	}
+}

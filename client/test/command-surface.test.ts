@@ -85,6 +85,7 @@ export const COMMAND_SURFACE: Record<
   startSession: { surface: "dm-console", action: "start-session" },
   endSession: { surface: "dm-console", action: "end-session" },
   placeToken: { surface: "dm-console", action: "place-token" },
+  describeToken: { surface: "dm-console", action: "describe-token" },
   addActor: { surface: "dm-console", action: "add-actor" },
   loadAdventure: { surface: "dm-console", action: "load-adventure" },
   loadMap: { surface: "dm-console", action: "load-map" },

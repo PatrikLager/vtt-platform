@@ -58,6 +58,10 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_PlaceToken{
 			PlaceToken: &vttv1.PlaceToken{TokenId: "t2", SceneId: "s1", ActorId: "a1"},
 		}}
+	case "describe_token":
+		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_DescribeToken{
+			DescribeToken: &vttv1.DescribeToken{TokenId: "t1", Name: "a hunched goblin"},
+		}}
 	case "remove_actor":
 		// Names "a1" — the actor ownershipFixture gives participant "p-1" —
 		// deliberately, so authzCases' remove_actor/player cell is FALSE
@@ -319,6 +323,11 @@ var authzCases = []authzCase{
 	{"remove_token", identity.RolePlayer, false},
 	{"remove_token", identity.RoleSpectator, false},
 
+	{"describe_token", identity.RoleDM, true},
+	{"describe_token", identity.RoleAgent, true},
+	{"describe_token", identity.RolePlayer, false},
+	{"describe_token", identity.RoleSpectator, false},
+
 	// remove_actor (retraction-leaves Task 9, spec §5.2). DM/AGENT ONLY, and
 	// the reasoning is add_actor's row read backwards: remove_actor is
 	// add_actor's inverse — it authors WHO IS IN THE WORLD — so it inherits
@@ -503,8 +512,8 @@ func ownershipFixture() *engine.State {
 
 // VTT-028 VTT-139 VTT-140 VTT-450 VTT-344
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 88 {
-		t.Fatalf("authzCases has %d entries, want 88 (22 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 92 {
+		t.Fatalf("authzCases has %d entries, want 92 (23 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {
@@ -518,6 +527,23 @@ func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
 					tc.role, tc.command, got, tc.want, err)
 			}
 		})
+	}
+}
+
+// VTT-463
+func TestOnlyTheDMAndTheAgentMayDescribeAToken(t *testing.T) {
+	st := ownershipFixture()
+	for role, may := range map[identity.Role]bool{
+		identity.RoleDM: true, identity.RoleAgent: true,
+		identity.RolePlayer: false, identity.RoleSpectator: false,
+	} {
+		err := gateway.Authorize(&identity.Participant{ID: "p-1", Role: role}, commandFor(t, "describe_token"), st)
+		if may && err != nil {
+			t.Fatalf("%s: describe_token refused: %v", role, err)
+		}
+		if !may && !errors.Is(err, gateway.ErrUnauthorized) {
+			t.Fatalf("%s: describe_token of a token their own actor stands on: err = %v, want ErrUnauthorized", role, err)
+		}
 	}
 }
 

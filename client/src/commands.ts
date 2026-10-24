@@ -137,6 +137,20 @@ export function placeToken(
   });
 }
 
+/** Rewrite a placed token's four texts at once; an empty one is cleared (VTT-479). */
+export function describeToken(
+  tokenId: string,
+  name: string,
+  notes: string,
+  gmName: string,
+  gmNotes: string,
+): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "describeToken", value: { tokenId, name, notes, gmName, gmNotes } },
+  });
+}
+
 /**
  * Take a token off the board, for good (retraction-leaves spec §5.1: "takes
  * a piece off the board"). NOT the same thing as a token going out of sight —

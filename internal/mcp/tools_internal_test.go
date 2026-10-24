@@ -32,6 +32,7 @@ var theCommandTools = []string{
 	"move_token",
 	"add_actor",
 	"place_token",
+	"describe_token",
 	"remove_token",
 	"remove_actor",
 	"start_session",

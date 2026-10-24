@@ -487,6 +487,9 @@ func (pr *Projection) classify(env *vttv1.Envelope, now sightView) verdict {
 	case *vttv1.Envelope_TokenPlaced:
 		return withheld
 
+	case *vttv1.Envelope_TokenDescribed:
+		return withheld
+
 	case *vttv1.Envelope_TokenRemoved:
 		// Withhold: a viewer that held the token is sent a TokenHidden
 		// (TestARemovedTokenReachesAPlayerOnlyAsHidden).

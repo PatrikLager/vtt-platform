@@ -108,6 +108,10 @@ func TestToEventPlaceTokenProducesTokenPlaced(t *testing.T) {
 		PlaceToken: &vttv1.PlaceToken{
 			TokenId: "t1", SceneId: "scn", ActorId: "a1",
 			Position: &vttv1.GridPosition{X: 3, Y: 7},
+			Name:     "a hunched goblin",
+			Notes:    "asleep",
+			GmName:   "Goblin Cutter",
+			GmNotes:  "wakes easily",
 		},
 	}}
 
@@ -122,6 +126,34 @@ func TestToEventPlaceTokenProducesTokenPlaced(t *testing.T) {
 	if tp.TokenPlaced.TokenId != "t1" || tp.TokenPlaced.SceneId != "scn" ||
 		tp.TokenPlaced.ActorId != "a1" || tp.TokenPlaced.Position.X != 3 || tp.TokenPlaced.Position.Y != 7 {
 		t.Fatalf("TokenPlaced = %+v, want t1/scn/a1/(3,7)", tp.TokenPlaced)
+	}
+	if tp.TokenPlaced.Name != "a hunched goblin" || tp.TokenPlaced.Notes != "asleep" ||
+		tp.TokenPlaced.GmName != "Goblin Cutter" || tp.TokenPlaced.GmNotes != "wakes easily" {
+		t.Fatalf("TokenPlaced = %+v, want the four texts the command gave", tp.TokenPlaced)
+	}
+}
+
+// VTT-260
+func TestToEventDescribeTokenProducesTokenDescribed(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
+	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_DescribeToken{
+		DescribeToken: &vttv1.DescribeToken{
+			TokenId: "t1", Name: "an angry goblin", Notes: "awake", GmName: "Goblin Cutter", GmNotes: "flees",
+		},
+	}}
+
+	env, err := gateway.ToEvent(cmd, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	td, ok := env.Payload.(*vttv1.Envelope_TokenDescribed)
+	if !ok {
+		t.Fatalf("payload = %T, want *Envelope_TokenDescribed", env.Payload)
+	}
+	if td.TokenDescribed.TokenId != "t1" || td.TokenDescribed.Name != "an angry goblin" ||
+		td.TokenDescribed.Notes != "awake" || td.TokenDescribed.GmName != "Goblin Cutter" ||
+		td.TokenDescribed.GmNotes != "flees" {
+		t.Fatalf("TokenDescribed = %+v, want every field the command gave", td.TokenDescribed)
 	}
 }
 

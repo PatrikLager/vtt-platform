@@ -36,6 +36,10 @@ const cases = [
   ["token_moved_reason_envelope.json", EnvelopeSchema],
   ["adventure_loaded_envelope.json", EnvelopeSchema],
   ["load_adventure_command.json", ClientCommandSchema],
+  ["token_placed_with_text_envelope.json", EnvelopeSchema],
+  ["token_described_envelope.json", EnvelopeSchema],
+  ["describe_token_command.json", ClientCommandSchema],
+  ["ability_used_with_outcomes_envelope.json", EnvelopeSchema],
 ] as const;
 
 for (const [fixture, schema] of cases) {

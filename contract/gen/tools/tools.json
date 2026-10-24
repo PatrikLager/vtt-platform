@@ -123,6 +123,22 @@
         "actorId": {
           "type": "string"
         },
+        "gmName": {
+          "description": "Optional; the DM's and the agent's alone: no player or spectator is ever sent it.",
+          "type": "string"
+        },
+        "gmNotes": {
+          "description": "Optional; the DM's and the agent's alone: no player or spectator is ever sent it.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Optional; what every player and spectator whose character sees this token is told it is, such as \"a sleeping creature\". Never the creature's true name unless the characters know it.",
+          "type": "string"
+        },
+        "notes": {
+          "description": "Optional; what they are told of it beside its name.",
+          "type": "string"
+        },
         "position": {
           "properties": {
             "x": {
@@ -155,6 +171,37 @@
       "type": "object"
     },
     "name": "place_token"
+  },
+  {
+    "description": "Rewrite a placed token's name, notes, GM name and GM notes, all four at once: a field sent empty is cleared, so send the present value of any you keep. Players and spectators whose character sees the token are sent its new name and notes; the GM name and GM notes reach only the DM and the agent. DM/agent only.",
+    "inputSchema": {
+      "properties": {
+        "gmName": {
+          "type": "string"
+        },
+        "gmNotes": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "tokenId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tokenId",
+        "name",
+        "notes",
+        "gmName",
+        "gmNotes"
+      ],
+      "type": "object"
+    },
+    "name": "describe_token"
   },
   {
     "description": "Take a token off the board, for good. This is NOT hiding it — the piece is no longer part of the world going forward, for everyone at the table. It does not erase that the token was ever there; the log keeps whatever place_token/move_token history it had before this. DM/agent only.",
@@ -222,7 +269,7 @@
           "type": "string"
         },
         "targetIds": {
-          "description": "The ACTOR ids of the creatures the ability is aimed at, never a token's id: a token is only where an actor stands on a scene, and an id that names no actor is refused. Each target must have a token in the caster's scene within the ability's range.",
+          "description": "The ACTOR ids of the creatures the ability is aimed at, never a token's id: a token is only where an actor stands on a scene, and an id that names no actor is refused. Each target must have a token in the caster's scene within the ability's range. A player's every target must be an actor the character judging their moves sees; any other is refused exactly as an id that names no actor is.",
           "items": {
             "type": "string"
           },

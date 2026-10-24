@@ -45,6 +45,18 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 			SceneId:  c.PlaceToken.GetSceneId(),
 			ActorId:  c.PlaceToken.GetActorId(),
 			Position: c.PlaceToken.GetPosition(),
+			Name:     c.PlaceToken.GetName(),
+			Notes:    c.PlaceToken.GetNotes(),
+			GmName:   c.PlaceToken.GetGmName(),
+			GmNotes:  c.PlaceToken.GetGmNotes(),
+		}}
+	case *vttv1.ClientCommand_DescribeToken:
+		env.Payload = &vttv1.Envelope_TokenDescribed{TokenDescribed: &vttv1.TokenDescribed{
+			TokenId: c.DescribeToken.GetTokenId(),
+			Name:    c.DescribeToken.GetName(),
+			Notes:   c.DescribeToken.GetNotes(),
+			GmName:  c.DescribeToken.GetGmName(),
+			GmNotes: c.DescribeToken.GetGmNotes(),
 		}}
 	case *vttv1.ClientCommand_RemoveToken:
 		env.Payload = &vttv1.Envelope_TokenRemoved{TokenRemoved: &vttv1.TokenRemoved{

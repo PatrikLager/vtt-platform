@@ -15,9 +15,10 @@ import (
 // Add a command's roles here and nowhere else: a command with no row is refused
 // for every role (SPEC-013, TestEveryClientCommandHasRoleCells).
 var commandRoles = map[string]map[identity.Role]bool{
-	"move_token":  {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
-	"add_actor":   {identity.RoleDM: true, identity.RoleAgent: true},
-	"place_token": {identity.RoleDM: true, identity.RoleAgent: true},
+	"move_token":     {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
+	"add_actor":      {identity.RoleDM: true, identity.RoleAgent: true},
+	"place_token":    {identity.RoleDM: true, identity.RoleAgent: true},
+	"describe_token": {identity.RoleDM: true, identity.RoleAgent: true},
 	// Keep the player off both removals, even of what they control (SPEC-013).
 	"remove_token":         {identity.RoleDM: true, identity.RoleAgent: true},
 	"remove_actor":         {identity.RoleDM: true, identity.RoleAgent: true},
@@ -221,6 +222,8 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "add_actor"
 	case *vttv1.ClientCommand_PlaceToken:
 		return "place_token"
+	case *vttv1.ClientCommand_DescribeToken:
+		return "describe_token"
 	case *vttv1.ClientCommand_RemoveToken:
 		return "remove_token"
 	case *vttv1.ClientCommand_RemoveActor:

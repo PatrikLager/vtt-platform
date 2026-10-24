@@ -41,6 +41,24 @@ message PlaceToken {
   string scene_id = 2;
   string actor_id = 3;
   GridPosition position = 4;
+  // What a player or spectator whose character sees the token is told it is.
+  string name = 5;
+  // What that player or spectator is told of the token beside its name.
+  string notes = 6;
+  // The DM's and the agent's alone: no player or spectator is sent it.
+  string gm_name = 7;
+  // The DM's and the agent's alone: no player or spectator is sent it.
+  string gm_notes = 8;
+}
+
+// DescribeToken rewrites a placed token's four texts at once; a text sent
+// empty is cleared. DM/agent only.
+message DescribeToken {
+  string token_id = 1;
+  string name = 2;
+  string notes = 3;
+  string gm_name = 4;
+  string gm_notes = 5;
 }
 
 // RemoveToken takes a piece off the board (retraction-leaves spec §5.1):
@@ -170,6 +188,7 @@ message ClientCommand {
     // 33 is the next-free slot after remove_token = 32 (retraction-leaves
     // Task 9 report).
     RemoveActor remove_actor = 33;
+    DescribeToken describe_token = 34;
   }
 }
 
