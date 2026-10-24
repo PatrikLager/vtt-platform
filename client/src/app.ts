@@ -364,7 +364,7 @@ function startSession(root: HTMLElement, token: string): Session {
       return;
     }
     const perches = me !== null && mayPerch(me, session.controlsNoPartyMember);
-    const canAct = !perches && me !== null && (me.role === "player" || me.role === "dm" || me.role === "agent");
+    const canAct = me !== null && !perches;
     const isDM = me !== null && (me.role === "dm" || me.role === "agent");
     const isPlayer = me !== null && me.role === "player";
     // A player acts as the character they watch, and an armed ability is

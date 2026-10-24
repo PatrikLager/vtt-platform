@@ -473,9 +473,8 @@ test("delivered events reach both the feed and the DM console", async () => {
 });
 
 test("a DM gets the player panel as well as the console", async () => {
-  // canAct lists player, dm and agent separately. Each arm needs its own
-  // case or one role silently loses the ability to act while still looking
-  // fully wired.
+  // A DM never perches, so canAct admits them: a mayPerch that perched a DM
+  // would take their panel away while the console still looked fully wired.
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
     "/api/me": { participantId: "p-dm", name: "DM", role: "dm" },
