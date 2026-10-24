@@ -372,6 +372,23 @@ key to build). A placement's square must not be a `wall`, and must not be a
 closed `door` — a token can never start somewhere it could not otherwise
 stand.
 
+A placement may also carry four optional texts, each a string and none
+bounded in length:
+
+```json
+{ "token_id": "tok-cutter", "actor_id": "act-cutter", "x": 1, "y": 0,
+  "name": "a hunched goblin", "notes": "It sleeps against the rock.",
+  "gm_name": "Goblin Cutter", "gm_notes": "Wakes at any noise." }
+```
+
+- **`name` and `notes`** are for the players: what a character who sees
+  the token can make out of it. Write "a hunched goblin" rather than the
+  creature's own name, unless the characters know it.
+- **`gm_name` and `gm_notes`** are for the DM and the agent alone.
+
+The same four keys work in an adventure's `scenes/*.json`. The DM may rewrite
+all four during play with `describe_token`.
+
 **`actor_id` must name an actor that already exists in the campaign the map
 is loaded into, and this is the one rule that is not checked when the file
 loads.** The map file itself validates fine; the failure comes later, when

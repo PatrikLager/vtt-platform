@@ -735,3 +735,25 @@ func TestCompileWithNoArtDirectoryResolvesStandardOnlyTiles(t *testing.T) {
 		t.Fatalf("tiles[1,1] = %v, want plain wood floor with no art", got)
 	}
 }
+
+// TestAMapPlacementCarriesItsFourTextsIntoTokenPlaced pins the four optional
+// keys of a map's placement through load and compile.
+func TestAMapPlacementCarriesItsFourTextsIntoTokenPlaced(t *testing.T) {
+	m, err := mapdef.Load("testdata/valid/named-placement.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := mapdef.Placement{TokenID: "tok-1", ActorID: "act-1",
+		Name: "a shape in the dark", Notes: "It does not move.", GMName: "The Warden", GMNotes: "Asleep."}
+	if len(m.Placements) != 1 || m.Placements[0] != want {
+		t.Fatalf("placements = %+v, want [%+v]", m.Placements, want)
+	}
+	envs, _, err := mapdef.Compile(m, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tp := envs[1].GetTokenPlaced()
+	if tp.GetName() != want.Name || tp.GetNotes() != want.Notes || tp.GetGmName() != want.GMName || tp.GetGmNotes() != want.GMNotes {
+		t.Fatalf("TokenPlaced = %v, want the placement's four texts", tp)
+	}
+}

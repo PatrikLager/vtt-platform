@@ -77,7 +77,8 @@ func TestLoadValidFixture(t *testing.T) {
 		}},
 		{"yard", "The Yard", 10, 10, []adventure.Placement{
 			{TokenID: "tok-vim", ActorID: "vim-fighter", X: 2, Y: 3},
-			{TokenID: "tok-brace", ActorID: "brace-guard", X: 5, Y: 5},
+			{TokenID: "tok-brace", ActorID: "brace-guard", X: 5, Y: 5,
+				Name: "a guard in grey", Notes: "He watches the well.", GMName: "Brace", GMNotes: "Paid by the smugglers."},
 		}},
 	}
 	if len(adv.Scenes) != len(wantScenes) {

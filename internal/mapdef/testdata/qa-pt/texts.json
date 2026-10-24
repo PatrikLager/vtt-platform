@@ -1,0 +1,23 @@
+{
+  "format_version": 1,
+  "id": "texts",
+  "name": "Four Texts",
+  "grid_width": 4,
+  "grid_height": 1,
+  "tiles": {
+    "0,0": "stone", "1,0": "stone", "2,0": "stone", "3,0": "stone"
+  },
+  "placements": [
+    { "token_id": "tok-all", "actor_id": "act-cutter", "x": 0, "y": 0,
+      "name": "a hunched shape — gråsten, 小鬼",
+      "notes": "It sleeps against the rock.\nIt mutters \"mine\".",
+      "gm_name": "Goblin Cutter",
+      "gm_notes": "Wakes at any noise." },
+    { "token_id": "tok-none", "actor_id": "act-fighter", "x": 1, "y": 0 },
+    { "token_id": "tok-player", "actor_id": "act-archer", "x": 2, "y": 0,
+      "name": "a goblin with a bow",
+      "notes": "It keeps to the rocks above the trail." },
+    { "token_id": "tok-gm", "actor_id": "act-boss", "x": 3, "y": 0,
+      "gm_name": "Chief Rakk", "gm_notes": "Will parley if outnumbered." }
+  ]
+}

@@ -5216,14 +5216,19 @@
       "SceneID": "ravine",
       "ActorID": "act-archer",
       "X": 5,
-      "Y": 0
+      "Y": 0,
+      "Name": "a goblin with a bow",
+      "Notes": "It keeps to the rocks above the trail.",
+      "GMName": "Goblin Archer"
     },
     "tok-cutter": {
       "ID": "tok-cutter",
       "SceneID": "ravine",
       "ActorID": "act-cutter",
       "X": 1,
-      "Y": 0
+      "Y": 0,
+      "Name": "a hunched goblin",
+      "GMName": "Goblin Cutter"
     },
     "tok-fighter": {
       "ID": "tok-fighter",

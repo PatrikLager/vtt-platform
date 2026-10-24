@@ -4233,7 +4233,9 @@
       "actorId": "act-cutter",
       "position": {
         "x": 1
-      }
+      },
+      "name": "a hunched goblin",
+      "gmName": "Goblin Cutter"
     }
   },
   {
@@ -4247,7 +4249,10 @@
       "actorId": "act-archer",
       "position": {
         "x": 5
-      }
+      },
+      "name": "a goblin with a bow",
+      "notes": "It keeps to the rocks above the trail.",
+      "gmName": "Goblin Archer"
     }
   },
   {

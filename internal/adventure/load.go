@@ -368,6 +368,10 @@ type placementJSON struct {
 	ActorID string `json:"actor_id"`
 	X       int32  `json:"x"`
 	Y       int32  `json:"y"`
+	Name    string `json:"name"`
+	Notes   string `json:"notes"`
+	GMName  string `json:"gm_name"`
+	GMNotes string `json:"gm_notes"`
 }
 
 // loadScenes decodes every scenes/*.json file (file-name order), validating

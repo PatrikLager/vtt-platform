@@ -145,6 +145,8 @@ func TestCompileValidFixtureExactEnvelopeList(t *testing.T) {
 		{Payload: &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
 			TokenId: "tok-brace", SceneId: "yard", ActorId: "brace-guard",
 			Position: &vttv1.GridPosition{X: 5, Y: 5},
+			Name:     "a guard in grey", Notes: "He watches the well.",
+			GmName: "Brace", GmNotes: "Paid by the smugglers.",
 		}}},
 		{Payload: &vttv1.Envelope_NoteUpserted{NoteUpserted: &vttv1.NoteUpserted{
 			Key: "yard-rumor", Title: "Yard Rumor", Text: "Something stirs behind the well.",
@@ -462,4 +464,39 @@ func TestCompileHandlesLopsidedAdventureShapes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAPlacementCarriesItsFourTextsIntoTokenPlaced pins the four optional keys
+// of a placement through load and compile.
+func TestAPlacementCarriesItsFourTextsIntoTokenPlaced(t *testing.T) {
+	adv, err := adventure.Load("testdata/valid", loadFixtureRuleset(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var loaded *adventure.Placement
+	for _, sc := range adv.Scenes {
+		for i := range sc.Placements {
+			if sc.Placements[i].TokenID == "tok-brace" {
+				loaded = &sc.Placements[i]
+			}
+		}
+	}
+	want := adventure.Placement{TokenID: "tok-brace", ActorID: "brace-guard", X: 5, Y: 5,
+		Name: "a guard in grey", Notes: "He watches the well.", GMName: "Brace", GMNotes: "Paid by the smugglers."}
+	if loaded == nil || *loaded != want {
+		t.Fatalf("loaded placement = %+v, want %+v", loaded, want)
+	}
+	envs, _, err := adventure.Compile(adv, engine.NewState())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range envs {
+		if tp := e.GetTokenPlaced(); tp.GetTokenId() == "tok-brace" {
+			if tp.GetName() != want.Name || tp.GetNotes() != want.Notes || tp.GetGmName() != want.GMName || tp.GetGmNotes() != want.GMNotes {
+				t.Fatalf("TokenPlaced = %v, want the placement's four texts", tp)
+			}
+			return
+		}
+	}
+	t.Fatal("compile emitted no TokenPlaced for tok-brace")
 }

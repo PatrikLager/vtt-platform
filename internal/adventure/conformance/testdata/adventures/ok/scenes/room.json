@@ -8,7 +8,11 @@
       "token_id": "tok-hero",
       "actor_id": "hero",
       "x": 0,
-      "y": 0
+      "y": 0,
+      "name": "a traveller",
+      "notes": "Dust on the cloak.",
+      "gm_name": "The Hero",
+      "gm_notes": "Carries the map."
     }
   ],
   "tiles": {

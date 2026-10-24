@@ -1,0 +1,18 @@
+{
+  "id": "loft",
+  "name": "The Loft",
+  "grid_width": 5,
+  "grid_height": 5,
+  "placements": [
+    {
+      "token_id": "tok-scout-2",
+      "actor_id": "grit-scout",
+      "x": 3,
+      "y": 3,
+      "name": "",
+      "notes": "",
+      "gm_name": "",
+      "gm_notes": ""
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "id": "yard",
+  "name": "The Yard",
+  "grid_width": 10,
+  "grid_height": 10,
+  "placements": [
+    {
+      "token_id": "tok-vim",
+      "actor_id": "vim-fighter",
+      "x": 2,
+      "y": 3
+    },
+    {
+      "token_id": "tok-brace",
+      "actor_id": "brace-guard",
+      "x": 5,
+      "y": 5,
+      "name": "a guard in grey — gråklädd, 灰色の衛兵",
+      "notes": "He watches the well.\nHe says \"halt\" twice.",
+      "gm_name": "Brace the Paid",
+      "gm_notes": "Paid by the smugglers; flees at dusk."
+    }
+  ]
+}

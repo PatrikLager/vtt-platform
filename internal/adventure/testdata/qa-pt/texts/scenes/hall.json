@@ -1,0 +1,16 @@
+{
+  "id": "hall",
+  "name": "The Hall",
+  "grid_width": 7,
+  "grid_height": 7,
+  "placements": [
+    {
+      "token_id": "tok-brace-2",
+      "actor_id": "brace-guard",
+      "x": 2,
+      "y": 2,
+      "name": "a figure by the hearth",
+      "notes": "It warms its hands."
+    }
+  ]
+}

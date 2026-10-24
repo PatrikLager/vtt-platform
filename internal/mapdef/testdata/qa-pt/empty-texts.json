@@ -1,0 +1,12 @@
+{
+  "format_version": 1,
+  "id": "empty-texts",
+  "name": "Four Empty Texts",
+  "grid_width": 1,
+  "grid_height": 1,
+  "tiles": { "0,0": "stone" },
+  "placements": [
+    { "token_id": "tok-empty", "actor_id": "act-1", "x": 0, "y": 0,
+      "name": "", "notes": "", "gm_name": "", "gm_notes": "" }
+  ]
+}

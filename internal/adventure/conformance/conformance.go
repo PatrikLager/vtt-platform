@@ -39,6 +39,7 @@
 //	  "text": "...", "visibility": "NOTE_VISIBILITY_PUBLIC"}}
 //	{"type": "narration_added", "narration_added": {"text": "..."}}
 //
+// A token_placed may also carry "name", "notes", "gm_name" and "gm_notes".
 // Envelope metadata (event_id/sequence/occurred_at/session_id/actor_role/
 // participant_id) is absent: Compile never sets it; handleLoadAdventure and
 // campaign.AppendBatch stamp it, so a golden pinning it would pin nothing.
@@ -321,6 +322,10 @@ type tokenPlacedDump struct {
 	ActorID string `json:"actor_id"`
 	X       int32  `json:"x"`
 	Y       int32  `json:"y"`
+	Name    string `json:"name,omitempty"`
+	Notes   string `json:"notes,omitempty"`
+	GMName  string `json:"gm_name,omitempty"`
+	GMNotes string `json:"gm_notes,omitempty"`
 }
 
 type noteUpsertedDump struct {
@@ -354,7 +359,8 @@ func toEnvelopeDump(env *vttv1.Envelope) (envelopeDump, error) {
 
 	case *vttv1.Envelope_TokenPlaced:
 		tp := p.TokenPlaced
-		d := tokenPlacedDump{TokenID: tp.TokenId, SceneID: tp.SceneId, ActorID: tp.ActorId}
+		d := tokenPlacedDump{TokenID: tp.TokenId, SceneID: tp.SceneId, ActorID: tp.ActorId,
+			Name: tp.Name, Notes: tp.Notes, GMName: tp.GmName, GMNotes: tp.GmNotes}
 		if tp.Position != nil {
 			d.X, d.Y = tp.Position.X, tp.Position.Y
 		}

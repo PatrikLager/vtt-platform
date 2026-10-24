@@ -1,0 +1,10 @@
+{
+  "format_version": 1,
+  "id": "cell",
+  "name": "A Single Square",
+  "grid_width": 1,
+  "grid_height": 1,
+  "tiles": { "0,0": "stone" },
+  "placements": [{ "token_id": "tok-1", "actor_id": "act-1", "x": 0, "y": 0,
+    "name": "a shape in the dark", "notes": "It does not move.", "gm_name": "The Warden", "gm_notes": "Asleep." }]
+}

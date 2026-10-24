@@ -189,6 +189,7 @@ type Object struct {
 // the adventure package just to name a field shape the two formats happen
 // to share.
 type Placement struct {
-	TokenID, ActorID string
-	X, Y             int32
+	TokenID, ActorID             string
+	X, Y                         int32
+	Name, Notes, GMName, GMNotes string
 }

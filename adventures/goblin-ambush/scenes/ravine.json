@@ -1040,13 +1040,18 @@
       "token_id": "tok-cutter",
       "actor_id": "act-cutter",
       "x": 1,
-      "y": 0
+      "y": 0,
+      "name": "a hunched goblin",
+      "gm_name": "Goblin Cutter"
     },
     {
       "token_id": "tok-archer",
       "actor_id": "act-archer",
       "x": 5,
-      "y": 0
+      "y": 0,
+      "name": "a goblin with a bow",
+      "notes": "It keeps to the rocks above the trail.",
+      "gm_name": "Goblin Archer"
     }
   ]
 }

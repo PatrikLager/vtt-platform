@@ -14,7 +14,11 @@
       "token_id": "tok-brace",
       "actor_id": "brace-guard",
       "x": 5,
-      "y": 5
+      "y": 5,
+      "name": "a guard in grey",
+      "notes": "He watches the well.",
+      "gm_name": "Brace",
+      "gm_notes": "Paid by the smugglers."
     }
   ]
 }

@@ -91,6 +91,7 @@ func Compile(m *Map, artDir string) ([]*vttv1.Envelope, []string, error) {
 			Payload: &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
 				TokenId: pl.TokenID, SceneId: m.ID, ActorId: pl.ActorID,
 				Position: &vttv1.GridPosition{X: pl.X, Y: pl.Y},
+				Name:     pl.Name, Notes: pl.Notes, GmName: pl.GMName, GmNotes: pl.GMNotes,
 			}},
 		})
 	}

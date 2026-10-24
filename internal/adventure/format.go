@@ -108,8 +108,9 @@ func (sc AdventureScene) asMap() *mapdef.Map {
 // placements array — it carries no scene reference of its own, because the
 // containing AdventureScene IS that reference (spec §4's nested shape).
 type Placement struct {
-	TokenID, ActorID string
-	X, Y             int32
+	TokenID, ActorID             string
+	X, Y                         int32
+	Name, Notes, GMName, GMNotes string
 }
 
 // AdventureActor is one actors/*.json file: a complete statblock instance,

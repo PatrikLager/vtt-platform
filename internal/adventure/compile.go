@@ -95,6 +95,7 @@ func Compile(adv *Adventure, st *engine.State) ([]*vttv1.Envelope, []string, err
 				Payload: &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
 					TokenId: p.TokenID, SceneId: sc.ID, ActorId: p.ActorID,
 					Position: &vttv1.GridPosition{X: p.X, Y: p.Y},
+					Name:     p.Name, Notes: p.Notes, GmName: p.GMName, GmNotes: p.GMNotes,
 				}},
 			})
 		}
