@@ -279,14 +279,15 @@ SPEC-018's.
 
 A client or tool author is bound by these:
 
-- A spectator's only command is `set_viewpoint`; a player's `set_viewpoint`
-  chooses which of their party members they watch, and the DM and the agent
-  may not issue it.
+- A spectator's only command is `set_viewpoint`. A player who controls a
+  party member chooses by it which of their party members they watch, and a
+  player who controls none chooses as a spectator does (SPEC-015, the
+  owner's ruling B-4 of 2026-10-22). The DM and the agent may not issue it.
 - A player acts only through an actor that counts them among its
   controllers; an actor nobody controls is the DM's and the agent's.
 - A player works a door from a controlled token beside it, and moves only
-  onto a square the character they watch can see now; a square they remember
-  and cannot see is refused.
+  onto a square the party member SPEC-015 judges the move by can see now; a
+  square they remember and cannot see is refused.
 - A refusal is an ok=false result on a connection that stays open, seen by
   the issuer alone. A move refusal's text names nothing the character the
   move was judged by has not seen (VTT-156, VTT-159); no other refusal's text

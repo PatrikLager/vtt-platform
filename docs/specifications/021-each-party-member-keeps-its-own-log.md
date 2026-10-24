@@ -225,7 +225,8 @@ bound by these:
 - A non-party creature left in a player's control is still theirs to move:
   `internal/gateway/authz.go` reads no kind (`grep -n 'Kind'
   internal/gateway/authz.go` prints nothing), and the move is judged by the
-  eyes of the character the player watches (SPEC-015).
+  move gate (SPEC-013), through the eyes SPEC-015 names. A player who
+  controls no party member moves it nowhere (VTT-370).
 - Entries of one log share `event_id`s with the world and with other logs;
   nothing may treat `character_events.event_id` as unique.
 - An entry's `world_seq` is provenance and the anchors' key, never folded and

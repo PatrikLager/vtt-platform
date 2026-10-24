@@ -10,7 +10,10 @@ under `contract/gen/tools`.
 Held by `contract/contract_test.go`, `contract/roundtrip_test.go`,
 `contract/events.test.ts` and the fixtures in `contract/testdata/`; that a
 perch appends nothing, by `internal/gateway/server_visibility_test.go` and
-`qa_seat_test.go` (VTT-184); that a player's result names the world event, by
+`qa_seat_test.go` (VTT-184); that an empty set arrives with its flag, by
+`TestQACNAnEmptySetSaysOnTheWireThatTheyControlNone` in
+`internal/gateway/qa_controls_none_test.go`; that a player's result names the
+world event, by
 `TestThreeRoleExitScenarioOverLiveWebSockets` in
 `internal/gateway/scenario_test.go`; and the `upsert_note` tool's schema, by
 `tools/toolgen/main_test.go` (VTT-232). Gated by `task check:drift` and `task
@@ -139,13 +142,19 @@ are sent none.
 
 `WatchableChanged` names whom a player or a spectator may watch: one
 `WatchableActor` for each party member `MayWatch` accepts for the participant,
-carrying the actor's id and name, in id order (SPEC-015). It comes after the
+carrying the actor's id and name, in id order (SPEC-015). Its
+`controls_no_party_member` says whether the participant controls no party
+member, by the owner's ruling "Field on the list" of 2026-10-23, and a client
+draws a player the perch by a true one (SPEC-022). It comes after the
 `PresenceSnapshot` and before the opening `ViewpointChanged`, including when it
-names none: protojson omits the empty list, so that frame arrives as
-`{"watchableChanged":{}}`. Each later one replaces the last whole, is sent only
-when the set has changed, and comes before the `ViewpointChanged` of the same
-change, if it moves the seat, and before any entry of the append that changed
-it. It is a frame, never an `Envelope`, and the DM and the agent are sent none.
+names none. protojson omits an empty list and a false flag. A list is empty
+only with the flag true, since a party member the participant controls is one
+`MayWatch` accepts for them, so an empty set arrives as
+`{"watchableChanged":{"controlsNoPartyMember":true}}`. Each later one replaces
+the last whole, is sent when SPEC-015 says, and comes before the
+`ViewpointChanged` of the same change, if it moves the seat, and before any
+entry of the append that changed it. It is a frame, never an
+`Envelope`, and the DM and the agent are sent none.
 
 ### What appends to the log, and what does not
 
