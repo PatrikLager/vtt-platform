@@ -1940,7 +1940,7 @@ func TestAnUnreadableIdentityRefusesTheCommandWithoutKickingAnybody(t *testing.T
 	// OPERATIONAL, not a credential fact — nobody was revoked, and the row is
 	// still there. Only the table it lives in has moved out from under the
 	// query, which is what an unhealthy database looks like from here.
-	raw, err := sql.Open("sqlite", campaign.LogPath(f.path))
+	raw, err := sql.Open("sqlite", campaign.LogPath(f.path)+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		t.Fatal(err)
 	}
