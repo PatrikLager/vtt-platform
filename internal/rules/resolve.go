@@ -162,7 +162,7 @@ func Resolve(rs *Ruleset, st *engine.State, cmd *vttv1.UseAbility, rng Roller) (
 		}
 		a, ok := st.Actors[tid]
 		if !ok {
-			return nil, fmt.Errorf("rules: resolve: unknown target actor %q", tid)
+			return nil, UnknownTarget(tid)
 		}
 		targets[tid] = a
 	}
@@ -243,6 +243,7 @@ func Resolve(rs *Ruleset, st *engine.State, cmd *vttv1.UseAbility, rng Roller) (
 	var events []*vttv1.Envelope
 	var rolls []*vttv1.AbilityUsed_Roll
 	var summaryParts []string
+	var outcomes []*vttv1.AbilityUsed_Outcome
 
 	if ability.Usage.Limited != nil {
 		lu := ability.Usage.Limited
@@ -299,6 +300,7 @@ func Resolve(rs *Ruleset, st *engine.State, cmd *vttv1.UseAbility, rng Roller) (
 			outcomeList := ability.BranchOutcomes[branchIdx]
 			word := ability.Resolution.Branches[branchIdx]
 			summaryParts = append(summaryParts, fmt.Sprintf("%s on %s: %s (%d vs %d)", ability.Name, tid, word, total, vsTotal))
+			outcomes = append(outcomes, &vttv1.AbilityUsed_Outcome{TargetId: tid, Result: word, Total: total32})
 
 			evs, evRolls, err := rst.applyOutcomes(casterID, tid, outcomeList, ability.ID, word)
 			if err != nil {
@@ -333,11 +335,17 @@ func Resolve(rs *Ruleset, st *engine.State, cmd *vttv1.UseAbility, rng Roller) (
 		TargetIds:      append([]string(nil), targetIDs...),
 		Rolls:          rolls,
 		OutcomeSummary: strings.Join(summaryParts, "; "),
+		Outcomes:       outcomes,
 	}
 	out := make([]*vttv1.Envelope, 0, len(events)+1)
 	out = append(out, abilityUsedEnvelope(abilityUsed))
 	out = append(out, events...)
 	return out, nil
+}
+
+// UnknownTarget is the refusal of a target id that names no actor.
+func UnknownTarget(id string) error {
+	return fmt.Errorf("rules: resolve: unknown target actor %q", id)
 }
 
 // resKey identifies one (actor, resource) pair for the running-value and

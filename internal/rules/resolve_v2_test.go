@@ -72,6 +72,7 @@ func TestResolveV2QuickJabConnect(t *testing.T) {
 			ActorId: "a", AbilityId: "quick-jab", TargetIds: []string{"b"},
 			Rolls:          []*vttv1.AbilityUsed_Roll{{Expression: "1d20 + @caster.vim + (2)", Results: []int32{15}, Total: 21}},
 			OutcomeSummary: "Quick Jab on b: connect (21 vs 10)",
+			Outcomes:       []*vttv1.AbilityUsed_Outcome{{TargetId: "b", Result: "connect", Total: 21}},
 		}),
 		envResourceChanged("b", "focus", -8, 2, "ability:quick-jab:connect"),
 		envConditionApplied("b", "winded", "threshold:focus"),
@@ -101,6 +102,7 @@ func TestResolveV2QuickJabGraze(t *testing.T) {
 			ActorId: "a", AbilityId: "quick-jab", TargetIds: []string{"b"},
 			Rolls:          []*vttv1.AbilityUsed_Roll{{Expression: "1d20 + @caster.vim + (2)", Results: []int32{2}, Total: 8}},
 			OutcomeSummary: "Quick Jab on b: graze (8 vs 30)",
+			Outcomes:       []*vttv1.AbilityUsed_Outcome{{TargetId: "b", Result: "graze", Total: 8}},
 		}),
 	}
 	assertEnvelopes(t, envs, want)
@@ -164,6 +166,7 @@ func TestResolveV2TagTeamOutcomeMergeOrder(t *testing.T) {
 			ActorId: "a", AbilityId: "tag-team", TargetIds: []string{"b"},
 			Rolls:          []*vttv1.AbilityUsed_Roll{{Expression: "1d20 + @caster.vim + (0)", Results: []int32{10}, Total: 15}},
 			OutcomeSummary: "Tag Team on b: connect (15 vs 10)",
+			Outcomes:       []*vttv1.AbilityUsed_Outcome{{TargetId: "b", Result: "connect", Total: 15}},
 		}),
 		envResourceChanged("b", "focus", 1, 1, "ability:tag-team:connect"), // tag-q
 		envResourceChanged("b", "focus", 2, 3, "ability:tag-team:connect"), // tag-p, running on top of tag-q's +1
@@ -199,6 +202,7 @@ func TestResolveV2WardShiftPassRunsEffectsOnly(t *testing.T) {
 			ActorId: "a", AbilityId: "ward-shift", TargetIds: []string{"b"},
 			Rolls:          []*vttv1.AbilityUsed_Roll{{Expression: "1d20 + @caster.vim", Results: []int32{15}, Total: 18}},
 			OutcomeSummary: "Ward Shift on b: pass (18 vs 5)",
+			Outcomes:       []*vttv1.AbilityUsed_Outcome{{TargetId: "b", Result: "pass", Total: 18}},
 		}),
 		envConditionRemoved("b", "steadied", "ability:ward-shift:effect"),
 	}
@@ -232,6 +236,7 @@ func TestResolveV2WardShiftFailAppliesAndNoOpRemoves(t *testing.T) {
 			ActorId: "a", AbilityId: "ward-shift", TargetIds: []string{"b"},
 			Rolls:          []*vttv1.AbilityUsed_Roll{{Expression: "1d20 + @caster.vim", Results: []int32{2}, Total: 5}},
 			OutcomeSummary: "Ward Shift on b: fail (5 vs 10)",
+			Outcomes:       []*vttv1.AbilityUsed_Outcome{{TargetId: "b", Result: "fail", Total: 5}},
 		}),
 		envConditionApplied("b", "winded", "ability:ward-shift:fail"),
 		// ward-mark's remove_condition(steadied) and ward-clear's
@@ -354,6 +359,7 @@ func TestResolveV2OutcomeCasterContextAsymmetric(t *testing.T) {
 			ActorId: "a", AbilityId: "drain", TargetIds: []string{"b"},
 			Rolls:          []*vttv1.AbilityUsed_Roll{{Expression: "1d20 + @caster.might", Results: []int32{10}, Total: 17}},
 			OutcomeSummary: "Drain on b: hit (17 vs 5)",
+			Outcomes:       []*vttv1.AbilityUsed_Outcome{{TargetId: "b", Result: "hit", Total: 17}},
 		}),
 		envResourceChanged("b", "pool", -7, 3, "ability:drain:hit"),
 	}
@@ -429,6 +435,7 @@ func TestResolveV2VsExpressionWithDiceRecordsInOrder(t *testing.T) {
 				{Expression: "@target.brace + 1d4", Results: []int32{3}, Total: 8},
 			},
 			OutcomeSummary: "Feint on b: connect (12 vs 8)",
+			Outcomes:       []*vttv1.AbilityUsed_Outcome{{TargetId: "b", Result: "connect", Total: 12}},
 		}),
 		envResourceChanged("b", "focus", 1, 1, "ability:feint:connect"),
 	}
@@ -462,6 +469,7 @@ func TestResolveV2VsExpressionWithDiceGraze(t *testing.T) {
 				{Expression: "@target.brace + 1d4", Results: []int32{4}, Total: 9},
 			},
 			OutcomeSummary: "Feint on b: graze (6 vs 9)",
+			Outcomes:       []*vttv1.AbilityUsed_Outcome{{TargetId: "b", Result: "graze", Total: 6}},
 		}),
 	}
 	assertEnvelopes(t, envs, want)

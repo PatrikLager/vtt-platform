@@ -426,6 +426,7 @@ func TestResolveHitFullEnvelope(t *testing.T) {
 			ActorId: "a", AbilityId: "jab", TargetIds: []string{"b"},
 			Rolls:          []*vttv1.AbilityUsed_Roll{{Expression: "1d20 + @brawn", Results: []int32{15}, Total: 18}},
 			OutcomeSummary: "Jab on b: hit (18 vs 10)",
+			Outcomes:       []*vttv1.AbilityUsed_Outcome{{TargetId: "b", Result: "hit", Total: 18}},
 		}),
 		envResourceChanged("b", "vigor", 1, 1, "ability:jab:hit"),
 		envConditionApplied("b", "winded", "threshold:vigor"),
@@ -452,6 +453,7 @@ func TestResolveMissFullEnvelope(t *testing.T) {
 			ActorId: "a", AbilityId: "jab", TargetIds: []string{"b"},
 			Rolls:          []*vttv1.AbilityUsed_Roll{{Expression: "1d20 + @brawn", Results: []int32{2}, Total: 5}},
 			OutcomeSummary: "Jab on b: miss (5 vs 30)",
+			Outcomes:       []*vttv1.AbilityUsed_Outcome{{TargetId: "b", Result: "miss", Total: 5}},
 		}),
 		// jab's miss list is empty: no ResourceChanged, no threshold events.
 	}
@@ -593,6 +595,7 @@ func TestResolveThresholdRemovesConditionWhenFalse(t *testing.T) {
 				{Expression: "0 - 1d6", Results: []int32{3}, Total: -3},
 			},
 			OutcomeSummary: "Haymaker on b: hit (23 vs 10)",
+			Outcomes:       []*vttv1.AbilityUsed_Outcome{{TargetId: "b", Result: "hit", Total: 23}},
 		}),
 		envResourceChanged("b", "vigor", -3, 0, "ability:haymaker:hit"),
 		envConditionRemoved("b", "winded", "threshold:vigor"),
@@ -973,4 +976,53 @@ func fmtErr(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// VTT-473
+func TestAnAbilityUsedCarriesEachTargetsResultAndRollTotalOnly(t *testing.T) {
+	rs := fixtureRuleset(t)
+	st := newTestState()
+	putActor(st, "a", map[string]int32{"brawn": 3}, nil)
+	putActor(st, "b", map[string]int32{"guard": 10}, map[string]*vttv1.Resource{"vigor": res(0, 5)})
+	putActor(st, "c", map[string]int32{"guard": 30}, map[string]*vttv1.Resource{"vigor": res(0, 5)})
+	putToken(st, "ta", "s1", "a", 0, 0)
+	putToken(st, "tb", "s1", "b", 1, 0)
+	putToken(st, "tc", "s1", "c", -1, 0)
+
+	envs, err := rules.Resolve(rs, st, useAbility("a", "sweep", "c", "b"), &queueRoller{queue: []int{2, 20}})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	got := envs[0].GetAbilityUsed().GetOutcomes()
+	want := []*vttv1.AbilityUsed_Outcome{
+		{TargetId: "c", Result: "miss", Total: 5},
+		{TargetId: "b", Result: "hit", Total: 23},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("outcomes = %v, want %v", got, want)
+	}
+	for i := range want {
+		if !proto.Equal(got[i], want[i]) {
+			t.Errorf("outcome %d = %v, want %v", i, got[i], want[i])
+		}
+		if got[i].GetTotal() == 10 || got[i].GetTotal() == 30 {
+			t.Errorf("outcome %d carries a total the roll was compared with: %v", i, got[i])
+		}
+	}
+}
+
+// VTT-473
+func TestAnAbilityWithNoResolutionCarriesNoOutcome(t *testing.T) {
+	rs := fixtureRuleset(t)
+	st := newTestState()
+	putActor(st, "a", nil, map[string]*vttv1.Resource{"focus": res(1, 1)})
+	putToken(st, "ta", "s1", "a", 0, 0)
+
+	envs, err := rules.Resolve(rs, st, useAbility("a", "brace", "a"), &queueRoller{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got := envs[0].GetAbilityUsed().GetOutcomes(); len(got) != 0 {
+		t.Errorf("an ability with no resolution carries outcomes %v", got)
+	}
 }

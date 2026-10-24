@@ -180,7 +180,14 @@
           "total": 13
         }
       ],
-      "outcomeSummary": "Fists on act-hidden: hit (13 vs 0)"
+      "outcomeSummary": "Fists on act-hidden: hit (13 vs 0)",
+      "outcomes": [
+        {
+          "targetId": "act-hidden",
+          "result": "hit",
+          "total": 13
+        }
+      ]
     }
   },
   {

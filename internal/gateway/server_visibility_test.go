@@ -1,6 +1,9 @@
 package gateway_test
 
 import (
+	"fmt"
+	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,6 +16,9 @@ import (
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
+	"github.com/PatrikLager/vtt-platform/internal/gateway"
+	"github.com/PatrikLager/vtt-platform/internal/identity"
+	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
 // seedAmbush builds session zero's shape on the fixture's campaign: a 32x32
@@ -908,5 +914,165 @@ func TestAPlayerAndASpectatorAreToldNoIssuerAndNoCause(t *testing.T) {
 	}
 	if causes != 3 {
 		t.Errorf("dm: %d status changes carry their cause, want 3", causes)
+	}
+}
+
+// sightTable is a hall split by a wall at x 4. The player's archer at 1,1 sees
+// the near creature at 3,1 and not the far one at 6,1, both within
+// crossbow-shot's range; each has a defense no roll reaches, so a shot misses.
+type sightTable struct {
+	*rulesetFixture
+	agentToken, playerToken string
+}
+
+func newSightTable(t *testing.T) *sightTable {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "campaign.db")
+	c, err := campaign.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Close() })
+	ids, err := identity.Open(campaign.LogPath(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ids.Close() })
+	dmToken, _, err := ids.CreateInvite("DM", identity.RoleDM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentToken, _, err := ids.CreateInvite("Agent", identity.RoleAgent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	playerToken, playerID, err := ids.CreateInvite("Archer", identity.RolePlayer)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tiles := map[string]*vttv1.TileRef{}
+	for y := int32(0); y < 3; y++ {
+		for x := int32(0); x < 10; x++ {
+			kind := "floor"
+			if x == 4 {
+				kind = "wall"
+			}
+			tiles[gridKeyForTest(x, y)] = &vttv1.TileRef{Kind: kind}
+		}
+	}
+	creature := func(id string) *vttv1.Envelope_ActorAdded {
+		return &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
+			ActorId: id, Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
+			Attributes: map[string]int32{"ac": 100},
+		}}}
+	}
+	token := func(id, actor string, x int32) *vttv1.Envelope_TokenPlaced {
+		return &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
+			TokenId: id, SceneId: "hall", ActorId: actor, Position: &vttv1.GridPosition{X: x, Y: 1},
+		}}
+	}
+	for i, payload := range []any{
+		&vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: "sight"}},
+		&vttv1.Envelope_SceneCreated{SceneCreated: &vttv1.SceneCreated{
+			SceneId: "hall", Name: "Hall", GridWidth: 10, GridHeight: 3, Tiles: tiles,
+		}},
+		&vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
+			ActorId: "archer", Name: "Archer", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+			Attributes: map[string]int32{"dex": 2},
+		}}},
+		&vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
+			ActorId: "archer", ParticipantId: playerID, Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		}},
+		creature("near"),
+		creature("far"),
+		token("tok-archer", "archer", 1),
+		token("tok-near", "near", 3),
+		token("tok-far", "far", 6),
+	} {
+		mustAppend(t, c, fmt.Sprintf("sight-seed-%d", i), payload)
+	}
+
+	httpSrv := httptest.NewServer(gateway.New(c, ids).WithRuleset(loadDnd45eMinimal(t)).Handler())
+	t.Cleanup(httpSrv.Close)
+	return &sightTable{
+		rulesetFixture: &rulesetFixture{t: t, srv: httpSrv, dmToken: dmToken},
+		agentToken:     agentToken, playerToken: playerToken,
+	}
+}
+
+func (tb *sightTable) head(t *testing.T) int64 {
+	t.Helper()
+	c := tb.dial(tb.dmToken, 0)
+	defer c.Close(websocket.StatusNormalClosure, "")
+	return expectCatchUpHead(t, c)
+}
+
+func (tb *sightTable) shoot(t *testing.T, token, ability string, targets ...string) *vttv1.CommandResult {
+	t.Helper()
+	conn := tb.dial(token, 0)
+	sendCommand(t, conn, &vttv1.ClientCommand{Command: &vttv1.ClientCommand_UseAbility{
+		UseAbility: &vttv1.UseAbility{ActorId: "archer", AbilityId: ability, TargetIds: targets},
+	}})
+	return readResult(t, conn)
+}
+
+// VTT-472
+func TestAPlayersAbilityAtATargetBehindAWallIsRefusedAsAnUnknownTarget(t *testing.T) {
+	tb := newSightTable(t)
+	head := tb.head(t)
+	r := tb.shoot(t, tb.playerToken, "crossbow-shot", "far")
+	if want := rules.UnknownTarget("far").Error(); r.GetOk() || r.GetError() != want {
+		t.Errorf("a shot at the creature behind the wall answered ok=%v %q, want %q", r.GetOk(), r.GetError(), want)
+	}
+	if got := tb.head(t); got != head {
+		t.Errorf("the refusal moved the log head from %d to %d", head, got)
+	}
+}
+
+// VTT-472
+func TestAnUnseenTargetAndAnAbsentOneAreAnsweredAlikeWhateverTheCommand(t *testing.T) {
+	tb := newSightTable(t)
+	head := tb.head(t)
+	for _, c := range []struct {
+		name, ability  string
+		unseen, absent []string
+	}{
+		{"a valid ability", "crossbow-shot", []string{"far"}, []string{"ghost"}},
+		{"a bogus ability id", "no-such-ability", []string{"far"}, []string{"ghost"}},
+		{"the target named twice", "hunters-flurry", []string{"far", "far"}, []string{"ghost", "ghost"}},
+		{"more targets than the ability allows", "crossbow-shot", []string{"far", "near"}, []string{"ghost", "near"}},
+	} {
+		unseen := tb.shoot(t, tb.playerToken, c.ability, c.unseen...)
+		absent := tb.shoot(t, tb.playerToken, c.ability, c.absent...)
+		if unseen.GetOk() || absent.GetOk() {
+			t.Errorf("%s: answered ok, unseen %v and absent %v", c.name, unseen.GetOk(), absent.GetOk())
+		}
+		if got, want := strings.ReplaceAll(unseen.GetError(), "far", "ghost"), absent.GetError(); got != want {
+			t.Errorf("%s: the unseen id was answered %q, the absent one %q", c.name, unseen.GetError(), want)
+		}
+	}
+	if got := tb.head(t); got != head {
+		t.Errorf("the refusals moved the log head from %d to %d", head, got)
+	}
+}
+
+// VTT-487
+func TestAPlayersAbilityAtASeenTargetInRangeResolves(t *testing.T) {
+	tb := newSightTable(t)
+	head := tb.head(t)
+	if r := tb.shoot(t, tb.playerToken, "crossbow-shot", "near"); !r.GetOk() || r.GetSequence() != head+1 {
+		t.Errorf("a shot at the creature in sight answered ok=%v seq %d %q, want seq %d",
+			r.GetOk(), r.GetSequence(), r.GetError(), head+1)
+	}
+}
+
+// VTT-482
+func TestTheDMsAndTheAgentsAbilitiesAreNotJudgedBySight(t *testing.T) {
+	tb := newSightTable(t)
+	for role, token := range map[string]string{"dm": tb.dmToken, "agent": tb.agentToken} {
+		if r := tb.shoot(t, token, "crossbow-shot", "far"); !r.GetOk() {
+			t.Errorf("the %s's shot at the creature behind the wall was refused: %s", role, r.GetError())
+		}
 	}
 }

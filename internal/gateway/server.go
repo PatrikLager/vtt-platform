@@ -24,6 +24,7 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
+	"github.com/PatrikLager/vtt-platform/internal/perceive"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
@@ -711,6 +712,16 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 						RequestId: requestID, Ok: false,
 						Error: "gateway: cannot move there — " + describeBlockage(why),
 					}
+				}
+			}
+		}
+		// Answer a target these eyes do not see as one naming no actor, before
+		// Resolve: any other answer tells the player that the id exists (VTT-472).
+		if ua, ok := cmd.GetCommand().(*vttv1.ClientCommand_UseAbility); ok {
+			eyes := perceive.Eyes{Shoulder: sub.judgedBy(p, st.Actors)}
+			for _, tid := range ua.UseAbility.GetTargetIds() {
+				if !perceive.SeesActor(eyes, st, tid) {
+					return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: rules.UnknownTarget(tid).Error()}
 				}
 			}
 		}

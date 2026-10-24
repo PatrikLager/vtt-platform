@@ -430,7 +430,7 @@ func qaIssCheckWire(t *testing.T, who string, c *qaIssConn, log []*vttv1.Envelop
 	}
 }
 
-// VTT-272 VTT-273 VTT-262 VTT-243 VTT-244
+// VTT-272 VTT-273 VTT-262 VTT-243 VTT-244 VTT-488
 func TestQAIssALivePlayerAndAPerchedSpectatorAreSentNoIssuerOrCause(t *testing.T) {
 	pl := qaIssPlayTable(t)
 	log := pl.tb.readLog()
@@ -438,7 +438,7 @@ func TestQAIssALivePlayerAndAPerchedSpectatorAreSentNoIssuerOrCause(t *testing.T
 	qaIssCheckWire(t, "live perched spectator", pl.sp, log, pl.actsAt)
 }
 
-// VTT-272 VTT-273 VTT-262 VTT-249
+// VTT-272 VTT-273 VTT-262 VTT-249 VTT-488
 func TestQAIssACatchUpIsSentNoIssuerOrCause(t *testing.T) {
 	pl := qaIssPlayTable(t)
 	log := pl.tb.readLog()

@@ -1,6 +1,7 @@
 package perceive_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -161,5 +162,37 @@ func TestAProjectionStartedOverFromItsViewersFoldSendsWhatTheContinuingOneSends(
 		if !proto.Equal(got[i], want[i]) {
 			t.Errorf("frame %d: started over %v, continuing %v", i, got[i], want[i])
 		}
+	}
+}
+
+// VTT-472
+func TestSeesActorAnswersWhatALookSeesAndRecordsNothing(t *testing.T) {
+	st := twoRooms()
+	mustApply(st, 8, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "rat",
+		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}})
+	mustApply(st, 9, &vttv1.TokenPlaced{TokenId: "t-rat", SceneId: "s", ActorId: "rat",
+		Position: &vttv1.GridPosition{X: 2, Y: 1}})
+	before, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eyes := perceive.Eyes{Shoulder: "hero"}
+	for _, c := range []struct {
+		id   string
+		want bool
+	}{{"hero", true}, {"rat", true}, {"goblin", false}, {"nobody", false}} {
+		if got := perceive.SeesActor(eyes, st, c.id); got != c.want {
+			t.Errorf("SeesActor(hero's eyes, %s) = %v, want %v", c.id, got, c.want)
+		}
+	}
+	if got := perceive.SeesActor(perceive.Eyes{Shoulder: "nobody"}, st, "rat"); got {
+		t.Errorf("eyes on no party member see the rat")
+	}
+	after, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Errorf("SeesActor wrote to the state it was asked about")
 	}
 }

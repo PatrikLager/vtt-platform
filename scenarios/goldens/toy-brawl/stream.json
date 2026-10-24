@@ -252,7 +252,14 @@
           "total": 15
         }
       ],
-      "outcomeSummary": "Fists on act-patron: hit (15 vs 0)"
+      "outcomeSummary": "Fists on act-patron: hit (15 vs 0)",
+      "outcomes": [
+        {
+          "targetId": "act-patron",
+          "result": "hit",
+          "total": 15
+        }
+      ]
     }
   },
   {

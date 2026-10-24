@@ -38,8 +38,7 @@ type Projection struct {
 	scenes map[string]bool
 	actors map[string]bool
 	tokens map[string]bool
-	// Call hideTokensOf only before transitions' token walk: it reads
-	// tokenActor, which only recall sets.
+	// Call hideTokensOf only before transitions' token walk: only recall sets this.
 	tokenActor map[string]string
 	tokenText  map[string][2]string
 	// Compare seen, never merge it: SceneSeen carries the whole current set.
@@ -126,6 +125,11 @@ func (pr *Projection) Perch(eyes Eyes, shown, st *engine.State, seq int64) []*vt
 func CanSee(eyes Eyes, st *engine.State, sceneID string, at *vttv1.GridPosition) bool {
 	pr := New(eyes, nil)
 	return pr.canSeeSquare(pr.look(st), sceneID, at)
+}
+
+// SeesActor reports whether eyes see actor id in st, recording nothing (VTT-472).
+func SeesActor(eyes Eyes, st *engine.State, id string) bool {
+	return New(eyes, nil).look(st).sees[id]
 }
 
 // recall sets every map but sighted from shown, the viewer's fold, and gone
