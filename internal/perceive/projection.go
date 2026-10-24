@@ -38,6 +38,10 @@ type Projection struct {
 	scenes map[string]bool
 	actors map[string]bool
 	tokens map[string]bool
+	// Call hideTokensOf only before transitions' token walk: it reads
+	// tokenActor, which only recall sets.
+	tokenActor map[string]string
+	tokenText  map[string][2]string
 	// Compare seen, never merge it: SceneSeen carries the whole current set.
 	seen map[string]map[string]bool
 	// Correct a door belief only for a square in sight (doorTransitions): a
@@ -55,6 +59,8 @@ type Projection struct {
 	// Withdraw a gone actor only before its id is introduced again: a bare
 	// ActorRemoved at any other time reports a removal the viewer did not see.
 	gone map[string]bool
+	// Re-introduce a reshaped actor only in sight: unseen, it waits (VTT-481).
+	reshaped map[string]bool
 }
 
 // New starts a projection through eyes whose viewer has been brought up to
@@ -69,16 +75,16 @@ func New(eyes Eyes, world *engine.State) *Projection {
 
 // Resume starts a projection through eyes for a viewer whose non-nil fold is
 // shown, seeing as the non-nil world does only when shown holds every actor in
-// sight as world does, and otherwise nothing yet (VTT-325).
+// sight as shownAs makes it of world, and otherwise nothing yet (VTT-325).
 func Resume(eyes Eyes, shown, world *engine.State) *Projection {
 	pr := New(eyes, world)
 	for id := range pr.sighted {
 		held, holds := shown.Actors[id]
 		a := world.Actors[id]
-		if !holds || !sameIncarnation(held, a) {
+		if !holds || !sameIncarnation(held, shownAs(a)) {
 			return New(eyes, nil)
 		}
-		if fix, ok := statusFrames(id, 0, beliefOf(held, shown.Conditions[id]), a, world.Conditions[id]); !ok || len(fix) > 0 {
+		if fix, ok := statusFrames(id, 0, beliefOf(held, shown.Conditions[id]), shownAs(a), world.Conditions[id]); !ok || len(fix) > 0 {
 			return New(eyes, nil)
 		}
 	}
@@ -123,11 +129,12 @@ func CanSee(eyes Eyes, st *engine.State, sceneID string, at *vttv1.GridPosition)
 }
 
 // recall sets every map but sighted from shown, the viewer's fold, and gone
-// from shown against st (VTT-312).
+// and reshaped from shown against st (VTT-312).
 func (pr *Projection) recall(shown, st *engine.State) {
 	pr.scenes, pr.actors, pr.tokens = map[string]bool{}, map[string]bool{}, map[string]bool{}
 	pr.seen, pr.doors = map[string]map[string]bool{}, map[string]map[string]bool{}
 	pr.notes, pr.belief, pr.gone = map[string]bool{}, map[string]actorBelief{}, map[string]bool{}
+	pr.tokenActor, pr.tokenText, pr.reshaped = map[string]string{}, map[string][2]string{}, map[string]bool{}
 	for id, sc := range shown.Scenes {
 		pr.scenes[id] = true
 		if lit := trueKeys(sc.Visible); len(lit) > 0 {
@@ -135,8 +142,10 @@ func (pr *Projection) recall(shown, st *engine.State) {
 		}
 		pr.doors[id] = trueKeys(sc.OpenDoors)
 	}
-	for id := range shown.Tokens {
+	for id, tok := range shown.Tokens {
 		pr.tokens[id] = true
+		pr.tokenActor[id] = tok.ActorID
+		pr.tokenText[id] = [2]string{tok.Name, tok.Notes}
 	}
 	for key := range shown.Notes {
 		pr.notes[key] = true
@@ -145,9 +154,13 @@ func (pr *Projection) recall(shown, st *engine.State) {
 		pr.actors[id] = true
 		pr.belief[id] = beliefOf(a, shown.Conditions[id])
 		// Mark gone the actor the world added again as another: the viewer never
-		// saw it removed, so it is withdrawn before it is introduced (VTT-313).
-		if w, ok := st.Actors[id]; ok && !sameIncarnation(a, w) {
-			pr.gone[id] = true
+		// saw it removed, so it is withdrawn before it is introduced (VTT-470).
+		if w, ok := st.Actors[id]; ok {
+			if !sameIncarnation(a, shownWith(w, engine.IsPartyMember(a))) {
+				pr.gone[id] = true
+			} else if !sameIncarnation(a, shownAs(w)) {
+				pr.reshaped[id] = true
+			}
 		}
 	}
 }
@@ -170,7 +183,7 @@ func trueKeys(m map[string]bool) map[string]bool {
 }
 
 // sameIncarnation reports whether a and b agree on every field only
-// ActorAdded writes, so that one may stand for the other (VTT-313).
+// ActorAdded writes, so that one may stand for the other (VTT-470).
 func sameIncarnation(a, b *vttv1.Actor) bool {
 	if a.GetName() != b.GetName() || a.GetModuleId() != b.GetModuleId() ||
 		!proto.Equal(a.GetModuleData(), b.GetModuleData()) ||
@@ -190,12 +203,25 @@ func sameIncarnation(a, b *vttv1.Actor) bool {
 	return true
 }
 
+// shownAs is what a character log may hold of a: a party member whole, any
+// other actor its id, module, kind and controllers alone (VTT-465).
+func shownAs(a *vttv1.Actor) *vttv1.Actor { return shownWith(a, engine.IsPartyMember(a)) }
+
+func shownWith(a *vttv1.Actor, whole bool) *vttv1.Actor {
+	if whole {
+		return a
+	}
+	return &vttv1.Actor{ActorId: a.GetActorId(), ModuleId: a.GetModuleId(), Kind: a.GetKind(),
+		ControllerId: a.GetControllerId(), ControllerIds: a.GetControllerIds()}
+}
+
 // sightView is one look at the world through this viewer's eyes (SPEC-016).
 type sightView struct {
 	squares map[string]map[string]bool
 	tokens  map[string]bool
 	actors  map[string]bool
 	sees    map[string]bool
+	party   map[string]bool
 }
 
 // look is what this viewer sees and may know of st, recomputed on every call
@@ -207,6 +233,7 @@ func (pr *Projection) look(st *engine.State) sightView {
 		tokens:  map[string]bool{},
 		actors:  map[string]bool{},
 		sees:    map[string]bool{},
+		party:   map[string]bool{},
 	}
 	if st == nil {
 		return v
@@ -247,6 +274,7 @@ func (pr *Projection) look(st *engine.State) sightView {
 		// Know every party member, seen or not (SPEC-016).
 		if engine.IsPartyMember(a) {
 			v.actors[id] = true
+			v.party[id] = true
 		}
 	}
 	return v
@@ -327,7 +355,8 @@ func (pr *Projection) transitions(cause *vttv1.Envelope, seq int64, now sightVie
 		if !ok {
 			continue
 		}
-		if pr.gone[id] {
+		if pr.gone[id] || (pr.reshaped[id] && now.sees[id]) {
+			out = append(out, pr.hideTokensOf(id, seq)...)
 			out = append(out, pr.withdraw(id, seq))
 		}
 		if !pr.actors[id] {
@@ -356,7 +385,8 @@ func (pr *Projection) transitions(cause *vttv1.Envelope, seq int64, now sightVie
 		out = append(out, &vttv1.Envelope{Sequence: seq,
 			Payload: &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
 				TokenId: id, SceneId: tok.SceneID, ActorId: tok.ActorID,
-				Position: &vttv1.GridPosition{X: tok.X, Y: tok.Y}}}})
+				Position: &vttv1.GridPosition{X: tok.X, Y: tok.Y},
+				Name:     tok.Name, Notes: tok.Notes}}})
 		pr.tokens[id] = true
 	}
 
@@ -488,7 +518,10 @@ func (pr *Projection) classify(env *vttv1.Envelope, now sightView) verdict {
 		return withheld
 
 	case *vttv1.Envelope_TokenDescribed:
-		return withheld
+		id := p.TokenDescribed.GetTokenId()
+		held := pr.tokenText[id]
+		return passIf(pr.tokens[id] && now.tokens[id] &&
+			held != [2]string{p.TokenDescribed.GetName(), p.TokenDescribed.GetNotes()})
 
 	case *vttv1.Envelope_TokenRemoved:
 		// Withhold: a viewer that held the token is sent a TokenHidden
@@ -541,7 +574,7 @@ func (pr *Projection) classify(env *vttv1.Envelope, now sightView) verdict {
 		return passIf(saw(p.ActorControlRevoked.GetActorId()))
 
 	case *vttv1.Envelope_ResourceChanged:
-		return passIf(saw(p.ResourceChanged.GetActorId()))
+		return passIf(now.party[p.ResourceChanged.GetActorId()] && saw(p.ResourceChanged.GetActorId()))
 
 	case *vttv1.Envelope_ConditionApplied:
 		return passIf(saw(p.ConditionApplied.GetActorId()))
@@ -708,7 +741,7 @@ func (pr *Projection) noteTransitions(seq int64, st *engine.State) []*vttv1.Enve
 // as grants and its conditions behind it (SPEC-016).
 func (pr *Projection) introduce(id string, seq int64, a *vttv1.Actor, st *engine.State) []*vttv1.Envelope {
 	// Clone the actor: st.Actors holds live pointers a later grant mutates.
-	clone := proto.Clone(a).(*vttv1.Actor)
+	clone := proto.Clone(shownAs(a)).(*vttv1.Actor)
 
 	// Clear the controllers from the introduction, since both folds refuse an
 	// ActorAdded that names one, and send each behind it as a grant stating the
@@ -731,6 +764,21 @@ func (pr *Projection) introduce(id string, seq int64, a *vttv1.Actor, st *engine
 				ActorId: id, ConditionId: c.ID}}})
 	}
 	pr.actors[id] = true
+	return out
+}
+
+// hideTokensOf hides every token of id on the viewer's board, so that a bare
+// ActorRemoved of it folds.
+func (pr *Projection) hideTokensOf(id string, seq int64) []*vttv1.Envelope {
+	var out []*vttv1.Envelope
+	for _, tid := range sortedSet(pr.tokens) {
+		if pr.tokenActor[tid] != id {
+			continue
+		}
+		out = append(out, &vttv1.Envelope{Sequence: seq,
+			Payload: &vttv1.Envelope_TokenHidden{TokenHidden: &vttv1.TokenHidden{TokenId: tid}}})
+		delete(pr.tokens, tid)
+	}
 	return out
 }
 
@@ -772,10 +820,11 @@ func beliefOf(a *vttv1.Actor, conditions []engine.ActorCondition) actorBelief {
 // changed it (SPEC-016).
 func (pr *Projection) correct(id string, seq int64, a *vttv1.Actor, st *engine.State) []*vttv1.Envelope {
 	b := pr.belief[id]
-	fix, ok := statusFrames(id, seq, b, a, st.Conditions[id])
+	fix, ok := statusFrames(id, seq, b, shownAs(a), st.Conditions[id])
 	if !ok {
 		// Re-introduce what no grant can carry.
-		return append([]*vttv1.Envelope{pr.withdraw(id, seq)}, pr.introduce(id, seq, a, st)...)
+		out := append(pr.hideTokensOf(id, seq), pr.withdraw(id, seq))
+		return append(out, pr.introduce(id, seq, a, st)...)
 	}
 	return fix
 }
@@ -900,6 +949,8 @@ func forwardable(env *vttv1.Envelope) *vttv1.Envelope {
 		p.ConditionApplied.Source = ""
 	case *vttv1.Envelope_ConditionRemoved:
 		p.ConditionRemoved.Reason = ""
+	case *vttv1.Envelope_TokenDescribed:
+		p.TokenDescribed.GmName, p.TokenDescribed.GmNotes = "", ""
 	}
 	return c
 }

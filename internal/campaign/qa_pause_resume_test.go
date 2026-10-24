@@ -474,7 +474,7 @@ func qaPauseBattery() []qaPauseBatteryItem {
 	return []qaPauseBatteryItem{
 		{"move a token in view", false, func() *vttv1.Envelope { return qaPauseMove(qaPauseTokVisitor, qaPauseRoomA, 4, 3) }},
 		{"move eye's own token", true, func() *vttv1.Envelope { return qaPauseMove(qaPauseTokEye, qaPauseRoomA, 1, 2) }},
-		{"change eye's pool", true, func() *vttv1.Envelope { return qaPausePool(qaPauseEye, -1, 9) }},
+		{"change the friend's pool", false, func() *vttv1.Envelope { return qaPausePool(qaPauseFriend, -1, 9) }},
 		{"mark eye", true, func() *vttv1.Envelope { return qaPauseMark(qaPauseEye, "marked") }},
 		{"attack between actors in view", true, func() *vttv1.Envelope { return qaPauseAttack(qaPauseVisitor, qaPauseEye) }},
 		{"narrate", false, func() *vttv1.Envelope { return qaPauseNarrate("while away", 0, 0) }},
@@ -761,10 +761,12 @@ func TestQAPauseAReusedIdIsWithdrawnBeforeItsNewActorIsIntroduced(t *testing.T) 
 			if added := w.stepBatch(qaPauseEye, qaPauseRemoveToken(qaPauseTokVisitor), qaPauseRemoveActor(qaPauseVisitor)); len(added) != 0 {
 				t.Fatalf("the removal wrote to the paused log: %s", qaPauseDump(added))
 			}
-			w.quiet(qaPauseEye, qaPauseActor(qaPauseVisitor, "Someone Else", qaPauseNP))
+			someoneElse := qaPauseActor(qaPauseVisitor, "Someone Else", qaPauseNP)
+			someoneElse.GetActorAdded().Actor.ModuleId = "someone-else"
+			w.quiet(qaPauseEye, someoneElse)
 			w.quiet(qaPauseEye, qaPausePlace(newTok, qaPauseRoomA, qaPauseVisitor, 5, 5))
 			before := w.log(qaPauseEye)
-			if old, ok := qaPauseFoldAll(t, before).Actors[qaPauseVisitor]; !ok || old.GetName() != "Stranger" {
+			if old, ok := qaPauseFoldAll(t, before).Actors[qaPauseVisitor]; !ok || old.GetModuleId() != "" {
 				t.Fatalf("fixture: the paused log does not hold the old visitor")
 			}
 			_, r := w.step(qaPauseEye, qaPauseGrant(qaPauseEye, qaPausePlayer, qaPausePM))
@@ -777,8 +779,8 @@ func TestQAPauseAReusedIdIsWithdrawnBeforeItsNewActorIsIntroduced(t *testing.T) 
 				}
 				if a := e.Env.GetActorAdded().GetActor(); a.GetActorId() == qaPauseVisitor && addedAt < 0 {
 					addedAt = i
-					if a.GetName() != "Someone Else" {
-						t.Errorf("the introduced visitor is named %q, want the new actor", a.GetName())
+					if a.GetModuleId() != "someone-else" {
+						t.Errorf("the introduced visitor has module %q, want the new actor's", a.GetModuleId())
 					}
 				}
 			}
@@ -789,8 +791,8 @@ func TestQAPauseAReusedIdIsWithdrawnBeforeItsNewActorIsIntroduced(t *testing.T) 
 			es := w.log(qaPauseEye)
 			final := qaPauseFoldAll(t, es)
 			qaPauseTokensStand(t, final, world)
-			if a := final.Actors[qaPauseVisitor]; a.GetName() != "Someone Else" {
-				t.Errorf("after the resume the log holds visitor as %q", a.GetName())
+			if a := final.Actors[qaPauseVisitor]; a.GetModuleId() != "someone-else" {
+				t.Errorf("after the resume the log holds visitor with module %q", a.GetModuleId())
 			}
 			if tok, ok := final.Tokens[newTok]; !ok || tok.X != 5 || tok.Y != 5 || tok.ActorID != qaPauseVisitor {
 				t.Errorf("after the resume the log holds %q as %+v (present %v)", newTok, tok, ok)
@@ -1314,7 +1316,7 @@ func TestQAPauseStatusChangedDuringThePauseStillFoldsAfterTheResume(t *testing.T
 	qaPauseBase(w, true)
 	w.quiet(qaPauseEye, qaPauseGrant(qaPauseEye, qaPausePlayer, qaPauseNP))
 	w.quiet(qaPauseEye, qaPauseMark(qaPauseVisitor, "marked"))
-	w.quiet(qaPauseEye, qaPausePool(qaPauseVisitor, -3, 7))
+	w.quiet(qaPauseEye, qaPauseMark(qaPauseVisitor, "winded"))
 	w.quiet(qaPauseEye, qaPausePool(qaPauseEye, -4, 6))
 	w.quiet(qaPauseEye, qaPauseMark(qaPauseEye, "slowed"))
 	before := w.log(qaPauseEye)
@@ -1322,7 +1324,7 @@ func TestQAPauseStatusChangedDuringThePauseStillFoldsAfterTheResume(t *testing.T
 	qaPauseCheckResume(t, before, r, w.world())
 	next := []*vttv1.Envelope{
 		{Payload: &vttv1.Envelope_ConditionRemoved{ConditionRemoved: &vttv1.ConditionRemoved{ActorId: qaPauseVisitor, ConditionId: "marked"}}},
-		qaPausePool(qaPauseVisitor, 1, 8),
+		{Payload: &vttv1.Envelope_ConditionRemoved{ConditionRemoved: &vttv1.ConditionRemoved{ActorId: qaPauseVisitor, ConditionId: "winded"}}},
 		qaPausePool(qaPauseEye, 1, 7),
 		{Payload: &vttv1.Envelope_ConditionRemoved{ConditionRemoved: &vttv1.ConditionRemoved{ActorId: qaPauseEye, ConditionId: "slowed"}}},
 	}
@@ -1334,10 +1336,10 @@ func TestQAPauseStatusChangedDuringThePauseStillFoldsAfterTheResume(t *testing.T
 	}
 	final := qaPauseFoldAll(t, w.log(qaPauseEye))
 	world := w.world()
+	if got, want := final.Actors[qaPauseEye].GetResources()["pool"].GetCurrent(), world.Actors[qaPauseEye].GetResources()["pool"].GetCurrent(); got != want {
+		t.Errorf("the log holds eye's pool at %d, the world at %d", got, want)
+	}
 	for _, id := range []string{qaPauseVisitor, qaPauseEye} {
-		if got, want := final.Actors[id].GetResources()["pool"].GetCurrent(), world.Actors[id].GetResources()["pool"].GetCurrent(); got != want {
-			t.Errorf("the log holds %s's pool at %d, the world at %d", id, got, want)
-		}
 		if got, want := len(final.Conditions[id]), len(world.Conditions[id]); got != want {
 			t.Errorf("the log holds %d conditions on %s, the world %d", got, id, want)
 		}

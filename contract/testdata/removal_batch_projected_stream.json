@@ -1,6 +1,6 @@
 [
   {"sequence": "7", "sceneCreated": {"sceneId": "s", "name": "S", "gridWidth": 7, "gridHeight": 3}},
-  {"sequence": "7", "actorAdded": {"actor": {"actorId": "goblin", "name": "Goblin", "kind": "ACTOR_KIND_NON_PARTY"}}},
+  {"sequence": "7", "actorAdded": {"actor": {"actorId": "goblin", "moduleId": "m1", "kind": "ACTOR_KIND_NON_PARTY"}}},
   {"sequence": "7", "actorAdded": {"actor": {"actorId": "hero", "name": "Hero", "kind": "ACTOR_KIND_PARTY_MEMBER"}}},
   {"sequence": "7", "actorControlGranted": {"actorId": "hero", "participantId": "p-1", "kind": "ACTOR_KIND_PARTY_MEMBER"}},
   {"sequence": "7", "tokenPlaced": {"tokenId": "t-gob", "sceneId": "s", "actorId": "goblin", "position": {"x": 2, "y": 1}}},
@@ -11,6 +11,6 @@
     }, "visible": ["0,1", "1,0", "1,1", "1,2", "2,0", "2,1", "2,2", "3,1"]}},
   {"sequence": "9", "tokenHidden": {"tokenId": "t-gob"}},
   {"sequence": "13", "actorRemoved": {"actorId": "goblin"}},
-  {"sequence": "13", "actorAdded": {"actor": {"actorId": "goblin", "name": "Second Goblin", "kind": "ACTOR_KIND_NON_PARTY"}}},
+  {"sequence": "13", "actorAdded": {"actor": {"actorId": "goblin", "moduleId": "m2", "kind": "ACTOR_KIND_NON_PARTY"}}},
   {"sequence": "13", "tokenPlaced": {"tokenId": "t-gob-2", "sceneId": "s", "actorId": "goblin", "position": {"x": 2, "y": 1}}}
 ]

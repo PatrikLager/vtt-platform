@@ -214,7 +214,7 @@ func TestAPartyMemberIsKnownEvenWhenHeldByTheDM(t *testing.T) {
 	}
 }
 
-// VTT-241
+// VTT-465
 func TestAPlayerIsIntroducedToATokenlessActorItIsGranted(t *testing.T) {
 	familiar := &vttv1.Actor{ActorId: "familiar", Name: "Familiar",
 		Kind:      vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
@@ -238,8 +238,8 @@ func TestAPlayerIsIntroducedToATokenlessActorItIsGranted(t *testing.T) {
 	if ids := a.GetControllerIds(); len(ids) != 1 || ids[0] != "p-1" {
 		t.Errorf("the player's fold holds the familiar with controllers %v, want [p-1]", ids)
 	}
-	if got := a.GetResources()["pool"].GetCurrent(); got != 2 {
-		t.Errorf("the familiar arrived with pool %d, want 2", got)
+	if len(a.GetResources()) != 0 || a.GetName() != "" {
+		t.Errorf("the familiar arrived as %v, want it without its name and its pool", a)
 	}
 }
 
@@ -447,7 +447,7 @@ func TestARemovedActorReachesOnlyTheSeatThatHeldIt(t *testing.T) {
 // TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh holds the case where
 // the seat saw the removal: the projector forgets the actor with its fold, so
 // the id used again is introduced in full (SPEC-016).
-// VTT-313
+// VTT-470
 func TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh(t *testing.T) {
 	st := twoRooms()
 	pr := newViewer(t, player())
@@ -750,7 +750,7 @@ func removalBatchWorld() *engine.State {
 	mustApply(st, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
 		ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
 	mustApply(st, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{
-		ActorId: "goblin", Name: "Goblin", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}})
+		ActorId: "goblin", Name: "Goblin", ModuleId: "m1", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}})
 	mustApply(st, 5, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s",
 		ActorId: "hero", Position: &vttv1.GridPosition{X: 1, Y: 1}})
 	mustApply(st, 6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
@@ -774,7 +774,7 @@ func projectRemovalBatchSeat(tb testing.TB, st *engine.State) []*vttv1.Envelope 
 		[]string{"t-gob", "t-gob-far"})...)
 	for _, s := range []step{
 		{12, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "goblin", Name: "Second Goblin",
-			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}},
+			ModuleId: "m2", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}},
 		{13, &vttv1.TokenPlaced{TokenId: "t-gob-2", SceneId: "s", ActorId: "goblin",
 			Position: &vttv1.GridPosition{X: 2, Y: 1}}},
 	} {
@@ -832,7 +832,7 @@ func TestARemovalBatchProjectsToTheBytesBothFoldsRead(t *testing.T) {
 	viewerState := engine.NewState()
 	for i, e := range stream {
 		if e.GetActorRemoved() != nil {
-			if g := viewerState.Actors["goblin"]; g.GetName() != "Goblin" || len(viewerState.Tokens) != 1 {
+			if g := viewerState.Actors["goblin"]; g.GetModuleId() != "m1" || len(viewerState.Tokens) != 1 {
 				t.Errorf("before the reuse the seat must hold the first goblin and no token of it, got %v and %d tokens",
 					g, len(viewerState.Tokens))
 			}
@@ -841,7 +841,7 @@ func TestARemovalBatchProjectsToTheBytesBothFoldsRead(t *testing.T) {
 			t.Fatalf("projected envelope %d (%T) does not fold: %v", i, e.GetPayload(), err)
 		}
 	}
-	if g := viewerState.Actors["goblin"]; g.GetName() != "Second Goblin" {
+	if g := viewerState.Actors["goblin"]; g.GetModuleId() != "m2" {
 		t.Errorf("after the reuse the seat must hold the second goblin, got %v", g)
 	}
 	if _, ok := viewerState.Actors["hero"]; !ok {
@@ -856,5 +856,35 @@ func TestARemovalBatchProjectsToTheBytesBothFoldsRead(t *testing.T) {
 		if _, ok := viewerState.Tokens[id]; !ok {
 			t.Errorf("%s must be on the seat's board at the end", id)
 		}
+	}
+}
+
+// VTT-465 VTT-485
+func TestACreatureIsIntroducedWithItsIdModuleKindAndConditionsAlone(t *testing.T) {
+	st := creatureWorld()
+	v := newViewer(t, heroEyes())
+	out := next(v, st, 10, &vttv1.NarrationAdded{Text: "look"})
+
+	var gob, hero *vttv1.Actor
+	for _, e := range out {
+		if a := e.GetActorAdded().GetActor(); a != nil {
+			switch a.GetActorId() {
+			case "goblin":
+				gob = a
+			case "hero":
+				hero = a
+			}
+		}
+	}
+	want := &vttv1.Actor{ActorId: "goblin", ModuleId: "m", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}
+	if !proto.Equal(gob, want) {
+		t.Fatalf("the creature arrived as %v, want %v: no name, attributes, resources or module data", gob, want)
+	}
+	if hero.GetName() != "Hero" || hero.GetResources()["vigor"].GetMax() != 9 || hero.GetAttributes()["brawn"] != 2 {
+		t.Fatalf("the party member arrived as %v, want it whole", hero)
+	}
+	held := v.shown.Actors["goblin"]
+	if held.GetControllerIds()[0] != "p-agent" || len(v.shown.Conditions["goblin"]) != 1 {
+		t.Fatalf("the creature's grant and condition did not follow it: %v, %v", held, v.shown.Conditions["goblin"])
 	}
 }

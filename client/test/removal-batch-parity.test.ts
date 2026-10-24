@@ -68,7 +68,7 @@ test("the projected removal batch folds, and a removal the seat did not see leav
   // After the batch: the token is gone, the goblin is still held.
   const after = fold(envelopes.slice(0, withdrawn));
   expect(Object.keys(after.Actors).sort()).toEqual(["goblin", "hero"]);
-  expect(after.Actors["goblin"]!.name).toBe("Goblin");
+  expect(after.Actors["goblin"]!.moduleId).toBe("m1");
   expect(Object.keys(after.Tokens)).toEqual(["t-hero"]);
 
   // After the reuse: the bare ActorRemoved makes room for the second goblin.
@@ -76,7 +76,7 @@ test("the projected removal batch folds, and a removal the seat did not see leav
   expect(envelopes[withdrawn + 1]!.payload.case).toBe("actorAdded");
   const st = fold(envelopes);
   expect(Object.keys(st.Actors).sort()).toEqual(["goblin", "hero"]);
-  expect(st.Actors["goblin"]!.name).toBe("Second Goblin");
+  expect(st.Actors["goblin"]!.moduleId).toBe("m2");
   expect(Object.keys(st.Tokens).sort()).toEqual(["t-gob-2", "t-hero"]);
   // The seat's own character and its board survive somebody else's removal.
   expect(st.Tokens["t-hero"]!.X).toBe(1);

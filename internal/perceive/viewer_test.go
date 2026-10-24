@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
@@ -62,6 +63,8 @@ func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
 		env.Payload = &vttv1.Envelope_ActorAdded{ActorAdded: p}
 	case *vttv1.TokenPlaced:
 		env.Payload = &vttv1.Envelope_TokenPlaced{TokenPlaced: p}
+	case *vttv1.TokenDescribed:
+		env.Payload = &vttv1.Envelope_TokenDescribed{TokenDescribed: p}
 	case *vttv1.TokenMoved:
 		env.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: p}
 	case *vttv1.TokenRemoved:
@@ -150,6 +153,77 @@ func twoRooms() *engine.State {
 	return st
 }
 
+// creatureWorld is built like twoRooms, with the goblin in the hero's room:
+// described, dazed, held by the agent, and carrying a name, an attribute, a
+// resource and module data that no character log may be sent.
+func creatureWorld() *engine.State {
+	st := engine.NewState()
+	mustApply(st, 1, &vttv1.SessionStarted{Name: "n"})
+	mustApply(st, 2, &vttv1.SceneCreated{
+		SceneId: "s", Name: "S", GridWidth: 7, GridHeight: 3, Tiles: twoRoomsTiles()})
+	mustApply(st, 3, &vttv1.ActorAdded{Actor: &vttv1.Actor{
+		ActorId: "hero", Name: "Hero", ModuleId: "m", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		Attributes: map[string]int32{"brawn": 2},
+		Resources:  map[string]*vttv1.Resource{"vigor": {Current: 9, Max: 9}}}})
+	lore, err := structpb.NewStruct(map[string]any{"lore": "the chief's son"})
+	if err != nil {
+		panic(err)
+	}
+	mustApply(st, 4, &vttv1.ActorAdded{Actor: &vttv1.Actor{
+		ActorId: "goblin", Name: "Goblin Cutter", ModuleId: "m",
+		Kind:       vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
+		Attributes: map[string]int32{"brawn": 1},
+		Resources:  map[string]*vttv1.Resource{"vigor": {Current: 5, Max: 5}},
+		ModuleData: lore}})
+	mustApply(st, 5, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s",
+		ActorId: "hero", Position: &vttv1.GridPosition{X: 1, Y: 1}})
+	mustApply(st, 6, &vttv1.TokenPlaced{TokenId: "t-gob", SceneId: "s",
+		ActorId: "goblin", Position: &vttv1.GridPosition{X: 2, Y: 1},
+		Name: "a hunched shape", Notes: "asleep", GmName: "the cutter", GmNotes: "wakes easily"})
+	mustApply(st, 7, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	mustApply(st, 8, &vttv1.ActorControlGranted{ActorId: "goblin", ParticipantId: "p-agent",
+		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
+	mustApply(st, 9, &vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "dazed"})
+	return st
+}
+
+// heroEyes sees through the hero's shoulder.
+func heroEyes() perceive.Eyes { return perceive.Eyes{Shoulder: "hero"} }
+
+// next applies payload to st at seq and projects it for v.
+func next(v *testViewer, st *engine.State, seq int64, payload proto.Message) []*vttv1.Envelope {
+	v.tb.Helper()
+	mustApply(st, seq, payload)
+	return v.event(envelope(seq, payload), st)
+}
+
+// shapes lists out as payload names and ids, for an exact-order check.
+func shapes(out []*vttv1.Envelope) []string {
+	var got []string
+	for _, e := range out {
+		id := ""
+		switch {
+		case e.GetActorAdded() != nil:
+			id = e.GetActorAdded().GetActor().GetActorId()
+		case e.GetActorRemoved() != nil:
+			id = e.GetActorRemoved().GetActorId()
+		case e.GetActorControlGranted() != nil:
+			id = e.GetActorControlGranted().GetActorId()
+		case e.GetConditionApplied() != nil:
+			id = e.GetConditionApplied().GetActorId()
+		case e.GetTokenPlaced() != nil:
+			id = e.GetTokenPlaced().GetTokenId()
+		case e.GetTokenHidden() != nil:
+			id = e.GetTokenHidden().GetTokenId()
+		case e.GetTokenDescribed() != nil:
+			id = e.GetTokenDescribed().GetTokenId()
+		}
+		got = append(got, fmt.Sprintf("%T %s", e.GetPayload(), id))
+	}
+	return got
+}
+
 // firstPlace projects the goblin's placement: a fresh viewer's first event,
 // which brings it its scene, its party and what it sees.
 func firstPlace(pr *testViewer, st *engine.State) []*vttv1.Envelope {
@@ -221,6 +295,9 @@ func forwardedOf(env *vttv1.Envelope) *vttv1.Envelope {
 	}
 	if r := c.GetConditionRemoved(); r != nil {
 		r.Reason = ""
+	}
+	if d := c.GetTokenDescribed(); d != nil {
+		d.GmName, d.GmNotes = "", ""
 	}
 	return c
 }

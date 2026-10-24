@@ -75,7 +75,7 @@ func TestADoorClosedWhileTheViewerSawNothingIsCorrectedOnSight(t *testing.T) {
 	}
 }
 
-// VTT-248
+// VTT-469
 func TestAControllerRevokedWhileUnseenIsRevokedOnSight(t *testing.T) {
 	w := newUnseenWorld(t)
 	w.addScout(1)
@@ -102,16 +102,21 @@ func TestAControllerRevokedWhileUnseenIsRevokedOnSight(t *testing.T) {
 	}
 }
 
-// VTT-313
+// VTT-470
 func TestAnActorAddedAgainWithAnotherAttributeIsIntroducedAfresh(t *testing.T) {
+	scout := func(weight int32) *vttv1.ActorAdded {
+		return &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "scout", Name: "Scout",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, Attributes: map[string]int32{"weight": weight}}}
+	}
 	w := newUnseenWorld(t)
-	w.addScout(1)
+	w.feed(scout(1))
+	w.feed(&vttv1.TokenPlaced{TokenId: "t-scout", SceneId: "s", ActorId: "scout",
+		Position: &vttv1.GridPosition{X: 2, Y: 1}})
 	w.feed(&vttv1.TokenRemoved{TokenId: "t-scout"})
 	w.feed(&vttv1.ActorRemoved{ActorId: "scout"})
-	w.feed(&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "scout", Name: "Scout",
-		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY, Attributes: map[string]int32{"weight": 2}}})
-	back := w.feed(&vttv1.TokenPlaced{TokenId: "t-scout-2", SceneId: "s", ActorId: "scout",
-		Position: &vttv1.GridPosition{X: 2, Y: 1}})
+	back := w.feed(scout(2))
+	back = append(back, w.feed(&vttv1.TokenPlaced{TokenId: "t-scout-2", SceneId: "s", ActorId: "scout",
+		Position: &vttv1.GridPosition{X: 2, Y: 1}})...)
 	var removed, added bool
 	for _, f := range back {
 		if f.GetActorRemoved().GetActorId() == "scout" {

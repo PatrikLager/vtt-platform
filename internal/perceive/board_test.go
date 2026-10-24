@@ -1102,3 +1102,58 @@ func TestADoorOpenedOutOfSightArrivesWhenTheSquareComesIntoView(t *testing.T) {
 			"or the client draws it shut for the rest of the session")
 	}
 }
+
+// VTT-462 VTT-478
+func TestATokenArrivesWithItsNameAndNotesAlone(t *testing.T) {
+	st := creatureWorld()
+	v := newViewer(t, heroEyes())
+	var tp *vttv1.TokenPlaced
+	for _, e := range next(v, st, 10, &vttv1.NarrationAdded{Text: "look"}) {
+		if p := e.GetTokenPlaced(); p.GetTokenId() == "t-gob" {
+			tp = p
+		}
+	}
+	if tp.GetName() != "a hunched shape" || tp.GetNotes() != "asleep" {
+		t.Fatalf("the token arrived as %v, want its name and notes", tp)
+	}
+	if tp.GetGmName() != "" || tp.GetGmNotes() != "" {
+		t.Fatalf("the token arrived as %v, with a GM text", tp)
+	}
+}
+
+// VTT-467 VTT-462
+func TestATokensRewriteReachesALogOnlyInSightAndOnlyWhenItsTextChanged(t *testing.T) {
+	st := creatureWorld()
+	v := newViewer(t, heroEyes())
+	next(v, st, 10, &vttv1.NarrationAdded{Text: "look"})
+
+	described := func(out []*vttv1.Envelope) []*vttv1.TokenDescribed {
+		var got []*vttv1.TokenDescribed
+		for _, e := range out {
+			if d := e.GetTokenDescribed(); d != nil {
+				got = append(got, d)
+			}
+		}
+		return got
+	}
+	if got := described(next(v, st, 11, &vttv1.TokenDescribed{TokenId: "t-gob",
+		Name: "a hunched shape", Notes: "asleep", GmName: "the chief", GmNotes: "lies"})); len(got) != 0 {
+		t.Fatalf("a rewrite of the GM texts alone was sent: %v", got)
+	}
+	got := described(next(v, st, 12, &vttv1.TokenDescribed{TokenId: "t-gob",
+		Name: "an angry goblin", Notes: "asleep", GmName: "the chief", GmNotes: "lies"}))
+	want := &vttv1.TokenDescribed{TokenId: "t-gob", Name: "an angry goblin", Notes: "asleep"}
+	if len(got) != 1 || !proto.Equal(got[0], want) {
+		t.Fatalf("a rewrite of the name was sent as %v, want one %v", got, want)
+	}
+
+	next(v, st, 13, &vttv1.TokenMoved{TokenId: "t-gob", SceneId: "s", To: &vttv1.GridPosition{X: 5, Y: 1}})
+	if got := described(next(v, st, 14, &vttv1.TokenDescribed{TokenId: "t-gob",
+		Name: "a fleeing goblin", GmName: "the chief"})); len(got) != 0 {
+		t.Fatalf("a rewrite out of sight was sent: %v", got)
+	}
+	next(v, st, 15, &vttv1.TokenMoved{TokenId: "t-gob", SceneId: "s", To: &vttv1.GridPosition{X: 2, Y: 1}})
+	if tok := v.shown.Tokens["t-gob"]; tok.Name != "a fleeing goblin" || tok.Notes != "" || tok.GMName != "" {
+		t.Fatalf("the token came back into sight as %+v, want its present name and no GM text", tok)
+	}
+}

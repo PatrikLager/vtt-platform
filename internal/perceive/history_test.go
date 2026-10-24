@@ -54,6 +54,14 @@ func historyGob(name, moduleID string) *vttv1.ActorAdded {
 		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY, Resources: map[string]*vttv1.Resource{"vigor": {Current: 5, Max: 5}}}}
 }
 
+// kindlessGob makes gob kindless, so a grant's kind change alters nothing held.
+func kindlessGob(events []any) []any {
+	gob := historyGob("Old Gob", "")
+	gob.Actor.Kind = vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED
+	events[4] = gob
+	return events
+}
+
 func historyPlace(token string) *vttv1.TokenPlaced {
 	return &vttv1.TokenPlaced{TokenId: token, SceneId: "s1", ActorId: "gob", Position: &vttv1.GridPosition{X: 3, Y: 1}}
 }
@@ -85,7 +93,7 @@ func historyFolds() []historyFold {
 	uncondition := func(id string) *vttv1.ConditionRemoved {
 		return &vttv1.ConditionRemoved{ActorId: "gob", ConditionId: id}
 	}
-	nonParty := vttv1.ActorKind_ACTOR_KIND_NON_PARTY
+	nonParty, kindless := vttv1.ActorKind_ACTOR_KIND_NON_PARTY, vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED
 	return []historyFold{
 		{"reuse-identical", reAdd(historyGob("Old Gob", ""))},
 		{"reuse-renamed", reAdd(historyGob("New Gob", ""))},
@@ -94,10 +102,10 @@ func historyFolds() []historyFold {
 			condition("A"), condition("B"), &vttv1.TokenRemoved{TokenId: "t-gob"},
 			uncondition("A"), condition("C"), condition("A"), historyPlace("t-gob2"),
 			&vttv1.TokenRemoved{TokenId: "t-gob2"}, uncondition("A"), uncondition("B"), historyPlace("t-gob3"))},
-		{"controller-restatement", historyBase(
-			grant("p1", nonParty), grant("p2", nonParty), &vttv1.TokenRemoved{TokenId: "t-gob"},
-			&vttv1.ActorControlRevoked{ActorId: "gob", ParticipantId: "p1"}, grant("p1", nonParty), historyPlace("t-gob2"),
-			&vttv1.TokenRemoved{TokenId: "t-gob2"}, grant("p2", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER), historyPlace("t-gob3"))},
+		{"controller-restatement", kindlessGob(historyBase(
+			grant("p1", kindless), grant("p2", kindless), &vttv1.TokenRemoved{TokenId: "t-gob"},
+			&vttv1.ActorControlRevoked{ActorId: "gob", ParticipantId: "p1"}, grant("p1", kindless), historyPlace("t-gob2"),
+			&vttv1.TokenRemoved{TokenId: "t-gob2"}, grant("p2", nonParty), historyPlace("t-gob3")))},
 	}
 }
 
@@ -154,17 +162,31 @@ func historyByName(t *testing.T, name string) historyFold {
 	return historyFold{}
 }
 
-// VTT-313
+// VTT-470
 func TestAnActorAddedAgainIsIntroducedAfreshOnlyWhenItIsAnother(t *testing.T) {
 	for name, want := range map[string][]string{
 		"reuse-identical": {"TokenPlaced t-gob2"},
-		"reuse-renamed":   {"ActorRemoved gob", "ActorAdded gob New Gob", "TokenPlaced t-gob2"},
-		"reuse-module-id": {"ActorRemoved gob", "ActorAdded gob Old Gob", "TokenPlaced t-gob2"},
+		"reuse-renamed":   {"TokenPlaced t-gob2"},
+		"reuse-module-id": {"ActorRemoved gob", "ActorAdded gob ", "TokenPlaced t-gob2"},
 	} {
 		frames, _ := historyFrames(t, historyByName(t, name).events)
 		if got := frameNames(frames[len(frames)-1]); !slices.Equal(got, want) {
 			t.Errorf("%s: the event that brings gob back is sent %q, want %q", name, got, want)
 		}
+	}
+
+	party := func(name string) *vttv1.ActorAdded {
+		a := historyGob(name, "")
+		a.Actor.Kind = vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER
+		return a
+	}
+	base := historyBase()
+	base[4] = party("Old Gob")
+	frames, _ := historyFrames(t, append(base, &vttv1.TokenRemoved{TokenId: "t-gob"},
+		&vttv1.ActorRemoved{ActorId: "gob"}, party("New Gob")))
+	want := []string{"ActorRemoved gob", "ActorAdded gob New Gob"}
+	if got := frameNames(frames[len(frames)-1]); !slices.Equal(got, want) {
+		t.Errorf("a party member added again under another name is sent %q, want %q", got, want)
 	}
 }
 
@@ -183,7 +205,7 @@ func TestACorrectionFollowsTheOrderTheViewerHolds(t *testing.T) {
 		{"conditions the world reordered unseen", historyByName(t, "condition-order").events,
 			[]string{"ConditionRemoved A", "ConditionRemoved B", "TokenPlaced t-gob3"}},
 		{"controllers the world reordered unseen", historyByName(t, "controller-restatement").events,
-			[]string{"ActorControlGranted p1 ACTOR_KIND_PARTY_MEMBER", "TokenPlaced t-gob3"}},
+			[]string{"ActorControlGranted p1 ACTOR_KIND_NON_PARTY", "TokenPlaced t-gob3"}},
 		{"conditions removed unseen, not sorted", historyBase(condition("B"), condition("A"),
 			&vttv1.TokenRemoved{TokenId: "t-gob"}, uncondition("B"), uncondition("A"), historyPlace("t-gob2")),
 			[]string{"ConditionRemoved B", "ConditionRemoved A", "TokenPlaced t-gob2"}},
@@ -195,7 +217,7 @@ func TestACorrectionFollowsTheOrderTheViewerHolds(t *testing.T) {
 	}
 }
 
-// VTT-248
+// VTT-469
 func TestAnActorAddedAgainUnchangedWithItsConditionsReachesTheViewerAsTheWorldHoldsIt(t *testing.T) {
 	condition := func(id string) *vttv1.ConditionApplied {
 		return &vttv1.ConditionApplied{ActorId: "gob", ConditionId: id}
@@ -223,8 +245,38 @@ func TestAnActorAddedAgainUnchangedWithItsConditionsReachesTheViewerAsTheWorldHo
 	if got, want := ids(shown.Conditions["gob"]), ids(world.Conditions["gob"]); !slices.Equal(got, want) {
 		t.Errorf("the viewer holds gob's conditions %q, the world %q", got, want)
 	}
-	got, want := shown.Actors["gob"], world.Actors["gob"]
+	w := world.Actors["gob"]
+	got, want := shown.Actors["gob"], &vttv1.Actor{ActorId: w.GetActorId(), ModuleId: w.GetModuleId(), Kind: w.GetKind()}
 	if !proto.Equal(got, want) {
-		t.Errorf("the viewer holds gob as %v, the world as %v", got, want)
+		t.Errorf("the viewer holds gob as %v, want the world's gob as a log is sent it, %v", got, want)
+	}
+}
+
+// VTT-470
+func TestACreatureInSightIsNotIntroducedAgain(t *testing.T) {
+	st := creatureWorld()
+	v := newViewer(t, heroEyes())
+	next(v, st, 10, &vttv1.NarrationAdded{Text: "look"})
+	steps := []proto.Message{
+		&vttv1.NarrationAdded{Text: "one"},
+		&vttv1.ConditionRemoved{ActorId: "goblin", ConditionId: "dazed"},
+		&vttv1.ConditionApplied{ActorId: "goblin", ConditionId: "dazed"},
+		&vttv1.ResourceChanged{ActorId: "goblin", Resource: "vigor", Delta: -2, NewValue: 3},
+		&vttv1.TokenDescribed{TokenId: "t-gob", Name: "an angry goblin"},
+		&vttv1.ActorControlGranted{ActorId: "goblin", ParticipantId: "p-dm",
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
+		&vttv1.ResourceChanged{ActorId: "hero", Resource: "vigor", Delta: -1, NewValue: 8},
+		&vttv1.NarrationAdded{Text: "two"},
+		&vttv1.ActorControlRevoked{ActorId: "goblin", ParticipantId: "p-dm"},
+		&vttv1.TokenDescribed{TokenId: "t-gob", Name: "a hunched shape", Notes: "asleep"},
+		&vttv1.ResourceChanged{ActorId: "goblin", Resource: "vigor", Delta: 2, NewValue: 5},
+		&vttv1.NarrationAdded{Text: "three"},
+	}
+	for i, p := range steps {
+		for _, e := range next(v, st, int64(11+i), p) {
+			if e.GetActorAdded().GetActor().GetActorId() == "goblin" || e.GetActorRemoved().GetActorId() == "goblin" {
+				t.Fatalf("step %d (%T) sent the creature again: %v", i, p, e)
+			}
+		}
 	}
 }

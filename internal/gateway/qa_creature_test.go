@@ -1149,7 +1149,7 @@ func TestQACreatureTheDefaultIsTheFirstPartyMemberById(t *testing.T) {
 	}
 }
 
-// VTT-313 VTT-318 VTT-321 VTT-326
+// VTT-470 VTT-318 VTT-321 VTT-326
 func TestQACreatureAnActorAddedAgainAsItIsNow(t *testing.T) {
 	tb, _, _, pID := qaCreatureRunning(t)
 	tb.dm.mustOK(qaCreatureRemove(qaCreatureGoblin))
@@ -1169,6 +1169,6 @@ func TestQACreatureAnActorAddedAgainAsItIsNow(t *testing.T) {
 		}
 	}
 	if last.GetName() != "Goblin Reborn" || last.GetAttributes()["str"] != 9 {
-		t.Errorf("VTT-313: after its return the log last introduced the goblin as %v, want the actor added again", last)
+		t.Errorf("VTT-470: after its return the log last introduced the goblin as %v, want the actor added again", last)
 	}
 }

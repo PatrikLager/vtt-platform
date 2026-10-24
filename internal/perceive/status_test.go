@@ -165,14 +165,14 @@ func TestAControlChangeOnAnUnseenPartyMemberReachesNoPlayer(t *testing.T) {
 	}
 }
 
-// VTT-246
+// VTT-365
 func TestAPlayersOwnTokenlessCharacterIsHeardOf(t *testing.T) {
 	frames := runTestimony(t, player(), testimonyLog(
 		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "familiar", Name: "Familiar",
-			Kind:      vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
+			Kind:      vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
 			Resources: map[string]*vttv1.Resource{"pool": {Current: 2, Max: 2}}}},
 		&vttv1.ActorControlGranted{ActorId: "familiar", ParticipantId: "p-1",
-			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 		&vttv1.ResourceChanged{ActorId: "familiar", Resource: "pool", Delta: -1, NewValue: 1},
 		&vttv1.ConditionApplied{ActorId: "familiar", ConditionId: "tired"},
 	))
@@ -220,7 +220,7 @@ func correctionFrames(t *testing.T, out []*vttv1.Envelope, actorID string) []*vt
 	return fix
 }
 
-// VTT-248 VTT-249 VTT-247
+// VTT-469 VTT-249 VTT-471
 func TestDamageTakenOutOfSightArrivesWhenTheEyeWalksIn(t *testing.T) {
 	steps := testimonyLog(
 		rogueLeaves,
@@ -251,8 +251,8 @@ func TestDamageTakenOutOfSightArrivesWhenTheEyeWalksIn(t *testing.T) {
 	}
 }
 
-// VTT-248 VTT-247
-func TestAKindChangedOutOfSightIsCorrectedOnSight(t *testing.T) {
+// VTT-469 VTT-471 VTT-481
+func TestAKindChangedOutOfSightIsBroughtToItsPresentOnSight(t *testing.T) {
 	charm := &vttv1.ActorControlGranted{ActorId: "goblin", ParticipantId: "p-3",
 		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}
 	for _, tc := range []struct {
@@ -289,7 +289,7 @@ func TestAKindChangedOutOfSightIsCorrectedOnSight(t *testing.T) {
 	}
 }
 
-// VTT-248
+// VTT-469
 func TestAResourceStartedBelowZeroIsCorrectedOnSight(t *testing.T) {
 	frames := runTestimony(t, player(), testimonyLog(
 		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "wraith", Name: "Wraith",
@@ -352,7 +352,7 @@ func TestConditionsReorderedOutOfSightSendNothingOnSight(t *testing.T) {
 	}
 }
 
-// VTT-248
+// VTT-469
 func TestADifferenceOfExactlyMaxInt32IsOneCorrection(t *testing.T) {
 	frames := runTestimony(t, player(), testimonyLog(
 		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "wraith", Name: "Wraith",
@@ -395,13 +395,13 @@ func TestARemovalOutOfSightIsNotReported(t *testing.T) {
 	}
 }
 
-// VTT-252 VTT-313
+// VTT-252 VTT-470
 func TestAnIdReusedAfterAnUnseenRemovalFoldsAgain(t *testing.T) {
 	frames := runTestimony(t, player(), testimonyLog(
 		rogueLeaves,
 		&vttv1.TokenRemoved{TokenId: "t-rogue"},
 		&vttv1.ActorRemoved{ActorId: "rogue"},
-		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "rogue", Name: "Second Rogue",
+		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "rogue", Name: "Second Rogue", ModuleId: "other",
 			Kind:      vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
 			Resources: map[string]*vttv1.Resource{"pool": {Current: 9, Max: 9}}}},
 		&vttv1.TokenPlaced{TokenId: "t-rogue-2", SceneId: "s", ActorId: "rogue",
@@ -413,8 +413,9 @@ func TestAnIdReusedAfterAnUnseenRemovalFoldsAgain(t *testing.T) {
 		out[1].GetActorAdded().GetActor().GetActorId() != "rogue" {
 		t.Fatalf("the reused rogue arrived as %v, want a bare ActorRemoved and then its introduction", out)
 	}
-	if a := viewer.Actors["rogue"]; a.GetName() != "Second Rogue" || a.GetResources()["pool"].GetCurrent() != 9 {
-		t.Errorf("the player holds rogue as %v, want the second incarnation", a)
+	want := &vttv1.Actor{ActorId: "rogue", ModuleId: "other", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}
+	if a := viewer.Actors["rogue"]; !proto.Equal(a, want) {
+		t.Errorf("the player holds rogue as %v, want the second incarnation as a log is sent it, %v", a, want)
 	}
 }
 
@@ -494,5 +495,177 @@ func TestAChangeByAnUnseenUserNamesNoAbilityAndNoIssuer(t *testing.T) {
 				t.Errorf("%s: forwarded %v, want the event less its issuer and its cause", v.role, sent)
 			}
 		}
+	}
+}
+
+// VTT-466 VTT-486
+func TestACreaturesResourceChangeReachesNoLog(t *testing.T) {
+	st := creatureWorld()
+	v := newViewer(t, heroEyes())
+	next(v, st, 10, &vttv1.NarrationAdded{Text: "look"})
+	resourceFrames := func(out []*vttv1.Envelope) int {
+		n := 0
+		for _, e := range out {
+			if e.GetResourceChanged() != nil {
+				n++
+			}
+		}
+		return n
+	}
+	if n := resourceFrames(next(v, st, 11, &vttv1.ResourceChanged{
+		ActorId: "goblin", Resource: "vigor", Delta: -2, NewValue: 3})); n != 0 {
+		t.Fatalf("a seen creature's resource change was sent (%d frames)", n)
+	}
+	next(v, st, 12, &vttv1.TokenMoved{TokenId: "t-gob", SceneId: "s", To: &vttv1.GridPosition{X: 5, Y: 1}})
+	if n := resourceFrames(next(v, st, 13, &vttv1.ResourceChanged{
+		ActorId: "goblin", Resource: "vigor", Delta: -1, NewValue: 2})); n != 0 {
+		t.Fatalf("an unseen creature's resource change was sent (%d frames)", n)
+	}
+	if n := resourceFrames(next(v, st, 14, &vttv1.ResourceChanged{
+		ActorId: "hero", Resource: "vigor", Delta: -1, NewValue: 8})); n != 1 {
+		t.Fatalf("the party member's own resource change was sent as %d frames, want 1", n)
+	}
+}
+
+// reshapeWorld is creatureWorld with a second party member, the ally, by the hero.
+func reshapeWorld() *engine.State {
+	st := creatureWorld()
+	mustApply(st, 20, &vttv1.ActorAdded{Actor: &vttv1.Actor{
+		ActorId: "ally", Name: "Ally", ModuleId: "m", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		Resources: map[string]*vttv1.Resource{"vigor": {Current: 4, Max: 4}}}})
+	mustApply(st, 21, &vttv1.TokenPlaced{TokenId: "t-ally", SceneId: "s",
+		ActorId: "ally", Position: &vttv1.GridPosition{X: 1, Y: 1}})
+	mustApply(st, 22, &vttv1.ActorControlGranted{ActorId: "ally", ParticipantId: "p-2",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	return st
+}
+
+// VTT-468
+func TestACreatureAGrantMakesAPartyMemberInSightArrivesWhole(t *testing.T) {
+	st := reshapeWorld()
+	v := newViewer(t, heroEyes())
+	next(v, st, 30, &vttv1.NarrationAdded{Text: "look"})
+
+	out := next(v, st, 31, &vttv1.ActorControlGranted{ActorId: "goblin", ParticipantId: "p-3",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	want := []string{
+		"*vttv1.Envelope_TokenHidden t-gob",
+		"*vttv1.Envelope_ActorRemoved goblin",
+		"*vttv1.Envelope_ActorAdded goblin",
+		"*vttv1.Envelope_ActorControlGranted goblin",
+		"*vttv1.Envelope_ActorControlGranted goblin",
+		"*vttv1.Envelope_ConditionApplied goblin",
+		"*vttv1.Envelope_TokenPlaced t-gob",
+		"*vttv1.Envelope_ActorControlGranted goblin",
+	}
+	if got := shapes(out); !sameStrings(got, want) {
+		t.Fatalf("the reshaping grant was sent as\n%v\nwant\n%v", got, want)
+	}
+	if a := v.shown.Actors["goblin"]; a.GetName() != "Goblin Cutter" || a.GetResources()["vigor"].GetMax() != 5 {
+		t.Fatalf("the new party member is held as %v, want it whole", a)
+	}
+	for _, e := range next(v, st, 32, &vttv1.NarrationAdded{Text: "after"}) {
+		if e.GetActorAdded() != nil || e.GetActorRemoved() != nil || e.GetTokenHidden() != nil {
+			t.Fatalf("the next event sent the reshaped actor again: %v", e)
+		}
+	}
+}
+
+// VTT-468
+func TestAPartyMemberAGrantMakesACreatureInSightIsHeldStripped(t *testing.T) {
+	st := reshapeWorld()
+	v := newViewer(t, heroEyes())
+	next(v, st, 30, &vttv1.NarrationAdded{Text: "look"})
+
+	out := next(v, st, 31, &vttv1.ActorControlGranted{ActorId: "ally", ParticipantId: "p-agent",
+		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
+	want := []string{
+		"*vttv1.Envelope_TokenHidden t-ally",
+		"*vttv1.Envelope_ActorRemoved ally",
+		"*vttv1.Envelope_ActorAdded ally",
+		"*vttv1.Envelope_ActorControlGranted ally",
+		"*vttv1.Envelope_ActorControlGranted ally",
+		"*vttv1.Envelope_TokenPlaced t-ally",
+		"*vttv1.Envelope_ActorControlGranted ally",
+	}
+	if got := shapes(out); !sameStrings(got, want) {
+		t.Fatalf("the reshaping grant was sent as\n%v\nwant\n%v", got, want)
+	}
+	held := v.shown.Actors["ally"]
+	if held.GetName() != "" || len(held.GetResources()) != 0 {
+		t.Fatalf("the new creature is held as %v, want it stripped", held)
+	}
+	for _, e := range next(v, st, 32, &vttv1.NarrationAdded{Text: "after"}) {
+		if e.GetActorAdded() != nil || e.GetActorRemoved() != nil || e.GetTokenHidden() != nil {
+			t.Fatalf("the next event sent the reshaped actor again: %v", e)
+		}
+	}
+}
+
+// VTT-481
+func TestAReshapingKindChangeOutOfSightWaitsForSight(t *testing.T) {
+	// Give no actor here a resource, and each a controller: else correct's own
+	// re-introduction, which a differing resource set forces, hides the reshape.
+	build := func() *engine.State {
+		st := engine.NewState()
+		mustApply(st, 1, &vttv1.SessionStarted{Name: "n"})
+		mustApply(st, 2, &vttv1.SceneCreated{
+			SceneId: "s", Name: "S", GridWidth: 7, GridHeight: 3, Tiles: twoRoomsTiles()})
+		for i, a := range []*vttv1.Actor{
+			{ActorId: "hero", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
+			{ActorId: "imp", Name: "Imp", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
+			{ActorId: "ally", Name: "Ally", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
+		} {
+			mustApply(st, int64(3+i), &vttv1.ActorAdded{Actor: a})
+		}
+		mustApply(st, 6, &vttv1.TokenPlaced{TokenId: "t-hero", SceneId: "s", ActorId: "hero",
+			Position: &vttv1.GridPosition{X: 1, Y: 1}})
+		mustApply(st, 7, &vttv1.TokenPlaced{TokenId: "t-imp", SceneId: "s", ActorId: "imp",
+			Position: &vttv1.GridPosition{X: 2, Y: 1}})
+		mustApply(st, 8, &vttv1.TokenPlaced{TokenId: "t-ally", SceneId: "s", ActorId: "ally",
+			Position: &vttv1.GridPosition{X: 2, Y: 1}})
+		mustApply(st, 9, &vttv1.ActorControlGranted{ActorId: "hero", ParticipantId: "p-1",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+		mustApply(st, 10, &vttv1.ActorControlGranted{ActorId: "imp", ParticipantId: "p-agent",
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
+		mustApply(st, 11, &vttv1.ActorControlGranted{ActorId: "ally", ParticipantId: "p-2",
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+		return st
+	}
+	for _, c := range []struct {
+		name, actor, token string
+		kind               vttv1.ActorKind
+		wantName           string
+	}{
+		{"a creature made a party member", "imp", "t-imp", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "Imp"},
+		{"a party member made a creature", "ally", "t-ally", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			st := build()
+			v := newViewer(t, heroEyes())
+			next(v, st, 12, &vttv1.NarrationAdded{Text: "look"})
+			next(v, st, 13, &vttv1.TokenMoved{TokenId: c.token, SceneId: "s", To: &vttv1.GridPosition{X: 5, Y: 1}})
+			for _, e := range next(v, st, 14, &vttv1.ActorControlGranted{ActorId: c.actor,
+				ParticipantId: "p-3", Kind: c.kind}) {
+				t.Fatalf("an unseen reshaping grant sent %v", shapes([]*vttv1.Envelope{e}))
+			}
+			out := next(v, st, 15, &vttv1.TokenMoved{TokenId: c.token, SceneId: "s",
+				To: &vttv1.GridPosition{X: 2, Y: 1}})
+			removed, added := -1, -1
+			for i, e := range out {
+				if e.GetActorRemoved().GetActorId() == c.actor {
+					removed = i
+				}
+				if e.GetActorAdded().GetActor().GetActorId() == c.actor {
+					added = i
+				}
+			}
+			if removed < 0 || added < removed {
+				t.Fatalf("coming into sight sent %v, want a withdrawal and then an introduction", shapes(out))
+			}
+			if got := v.shown.Actors[c.actor].GetName(); got != c.wantName {
+				t.Fatalf("the log holds %s named %q, want %q", c.actor, got, c.wantName)
+			}
+		})
 	}
 }

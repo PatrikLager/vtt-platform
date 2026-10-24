@@ -784,7 +784,7 @@ func TestALogPausesWhileItsActorIsNotAPartyMember(t *testing.T) {
 					t.Fatal(err)
 				}
 				changeling := nonParty("goblin")
-				changeling.Actor.Name = "Changeling"
+				changeling.Actor.ModuleId = "changeling"
 				must(t, c, cenv(nextID(), changeling))
 				must(t, c, cenv(nextID(), &vttv1.TokenPlaced{TokenId: "t-gob-2", SceneId: "s", ActorId: "goblin", Position: at(1, 1)}))
 			} else {
@@ -810,7 +810,7 @@ func TestALogPausesWhileItsActorIsNotAPartyMember(t *testing.T) {
 				}
 			}
 			assertBoardAndSessionAsTheWorld(t, c, "hero")
-			if reuse && c.CharacterFoldForTest("hero").Actors["goblin"].GetName() != "Changeling" {
+			if reuse && c.CharacterFoldForTest("hero").Actors["goblin"].GetModuleId() != "changeling" {
 				t.Errorf("the hero's log holds the old goblin after the resume")
 			}
 			assertFoldsAtEveryPrefix(t, "the hero's log", got)

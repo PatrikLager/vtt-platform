@@ -319,7 +319,7 @@ func qaIssPlayTable(t *testing.T) *qaIssPlay {
 	}}})
 	pl.dm.must(&vttv1.ClientCommand{Command: &vttv1.ClientCommand_StartSession{StartSession: &vttv1.StartSession{Name: "qa night"}}})
 	party, other := vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, vttv1.ActorKind_ACTOR_KIND_NON_PARTY
-	for _, a := range []*vttv1.Actor{qaIssActor("hero", party), qaIssActor("patron", other), qaIssActor("lurker", other)} {
+	for _, a := range []*vttv1.Actor{qaIssActor("hero", party), qaIssActor("patron", party), qaIssActor("lurker", other)} {
 		pl.dm.must(&vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddActor{AddActor: &vttv1.AddActor{Actor: a}}})
 	}
 	pl.dm.must(qaIssCmdPlace("hero-tok", "hall", "hero", 1, 1))

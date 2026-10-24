@@ -436,7 +436,7 @@ func TestQATestimonyEyesAPlayerIsIntroducedToEveryTokenlessActorItControls(t *te
 				}
 				for _, other := range []string{"p2", "spectator"} {
 					if kind == vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER {
-						qaEyesControllers(t, tt, "VTT-208 VTT-247", other, "x")
+						qaEyesControllers(t, tt, "VTT-208 VTT-471", other, "x")
 					} else {
 						qaEyesNotIntroduced(t, tt, other, "x", "VTT-242")
 					}

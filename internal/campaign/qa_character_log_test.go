@@ -1245,7 +1245,7 @@ func qaLogReopenPartOne(g *qaLogGen) []*vttv1.Envelope {
 
 func qaLogReopenPartTwo(g *qaLogGen) []*vttv1.Envelope {
 	return []*vttv1.Envelope{
-		g.e("rx2", qaLogPool("x", -2, 7)),
+		g.e("cx2", qaLogMark("x", "winded")),
 		g.e("rq2", qaLogPool("q", -1, 8)),
 		g.e("ry2", qaLogPool("y", -4, 6)),
 		g.e("mx", qaLogMove("tx", "a", 1, 1, 2, 1)),
@@ -1293,7 +1293,7 @@ func TestQALogACharacterLogContinuesAfterReopen(t *testing.T) {
 			t.Errorf("fixture: %q's log received nothing after reopen", id)
 		}
 	}
-	if qaLogIndex(control.log("p"), qaLogEvent("qalog-rx2")) < 0 {
+	if qaLogIndex(control.log("p"), qaLogEvent("qalog-cx2")) < 0 {
 		t.Fatalf("fixture: the change on seen x did not reach p in the control\n%s", qaLogDescribe(control.log("p")))
 	}
 	if qaLogIndex(control.log("p"), qaLogEvent("qalog-rq2")) >= 0 {
