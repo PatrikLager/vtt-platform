@@ -1064,3 +1064,33 @@ Closing it needs a `server_internal_test.go` case whose `encodeFrame` fails a
 frame after it. Recorded 2026-10-21 by the reading review of the
 specification step of
 `docs/superpowers/specs/2026-10-20-the-client-follows-the-log-it-is-sent-design.md`.
+
+**A repaint takes the focus from the box the DM is typing in.**
+`startSession`'s `paint` in `client/src/app.ts` rebuilds the whole tree on
+every change to the session and on each connect-time fetch that resolves, and
+`renderSpectator` replaces root's children with the new one. `input()` and
+`textarea()` in `client/src/view/dm.ts` carry the typed text across a rebuild
+through `draft`; nothing in `client/src` carries the focus. A keystroke after
+a repaint goes to `body` and is lost. Probe: as the DM, focus the console's
+session-name box, type `Open`, have another connection add a narration, wait
+for it in the feed and type ` Table`; the box holds `Open`, and
+`document.activeElement` is `body`. Playwright's `fill` focuses the box and
+then inserts its text, so a repaint between the two leaves the box empty: the
+same probe with the narration between `focus()` and `keyboard.insertText("Open
+Table")` gets "a session needs a name" from Start session. A probe in a
+scratch directory saw both on `1e24277` and on `eb6d423` (2026-10-25), and
+`client/e2e/joining.spec.ts` failed that way once in `task e2e` on `eb6d423`.
+Any spec that fills a console box before the connect-time fetches have all
+resolved can meet it, and these fill one as soon as `.conn` reads "connected"
+or the console appears: besides joining's, `client/e2e/table.spec.ts`'s "a DM
+starts a session and loads an adventure" and "what the DM is typing survives
+events arriving", and `client/e2e/handover.spec.ts`'s "a DM hands a second
+character over, and the player keeps both across a reconnect". Which gate
+should have caught it, and why not: `client/test/dm-view.test.ts`'s "text
+survives a re-render, so an incoming event cannot eat what the DM is typing"
+and `client/e2e/table.spec.ts`'s "what the DM is typing survives events
+arriving" assert the text after a repaint and never a keystroke after one, and
+no requirement says the focus stays. Labels: `spec silent`. Closing it needs a
+repaint that leaves the focused box focused, with its selection, and a test
+that types after a repaint. Recorded 2026-10-25 by the e2e run of
+`docs/superpowers/specs/2026-10-24-a-token-carries-what-a-player-may-see-of-it-design.md`.
