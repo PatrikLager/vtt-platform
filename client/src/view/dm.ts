@@ -45,9 +45,6 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
 // lost whatever they were part-way through typing. In practice that made the
 // longer forms impossible to complete at all: a note or a pasted actor takes
 // longer to type than the gap between two events.
-//
-// Found by the e2e (T9), not by any unit test — the bug only exists when a
-// real event stream runs alongside a real form.
 const draft: Record<string, string> = {};
 
 /** Clear a field's remembered text, after the command it fed succeeded. */
@@ -137,11 +134,11 @@ function choiceSelect(
 // reworded, and they match by substring, so "name" also selects "session
 // name". A test that pins a field by its wording breaks on a copy edit and
 // silently targets the wrong box when two placeholders overlap.
-function input(placeholder: string, field: string, cls = ""): HTMLInputElement {
+function input(placeholder: string, field: string, cls = "", presentText = ""): HTMLInputElement {
   const i = document.createElement("input");
   i.placeholder = placeholder;
   i.dataset["field"] = field;
-  i.value = draft[field] ?? "";
+  i.value = draft[field] ?? presentText;
   i.addEventListener("input", () => {
     draft[field] = i.value;
   });
@@ -149,12 +146,12 @@ function input(placeholder: string, field: string, cls = ""): HTMLInputElement {
   return i;
 }
 
-function textarea(placeholder: string, field: string): HTMLTextAreaElement {
+function textarea(placeholder: string, field: string, presentText: string): HTMLTextAreaElement {
   const t = document.createElement("textarea");
   t.placeholder = placeholder;
   t.dataset["field"] = field;
   t.className = "wide";
-  t.value = draft[field] ?? "";
+  t.value = draft[field] ?? presentText;
   t.addEventListener("input", () => {
     draft[field] = t.value;
   });
@@ -391,15 +388,12 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     for (const id of ids) {
       const row = el("div", "row describe-row");
       row.dataset["token"] = id;
-      const name = input("what players see", `describe-name:${id}`);
-      const notes = textarea("notes players see", `describe-notes:${id}`);
-      const gmName = input("GM name", `describe-gm-name:${id}`);
-      const gmNotes = textarea("GM notes", `describe-gm-notes:${id}`);
-      const boxes = [name, notes, gmName, gmNotes];
       const tok = d.st.Tokens[id]!;
-      for (const [box, present] of [[name, tok.Name], [notes, tok.Notes], [gmName, tok.GMName], [gmNotes, tok.GMNotes]] as const) {
-        if (draft[box.dataset["field"]!] === undefined) box.value = present ?? "";
-      }
+      const name = input("what players see", `describe-name:${id}`, "", tok.Name ?? "");
+      const notes = textarea("notes players see", `describe-notes:${id}`, tok.Notes ?? "");
+      const gmName = input("GM name", `describe-gm-name:${id}`, "", tok.GMName ?? "");
+      const gmNotes = textarea("GM notes", `describe-gm-notes:${id}`, tok.GMNotes ?? "");
+      const boxes = [name, notes, gmName, gmNotes];
       row.append(el("span", "describe-id", id), ...boxes, button("Describe", () => {
         d.send(describeToken(id, name.value, notes.value, gmName.value, gmNotes.value));
         clearDraft(...boxes.map((b) => b.dataset["field"]!));
