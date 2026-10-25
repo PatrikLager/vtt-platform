@@ -6,17 +6,17 @@ Accepted. The browser client implements it in `client/src/wire.ts`,
 `client/src/session.ts`, `client/src/app.ts`, `client/src/metadata.ts`,
 `client/src/view/spectator.ts`, `client/src/view/feed.ts`,
 `client/src/view/player.ts`, `client/src/view/naming.ts`,
-`client/src/view/grid.ts`, `client/src/view/dm.ts`, `client/src/commands.ts`
-and `client/src/style.css`; the Go readers in `internal/harness/client.go`,
-`internal/harness/engine.go`, `internal/harness/soak.go`,
-`cmd/vtt/client_run.go`'s `dialerFor`, `internal/mcp/server.go`,
-`internal/mcp/read_tools.go` and `cmd/vtt/state_dump.go`. That the browser
-client's window shows no sequence outside the reason it gives for a log it
-cannot fold is held by `client/test/app.test.ts`'s "no role's window shows a
-log sequence number", `client/test/spectator-view.test.ts`,
-`client/test/qa-window-number.test.ts` and `client/e2e/table.spec.ts`
-(VTT-393); that it holds one log and a redial names it, by
-`client/test/wire.test.ts`, `client/test/session.test.ts`,
+`client/src/view/grid.ts`, `client/src/view/dm.ts`, `client/src/view/focus.ts`,
+`client/src/view/join.ts`, `client/src/commands.ts` and `client/src/style.css`;
+the Go readers in `internal/harness/client.go`, `internal/harness/engine.go`,
+`internal/harness/soak.go`, `cmd/vtt/client_run.go`'s `dialerFor`,
+`internal/mcp/server.go`, `internal/mcp/read_tools.go` and
+`cmd/vtt/state_dump.go`. That the browser client's window shows no sequence
+outside the reason it gives for a log it cannot fold is held by
+`client/test/app.test.ts`'s "no role's window shows a log sequence number",
+`client/test/spectator-view.test.ts`, `client/test/qa-window-number.test.ts`
+and `client/e2e/table.spec.ts` (VTT-393); that it holds one log and a redial
+names it, by `client/test/wire.test.ts`, `client/test/session.test.ts`,
 `client/test/app.test.ts`, `client/test/qa-one-log.test.ts`,
 `client/test/qa-switch.test.ts`, `client/test/qa-remembered-log.test.ts` and
 `client/test/qa-reload-viewpoint.test.ts` (VTT-394 to VTT-398, VTT-407); that
@@ -38,25 +38,30 @@ members a `WatchableChanged` names and switch between them, by
 (VTT-403 to VTT-405, VTT-408, VTT-457, VTT-460); that a player whose set says
 they control no party member is drawn the perch and no panel, that its "No
 shoulder" sends nobody, and that their board click sends nothing, by
-`client/test/app.test.ts` and `client/test/qa-perched-player.test.ts`
-(VTT-458, VTT-459, VTT-461); that a spectator chooses a shoulder and a player
-switches in the browser, and that a reload keeps either, by
-`client/e2e/table.spec.ts` (VTT-394, VTT-403, VTT-405, VTT-442, VTT-444) and
-`client/e2e/handover.spec.ts` (VTT-442); that a player whose last party member
-the DM takes back keeps watching it with the perch, chooses nobody by "No
-shoulder" and then another shoulder, by `client/e2e/handover.spec.ts`
-(VTT-458, VTT-459); and that a player's and a spectator's page shows no Events
-panel and a DM's does, by `client/e2e/table.spec.ts` (VTT-445, VTT-446); that
-a window names what it shows by its role's chain and never a token or actor by
-its id, shows a token's card, and words every payload, by
-`client/test/naming.test.ts`, `client/test/token-card.test.ts`,
-`client/test/spectator-view.test.ts`, `client/test/app.test.ts`,
-`client/test/qa-ability-target.test.ts`,
+`client/test/app.test.ts` and `client/test/qa-perched-player.test.ts` (VTT-458,
+VTT-459, VTT-461); that a spectator chooses a shoulder and a player switches in
+the browser, and that a reload keeps either, by `client/e2e/table.spec.ts`
+(VTT-394, VTT-403, VTT-405, VTT-442, VTT-444) and `client/e2e/handover.spec.ts`
+(VTT-442); that a player whose last party member the DM takes back keeps
+watching it with the perch, chooses nobody by "No shoulder" and then another
+shoulder, by `client/e2e/handover.spec.ts` (VTT-458, VTT-459); and that a
+player's and a spectator's page shows no Events panel and a DM's does, by
+`client/e2e/table.spec.ts` (VTT-445, VTT-446); that a window names what it
+shows by its role's chain and never a token or actor by its id, shows a token's
+card, and words every payload, by `client/test/naming.test.ts`,
+`client/test/token-card.test.ts`, `client/test/spectator-view.test.ts`,
+`client/test/app.test.ts`, `client/test/qa-ability-target.test.ts`,
 `client/test/qa-what-a-window-shows.test.ts` and `client/e2e/table.spec.ts`
 (VTT-474 to VTT-477, VTT-483, VTT-484, VTT-489, VTT-490); and the console's
 rewrite, by `client/test/dm-view.test.ts` and
-`client/test/qa-describe-token.test.ts` (VTT-464). Every `client/e2e/` file
-runs outside `task check`.
+`client/test/qa-describe-token.test.ts` (VTT-464); and that a repaint gives the
+box being typed in its focus and selection back, focuses nothing else and
+leaves the page scrolled where it was, and that the Say boxes keep what was
+typed until a narration is sent, by `client/test/focus.test.ts`,
+`client/test/app.test.ts`, `client/test/spectator-view.test.ts`,
+`client/test/qa-repaint-focus.test.ts`, `client/test/qa-say-boxes.test.ts`,
+`client/e2e/typing.spec.ts` and `client/e2e/qa-repaint.spec.ts` (VTT-491 to
+VTT-494). Every `client/e2e/` file runs outside `task check`.
 
 That `internal/harness`'s client hands its reader every entry and each switch
 and that a dial names a log is held by
@@ -199,6 +204,31 @@ works a door or sends nothing. A player's selected actor follows the
 their armed ability. A DM's and an agent's chips select which of the actors
 granted them a board click moves and whose abilities the panel offers, and
 send nothing.
+
+The client rebuilds the tree it draws at every paint, and the box being typed
+in keeps its focus and its selection (the owner's rulings "Återställ fokus",
+"Konsol, Say och join", "Ja, preventScroll", "Lägg till overflow-anchor: none"
+and "Ja, via activeElement", 2026-10-25). `renderSpectator` for the table and
+`renderJoinView` for the join form end in `replaceKeepingFocus` in
+`client/src/view/focus.ts`. A box is an input or a textarea carrying a
+`data-field`. Every input and textarea the console, the join form and the
+player panel draw carries one, and no select or button does. When a box of the
+root is `document.activeElement`, in a tab in front or behind, the repaint
+gives the new tree's box with the same `data-field` the focus, with
+`preventScroll`, and the old box's selection start, end and direction, unless
+its type has no selection (VTT-491), and focuses nothing else (VTT-492). The
+page stays scrolled where it was, whether the box is above, in or below the
+viewport (VTT-494): `preventScroll` keeps the focus from scrolling to the box,
+and `#app`'s `overflow-anchor: none` keeps scroll anchoring from moving the
+page when the tree is replaced. What a box shows after a repaint comes from
+outside the tree: the console's from `draft` in `client/src/view/dm.ts`, or,
+for a box with no draft, from the world and the join link the console is drawn
+from, or nothing; the join form's from `JoinViewState.name`; and the player
+panel's Say boxes, `say-as` and `say-text`, from `PlayerUIState`'s `sayAs` and
+`sayText`, which Send, or Enter in `say-text`, empties when it sends a
+narration (VTT-493). A focused select or button loses the focus at a repaint,
+and so does a box when `paint` draws the reason it cannot fold a log in its
+place.
 
 ### How the window names what it shows
 
@@ -366,6 +396,11 @@ each entry it is sent, and no switch.
   still carry the ids, and `outcome_summary` (SPEC-007).
 - A payload added to the contract needs a line in `describe` before the
   client typechecks.
+- An input or a textarea added to a view needs a `data-field` unique in the
+  tree it is drawn in, or a repaint takes its focus, or hands the focus to the
+  first box in tree order with the same field.
+- Text a box must keep across a repaint needs a home outside the tree, as
+  `draft`, `JoinViewState` and `PlayerUIState` are; a box keeps none itself.
 
 - The Events panel is no boundary: it shows only entries of the log the window
   holds, and the window's Story shows each of them. What a connection is sent
@@ -419,4 +454,4 @@ VTT-423, VTT-424, VTT-425, VTT-426, VTT-427, VTT-428, VTT-429, VTT-430,
 VTT-431, VTT-432, VTT-433, VTT-434, VTT-435, VTT-442, VTT-443, VTT-444,
 VTT-445, VTT-446, VTT-447, VTT-448, VTT-449, VTT-457, VTT-458, VTT-459,
 VTT-460, VTT-461, VTT-464, VTT-474, VTT-475, VTT-476, VTT-477, VTT-483,
-VTT-484, VTT-489, VTT-490.
+VTT-484, VTT-489, VTT-490, VTT-491, VTT-492, VTT-493, VTT-494.
