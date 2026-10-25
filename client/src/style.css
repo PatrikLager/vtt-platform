@@ -21,6 +21,7 @@ body {
 }
 
 #app {
+  overflow-anchor: none;
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
   grid-template-areas: "status status" "board feed" "notes ticker";

@@ -7,6 +7,8 @@
 // small — every node here has text or does not, decided at the point it is
 // built.
 
+import { replaceKeepingFocus } from "./focus";
+
 export interface JoinViewState {
   /** What the person has typed so far. Survives a repaint; see below. */
   name: string;
@@ -75,5 +77,5 @@ export function renderJoinView(
     wrap.appendChild(err);
   }
 
-  root.replaceChildren(wrap);
+  replaceKeepingFocus(root, wrap);
 }

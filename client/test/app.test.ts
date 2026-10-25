@@ -3335,3 +3335,89 @@ test("the DM's and the agent's windows name a token by its GM name, and a player
     s?.close();
   }
 });
+
+// --- a repaint keeps the box being typed in -------------------------------
+
+/** A DM's page with no session open, its metadata answered. */
+async function dmPage() {
+  localStorage.setItem("vtt.token", "tok-dm");
+  stubMetadata({
+    "/api/me": { participantId: "p-dm", name: "DM", role: "dm" },
+    "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
+    "/api/adventures": { adventures: [] },
+  });
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  await settle();
+  return { r, s, sock };
+}
+
+// VTT-491
+test("an event's repaint leaves the DM typing in the same box, caret and all", async () => {
+  const { r, s, sock } = await dmPage();
+  const name = r.querySelector<HTMLInputElement>('[data-field="session-name"]')!;
+  name.focus();
+  name.value = "Open";
+  name.dispatchEvent(new Event("input"));
+  // Inside the text: a box whose value is set puts its caret at the end, so
+  // a caret at the end would not tell a restored one from none.
+  name.setSelectionRange(2, 2);
+
+  sock.deliver(envelope(1, { narrationAdded: { text: "A hush falls.", as: "", anchorFromSeq: "0", anchorToSeq: "0" } }));
+  await settle();
+
+  try {
+    const next = r.querySelector<HTMLInputElement>('[data-field="session-name"]')!;
+    expect(next === name).toBe(false);
+    expect(document.activeElement === next).toBe(true);
+    expect(next.value).toBe("Open");
+    expect([next.selectionStart, next.selectionEnd]).toEqual([2, 2]);
+    byText(r, "Start session")!.click();
+    expect(JSON.parse(sock.sent.at(-1)!).startSession.name).toBe("Open");
+  } finally {
+    // The console's draft outlives this test; leave it empty for later files.
+    const box = r.querySelector<HTMLInputElement>('[data-field="session-name"]')!;
+    box.value = "";
+    box.dispatchEvent(new Event("input"));
+    s?.close();
+  }
+});
+
+// VTT-492
+test("a repaint that takes the focused box away focuses nothing in its place", async () => {
+  const { r, s, sock } = await dmPage();
+  r.querySelector<HTMLInputElement>('[data-field="session-name"]')!.focus();
+
+  sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+  await settle();
+
+  expect(r.querySelector('[data-field="session-name"]') === null).toBe(true);
+  expect(byText(r, "End session")).toBeDefined();
+  expect(document.activeElement === document.body).toBe(true);
+  s?.close();
+});
+
+// VTT-491
+test("a refused join leaves the joiner typing in the name box", async () => {
+  setURL("http://localhost/?join=s3cret");
+  useFakeSocket();
+  stubJoinRoute(403, "gateway: this link is not accepting anyone\n");
+  const r = root();
+  boot(r);
+  const name = r.querySelector<HTMLInputElement>('[data-field="join-name"]')!;
+  name.focus();
+  name.value = "Kim";
+  name.dispatchEvent(new Event("input"));
+
+  name.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+  await settle();
+
+  expect(r.querySelector(".error")).not.toBeNull();
+  const next = r.querySelector<HTMLInputElement>('[data-field="join-name"]')!;
+  expect(next === name).toBe(false);
+  expect(document.activeElement === next).toBe(true);
+  expect(next.value).toBe("Kim");
+});

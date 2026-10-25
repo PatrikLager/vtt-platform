@@ -14,6 +14,7 @@ import { namer, type Namer } from "./naming";
 import { fitCamera, worldFromScreen, type Camera } from "./camera";
 import { planFog, planGrid, planScene } from "./scene-plan";
 import { paint, shadeFog, strokeGrid, type ImageMap } from "./canvas";
+import { replaceKeepingFocus } from "./focus";
 
 export const CELL = 44;
 
@@ -666,7 +667,7 @@ export function renderSpectator(
     const t = el("div", "toast", extras.toast);
     nodes.push(t);
   }
-  root.replaceChildren(...nodes);
+  replaceKeepingFocus(root, ...nodes);
 }
 
 function because(label: string, reason: string): string {

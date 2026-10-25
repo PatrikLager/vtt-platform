@@ -37,6 +37,7 @@ client/src/view/canvas.ts          100.00
 client/src/view/dm.ts            100.00
 client/src/view/doors.ts         100.00
 client/src/view/feed.ts         100.00
+client/src/view/focus.ts        100.00
 client/src/view/grid.ts         100.00
 client/src/view/join.ts          100.00
 client/src/view/naming.ts        100.00

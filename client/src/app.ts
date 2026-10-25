@@ -98,9 +98,8 @@ function runJoin(root: HTMLElement, auth: Auth, secret: string): void {
   const state: JoinViewState = { name: "", busy: false, error: "" };
   const paint = () =>
     renderJoinView(root, state, {
-      // NO repaint on a keystroke: rebuilding the input mid-typing throws away
-      // the caret. The value is re-seeded from state on the paints that do
-      // happen, which is what keeps a refusal from costing them their typing.
+      // NO repaint on a keystroke. The value is re-seeded from state on the
+      // paints that do happen, which keeps a refusal from costing the typing.
       onName: (v) => {
         state.name = v;
       },
