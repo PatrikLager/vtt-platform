@@ -2,9 +2,9 @@ import { test, expect, type Page } from "@playwright/test";
 import { fixture } from "./setup";
 
 // What someone is typing when a repaint arrives, in a real browser: the
-// focus and the page's scroll.
+// focus, the page's scroll, and the text of a box that keeps none itself.
 
-const { base, tokens } = fixture("typing");
+const { base, tokens, ids } = fixture("typing");
 
 // Leave the table as this file found it, as table.spec.ts does.
 test.afterAll(async ({ browser }) => {
@@ -157,3 +157,60 @@ test("a box in a background tab keeps the focus across a repaint",
     await page.keyboard.insertText("X");
     await expect(box).toHaveValue("OpXen");
   });
+
+/** Send the DM's commands on a raw socket, one at a time; any refusal fails the test. */
+async function asDM(page: Page, commands: Record<string, unknown>[]) {
+  const refused = await page.evaluate(
+    async ([t, cs]) => {
+      const ws = new WebSocket(`${location.origin.replace("http", "ws")}/ws?token=${t}&after=0`);
+      await new Promise((r) => ws.addEventListener("open", r));
+      const out: string[] = [];
+      for (const [i, c] of cs.entries()) {
+        const requestId = `e2e-dm-${i}`;
+        const answer = new Promise<{ ok?: boolean; error?: string }>((r) =>
+          ws.addEventListener("message", (m) => {
+            const f = JSON.parse(String(m.data));
+            if (f.result?.requestId === requestId) r(f.result);
+          }),
+        );
+        ws.send(JSON.stringify({ requestId, ...c }));
+        const res = await answer;
+        if (!res.ok) out.push(`${Object.keys(c)[0]}: ${res.error}`);
+      }
+      ws.close();
+      return out;
+    },
+    [tokens.dm, commands] as const,
+  );
+  expect(refused).toEqual([]);
+}
+
+// VTT-491 VTT-493
+test("what a player types in Say survives a repaint, focus and all", async ({ page }) => {
+  await page.goto(`${base}/?token=${tokens.dm}`);
+  await expect(page.locator(".conn")).toHaveText("connected", { timeout: 15_000 });
+  await asDM(page, [
+    { startSession: { name: "Say" } },
+    { loadAdventure: { adventureId: "goblin-ambush" } },
+    {
+      grantActorControl: {
+        actorId: "act-fighter", participantId: ids.player, kind: "ACTOR_KIND_PARTY_MEMBER",
+      },
+    },
+  ]);
+
+  await page.goto(`${base}/?token=${tokens.player}`);
+  await expect(page.locator(".conn")).toHaveText("connected", { timeout: 15_000 });
+  const say = page.locator('.player .say input[placeholder="say or narrate"]');
+  await expect(say).toBeVisible({ timeout: 10_000 });
+  await say.focus();
+  await page.keyboard.type("I draw my");
+
+  await narrate(page, "the wind rises");
+
+  // Retrying matchers: the narration brings more than one repaint, and a
+  // box read once may already be gone.
+  await expect(say).toHaveValue("I draw my");
+  await expect(say).toBeFocused();
+});
+

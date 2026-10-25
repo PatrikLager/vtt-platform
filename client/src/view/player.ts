@@ -22,6 +22,9 @@ export interface PlayerUIState {
   selectedAbilityId: string;
   /** Whether a board click works a door instead of moving a token (SPEC-022). */
   doorsArmed: boolean;
+  /** What the Say boxes hold until Send sends it (VTT-493). */
+  sayAs?: string;
+  sayText?: string;
 }
 
 /** A player's switch between the party members the gateway lets them watch (VTT-457). */
@@ -189,9 +192,19 @@ export function renderPlayerPanel(
   const as = document.createElement("input");
   as.placeholder = "in character as… (optional)";
   as.className = "as";
+  as.dataset["field"] = "say-as";
+  as.value = ui.sayAs ?? "";
+  as.addEventListener("input", () => {
+    ui.sayAs = as.value;
+  });
   const text = document.createElement("input");
   text.placeholder = "say or narrate";
   text.className = "text";
+  text.dataset["field"] = "say-text";
+  text.value = ui.sayText ?? "";
+  text.addEventListener("input", () => {
+    ui.sayText = text.value;
+  });
   const send3 = el("button", "chip", "Send");
   send3.dataset["action"] = "add-narration";
   const submit = () => {
@@ -199,6 +212,8 @@ export function renderPlayerPanel(
     if (t === "") return;
     send(addNarration(t, as.value.trim() || undefined));
     text.value = "";
+    ui.sayAs = "";
+    ui.sayText = "";
     rerender();
   };
   send3.addEventListener("click", submit);

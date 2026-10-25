@@ -25,7 +25,7 @@ client/src/view/grid.ts  43.0
 client/src/view/join.ts  33.9
 client/src/view/naming.ts  8.6
 client/src/view/pack-assets.ts  62.7
-client/src/view/player.ts  23.1
+client/src/view/player.ts  22.1
 client/src/view/scene-plan.ts  52.9
 client/src/view/spectator.ts  40.9
 client/src/wire.ts  30.0

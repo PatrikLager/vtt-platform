@@ -375,6 +375,77 @@ test("sending narration requires text, and clears the box afterwards", () => {
   expect(text.value).toBe("");
 });
 
+/**
+ * The table with a player's panel, repainted as app.ts's paint does: one
+ * `ui` across paints, into a root on the document so the focus means
+ * something.
+ */
+function sayTable() {
+  const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "", doorsArmed: false };
+  const sent: ClientCommand[] = [];
+  const root = document.createElement("div");
+  document.body.replaceChildren(root);
+  const paint = (): void =>
+    renderSpectator(root, world(), [], "connected", {
+      panel: renderPlayerPanel(world(), me, [], ui, (c) => sent.push(c), paint),
+    });
+  paint();
+  // By class, which the boxes carry with or without a data-field.
+  const box = (kind: "as" | "text") => root.querySelector<HTMLInputElement>(`.say .${kind}`)!;
+  const type = (kind: "as" | "text", text: string): void => {
+    box(kind).value = text;
+    box(kind).dispatchEvent(new Event("input"));
+  };
+  return { sent, paint, box, type };
+}
+
+/** Type into both Say boxes, focus one, repaint, and Send from the new tree. */
+function sayAcrossARepaint(focused: "as" | "text"): void {
+  const t = sayTable();
+  expect([t.box("as").value, t.box("text").value]).toEqual(["", ""]);
+  // The fields address the boxes, and differ from every one the DM console
+  // draws beside them for a DM.
+  expect([t.box("as").dataset["field"], t.box("text").dataset["field"]])
+    .toEqual(["say-as", "say-text"]);
+  t.type("as", "Lera");
+  t.type("text", "I draw my");
+  const was = t.box(focused);
+  was.focus();
+
+  t.paint();
+
+  expect(t.box(focused) === was).toBe(false);
+  expect([t.box("as").value, t.box("text").value]).toEqual(["Lera", "I draw my"]);
+  expect(document.activeElement === t.box(focused)).toBe(true);
+  document.querySelector<HTMLButtonElement>('[data-action="add-narration"]')!.click();
+  expect(t.sent.map((c) => c.command.value)).toEqual([
+    expect.objectContaining({ text: "I draw my", as: "Lera" }),
+  ]);
+}
+
+// VTT-493 VTT-491
+test("what a player typed in Say survives a repaint, with the as box focused", () => {
+  sayAcrossARepaint("as");
+});
+
+// VTT-493 VTT-491
+test("what a player typed in Say survives a repaint, with the text box focused", () => {
+  sayAcrossARepaint("text");
+});
+
+// VTT-493
+test("Send empties both Say boxes for the paints after it", () => {
+  const t = sayTable();
+  t.type("as", "Lera");
+  t.type("text", "Hold.");
+  document.querySelector<HTMLButtonElement>('[data-action="add-narration"]')!.click();
+
+  t.paint();
+
+  expect(t.sent).toHaveLength(1);
+  expect([t.box("as").value, t.box("text").value]).toEqual(["", ""]);
+});
+
 // ============================================================================
 // Mutation-driven suite. view/spectator.ts opened at 71.62%, and the survivors
 // were not evenly spread: the board's GEOMETRY and describe()'s crash-safety
