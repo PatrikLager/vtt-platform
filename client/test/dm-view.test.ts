@@ -926,6 +926,8 @@ test("an input created without a class carries no class at all", () => {
   // `cls = ""` -> a truthy default puts a bogus class on every unstyled box.
   const h = harness();
   expect(h.field("actor-id").className).toBe("");
+  // `if (cls)` -> true assigns "", which leaves an empty class attribute.
+  expect(h.field("actor-id").hasAttribute("class")).toBe(false);
   expect(h.field("session-name").className).toBe("wide");
 });
 

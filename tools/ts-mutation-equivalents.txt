@@ -176,17 +176,20 @@ client/src/fold.ts  ConditionalExpression  offset=5  span=9  nth=1  copies=1  fa
 
 # --- client/src/view/dm.ts --------------------------------------------------
 #
-# 166 survivors -> 1 by writing the messages, the payloads and the field
-# contract (client/test/dm-view.test.ts). One further mutant is handled in the
-# SOURCE with a `// Stryker disable` and a stated reason rather than here,
-# because it is NOT equivalent: dropping el()'s `text !== undefined` guard puts
-# the word "undefined" above every group in a real browser, while happy-dom
-# coerces it to "" and no test can see the difference. Claiming equivalence for
-# it would be the wrong-adjudication this file warns about.
-
-client/src/view/dm.ts  ConditionalExpression  offset=5  span=3  nth=1  copies=1  true
-    code: if (cls) i.className = cls;
-    `if (cls) i.className = cls` -> always-assign, in the input() helper. Unlike el()'s version of the same line, this parameter has a default of "" rather than being optional, so the mutated branch assigns the empty string — which is what className already holds. No element can tell the two apart, and there is no call site that passes undefined.
+# 166 survivors -> 0 here by writing the messages, the payloads and the field
+# contract (client/test/dm-view.test.ts). The last entry that stood here, on
+# input()'s `if (cls) i.className = cls` -> true, was killed rather than
+# excused: under it a box built with no class carries an empty class
+# attribute, which "an input created without a class carries no class at all"
+# asserts away. dm.ts's four other entries, three on its two sort comparators
+# and one on the grant target's draft fallback, sit under the client/src/app.ts
+# header, after client/src/session.ts's two. Two further mutants, el()'s
+# `text !== undefined` guard forced either way, are disabled in the SOURCE
+# with a `// Stryker disable` and a stated reason rather than adjudicated here,
+# because the one forced true is NOT equivalent: it puts the word "undefined"
+# above every group in a real browser, while happy-dom coerces it to "" and no
+# test can see the difference. Claiming equivalence for it would be the
+# wrong-adjudication this file warns about.
 
 # --- client/src/player.ts ----------------------------------------------------
 #
