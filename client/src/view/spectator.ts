@@ -6,9 +6,11 @@
 
 import type { State } from "../state";
 import type { Participant } from "../session";
-import { NoteVisibility, type Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
+import { ActorKind, NoteVisibility, type AbilityUsed, type Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
+import type { Ability } from "../metadata";
 import { buildFeed, type FeedEntry } from "./feed";
 import { cellFromPoint, tokensOnScene, type Geometry, type TokenDisc } from "./grid";
+import { namer, type Namer } from "./naming";
 import { fitCamera, worldFromScreen, type Camera } from "./camera";
 import { planFog, planGrid, planScene } from "./scene-plan";
 import { paint, shadeFog, strokeGrid, type ImageMap } from "./canvas";
@@ -106,8 +108,8 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
   return n;
 }
 
-/** A short, human label for an event, used by the feed and the ticker. */
-export function describe(e: Envelope): string {
+/** describe is a short, human label for an event, naming as names does (VTT-476). */
+export function describe(e: Envelope, names: Namer): string {
   const p = e.payload;
   switch (p.case) {
     case "sessionStarted":
@@ -117,41 +119,64 @@ export function describe(e: Envelope): string {
     case "sceneCreated":
       return `scene "${p.value.name}"`;
     case "actorAdded":
-      return `actor ${p.value.actor?.name || p.value.actor?.actorId || "?"} joined`;
+      return p.value.actor?.kind === ActorKind.PARTY_MEMBER
+        ? `${names.actor(p.value.actor.actorId)} is in the party`
+        : `${names.actor(p.value.actor?.actorId)} comes into sight`;
     case "tokenPlaced":
-      return `${p.value.tokenId} placed at ${p.value.position?.x ?? 0},${p.value.position?.y ?? 0}`;
+      return `${names.token(p.value.tokenId)} is at ${square(p.value.position)}`;
     case "tokenMoved":
-      return because(`${p.value.tokenId} moved to ${p.value.to?.x ?? 0},${p.value.to?.y ?? 0}`, p.value.reason);
-    // The two forward-only removals (retraction-leaves spec §5). They arrive
-    // here as ordinary feed entries because a removal IS something that
-    // happened — the counterparts above (actorAdded, tokenPlaced) are labelled
-    // and the inverses were not, so a player watched "tokenRemoved" and
-    // "actorRemoved" go past in developer vocabulary. TokenRemoved carries a
-    // bare token_id and ActorRemoved a bare actor_id (events.proto), so
-    // neither can name anything the fold has already deleted.
+      return because(`${names.token(p.value.tokenId)} moved to ${square(p.value.to)}`, p.value.reason);
     case "tokenRemoved":
-      return `${p.value.tokenId} taken off the board`;
+      return `${names.token(p.value.tokenId)} taken off the board`;
+    case "tokenHidden":
+      return `${names.token(p.value.tokenId)} went out of sight`;
+    case "tokenDescribed":
+      return `${names.token(p.value.tokenId)} described`;
     case "actorRemoved":
-      return `actor ${p.value.actorId} left`;
+      return `${names.actor(p.value.actorId)} left`;
     case "conditionApplied":
-      return `${p.value.actorId} gained ${p.value.conditionId}`;
+      return `${names.actor(p.value.actorId)} gained ${p.value.conditionId}`;
     case "conditionRemoved":
-      return `${p.value.actorId} lost ${p.value.conditionId}`;
+      return `${names.actor(p.value.actorId)} lost ${p.value.conditionId}`;
     case "resourceChanged":
-      return `${p.value.actorId} ${p.value.resource} → ${p.value.newValue}`;
+      return `${names.actor(p.value.actorId)} ${p.value.resource} → ${p.value.newValue}`;
+    case "abilityUsed":
+      return abilityLine(p.value, names);
+    case "actorControlGranted":
+      return `control of ${names.actor(p.value.actorId)} given`;
+    case "actorControlRevoked":
+      return `control of ${names.actor(p.value.actorId)} taken back`;
+    case "doorOpened":
+      return `a door opened at ${square(p.value.at)}`;
+    case "doorClosed":
+      return `a door closed at ${square(p.value.at)}`;
+    case "sceneSeen":
+      return "the view changed";
+    case "narrationAdded":
+      return p.value.as === "" ? p.value.text : `${p.value.as}: ${p.value.text}`;
     case "noteUpserted":
       return `note "${p.value.key}" updated`;
     case "noteDeleted":
       return `note "${p.value.key}" withdrawn`;
-    case "abilityUsed":
-      return `${p.value.actorId} used ${p.value.abilityId}`;
     case "attackRolled":
       return `roll ${p.value.total}`;
     case "adventureLoaded":
       return `adventure ${p.value.adventureId} loaded`;
-    default:
-      return p.case ?? "event";
+    case undefined:
+      return "something happened";
   }
+}
+
+// Read outcomes, never outcome_summary: the summary carries what the roll was
+// compared with (VTT-477).
+function abilityLine(u: AbilityUsed, names: Namer): string {
+  const head = `${names.actor(u.actorId)} used ${names.ability(u.abilityId)}`;
+  if (u.outcomes.length === 0) return `${head} on ${u.targetIds.map((id) => names.actor(id)).join(", ")}`;
+  return head + u.outcomes.map((o) => ` on ${names.actor(o.targetId)}: ${o.result}, rolled ${o.total}`).join(";");
+}
+
+function square(at: { x: number; y: number } | undefined): string {
+  return `${at?.x ?? 0},${at?.y ?? 0}`;
 }
 
 function renderGrid(
@@ -176,6 +201,9 @@ function renderGrid(
   // because at this point the element this function builds is not in the
   // document and has no size to read.
   pane: { w: number; h: number },
+  names: Namer,
+  pinned: string | undefined,
+  onCardPin: (tokenId: string) => void,
   onCell?: (c: { x: number; y: number }) => void,
   // TEST-ONLY SEAM (review finding C4, 2026-08-16): how this function
   // obtains a 2D context. Defaults to the real canvas.getContext, which is
@@ -301,8 +329,8 @@ function renderGrid(
   // call site's only job is to hand it the one this seat was actually sent.
   // Undefined (the DM's stream, which carries no sceneSeen) draws every token;
   // see tokensOnScene on why that is not the same as an empty set.
-  for (const d of tokensOnScene(st, sceneId, scene.Visible)) {
-    board.appendChild(renderDisc(d, cam));
+  for (const d of tokensOnScene(st, sceneId, scene.Visible, names)) {
+    board.appendChild(renderDisc(d, cam, scene, names.dm, pinned, onCardPin));
   }
   wrap.appendChild(board);
   return wrap;
@@ -327,7 +355,14 @@ function renderGrid(
  * token's content should be the one part of the board immune to the camera
  * that governs everything else on it.
  */
-function renderDisc(d: TokenDisc, cam: Camera): HTMLElement {
+function renderDisc(
+  d: TokenDisc,
+  cam: Camera,
+  scene: { GridWidth: number; GridHeight: number },
+  dm: boolean,
+  pinned: string | undefined,
+  onCardPin: (tokenId: string) => void,
+): HTMLElement {
   const t = el("div", "token");
   const size = CELL * cam.scale;
   const scale = cam.scale;
@@ -335,8 +370,16 @@ function renderDisc(d: TokenDisc, cam: Camera): HTMLElement {
   t.style.top = `${d.y * CELL * cam.scale + cam.offsetY}px`;
   t.style.width = `${size}px`;
   t.style.height = `${size}px`;
-  t.title = d.name || d.actorId;
+  t.title = d.name;
   t.dataset["tokenId"] = d.tokenId;
+  if (d.tokenId === pinned) t.classList.add("pinned");
+  // Open the card toward the board's middle: .grid clips what crosses its edge.
+  if (d.x * 2 >= scene.GridWidth) t.classList.add("card-left");
+  if (d.y * 2 >= scene.GridHeight) t.classList.add("card-up");
+  t.addEventListener("contextmenu", (ev) => {
+    ev.preventDefault();
+    onCardPin(d.tokenId);
+  });
 
   const initial = el("span", "initial", d.initial);
   initial.style.width = `${30 * scale}px`;
@@ -367,10 +410,23 @@ function renderDisc(d: TokenDisc, cam: Camera): HTMLElement {
     }
     t.appendChild(dots);
   }
+  t.appendChild(renderCard(d, dm));
   return t;
 }
 
-function renderFeed(entries: FeedEntry[]): HTMLElement {
+// Show the GM's texts in a DM's or an agent's window alone (VTT-483).
+function renderCard(d: TokenDisc, dm: boolean): HTMLElement {
+  const card = el("div", "token-card");
+  card.appendChild(el("p", "card-name", d.name));
+  if (dm) card.appendChild(el("p", "card-shown", `players see: ${d.shown}`));
+  if (d.notes !== "") card.appendChild(el("p", "card-notes", d.notes));
+  if (dm && d.gmNotes !== "") card.appendChild(el("p", "card-gm-notes", d.gmNotes));
+  return card;
+}
+
+function noPin(): void {}
+
+function renderFeed(entries: FeedEntry[], names: Namer): HTMLElement {
   const wrap = el("section", "feed");
   wrap.appendChild(el("h2", undefined, "Story"));
   if (entries.length === 0) {
@@ -386,7 +442,7 @@ function renderFeed(entries: FeedEntry[]): HTMLElement {
       item.appendChild(line);
     }
     for (const e of entry.events) {
-      item.appendChild(el("p", "mechanical", describe(e)));
+      item.appendChild(el("p", "mechanical", describe(e, names)));
     }
     wrap.appendChild(item);
   }
@@ -416,12 +472,12 @@ function renderNotes(st: State): HTMLElement {
   return wrap;
 }
 
-function renderTicker(log: Envelope[]): HTMLElement {
+function renderTicker(log: Envelope[], names: Namer): HTMLElement {
   const wrap = el("section", "ticker");
   wrap.appendChild(el("h2", undefined, "Events"));
   // Keep it bounded: an all-night session is thousands of events.
   for (const e of log.slice(-40).reverse()) {
-    wrap.appendChild(el("p", "tick", describe(e)));
+    wrap.appendChild(el("p", "tick", describe(e, names)));
   }
   return wrap;
 }
@@ -560,6 +616,14 @@ export interface ViewExtras {
   getContext?: ((canvas: HTMLCanvasElement) => CanvasRenderingContext2D | null) | undefined;
   /** Whether this board shows the door tool armed: false where it cannot act. */
   doorsArmed?: boolean | undefined;
+  /** Whether the window names and shows as a DM's or an agent's does (VTT-484). */
+  dm?: boolean | undefined;
+  /** The ruleset's abilities, which name an ability in the Story (VTT-477). */
+  abilities?: Ability[] | undefined;
+  /** The token whose card a right-click pinned (VTT-474). */
+  pinnedCard?: string | undefined;
+  /** Pin or unpin a token's card, on a right-click on its disc (VTT-474). */
+  onCardPin?: ((tokenId: string) => void) | undefined;
 }
 
 export function renderSpectator(
@@ -584,14 +648,16 @@ export function renderSpectator(
   // element to the NEW size — the measurement is current, and the first frame of
   // all falls back to the documented default.
   const pane = paneSize(root.querySelector<HTMLElement>(".grid"));
+  const names = namer(st, log, extras.dm ?? false, extras.abilities);
 
   const nodes: HTMLElement[] = [
     renderStatus(st, status, extras),
-    renderGrid(st, sceneId, extras.images ?? NO_IMAGES, extras.doorsArmed ?? false, pane, extras.onCell, extras.getContext),
-    renderFeed(buildFeed(log)),
+    renderGrid(st, sceneId, extras.images ?? NO_IMAGES, extras.doorsArmed ?? false, pane, names,
+      extras.pinnedCard, extras.onCardPin ?? noPin, extras.onCell, extras.getContext),
+    renderFeed(buildFeed(log), names),
     renderNotes(st),
   ];
-  if (extras.ticker) nodes.push(renderTicker(log));
+  if (extras.ticker) nodes.push(renderTicker(log, names));
   // Never draw the perch with a panel or console: #app:has(.perch) names neither.
   if (extras.perch) nodes.push(renderPerch(extras.perch));
   if (extras.panel) nodes.push(extras.panel);

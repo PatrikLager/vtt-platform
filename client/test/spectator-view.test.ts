@@ -1,14 +1,15 @@
 import "./support/dom"; // see that module: registers once, keeps real fetch/WebSocket
 
 import { test, expect } from "bun:test";
-import { create } from "@bufbuild/protobuf";
+import { create, type DescMessage } from "@bufbuild/protobuf";
 import {
   EnvelopeSchema, SessionStartedSchema, SessionEndedSchema, SceneCreatedSchema,
   ActorAddedSchema, TokenPlacedSchema, TokenMovedSchema, NarrationAddedSchema,
   NoteUpsertedSchema, NoteDeletedSchema, ConditionAppliedSchema,
   ConditionRemovedSchema, ResourceChangedSchema, AbilityUsedSchema,
   AttackRolledSchema, AdventureLoadedSchema, SceneSeenSchema,
-  TokenRemovedSchema, ActorRemovedSchema,
+  TokenRemovedSchema, ActorRemovedSchema, TokenHiddenSchema, TokenDescribedSchema,
+  ActorControlGrantedSchema, ActorControlRevokedSchema, DoorOpenedSchema, DoorClosedSchema,
   type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderSpectator, describe as describeEvent, CELL, boardCamera, paneSize,
@@ -21,6 +22,7 @@ import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { paint, missingTileColors, type ImageMap } from "../src/view/canvas";
 import { worldFromScreen } from "../src/view/camera";
 import { cellFromPoint, type Geometry } from "../src/view/grid";
+import { UNNAMED, namer } from "../src/view/naming";
 
 /** Move an actor's control to someone else, mirror and set together. */
 function reassign(a: { controllerId: string; controllerIds: string[] }, to: string): void {
@@ -37,7 +39,7 @@ function world(): State {
   st.Scenes["s1"] = { ID: "s1", Name: "The Hall", GridWidth: 6, GridHeight: 4 };
   st.Actors["a1"] = {
     actorId: "a1", name: "Lera", moduleId: "", attributes: {},
-    resources: { vigor: { current: 3, max: 10 } }, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED,
+    resources: { vigor: { current: 3, max: 10 } }, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.PARTY_MEMBER,
   };
   st.Tokens["t1"] = { ID: "t1", SceneID: "s1", ActorID: "a1", X: 2, Y: 1 };
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 4 }];
@@ -138,7 +140,7 @@ test("each ticker row is its event's description alone, newest first", () => {
     env(3, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t1", to: { x: 3, y: 4 } }) }),
   ];
   const ticks = Array.from(render(world(), log, DM).querySelectorAll(".ticker .tick"));
-  expect(ticks.map((r) => r.textContent)).toEqual(["t1 moved to 3,4", 'scene "H"', "session started — S"]);
+  expect(ticks.map((r) => r.textContent)).toEqual(["Lera moved to 3,4", 'scene "H"', "session started — S"]);
   for (const r of ticks) {
     expect(r.getAttributeNames()).toEqual(["class"]);
     expect(r.children.length).toBe(0);
@@ -162,8 +164,8 @@ test("the feed and the ticker show a move's reason", () => {
   const log = [env(6, { case: "tokenMoved", value: create(TokenMovedSchema, {
     tokenId: "t1", to: { x: 3, y: 4 }, reason: "the floor gives way" }) })];
   const root = render(world(), log, DM);
-  expect(root.querySelector(".feed .mechanical")?.textContent).toBe("t1 moved to 3,4 — the floor gives way");
-  expect(root.querySelector(".ticker .tick")?.textContent).toBe("t1 moved to 3,4 — the floor gives way");
+  expect(root.querySelector(".feed .mechanical")?.textContent).toBe("Lera moved to 3,4 — the floor gives way");
+  expect(root.querySelector(".ticker .tick")?.textContent).toBe("Lera moved to 3,4 — the floor gives way");
 });
 
 test("in-character speech is marked with its speaker; table talk is not", () => {
@@ -176,27 +178,26 @@ test("in-character speech is marked with its speaker; table talk is not", () => 
   expect(root.querySelectorAll(".narration")).toHaveLength(1);
 });
 
-test("describe renders a real label for every event kind it handles, not the fallback", () => {
-  // The previous version of this test asserted only `label.length > 0` and
-  // `label !== "event"` over six kinds. describe()'s default branch is
-  // `return p.case ?? "event"`, and every case name is a non-empty string
-  // that is not "event" — so DELETING THE ENTIRE SWITCH left all six
-  // assertions passing. It proved that protobuf sets `payload.case`.
-  //
-  // So: exact strings. The fallback is separately caught by asserting no label
-  // equals its own case name.
-  //
-  // THIS LIST IS PARTIAL, and the title used to say "every event kind", which
-  // was the reason nothing went red when the two removal arms shipped with no
-  // label at all: the list is hand-maintained and describe()'s switch is not,
-  // so an unlabelled arm is invisible here rather than failing. As of
-  // 2026-09-01 the cases below cover the ones with a label; doorOpened,
-  // doorClosed, tokenHidden, sceneSeen and the actor-control grants still fall
-  // through to the case name and are NOT covered. Closing that gap means
-  // driving the list off the Envelope descriptor's payload oneof rather than
-  // adding rows, and it is deliberately not done here — this round added the
-  // two arms this arc introduced and said so, rather than leaving a title
-  // that promises exhaustiveness the list cannot deliver.
+// The Story's names: a party member, and a creature known by its token's name.
+function storyWorld(): State {
+  const st = newState();
+  st.Actors["act-ama"] = {
+    actorId: "act-ama", name: "Ama", moduleId: "", attributes: {}, resources: {},
+    controllerId: "", controllerIds: [], kind: ActorKind.PARTY_MEMBER,
+  };
+  st.Actors["act-gob"] = {
+    actorId: "act-gob", name: "Goblin Cutter", moduleId: "", attributes: {}, resources: {},
+    controllerId: "", controllerIds: [], kind: ActorKind.NON_PARTY,
+  };
+  st.Tokens["tok-ama"] = { ID: "tok-ama", SceneID: "s", ActorID: "act-ama", X: 0, Y: 0 };
+  st.Tokens["tok-gob"] = { ID: "tok-gob", SceneID: "s", ActorID: "act-gob", X: 1, Y: 0, Name: "a hunched goblin" };
+  return st;
+}
+const STORY = namer(storyWorld(), [], false, [{ id: "cleave", name: "Cleave" }]);
+
+// VTT-476 VTT-475 VTT-477
+test("describe renders a real label for every event kind, not the fallback", () => {
+  const gob = { actorId: "act-gob" };
   const cases: [Envelope, string][] = [
     [env(1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) }),
       "session started — S"],
@@ -204,62 +205,97 @@ test("describe renders a real label for every event kind it handles, not the fal
       "session ended"],
     [env(3, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "s", name: "N", gridWidth: 1, gridHeight: 1 }) }),
       'scene "N"'],
-    [env(4, { case: "actorAdded", value: create(ActorAddedSchema, { actor: { actorId: "a", name: "A" } }) }),
-      "actor A joined"],
-    [env(5, { case: "tokenPlaced", value: create(TokenPlacedSchema, { tokenId: "t", sceneId: "s", actorId: "a", position: { x: 1, y: 2 } }) }),
-      "t placed at 1,2"],
-    [env(6, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t", to: { x: 3, y: 4 } }) }),
-      "t moved to 3,4"],
-    [env(17, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t", to: { x: 3, y: 4 }, reason: "r" }) }),
-      "t moved to 3,4 — r"],
-    [env(7, { case: "conditionApplied", value: create(ConditionAppliedSchema, { actorId: "a", conditionId: "prone" }) }),
-      "a gained prone"],
-    [env(8, { case: "conditionRemoved", value: create(ConditionRemovedSchema, { actorId: "a", conditionId: "prone" }) }),
-      "a lost prone"],
-    [env(9, { case: "resourceChanged", value: create(ResourceChangedSchema, { actorId: "a", resource: "hp", newValue: 7 }) }),
-      "a hp → 7"],
-    [env(10, { case: "noteUpserted", value: create(NoteUpsertedSchema, { key: "k", title: "t", text: "x" }) }),
+    [env(4, { case: "actorAdded", value: create(ActorAddedSchema, {
+      actor: { actorId: "act-ama", name: "Ama", kind: ActorKind.PARTY_MEMBER } }) }),
+      "Ama is in the party"],
+    [env(5, { case: "actorAdded", value: create(ActorAddedSchema, {
+      actor: { actorId: "act-gob", name: "Goblin Cutter", kind: ActorKind.NON_PARTY } }) }),
+      "a hunched goblin comes into sight"],
+    [env(6, { case: "tokenPlaced", value: create(TokenPlacedSchema, {
+      tokenId: "tok-gob", sceneId: "s", actorId: "act-gob", position: { x: 1, y: 2 } }) }),
+      "a hunched goblin is at 1,2"],
+    [env(7, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "tok-ama", to: { x: 3, y: 4 } }) }),
+      "Ama moved to 3,4"],
+    [env(8, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "tok-ama", to: { x: 3, y: 4 }, reason: "r" }) }),
+      "Ama moved to 3,4 — r"],
+    [env(9, { case: "tokenRemoved", value: create(TokenRemovedSchema, { tokenId: "tok-gob" }) }),
+      "a hunched goblin taken off the board"],
+    [env(10, { case: "tokenHidden", value: create(TokenHiddenSchema, { tokenId: "tok-gob" }) }),
+      "a hunched goblin went out of sight"],
+    [env(11, { case: "tokenDescribed", value: create(TokenDescribedSchema, { tokenId: "tok-gob", name: "x" }) }),
+      "a hunched goblin described"],
+    [env(12, { case: "actorRemoved", value: create(ActorRemovedSchema, gob) }),
+      "a hunched goblin left"],
+    [env(13, { case: "conditionApplied", value: create(ConditionAppliedSchema, { ...gob, conditionId: "prone" }) }),
+      "a hunched goblin gained prone"],
+    [env(14, { case: "conditionRemoved", value: create(ConditionRemovedSchema, { ...gob, conditionId: "prone" }) }),
+      "a hunched goblin lost prone"],
+    [env(15, { case: "resourceChanged", value: create(ResourceChangedSchema, { actorId: "act-ama", resource: "vigor", newValue: 7 }) }),
+      "Ama vigor → 7"],
+    [env(16, { case: "abilityUsed", value: create(AbilityUsedSchema, {
+      actorId: "act-ama", abilityId: "cleave", targetIds: ["act-gob", "act-ama"] }) }),
+      "Ama used Cleave on a hunched goblin, Ama"],
+    [env(17, { case: "abilityUsed", value: create(AbilityUsedSchema, {
+      actorId: "act-ama", abilityId: "cleave", targetIds: ["act-gob", "act-ama"],
+      outcomes: [{ targetId: "act-gob", result: "hit", total: 17 }, { targetId: "act-ama", result: "miss", total: 3 }] }) }),
+      "Ama used Cleave on a hunched goblin: hit, rolled 17; on Ama: miss, rolled 3"],
+    [env(18, { case: "abilityUsed", value: create(AbilityUsedSchema, { actorId: "act-ama", abilityId: "rally", targetIds: ["act-ama"] }) }),
+      "Ama used rally on Ama"],
+    [env(19, { case: "actorControlGranted", value: create(ActorControlGrantedSchema, { actorId: "act-ama" }) }),
+      "control of Ama given"],
+    [env(20, { case: "actorControlRevoked", value: create(ActorControlRevokedSchema, { actorId: "act-ama" }) }),
+      "control of Ama taken back"],
+    [env(21, { case: "doorOpened", value: create(DoorOpenedSchema, { sceneId: "s", at: { x: 3, y: 1 } }) }),
+      "a door opened at 3,1"],
+    [env(22, { case: "doorClosed", value: create(DoorClosedSchema, { sceneId: "s", at: { x: 3, y: 1 } }) }),
+      "a door closed at 3,1"],
+    [env(23, { case: "sceneSeen", value: create(SceneSeenSchema, { sceneId: "s" }) }),
+      "the view changed"],
+    [env(24, { case: "narrationAdded", value: create(NarrationAddedSchema, { text: "Hi", as: "Goblin" }) }),
+      "Goblin: Hi"],
+    [env(25, { case: "narrationAdded", value: create(NarrationAddedSchema, { text: "ooc" }) }),
+      "ooc"],
+    [env(26, { case: "noteUpserted", value: create(NoteUpsertedSchema, { key: "k", title: "t", text: "x" }) }),
       'note "k" updated'],
-    [env(11, { case: "noteDeleted", value: create(NoteDeletedSchema, { key: "k" }) }),
+    [env(27, { case: "noteDeleted", value: create(NoteDeletedSchema, { key: "k" }) }),
       'note "k" withdrawn'],
-    [env(12, { case: "abilityUsed", value: create(AbilityUsedSchema, { actorId: "a", abilityId: "cleave" }) }),
-      "a used cleave"],
-    [env(13, { case: "attackRolled", value: create(AttackRolledSchema, { total: 17 }) }),
+    [env(28, { case: "attackRolled", value: create(AttackRolledSchema, { total: 17 }) }),
       "roll 17"],
-    [env(14, { case: "adventureLoaded", value: create(AdventureLoadedSchema, { adventureId: "adv" }) }),
+    [env(29, { case: "adventureLoaded", value: create(AdventureLoadedSchema, { adventureId: "adv" }) }),
       "adventure adv loaded"],
-    // The forward-only removals (retraction-leaves spec §5). A player's feed
-    // showed the raw "tokenRemoved"/"actorRemoved" until 2026-09-01, which is
-    // the default branch — so these two rows are also what pins that the arms
-    // exist at all.
-    [env(15, { case: "tokenRemoved", value: create(TokenRemovedSchema, { tokenId: "t" }) }),
-      "t taken off the board"],
-    [env(16, { case: "actorRemoved", value: create(ActorRemovedSchema, { actorId: "a" }) }),
-      "actor a left"],
   ];
 
   for (const [e, want] of cases) {
-    expect(describeEvent(e)).toBe(want);
+    expect(describeEvent(e, STORY)).toBe(want);
   }
-
-  // Anything reaching the default branch renders as its own case name, which
-  // is developer vocabulary leaking into the story feed.
-  for (const [e] of cases) {
-    expect(describeEvent(e)).not.toBe(e.payload.case);
+  const covered = new Set(cases.map(([e]) => e.payload.case));
+  for (const f of EnvelopeSchema.oneofs.find((o) => o.name === "payload")!.fields) {
+    expect(covered.has(f.localName as Envelope["payload"]["case"])).toBe(true);
   }
 });
 
-test("an event kind describe() does not handle degrades to its case name", () => {
-  // Pins the fallback itself, so the test above cannot be satisfied BY it.
-  //
-  // SceneSeen is the subject because it is PROJECTION-ONLY bookkeeping (its
-  // own comment in events.proto says so): a viewer's remembered terrain, not a
-  // beat in the story, so nothing will ever give it a describe() case and this
-  // pin will not be broken by someone narrating it. It replaces
-  // eventsRetracted, which held this spot until the message left the contract
-  // on 2026-08-31 (spec 2026-08-30-retraction-leaves).
-  const e = env(99, { case: "sceneSeen", value: create(SceneSeenSchema, { sceneId: "s1" }) });
-  expect(describeEvent(e)).toBe("sceneSeen");
+// What C7 fills in a payload of every case: the fixture's actor and token ids.
+function sampleOf(desc: DescMessage): Envelope["payload"]["value"] {
+  const init: Record<string, unknown> = {};
+  for (const f of desc.fields) {
+    if (["actorId", "attackerId", "targetId"].includes(f.localName)) init[f.localName] = "act-gob";
+    if (f.localName === "tokenId") init[f.localName] = "tok-gob";
+    if (f.localName === "targetIds") init[f.localName] = ["act-gob"];
+    if (f.localName === "actor") init[f.localName] = { actorId: "act-gob" };
+    if (f.localName === "outcomes") init[f.localName] = [{ targetId: "act-gob", result: "hit", total: 3 }];
+  }
+  return create(desc, init) as Envelope["payload"]["value"];
+}
+
+// VTT-476 VTT-475
+test("no Story line is a payload's name, an actor or token id, or someone joining", () => {
+  for (const f of EnvelopeSchema.oneofs.find((o) => o.name === "payload")!.fields) {
+    const payload = { case: f.localName, value: sampleOf(f.message!) } as Envelope["payload"];
+    const line = describeEvent(env(1, payload), STORY);
+    expect(line).not.toBe(f.localName);
+    for (const id of ["act-gob", "tok-gob", "act-ama", "tok-ama"]) expect(line).not.toContain(id);
+    expect(line).not.toMatch(/joined/);
+  }
 });
 
 // --- player panel -----------------------------------------------------------
@@ -825,35 +861,38 @@ test("an event missing the fields describe() reads degrades instead of throwing"
     env(3, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t" }) }),
   ];
   for (const e of cases) {
-    expect(() => describeEvent(e)).not.toThrow();
-    expect(describeEvent(e).length).toBeGreaterThan(0);
+    expect(() => describeEvent(e, STORY)).not.toThrow();
+    expect(describeEvent(e, STORY).length).toBeGreaterThan(0);
   }
 });
 
+// VTT-475
 test("an actor with neither name nor id still reads as something", () => {
   const e = env(1, { case: "actorAdded", value: create(ActorAddedSchema, { actor: { actorId: "", name: "" } }) });
-  expect(describeEvent(e)).toBe("actor ? joined");
+  expect(describeEvent(e, STORY)).toBe("a creature comes into sight");
+  const none = env(2, { case: "actorAdded", value: create(ActorAddedSchema, {}) });
+  expect(describeEvent(none, STORY)).toBe("a creature comes into sight");
 });
 
 test("a position-less placement reads as the origin, not as undefined", () => {
   const e = env(1, { case: "tokenPlaced", value: create(TokenPlacedSchema, { tokenId: "t9", sceneId: "s", actorId: "a" }) });
-  expect(describeEvent(e)).toBe("t9 placed at 0,0");
+  expect(describeEvent(e, STORY)).toBe("a creature is at 0,0");
 });
 
 test("an envelope with no payload at all reads as a generic event", () => {
-  // `p.case ?? "event"` — the last fallback. An empty label is a blank row
-  // the reader cannot interpret.
+  // An empty label is a blank row the reader cannot interpret.
   const bare = create(EnvelopeSchema, { eventId: "bare", sequence: 1n });
-  expect(describeEvent(bare)).toBe("event");
+  expect(describeEvent(bare, STORY)).toBe("something happened");
 });
 
 // --- discs: the fallbacks and the optional sections -------------------------
 
-test("a disc is titled by name, falling back to the actor id", () => {
+// VTT-475
+test("a disc is titled by name, falling back to `a creature`, never an id", () => {
   const st = world();
   st.Actors["a1"]!.name = "";
   const t = render(st).querySelector(".token") as HTMLElement;
-  expect(t.title).toBe("a1");
+  expect(t.title).toBe(UNNAMED);
   expect(t.dataset["tokenId"]).toBe("t1");
 });
 
@@ -1045,7 +1084,9 @@ test("a window not asked for the Events panel draws none, and its Story still sh
   const root = render(world(), log);
   expect(root.querySelectorAll("section.ticker").length).toBe(0);
   expect(Array.from(root.querySelectorAll("h2"), (h) => h.textContent)).not.toContain("Events");
-  expect(Array.from(root.querySelectorAll(".feed .mechanical"), (n) => n.textContent)).toEqual(log.map(describeEvent));
+  const names = namer(world(), log, false, undefined);
+  expect(Array.from(root.querySelectorAll(".feed .mechanical"), (n) => n.textContent))
+    .toEqual(log.map((e) => describeEvent(e, names)));
 });
 
 test("a scene keyed by the empty string is still rendered", () => {
@@ -1207,9 +1248,9 @@ test("a target button sends the ability at that token's actor, then disarms", ()
   st.Actors["a2"] = {
     actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-them", controllerIds: ["p-them"], kind: ActorKind.UNSPECIFIED,
   };
-  st.Tokens["t2"] = { ID: "t2", SceneID: "s1", ActorID: "a2", X: 3, Y: 1 };
+  st.Tokens["t2"] = { ID: "t2", SceneID: "s1", ActorID: "a2", X: 3, Y: 1, Name: "a tall stranger" };
   const p = panel(st, [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
-  p.button("Bran").click();
+  p.button("a tall stranger").click();
   expect(p.sent).toHaveLength(1);
   expect(p.sent[0]!.command.case).toBe("useAbility");
   expect(p.sent[0]!.command.value).toEqual(
@@ -1219,11 +1260,13 @@ test("a target button sends the ability at that token's actor, then disarms", ()
   expect(p.repaints()).toBe(1);
 });
 
-test("a target with no actor name is labelled by its token id", () => {
+// VTT-475
+test("a target with no actor name is labelled `a creature`, never by its id", () => {
   const st = world();
   st.Tokens["t2"] = { ID: "t2", SceneID: "s1", ActorID: "ghost", X: 3, Y: 1 };
   const p = panel(st, [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
-  expect(p.button("t2")).toBeDefined();
+  expect(p.button(UNNAMED)).toBeDefined();
+  expect(Array.from(p.node.querySelectorAll("button"), (b) => b.textContent)).not.toContain("t2");
 });
 
 test("the targets heading names the ability's range", () => {

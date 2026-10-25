@@ -3303,7 +3303,35 @@ test("a DM's and an agent's window draws a row in the Events panel for each entr
     expect(r.querySelectorAll(".dm").length).toBe(1);
     const ticks = Array.from(r.querySelectorAll(".ticker .tick"), (n) => n.textContent);
     expect(ticks).toEqual(storyRows(r).reverse());
-    expect(ticks[0]).toBe("t1 placed at 1,1");
+    expect(ticks[0]).toBe("Lera is at 1,1");
+    s?.close();
+  }
+});
+
+// VTT-474
+test("a right-click pins a disc's card across an event's repaint, and a second right-click unpins it", async () => {
+  const { r, s, sock } = await tableAs("player");
+  const disc = () => r.querySelector('.token[data-token-id="t1"]') as HTMLElement;
+  const rightClick = () => disc().dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+  expect(disc().classList.contains("pinned")).toBe(false);
+  rightClick();
+  expect(disc().classList.contains("pinned")).toBe(true);
+  sock.deliver(envelope(6, { narrationAdded: { text: "The torch gutters." } }));
+  await settle();
+  expect(r.querySelector(".feed")?.textContent).toContain("The torch gutters.");
+  expect(disc().classList.contains("pinned")).toBe(true);
+  rightClick();
+  expect(disc().classList.contains("pinned")).toBe(false);
+  s?.close();
+});
+
+// VTT-484 VTT-475
+test("the DM's and the agent's windows name a token by its GM name, and a player's by its name", async () => {
+  for (const [role, want] of [["dm", "Lera the Bold"], ["agent", "Lera the Bold"], ["player", "a cloaked figure"]]) {
+    const { r, s, sock } = await tableAs(role!);
+    sock.deliver(envelope(6, { tokenDescribed: { tokenId: "t1", name: "a cloaked figure", gmName: "Lera the Bold" } }));
+    await settle();
+    expect((r.querySelector('.token[data-token-id="t1"]') as HTMLElement).title).toBe(want!);
     s?.close();
   }
 });

@@ -191,7 +191,7 @@ test("the story feed and ticker record what happened", async ({ page, browser })
   await expect(page.locator(".ticker")).toHaveCount(0);
   const rows = page.locator(".feed .mechanical");
   await expect(rows).not.toHaveCount(0, { timeout: 10_000 });
-  await expect(rows.filter({ hasText: /^tok-lera placed at \d+,\d+$/ })).toHaveCount(1);
+  await expect(rows.filter({ hasText: /^Lera is at \d+,\d+$/ })).toHaveCount(1);
   await expect(rows.filter({ hasText: /#\d/ })).toHaveCount(0);
   expect(await drawn(rows)).toEqual([]);
   await page.screenshot(shot("04-player-feed"));
@@ -282,7 +282,7 @@ test("a spectator's command is refused by the server", async ({ page }) => {
   expect(status).toBe("spectator");
 });
 
-// VTT-436
+// VTT-436 VTT-474 VTT-477
 test("a player's ability reaches the creature they aim it at", async ({ page, browser }) => {
   // Last in this file: the grant below makes the Human Fighter the player's
   // default view, and "a player sees their own panel and can move their token"
@@ -300,7 +300,8 @@ test("a player's ability reaches the creature they aim it at", async ({ page, br
   await dmCtx.close();
 
   const sent: unknown[] = [];
-  page.on("websocket", (ws) =>
+  const received: string[] = [];
+  page.on("websocket", (ws) => {
     ws.on("framesent", (f) => {
       try {
         const cmd = JSON.parse(String(f.payload));
@@ -308,21 +309,40 @@ test("a player's ability reaches the creature they aim it at", async ({ page, br
       } catch {
         // Not a command frame.
       }
-    }),
-  );
+    });
+    ws.on("framereceived", (f) => received.push(String(f.payload)));
+  });
   await openAs(page, "player");
   const panel = page.locator(".player");
   await panel.locator("button.chip", { hasText: "Human Fighter" }).click();
   await expect(panel.locator("button.chip.sel", { hasText: "Human Fighter" })).toBeVisible({ timeout: 10_000 });
   await panel.locator("button.chip", { hasText: "Longsword Strike" }).click();
-  await panel.locator('[data-action="use-ability"]', { hasText: "Goblin Cutter" }).click();
+  await panel.locator('[data-action="use-ability"]', { hasText: "a hunched goblin" }).click();
 
-  const used = page.locator(".feed .mechanical", { hasText: "act-fighter used longsword-strike" });
+  const used = page.locator(".feed .mechanical", {
+    hasText: /^Human Fighter used Longsword Strike on a hunched goblin: (hit|miss), rolled \d+$/,
+  });
   await expect(used.or(page.locator(".toast")).first()).toBeVisible({ timeout: 10_000 });
   await expectNoRefusal(page, "use ability");
   expect(sent).toEqual([{ actorId: "act-fighter", abilityId: "longsword-strike", targetIds: ["act-cutter"] }]);
   await expect(used).toHaveCount(1);
-  const hp = await page.locator(".feed .mechanical", { hasText: /^act-cutter hp → / }).allTextContents();
-  for (const row of hp) expect(Number(row.replace(/^act-cutter hp → /, ""))).toBeLessThan(8);
+  await expect(page.locator(".feed .mechanical", { hasText: " vs " })).toHaveCount(0);
+  expect(received.some((f) => JSON.parse(f).event?.abilityUsed !== undefined)).toBe(true);
+  for (const frame of received) {
+    expect(frame).not.toContain("Goblin Cutter");
+    const parsed = JSON.parse(frame);
+    const ev = parsed.event ?? {};
+    expect(ev.resourceChanged?.actorId).not.toBe("act-cutter");
+    const actor = ev.actorAdded?.actor;
+    if (actor?.actorId === "act-cutter") expect(actor.resources).toBeUndefined();
+  }
+
+  const disc = page.locator('.token[data-token-id="tok-cutter"]');
+  await disc.hover();
+  await expect(disc.locator(".token-card")).toBeVisible();
+  await expect(disc.locator(".token-card .card-name")).toHaveText("a hunched goblin");
+  await disc.click({ button: "right" });
+  await page.mouse.move(0, 0);
+  await expect(disc.locator(".token-card")).toBeVisible();
   await page.screenshot(shot("08-player-ability-resolved"));
 });

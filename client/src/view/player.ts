@@ -15,6 +15,7 @@ import { affordable, controlledActors, targetableTokens } from "../player";
 import { moveToken, useAbility, addNarration, setViewpoint } from "../commands";
 import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import { currentSceneId, mayWorkDoor } from "./doors";
+import { namer } from "./naming";
 
 export interface PlayerUIState {
   selectedActorId: string;
@@ -133,11 +134,11 @@ export function renderPlayerPanel(
   const armed = abilities.find((a) => a.id === ui.selectedAbilityId);
   if (armed && tokenId !== "") {
     const targets = targetableTokens(st, tokenId, armed);
+    const names = namer(st, [], me.role === "dm" || me.role === "agent", abilities);
     wrap.appendChild(el("h3", undefined, `Targets (range ${armed.range})`));
     const list = el("div", "row");
     for (const t of targets) {
-      const label = st.Actors[t.ActorID]?.name || t.ID;
-      const b = el("button", "chip", label);
+      const b = el("button", "chip", names.token(t.ID));
       b.dataset["action"] = "use-ability";
       b.addEventListener("click", () => {
         send(useAbility(actorId, armed.id, [t.ActorID]));

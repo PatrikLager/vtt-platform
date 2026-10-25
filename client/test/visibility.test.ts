@@ -9,6 +9,7 @@ import { fitCamera } from "../src/view/camera";
 import { planFog, planScene } from "../src/view/scene-plan";
 import { fogInk, shadeFog } from "../src/view/canvas";
 import { tokensOnScene } from "../src/view/grid";
+import { namer } from "../src/view/naming";
 import { renderSpectator } from "../src/view/spectator";
 
 // TASK 7: the board draws only what this seat may know.
@@ -263,7 +264,7 @@ test("a token on remembered-but-unseen ground produces NO disc at all", () => {
   // something later declines to paint — none. You remember the room, not the
   // goblin standing in it.
   const st = playerBoard();
-  const ids = tokensOnScene(st, "s1", st.Scenes["s1"]!.Visible).map((d) => d.tokenId);
+  const ids = tokensOnScene(st, "s1", st.Scenes["s1"]!.Visible, namer(st, [], false, undefined)).map((d) => d.tokenId);
   expect(ids).toEqual(["t-hero"]);
 });
 
@@ -315,7 +316,7 @@ test("a token on a bare canvas is drawn: sight does not need terrain", () => {
   expect(sc.Tiles).toEqual({});
 
   // BOTH tokens are drawn. The player's own is the one that used to vanish.
-  expect(tokensOnScene(st, "s1", sc.Visible).map((d) => d.tokenId)).toEqual(["t-gob", "t-hero"]);
+  expect(tokensOnScene(st, "s1", sc.Visible, namer(st, [], false, undefined)).map((d) => d.tokenId)).toEqual(["t-gob", "t-hero"]);
 });
 
 test("terrain arrives for ground that is NOT currently visible, and stays remembered", () => {
@@ -333,14 +334,14 @@ test("terrain arrives for ground that is NOT currently visible, and stays rememb
 
 test("a seat that can currently see nothing draws no token, including its own", () => {
   const st = playerBoard();
-  expect(tokensOnScene(st, "s1", {})).toEqual([]);
+  expect(tokensOnScene(st, "s1", {}, namer(st, [], false, undefined))).toEqual([]);
 });
 
 test("undefined is not an empty set: a stream with no projection draws every token", () => {
   // The DM and the agent. Conflating undefined with {} would blank their board
   // entirely, which is the failure this distinction exists to prevent.
   const st = playerBoard();
-  const ids = tokensOnScene(st, "s1", undefined).map((d) => d.tokenId);
+  const ids = tokensOnScene(st, "s1", undefined, namer(st, [], false, undefined)).map((d) => d.tokenId);
   expect(ids).toEqual(["t-gob", "t-hero"]);
 });
 

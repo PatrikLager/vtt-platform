@@ -156,6 +156,7 @@ function startSession(root: HTMLElement, token: string): Session {
   let joinLink: JoinLink | null = null;
   let roster: Roster[] | null = null;
   let toast = "";
+  let pinnedCard: string | undefined;
 
   // Real pack art (Task 10), merged in as each configured map's pack
   // resolves — see pack-assets.ts's own header comment for why this loads
@@ -427,6 +428,13 @@ function startSession(root: HTMLElement, token: string): Session {
         void session.reconnect().catch(() => undefined);
       },
       images,
+      dm: isDM,
+      abilities,
+      pinnedCard,
+      onCardPin: (id) => {
+        pinnedCard = pinnedCard === id ? undefined : id;
+        paint();
+      },
       // BOARD-VISIBLE, not only console/panel-visible (Task 4, spec §8): a DM
       // who arms doors, walks away and comes back must be able to see why
       // their clicks have stopped moving tokens, from the board alone.

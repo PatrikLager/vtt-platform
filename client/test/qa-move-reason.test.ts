@@ -13,7 +13,8 @@ import {
   type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { describe, renderSpectator } from "../src/view/spectator";
-import { newState } from "../src/state";
+import { newState, type State } from "../src/state";
+import { namer } from "../src/view/naming";
 
 interface MoveOpts {
   seq?: bigint;
@@ -45,12 +46,21 @@ function move(o: MoveOpts = {}): Envelope {
   });
 }
 
-const BASE = "tok-a moved to 7,5";
+// The two tokens have names, so a label naming a token by its id cannot pass.
+function named(): State {
+  const st = newState();
+  st.Tokens["tok-a"] = { ID: "tok-a", SceneID: "scene-1", ActorID: "act-a", X: 7, Y: 5, Name: "a hunched goblin" };
+  st.Tokens["tok-b"] = { ID: "tok-b", SceneID: "scene-1", ActorID: "act-b", X: 7, Y: 5, Name: "a tall shadow" };
+  return st;
+}
+const NAMES = namer(named(), [], false, undefined);
+
+const BASE = "a hunched goblin moved to 7,5";
 
 function render(log: Envelope[]): HTMLElement {
   const root = document.createElement("div");
   document.body.appendChild(root);
-  renderSpectator(root, newState(), log, "connected", { ticker: true });
+  renderSpectator(root, named(), log, "connected", { ticker: true });
   return root;
 }
 
@@ -79,13 +89,13 @@ function occurrences(hay: string, needle: string): number {
 group("describe: a move's label and its reason", () => {
   // VTT-263
   test("a move whose frame carries a reason is labelled with it", () => {
-    const label = describe(move({ reason: "toward the window" }));
+    const label = describe(move({ reason: "toward the window" }), NAMES);
     expect(label).toContain("toward the window");
   });
 
   // VTT-263
   test("the reason is shown once, beside the token and destination the label already named", () => {
-    const label = describe(move({ reason: "toward the window" }));
+    const label = describe(move({ reason: "toward the window" }), NAMES);
     expect(label).toContain(BASE);
     expect(occurrences(label, "toward the window")).toBe(1);
   });
@@ -95,13 +105,13 @@ group("describe: a move's label and its reason", () => {
   // client/src/view/spectator.ts, `"<token> moved to x,y"`" — a move without
   // a reason keeps exactly that label.
   test("a move with no reason is labelled exactly as before", () => {
-    expect(describe(move())).toBe(BASE);
-    expect(describe(move({ tokenId: "tok-b" }))).toBe("tok-b moved to 7,5");
+    expect(describe(move(), NAMES)).toBe(BASE);
+    expect(describe(move({ tokenId: "tok-b" }), NAMES)).toBe("a tall shadow moved to 7,5");
   });
 
   // VTT-263
   test("an empty reason is no reason: proto3 sends nothing, so the label is unchanged", () => {
-    expect(describe(move({ reason: "" }))).toBe(BASE);
+    expect(describe(move({ reason: "" }), NAMES)).toBe(BASE);
   });
 
   // VTT-263
@@ -114,20 +124,20 @@ group("describe: a move's label and its reason", () => {
     ["a prototype member name", "__proto__"],
     ["an embedded newline", "line one\nline two"],
   ])("free text with %s is shown verbatim", (_name, reason) => {
-    expect(describe(move({ reason }))).toContain(reason);
+    expect(describe(move({ reason }), NAMES)).toContain(reason);
   });
 
   // VTT-263
   test("a long reason is shown whole, not cut", () => {
     const reason = "a".repeat(250) + "|middle|" + "z".repeat(250) + "|end";
-    expect(describe(move({ reason }))).toContain(reason);
+    expect(describe(move({ reason }), NAMES)).toContain(reason);
   });
 
   // VTT-263
   test.each(["dm", "agent", "player"])(
     "the reason is shown whatever role issued the move (%s)",
     (role) => {
-      expect(describe(move({ role, reason: "toward the window" }))).toContain(
+      expect(describe(move({ role, reason: "toward the window" }), NAMES)).toContain(
         "toward the window",
       );
     },
@@ -135,7 +145,7 @@ group("describe: a move's label and its reason", () => {
 
   // VTT-263
   test("a frame carrying a reason but no destination is still labelled with the reason", () => {
-    expect(describe(move({ noTo: true, reason: "toward the window" }))).toContain(
+    expect(describe(move({ noTo: true, reason: "toward the window" }), NAMES)).toContain(
       "toward the window",
     );
   });
@@ -168,14 +178,14 @@ group("renderSpectator: the feed and the ticker", () => {
     ]);
     const beats = feedBeats(root);
     expect(beats.filter((b) => b.includes("toward the window"))).toEqual([
-      expect.stringContaining("tok-b"),
+      expect.stringContaining("a tall shadow"),
     ]);
     expect(beats).toContain(BASE);
-    expect(beats).toContain("tok-c moved to 7,5");
+    expect(beats).toContain("a creature moved to 7,5");
 
     expect(tickFor(root, 2)).toContain("toward the window");
     expect(tickFor(root, 1)).toBe(BASE);
-    expect(tickFor(root, 3)).toBe("tok-c moved to 7,5");
+    expect(tickFor(root, 3)).toBe("a creature moved to 7,5");
   });
 
   // The design doc named in this file's header: `"<token> moved to x,y"` —

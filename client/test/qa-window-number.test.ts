@@ -15,6 +15,8 @@ import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { boot } from "../src/app";
 import { fold } from "../src/fold";
 import { renderSpectator, describe as describeEvent } from "../src/view/spectator";
+import { namer } from "../src/view/naming";
+import { newState } from "../src/state";
 import { EnvelopeSchema, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 
 // --- harness, copied from app.test.ts's harness half -------------------------
@@ -576,7 +578,7 @@ test.each(["world", "character"] as const)("renderSpectator over a %s log writes
 test("describe, the label feed and ticker show for an event, names no sequence for any kind of event", () => {
   const frames = [...worldLog(HIGH), ...characterLog(HIGH + 100, "p-me")];
   const seqs = seqsOf(frames);
-  const labels = envelopes(frames).map((e) => describeEvent(e));
+  const labels = envelopes(frames).map((e) => describeEvent(e, namer(newState(), [], false, undefined)));
   expect(labels.length).toBe(frames.length);
   expect(leaks(labels, seqs)).toEqual([]);
 });

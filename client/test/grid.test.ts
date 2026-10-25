@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import { cellFromPoint, tokensOnScene, type Geometry } from "../src/view/grid";
 import { newState, type State } from "../src/state";
+import { UNNAMED, namer } from "../src/view/naming";
 import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
 
 const geom: Geometry = { cell: 40, width: 10, height: 8 };
@@ -34,7 +35,7 @@ function worldWith(): State {
     moduleId: "",
     attributes: {},
     resources: { vigor: { current: 3, max: 10 }, focus: { current: 7, max: 7 } },
-    controllerId: "p-player", controllerIds: ["p-player"], kind: ActorKind.UNSPECIFIED,
+    controllerId: "p-player", controllerIds: ["p-player"], kind: ActorKind.PARTY_MEMBER,
   };
   st.Actors["a2"] = {
     actorId: "a2", name: "", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
@@ -48,18 +49,21 @@ function worldWith(): State {
   return st;
 }
 
+const discsOf = (st: State, scene: string) => tokensOnScene(st, scene, undefined, namer(st, [], false, undefined));
+
 test("only tokens on the requested scene are returned", () => {
-  const discs = tokensOnScene(worldWith(), "s1", undefined);
+  const discs = discsOf(worldWith(), "s1");
   expect(discs.map((d) => d.tokenId)).toEqual(["t1"]);
 });
 
-test("a disc is labelled with the actor's initial", () => {
-  expect(tokensOnScene(worldWith(), "s1", undefined)[0]!.initial).toBe("L");
+// VTT-475
+test("a disc is labelled with the initial of the window's name for its token", () => {
+  expect(discsOf(worldWith(), "s1")[0]!.initial).toBe("L");
 });
 
 test("an actor with no name still gets a stable label rather than a blank disc", () => {
-  const discs = tokensOnScene(worldWith(), "s2", undefined);
-  expect(discs[0]!.initial).not.toBe("");
+  const discs = discsOf(worldWith(), "s2");
+  expect(discs[0]!.initial).toBe("?");
 });
 
 test("EVERY resource is shown, in a stable order, with current and max", () => {
@@ -67,7 +71,7 @@ test("EVERY resource is shown, in a stable order, with current and max", () => {
   // would need ruleset client-hints the format does not have (§9), and
   // guessing which matters is exactly the genre assumption the platform
   // refuses to make.
-  const chips = tokensOnScene(worldWith(), "s1", undefined)[0]!.resources;
+  const chips = discsOf(worldWith(), "s1")[0]!.resources;
   expect(chips.map((c) => c.name)).toEqual(["focus", "vigor"]); // sorted, not map order
   expect(chips.find((c) => c.name === "vigor")).toEqual({ name: "vigor", current: 3, max: 10 });
 });
@@ -75,7 +79,7 @@ test("EVERY resource is shown, in a stable order, with current and max", () => {
 test("EVERY condition is shown, in applied order", () => {
   // Applied order is meaningful — it is the order the table saw them happen —
   // and the fold preserves it deliberately, so the view must not re-sort.
-  const dots = tokensOnScene(worldWith(), "s1", undefined)[0]!.conditions;
+  const dots = discsOf(worldWith(), "s1")[0]!.conditions;
   expect(dots.map((c) => c.id)).toEqual(["dazed", "marked"]);
 });
 
@@ -84,7 +88,7 @@ test("a token whose actor vanished does not crash the board", () => {
   // grid instead of one disc.
   const st = worldWith();
   delete st.Actors["a1"];
-  const discs = tokensOnScene(st, "s1", undefined);
+  const discs = discsOf(st, "s1");
   expect(discs).toHaveLength(1);
   expect(discs[0]!.resources).toEqual([]);
 });
@@ -105,7 +109,7 @@ test("discs come back in tokenId order regardless of insertion order", () => {
     };
     st.Tokens[id] = { ID: id, SceneID: "s1", ActorID: "a" + id, X: 0, Y: 0 };
   }
-  expect(tokensOnScene(st, "s1", undefined).map((d) => d.tokenId)).toEqual(["t1", "t2", "t3", "t4"]);
+  expect(discsOf(st, "s1").map((d) => d.tokenId)).toEqual(["t1", "t2", "t3", "t4"]);
 });
 
 test("the order is ASCENDING, and it is the comparator producing it", () => {
@@ -118,22 +122,22 @@ test("the order is ASCENDING, and it is the comparator producing it", () => {
   st.Actors["a"] = { actorId: "a", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED };
   st.Tokens["zz"] = { ID: "zz", SceneID: "s1", ActorID: "a", X: 0, Y: 0 };
   st.Tokens["aa"] = { ID: "aa", SceneID: "s1", ActorID: "a", X: 1, Y: 1 };
-  const ids = tokensOnScene(st, "s1", undefined).map((d) => d.tokenId);
+  const ids = discsOf(st, "s1").map((d) => d.tokenId);
   expect(ids).toEqual(["aa", "zz"]);
   expect(ids[0]! < ids[1]!).toBe(true);
 });
 
-test("a token whose actor is gone still draws, with an empty name", () => {
+// VTT-475
+test("a token whose actor is gone still draws, as a creature", () => {
   // Tokens and actors are separate maps and a token can outlive its actor
   // mid-replay. Drawing nothing would make the board disagree with the
-  // server's state; the disc renders with no name and falls back to the actor
-  // id for its initial.
+  // server's state.
   const st = newState();
   st.Scenes["s1"] = { ID: "s1", Name: "Hall", GridWidth: 4, GridHeight: 4 };
   st.Tokens["t9"] = { ID: "t9", SceneID: "s1", ActorID: "ghost", X: 1, Y: 1 };
-  const [d] = tokensOnScene(st, "s1", undefined);
-  expect(d!.name).toBe("");
-  expect(d!.initial).toBe("G");
+  const [d] = discsOf(st, "s1");
+  expect(d!.name).toBe(UNNAMED);
+  expect(d!.initial).toBe("?");
   expect(d!.resources).toEqual([]);
   expect(d!.conditions).toEqual([]);
 });
@@ -155,7 +159,7 @@ test("a long reversed board still sorts, exercising the merge paths", () => {
   st.Actors["a"] = { actorId: "a", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED };
   const ids = Array.from({ length: 20 }, (_, i) => `t${String(20 - i).padStart(2, "0")}`);
   for (const id of ids) st.Tokens[id] = { ID: id, SceneID: "s1", ActorID: "a", X: 0, Y: 0 };
-  const got = tokensOnScene(st, "s1", undefined).map((d) => d.tokenId);
+  const got = discsOf(st, "s1").map((d) => d.tokenId);
   expect(got).toEqual([...ids].sort());
   expect(got[0]).toBe("t01");
   expect(got[19]).toBe("t20");

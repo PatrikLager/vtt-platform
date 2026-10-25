@@ -257,3 +257,46 @@ h3 { margin: 0 0 2px; font-size: 14px; }
   margin: 0;
   color: #b00020;
 }
+
+/* Keep the card pointer-transparent, so a left click still reaches the board;
+   open it inward, since .grid clips what crosses its edge (VTT-408). */
+.token .token-card {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: 0;
+  z-index: 2;
+  min-width: 12em;
+  max-width: 20em;
+  padding: 0.4em 0.6em;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 13px;
+  text-align: left;
+  pointer-events: none;
+}
+.token:hover .token-card,
+.token.pinned .token-card {
+  display: block;
+}
+.token.card-left .token-card {
+  left: auto;
+  right: 100%;
+}
+.token.card-up .token-card {
+  top: auto;
+  bottom: 0;
+}
+.token-card p {
+  margin: 0.2em 0;
+}
+.token-card .card-name {
+  font-weight: bold;
+}
+.token-card .card-shown,
+.token-card .card-gm-notes {
+  font-style: italic;
+  color: var(--accent);
+}

@@ -5,6 +5,7 @@
 // is testable without a browser.
 
 import type { State } from "../state";
+import { initialOf, type Namer } from "./naming";
 
 export interface Geometry {
   /** Pixel size of one square cell. */
@@ -35,6 +36,12 @@ export interface TokenDisc {
   /** Single character shown on the disc. */
   initial: string;
   name: string;
+  /** What a player's window names the token, for its card. */
+  shown: string;
+  /** The token's notes, for its card. */
+  notes: string;
+  /** The token's GM notes, which only a DM's or an agent's card shows. */
+  gmNotes: string;
   x: number;
   y: number;
   resources: ResourceChip[];
@@ -94,6 +101,7 @@ export function tokensOnScene(
   st: State,
   sceneId: string,
   visible: Record<string, boolean> | undefined,
+  names: Namer,
 ): TokenDisc[] {
   const discs: TokenDisc[] = [];
 
@@ -119,15 +127,15 @@ export function tokensOnScene(
     // The fold preserves it deliberately, so the view must not re-sort.
     const conditions: ConditionDot[] = (st.Conditions[tok.ActorID] ?? []).map((c) => ({ id: c.ID }));
 
-    const name = actor?.name ?? "";
+    const name = names.token(tok.ID);
     discs.push({
       tokenId: tok.ID,
       actorId: tok.ActorID,
-      // A blank disc is unreadable, so an unnamed actor falls back to its id.
-      // Array indexing rather than [0] to keep a multi-byte first character
-      // (an emoji, a non-Latin letter) intact instead of splitting it.
-      initial: ([...(name || tok.ActorID || "?")][0] ?? "?").toUpperCase(),
+      initial: initialOf(name),
       name,
+      shown: names.shown(tok.ID),
+      notes: tok.Notes ?? "",
+      gmNotes: tok.GMNotes ?? "",
       x: tok.X,
       y: tok.Y,
       resources,

@@ -141,8 +141,8 @@ test("qaAT: several targets in range — each button aims at its own token's act
   const tokens = [
     token("tok-mara", "act-mara", 5, 5),
     token("tok-hollis", "act-hollis", 6, 6),
-    token("t-7f3a", "rat-1", 4, 5),
-    token("t-0c19", "rat-2", 5, 4),
+    { ...token("t-7f3a", "rat-1", 4, 5), Name: "Cellar Rat" },
+    { ...token("t-0c19", "rat-2", 5, 4), Name: "Bilge Rat" },
   ];
   const st = world(actors, tokens);
   const want: [string, string][] = [["Hollis Brack", "act-hollis"], ["Cellar Rat", "rat-1"], ["Bilge Rat", "rat-2"]];
@@ -154,19 +154,24 @@ test("qaAT: several targets in range — each button aims at its own token's act
   }
 });
 
-// VTT-440
-test("qaAT: a named actor's target button is labelled by its name, not its token's id", () => {
+// VTT-475
+test("qaAT: a target button is labelled by the window's naming, the token's name first", () => {
   const st = world(
     [MARA(), HOLLIS(), RAT()],
-    [token("tok-mara", "act-mara", 5, 5), token("tok-hollis", "act-hollis", 6, 6), token("t-7f3a", "rat-1", 4, 4)],
+    [
+      token("tok-mara", "act-mara", 5, 5),
+      token("tok-hollis", "act-hollis", 6, 6),
+      { ...token("t-7f3a", "rat-1", 4, 4), Name: "a squeaking shape" },
+    ],
   );
   const ui = armed("act-mara", "fists");
   expect(shots(st, PLAYER, [FISTS], ui, "Hollis Brack").length).toBe(1);
-  expect(shots(st, PLAYER, [FISTS], ui, "Cellar Rat").length).toBe(1);
+  expect(shots(st, PLAYER, [FISTS], ui, "a squeaking shape").length).toBe(1);
   const { el } = draw(st, PLAYER, [FISTS], ui);
   for (const t of texts(el)) {
     expect(t).not.toContain("tok-hollis");
     expect(t).not.toContain("t-7f3a");
+    expect(t).not.toContain("Cellar Rat");
   }
 });
 
@@ -223,10 +228,14 @@ test("qaAT: a token whose id is another actor's id is still aimed at the actor i
 test("qaAT: two tokens of one actor give two buttons, each aimed at that actor", () => {
   const st = world(
     [MARA(), RAT()],
-    [token("tok-mara", "act-mara", 5, 5), token("t-aa01", "rat-1", 4, 4), token("t-aa02", "rat-1", 6, 6)],
+    [
+      token("tok-mara", "act-mara", 5, 5),
+      { ...token("t-aa01", "rat-1", 4, 4), Name: "a rat" },
+      { ...token("t-aa02", "rat-1", 6, 6), Name: "a rat" },
+    ],
   );
   const ui = armed("act-mara", "fists");
-  const s = shots(st, PLAYER, [FISTS], ui, "Cellar Rat");
+  const s = shots(st, PLAYER, [FISTS], ui, "a rat");
   expect(s.length).toBe(2);
   for (const shot of s) expect(shot.ua.targetIds).toEqual(["rat-1"]);
 });
