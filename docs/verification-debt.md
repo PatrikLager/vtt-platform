@@ -1112,3 +1112,17 @@ Closing it needs a `server_internal_test.go` case whose `encodeFrame` fails a
 frame after it. Recorded 2026-10-21 by the reading review of the
 specification step of
 `docs/superpowers/specs/2026-10-20-the-client-follows-the-log-it-is-sent-design.md`.
+
+**A dm-view comment says el()'s guard forced true leaks text.**
+`client/test/dm-view.test.ts`'s "a group's row holds only its elements, with
+no stray text" opens with a comment saying that `if (text !== undefined)
+n.textContent = text` forced true leaks text into containers. Under that
+mutant, made by hand in `client/src/view/dm.ts`, the client suite stays green,
+and el()'s own `// Stryker disable` comment says why: happy-dom coerces an
+undefined `textContent` to `""`. Recipe: none; the comment is false as it
+stands. Which gate should have caught it, and why not: none; no gate reads a
+test comment's claim about a mutant. Labels: `test asserts nothing`. Closing
+it needs the comment to say what the test does pin, the `const row` sentinel.
+Recorded 2026-10-25 by the reviews of Task 1 of
+`docs/superpowers/plans/2026-10-25-a-repaint-keeps-what-is-being-typed.md` and
+of `docs/reports/2026-10-25-a-repaint-keeps-what-is-being-typed.md`.
