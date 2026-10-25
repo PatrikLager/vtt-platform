@@ -39,6 +39,7 @@ client/src/view/doors.ts         100.00
 client/src/view/feed.ts         100.00
 client/src/view/grid.ts         100.00
 client/src/view/join.ts          100.00
+client/src/view/naming.ts        100.00
 client/src/view/pack-assets.ts     100.00
 client/src/view/scene-plan.ts      100.00
 client/src/view/player.ts        100.00
