@@ -88,9 +88,14 @@ another or none, and start the world's open session, with its id and name, if
 the log holds none or another; sessions that opened and closed during the
 pause are not in the log. Then a `TokenHidden` for every token the log holds,
 by id. Its decision starts from nothing seen, so the frames for the resuming
-event place what it sees on its present square and correct each held actor
-in sight. A new actor added under an old id continues that id's log, and is
-withdrawn and introduced afresh, or corrected, as VTT-313 says.
+event place what it sees on its present square and correct each held actor in
+sight. A new actor added under an old id continues that id's log, and is
+withdrawn and introduced afresh, or corrected, as VTT-470 says: what the log
+holds is compared with what it may be sent of the new actor, every field only
+`ActorAdded` writes of a party member and the module id alone of any other
+actor, since a log holds no more of a creature, and an id added again under
+the other kind with the same module id is re-introduced as a kind change is
+(SPEC-016).
 
 **A creature a player runs.** By the owner's rulings, of 2026-08-23 for a
 creature charmed into a player's service and of 2026-10-19 for one they
@@ -112,7 +117,11 @@ description tells the agent to grant such a creature
 `ACTOR_KIND_PARTY_MEMBER` and how to end the run (VTT-389);
 `revoke_actor_control`'s tells it that revoking alone leaves the creature a
 party member (`TestRevokeActorControlSaysItEndsAPlayersRunOfACreature`); and
-`add_actor`'s tells it never to reuse an actor's id (VTT-390).
+`add_actor`'s tells it never to reuse an actor's id (VTT-390). Each of the two
+grants changes what every other log may hold of the creature, its name and
+statblock or its id, module and kind alone, so a log that sees it then is sent
+it again, and one that does not is sent it again when it next sees it
+(SPEC-016, VTT-468, VTT-481).
 
 **Frames that would not fold.** Each actor's frames are folded first onto a
 copy of its log, each stamped with the sequence it will have. A set that does

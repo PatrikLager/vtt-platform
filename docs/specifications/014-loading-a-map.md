@@ -10,7 +10,11 @@ Accepted. Implemented by `internal/gateway/map.go` (`handleLoadMap`,
 `cmd/vtt/serve_compose.go`'s `composeServer`; pinned by
 `internal/gateway/map_test.go` and `map_internal_test.go`, and the id bound
 `LoadInstalled` holds by `internal/mapdef/load_test.go`, `installed_test.go`
-and `qa_id_bound_test.go`.
+and `qa_id_bound_test.go`; a placement's texts by
+`TestAMapPlacementCarriesItsFourTextsIntoTokenPlaced` in
+`internal/mapdef/compile_test.go` and by
+`internal/mapdef/qa_placement_texts_test.go`, and an adventure placement's by
+`internal/adventure/qa_placement_texts_test.go`.
 
 ## Principles served
 
@@ -90,13 +94,16 @@ reach the issuer.
 
 **The batch and its stamping.** `mapdef.Compile` returns the batch SPEC-007
 describes, its `SceneCreated`'s scene id being the map's id, with `EventId`,
-`ParticipantId`, `ActorRole` and `OccurredAt` left zero. `handleLoadMap`
-stamps each envelope with an `EventId` from `newEventID`, the issuer's
-`ParticipantId` and `ActorRole`, and one `OccurredAt` shared by the batch,
-since the store refuses an envelope with no `EventId`, and appends the batch
-with `campaign.AppendBatch`, which folds it whole and persists all of it or
-none. A refusal by the fold, including SPEC-007's for a placement whose actor
-is absent, is answered with the fold's own message.
+`ParticipantId`, `ActorRole` and `OccurredAt` left zero. Each placement's
+`TokenPlaced` carries the placement's optional `name`, `notes`, `gm_name` and
+`gm_notes` as the file writes them, none bounded (SPEC-018), and an
+adventure's scene takes the same four keys (`docs/map-format.md` §6).
+`handleLoadMap` stamps each envelope with an `EventId` from `newEventID`, the
+issuer's `ParticipantId` and `ActorRole`, and one `OccurredAt` shared by the
+batch, since the store refuses an envelope with no `EventId`, and appends the
+batch with `campaign.AppendBatch`, which folds it whole and persists all of it
+or none. A refusal by the fold, including SPEC-007's for a placement whose
+actor is absent, is answered with the fold's own message.
 
 **The one translated refusal.** An `AppendBatch` failure that `errors.Is`
 `engine.ErrSceneExists` is answered with `gateway: load_map: scene id "<id>"
@@ -150,6 +157,9 @@ A DM, an operator and a tool author are bound by these:
 - A second load of a scene id already in play is refused; the remedy is a
   copy under a new id.
 - The actors a map places are added first.
+- A placement may name its token: its name and notes reach a player whose
+  character sees the token, and its GM name and GM notes reach the DM and the
+  agent alone (SPEC-016).
 - Art installed since boot is used at the next load; an unusable piece costs
   its square's art and a warning, and a sidecar written for a later format
   refuses the map. A square whose art did not resolve at a map's load stays

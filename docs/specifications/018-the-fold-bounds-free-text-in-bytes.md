@@ -126,9 +126,10 @@ into `AbilityUsed.outcome_summary` or a reason, and the spectator's one cell,
 
 | Field | What holds it |
 |---|---|
-| `TokenMoved.token_id`, `TokenPlaced.scene_id`, `TokenPlaced.actor_id`, `TokenRemoved.token_id`, `ActorRemoved.actor_id`, `DoorOpened.scene_id`, `DoorClosed.scene_id`, `ResourceChanged.actor_id`, `ResourceChanged.resource`, `ConditionApplied.actor_id`, `ConditionRemoved.actor_id`, `ConditionRemoved.condition_id`, `NoteDeleted.key`, `ActorControlGranted.actor_id`, `ActorControlRevoked.actor_id` | `engine.Apply` refuses a value that names nothing it has folded, so each equals an id or a name the table bounds |
+| `TokenMoved.token_id`, `TokenPlaced.scene_id`, `TokenPlaced.actor_id`, `TokenRemoved.token_id`, `ActorRemoved.actor_id`, `DoorOpened.scene_id`, `DoorClosed.scene_id`, `ResourceChanged.actor_id`, `ResourceChanged.resource`, `ConditionApplied.actor_id`, `ConditionRemoved.actor_id`, `ConditionRemoved.condition_id`, `NoteDeleted.key`, `ActorControlGranted.actor_id`, `ActorControlRevoked.actor_id`, `TokenDescribed.token_id` | `engine.Apply` refuses a value that names nothing it has folded, so each equals an id or a name the table bounds |
 | `Actor.controller_id`, `Actor.controller_ids` | `engine.Apply` refuses an `ActorAdded` that declares either, and fills them from `ActorControlGranted.participant_id` |
-| `AbilityUsed.actor_id`, `AbilityUsed.target_ids` | `Resolve` refuses a value that names no folded actor |
+| `AbilityUsed.actor_id`, `AbilityUsed.target_ids`, `AbilityUsed.Outcome.target_id` | `Resolve` refuses a value that names no folded actor |
+| `AbilityUsed.Outcome.result` | `Resolve` writes a branch label, which `internal/rules/load.go` bounds at `maxIDBytes` |
 | `ConditionApplied.source`, `ResourceChanged.reason`, `ConditionRemoved.reason` | `Resolve` writes each as `ability:` followed by an ability id and a branch label, `effect` or `usage`, or as `threshold:` followed by a resource name, and `internal/rules/load.go` bounds the id, the label and the name; `ToEvent` writes a `remove_condition`'s reason as `manual` |
 | `AbilityUsed.outcome_summary`, `AbilityUsed.Roll.expression` | `Resolve` writes the first from an ability's display name, each target's id and, for an ability with a resolution, a branch label and two totals, and the second from the ruleset's compiled expressions; no loader bounds a display name or an expression |
 | `TileRef.kind`, `TileRef.material` | `BuildSceneCreated` writes them from `StandardTile`'s vocabulary |
@@ -138,6 +139,7 @@ into `AbilityUsed.outcome_summary` or a reason, and the spectator's one cell,
 | `Envelope.event_id`, `Envelope.participant_id`, `Envelope.actor_role`, and `Envelope.session_id` but a `SessionStarted`'s | the server writes them: `newEventID`, the issuing participant's id and role, and `stampSessionIDAgainst`, which writes the open session's id or none |
 | `AttackRolled.attacker_id`, `AttackRolled.target_id`, `AttackRolled.expression`, `AttackRolled.versus`, `AttackRolled.outcome`, `Modifier.source` | nothing in production writes an `AttackRolled`, and `engine.Apply` reads none of it |
 | `SceneObject.kind` | nothing: it is a map's or an adventure's object `kind`, which no loader checks, and the fold keeps it; `describeBlockage` clips it where a player's move refusal names it (SPEC-013) |
+| `TokenPlaced.name`, `TokenPlaced.notes`, `TokenPlaced.gm_name`, `TokenPlaced.gm_notes`, and the same four on `TokenDescribed` | the WebSocket frame alone (`maxWSFrameBytes`, SPEC-011) for `place_token` and `describe_token`, commands of the DM and the agent, and nothing for a placement in a map or an adventure file, which no loader bounds; the fold keeps each |
 | `Actor.module_data` | the WebSocket frame alone (`maxWSFrameBytes`, SPEC-011): `add_actor`, a command of the DM and the agent, is its one writer, and the fold keeps it; its shape is a rule module's (SPEC-007) |
 
 The cells that say nothing or none rest on these searches, each a `git grep`
@@ -149,15 +151,19 @@ over `'*.go' ':!*_test.go' ':!contract/gen' ':!contract-spike'`: `-E
 internal/adventure ':!*_test.go'` prints only the loader's and
 `BuildSceneCreated`'s copies of an object's `kind`. `grep -n -E
 'len\([^)]*(Name|Expr|Src|Description)[^)]*\) >' internal/rules/load.go`
-prints only the resource-name bound.
+prints only the resource-name bound; and `-E 'len\([^)]*(Name|Notes)[^)]*\) >'
+-- internal/mapdef internal/adventure internal/engine ':!*_test.go'
+':!*/testdata/*'` prints only the bounds on a session's, a scene's, an
+actor's, an adventure's and a map's name, none on a token's text.
 
 A string a map, an adventure or a ruleset file carries and its loader does not
 bound is under the same decision: a ruleset's display names, descriptions,
 expressions, atom ids, param names and graph keys, its manifest's id and name,
 and its guide; a map's or an adventure's `overrides` values and objects'
-`kind` and `art`; and a map's placement `actor_id`. Where one reaches the log,
-it is only as a field of the two tables above; a ruleset's display names,
-descriptions and manifest id and name reach every participant through
+`kind` and `art`; a map's or an adventure's placement `name`, `notes`,
+`gm_name` and `gm_notes`; and a map's placement `actor_id`. Where one reaches
+the log, it is only as a field of the two tables above; a ruleset's display
+names, descriptions and manifest id and name reach every participant through
 `/api/ruleset`, and its guide through `/api/ruleset/guide` (SPEC-012). A
 refusal that quotes such a value, or an id a command gave that names nothing,
 goes to the issuer of the command that met it (SPEC-013), or, when a file is

@@ -4,8 +4,10 @@
 
 Accepted. The browser client implements it in `client/src/wire.ts`,
 `client/src/session.ts`, `client/src/app.ts`, `client/src/metadata.ts`,
-`client/src/view/spectator.ts`, `client/src/view/feed.ts` and
-`client/src/view/player.ts`; the Go readers in `internal/harness/client.go`,
+`client/src/view/spectator.ts`, `client/src/view/feed.ts`,
+`client/src/view/player.ts`, `client/src/view/naming.ts`,
+`client/src/view/grid.ts`, `client/src/view/dm.ts`, `client/src/commands.ts`
+and `client/src/style.css`; the Go readers in `internal/harness/client.go`,
 `internal/harness/engine.go`, `internal/harness/soak.go`,
 `cmd/vtt/client_run.go`'s `dialerFor`, `internal/mcp/server.go`,
 `internal/mcp/read_tools.go` and `cmd/vtt/state_dump.go`. That the browser
@@ -44,8 +46,17 @@ switches in the browser, and that a reload keeps either, by
 the DM takes back keeps watching it with the perch, chooses nobody by "No
 shoulder" and then another shoulder, by `client/e2e/handover.spec.ts`
 (VTT-458, VTT-459); and that a player's and a spectator's page shows no Events
-panel and a DM's does, by `client/e2e/table.spec.ts` (VTT-445, VTT-446). Every
-`client/e2e/` file runs outside `task check`.
+panel and a DM's does, by `client/e2e/table.spec.ts` (VTT-445, VTT-446); that
+a window names what it shows by its role's chain and never a token or actor by
+its id, shows a token's card, and words every payload, by
+`client/test/naming.test.ts`, `client/test/token-card.test.ts`,
+`client/test/spectator-view.test.ts`, `client/test/app.test.ts`,
+`client/test/qa-ability-target.test.ts`,
+`client/test/qa-what-a-window-shows.test.ts` and `client/e2e/table.spec.ts`
+(VTT-474 to VTT-477, VTT-483, VTT-484, VTT-489, VTT-490); and the console's
+rewrite, by `client/test/dm-view.test.ts` and
+`client/test/qa-describe-token.test.ts` (VTT-464). Every `client/e2e/` file
+runs outside `task check`.
 
 That `internal/harness`'s client hands its reader every entry and each switch
 and that a dial names a log is held by
@@ -189,6 +200,73 @@ their armed ability. A DM's and an agent's chips select which of the actors
 granted them a board click moves and whose abilities the panel offers, and
 send nothing.
 
+### How the window names what it shows
+
+`namer` in `client/src/view/naming.ts` names each token and actor the window
+shows, except in the panel's chips and the perch's buttons. `renderSpectator`
+builds one per paint, from the fold, the log, `ViewExtras.dm` and
+`ViewExtras.abilities`, for a disc's initial and its native `title`, its card,
+and the Story and the Events panel; `paint` in `startSession` sets `dm` to
+`isDM` and `abilities` to the list `/api/ruleset` gave, for every role.
+`renderPlayerPanel` builds its own for its target buttons, from the fold alone
+with no log, by the role `/api/me` last gave (VTT-475, VTT-484, by the owner's
+rulings A-6 and K-1 of 2026-10-22).
+- **A window that is not a DM's or an agent's** names a token by its `Name`,
+  else its actor's name when the actor is a party member, else `a creature`
+  (`UNNAMED`).
+- **A DM's or an agent's window** names a token by its `GMName`, else its
+  actor's name, else `a creature`.
+- **An actor** is named by the first of its tokens, in id order, that its
+  window's chain names by the token's own field, else as above. The tokens
+  read are those the fold holds and those the window's log placed.
+- **What the fold no longer holds** is named as the newest `tokenPlaced`,
+  `tokenDescribed` or `actorAdded` entry of the log that named it, so a Story
+  line keeps naming what the window was told (VTT-489).
+- **The initial** is the naming's first character in upper case, and `?` for
+  `a creature`. An ability is named by the display name `/api/ruleset` gives
+  it, else its id.
+
+A player's chips and the perch's buttons name a party member as the
+`WatchableChanged` set names it, and a DM's or an agent's chips an actor as
+the fold holds it, each by its id when that name is empty (VTT-404); the
+naming above does not reach them.
+
+**The card.** Each disc carries a `.token-card`: the naming, then, in a DM's
+or an agent's window, "players see: " and what a player's window names the
+token (`Namer.shown`, VTT-490), then the token's notes, then, in a DM's or an
+agent's window, its GM notes, each only when non-empty (VTT-474, VTT-483).
+`client/src/style.css` shows it on `.token:hover` and on `.token.pinned`, with
+`pointer-events: none`, so a left click still reaches the board's handler and
+moves as before (VTT-408; the owner's ruling "Ja, som i dag" of 2026-10-24). A
+disc in the right or the bottom half of its scene opens its card toward the
+middle (`card-left`, `card-up`), since `.grid` clips what crosses its edge. A
+right-click on a disc is prevented and hands its token's id to
+`ViewExtras.onCardPin`; `paint` keeps the pinned id across paints, and a
+right-click on the pinned disc unpins it.
+
+**The Story's lines.** `describe` in `client/src/view/spectator.ts` words
+every case of `Envelope.payload`, and an envelope with none as "something
+happened"; it has no `default`, so a payload added to the contract fails
+`task client:typecheck` until it is worded (VTT-476). An actor's arrival
+reads "<actor> is in the party" or "<actor> comes into sight", a token's
+placement "<token> is at x,y", and a move "<token> moved to x,y", with " — "
+and its reason when it has one. An ability's line is "<actor> used
+<ability>", then, for each of its `outcomes` in order, " on <target>:
+<result>, rolled <total>", joined by ";", and with no outcomes " on " and its
+targets joined by ", ". It never reads `outcome_summary` or `rolls`, so it
+shows what was rolled and never the total that roll was compared with (VTT-477,
+by the owner's ruling of 2026-10-24 on the ability's line). A condition, a
+resource, a note's key and an adventure's id are shown as the entry names
+them.
+
+**The console's rewrite.** `renderDMConsole` in `client/src/view/dm.ts` draws,
+when the world holds a token, a "Describe tokens" group with one row per token
+of the world, by id, each with the token's id and boxes for its name, notes,
+GM name and GM notes, the two notes as textareas. A box with no draft shows
+the token's present text. "Describe" sends `describeToken` with the four as
+typed, empty ones included, and clears that row's drafts (VTT-464; "Ja, en
+kontroll i konsolen", the owner's ruling of 2026-10-24).
+
 ### What a Go reader holds
 
 `internal/harness`'s `Client` hands its reader on `Events()`, a `Delivery`
@@ -282,6 +360,13 @@ each entry it is sent, and no switch.
 
 ## Consequences
 
+- A window that is not a DM's or an agent's names no actor or token by its id
+  on a disc, a card, a target button or a Story line; the chips and the perch
+  name an unnamed party member by its id (VTT-404). The frames it is sent
+  still carry the ids, and `outcome_summary` (SPEC-007).
+- A payload added to the contract needs a line in `describe` before the
+  client typechecks.
+
 - The Events panel is no boundary: it shows only entries of the log the window
   holds, and the window's Story shows each of them. What a connection is sent
   is SPEC-015's.
@@ -333,4 +418,5 @@ VTT-414, VTT-415, VTT-416, VTT-418, VTT-419, VTT-420, VTT-421, VTT-422,
 VTT-423, VTT-424, VTT-425, VTT-426, VTT-427, VTT-428, VTT-429, VTT-430,
 VTT-431, VTT-432, VTT-433, VTT-434, VTT-435, VTT-442, VTT-443, VTT-444,
 VTT-445, VTT-446, VTT-447, VTT-448, VTT-449, VTT-457, VTT-458, VTT-459,
-VTT-460, VTT-461.
+VTT-460, VTT-461, VTT-464, VTT-474, VTT-475, VTT-476, VTT-477, VTT-483,
+VTT-484, VTT-489, VTT-490.

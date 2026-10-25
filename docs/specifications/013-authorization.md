@@ -11,13 +11,15 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 (`validateAddActor`), `internal/gateway/note_validate.go`
 (`validateUpsertNote`), `internal/gateway/convert.go` (`ToEvent`) and
 `internal/gateway/server.go` (`answerCommand`, `authorize`,
-`handleSetViewpoint`, `handleCommand`, `describeBlockage`), against
+`handleSetViewpoint`, `handleCommand`, `describeBlockage`), with
+`perceive.SeesActor` and `rules.UnknownTarget` for the sight gate, against
 `internal/engine`'s `State`; pinned by `internal/gateway/authz_test.go`,
 `grant_validate_test.go`, `add_actor_validate_test.go`,
 `note_validate_test.go`, `convert_test.go`, `server_test.go`,
 `server_visibility_test.go`, `server_internal_test.go`, `watch_test.go`,
-`seat_internal_test.go`, `viewpoint_test.go`, `qa_seat_test.go` and
-`qa_move_gate_test.go`, and by
+`seat_internal_test.go`, `viewpoint_test.go`, `qa_seat_test.go`,
+`qa_move_gate_test.go`, `qa_describe_token_test.go` and
+`qa_ability_sight_test.go`, and by
 `cmd/vtt/scenario_goldens_test.go`.
 
 ## Principles served
@@ -43,6 +45,7 @@ may issue it:
 | `move_token` | yes | yes | `authorizeTokenOwnership` | no |
 | `add_actor` | yes | yes | no | no |
 | `place_token` | yes | yes | no | no |
+| `describe_token` | yes | yes | no | no |
 | `remove_token` | yes | yes | no | no |
 | `remove_actor` | yes | yes | no | no |
 | `start_session` | yes | yes | no | no |
@@ -70,6 +73,9 @@ no character log (SPEC-015); `set_viewpoint` is the spectator's only cell and
 one of the player's. Removal authors the board and the cast, so
 `remove_token` holds `place_token`'s cells and `remove_actor` holds
 `add_actor`'s: a player may remove neither a token nor an actor they control.
+`describe_token` holds `place_token`'s cells too: what a token is called and
+what its notes say are the DM's and the agent's to write (VTT-463; "Ja, ett
+eget kommando", the owner's ruling of 2026-10-24).
 Granting control, promotion and the join door are the DM's and the agent's
 alone, since each confers standing at a table whose shared link admits
 spectators (SPEC-009, VTT-028). Every refusal `Authorize` returns wraps
@@ -150,11 +156,12 @@ comparison of two empty ids passes, that guard is the refusal. Control is an
 
 **What the DM and the agent are free of.** No player rule runs for them:
 `Authorize` returns before `authorizePlayer`, `mayWorkDoor` returns nil for
-every role but player, and `handleCommand`'s move gate runs for a player
-only. They act on, and grant and revoke control of, an actor a player
+every role but player, and `handleCommand`'s move gate and sight gate run for
+a player only. They act on, and grant and revoke control of, an actor a player
 controls, and acting on it leaves its `controller_ids` as they were; they
 work a door from anywhere; they move a token onto any square, a wall and a
-square no player can see included (VTT-158, VTT-379). The table's cells
+square no player can see included (VTT-158, VTT-379); they aim an ability at
+an actor no character sees (VTT-482). The table's cells
 and the two checks for every role bind them.
 
 **The command path.** `serve`'s read loop decodes each frame, re-resolves the
@@ -172,19 +179,20 @@ runs, in this order, and stops at the first refusal:
 
 1. for a player's `move_token` whose token the snapshot holds, the move gate
    below;
-2. `validateGrantActorControl`, for a `grant_actor_control`;
-3. `validateAddActor`, for an `add_actor`;
-4. `validateUpsertNote`, for an `upsert_note`;
-5. the dispatch of `use_ability`, `load_adventure`, `load_map`,
+2. for a player's `use_ability`, the sight gate below;
+3. `validateGrantActorControl`, for a `grant_actor_control`;
+4. `validateAddActor`, for an `add_actor`;
+5. `validateUpsertNote`, for an `upsert_note`;
+6. the dispatch of `use_ability`, `load_adventure`, `load_map`,
    `remove_actor`, `promote_participant`, `set_join_door` and
    `rotate_join_link` to their handlers;
-6. `ToEvent`, which makes every other command one envelope stamped with the
+7. `ToEvent`, which makes every other command one envelope stamped with the
    participant's id and role;
-7. for a `TokenMoved`, the backfill of `SceneId` and `From` from the
+8. for a `TokenMoved`, the backfill of `SceneId` and `From` from the
    snapshot's token;
-8. `campaign.Append`, which folds a clone of the envelope and returns the
+9. `campaign.Append`, which folds a clone of the envelope and returns the
    fold's refusal before anything is persisted;
-9. an ok=true result carrying the sequence `campaign.Append` assigned.
+10. an ok=true result carrying the sequence `campaign.Append` assigned.
 
 Every refusal is an ok=false `CommandResult` whose `Error` is the refusal's
 text. The read loop queues it on the issuing connection and reads the next
@@ -208,6 +216,22 @@ is refused even when they remember its terrain. A token the snapshot does not
 hold never reaches the gate, since
 `authorizeTokenOwnership` has refused it. `canSee` and `judgedBy` are
 SPEC-015's; what a character sees is SPEC-016's.
+
+**The player's sight gate.** For a player's `use_ability`, `handleCommand`
+asks of each target id, in the command's order,
+`perceive.SeesActor(perceive.Eyes{Shoulder: sub.judgedBy(p, st.Actors)}, st,
+id)`, and at the first it answers false refuses with
+`rules.UnknownTarget(id).Error()`, the answer `Resolve` gives a target id that
+names no actor, and appends nothing (VTT-472; A-10 in
+`docs/superpowers/notes/2026-10-22-alpha-one-findings.md`). It runs before
+`Resolve`, and an absent id is not seen either, so an unseen target and an
+absent one get the same answer whatever else the command carries: an unknown
+ability, a target named twice, more targets than the ability allows. A command
+whose every target is seen goes on to `handleUseAbility` (VTT-487). The eyes
+are the ones the move gate judges by, so a party member of the player's out of
+that character's sight cannot be aimed at, not even by itself as caster, and a
+player who controls only a creature has no eyes and names no target that is
+not refused.
 
 **`describeBlockage`.** It rewrites the reason `engine.State.Blocked` gives.
 `scenery: <kind>` becomes `something (a <kind>) is in the way`, the kind
@@ -288,10 +312,15 @@ A client or tool author is bound by these:
 - A player works a door from a controlled token beside it, and moves only
   onto a square the party member SPEC-015 judges the move by can see now; a
   square they remember and cannot see is refused.
+- A player aims an ability only at actors that party member sees; a target it
+  does not see is answered as a target that names no actor.
+- A token's texts are written by the DM and the agent alone.
 - A refusal is an ok=false result on a connection that stays open, seen by
   the issuer alone. A move refusal's text names nothing the character the
-  move was judged by has not seen (VTT-156, VTT-159); no other refusal's text
-  is bounded by this record.
+  move was judged by has not seen (VTT-156, VTT-159), and a player's
+  `use_ability` at a target that character does not see is answered with the
+  text an absent id gets (VTT-472); no other refusal's text is bounded by this
+  record.
 - A `grant_actor_control` and an `add_actor` state what the actor is; an
   `add_actor` never confers control, and control is granted afterwards.
 - An `upsert_note` states who may read the note.
@@ -311,4 +340,4 @@ And whoever changes the code:
 VTT-138, VTT-139, VTT-140, VTT-142, VTT-143, VTT-144, VTT-145, VTT-146,
 VTT-147, VTT-148, VTT-149, VTT-150, VTT-151, VTT-152, VTT-153, VTT-154,
 VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161, VTT-162, VTT-231,
-VTT-260, VTT-261, VTT-344, VTT-379.
+VTT-260, VTT-261, VTT-344, VTT-379, VTT-463, VTT-472, VTT-482, VTT-487.

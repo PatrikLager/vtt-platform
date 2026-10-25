@@ -13,11 +13,18 @@ perch appends nothing, by `internal/gateway/server_visibility_test.go` and
 `qa_seat_test.go` (VTT-184); that an empty set arrives with its flag, by
 `TestQACNAnEmptySetSaysOnTheWireThatTheyControlNone` in
 `internal/gateway/qa_controls_none_test.go`; that a player's result names the
-world event, by
-`TestThreeRoleExitScenarioOverLiveWebSockets` in
-`internal/gateway/scenario_test.go`; and the `upsert_note` tool's schema, by
-`tools/toolgen/main_test.go` (VTT-232). Gated by `task check:drift` and `task
-check:breaking`, both inside `task check`.
+world event, by `TestThreeRoleExitScenarioOverLiveWebSockets` in
+`internal/gateway/scenario_test.go`; the `upsert_note` tool's schema, by
+`tools/toolgen/main_test.go` (VTT-232); a token's four texts, the rewrite and
+an ability's outcomes, by `TestTokenPlacedWithTextEnvelopeRoundTrip`,
+`TestTokenDescribedEnvelopeRoundTrip`, `TestDescribeTokenCommandRoundTrip` and
+`TestAbilityUsedWithOutcomesEnvelopeRoundTrip` in
+`contract/roundtrip_test.go`, and their tools by
+`TestPlaceTokenOffersTheFourTextsAsOptional`,
+`TestDescribeTokenStatesAllFourAtOnce` and
+`TestUseAbilitySaysAPlayersTargetMustBeSeen` in `tools/toolgen/main_test.go`.
+Gated by `task check:drift` and `task check:breaking`, both inside `task
+check`.
 
 Both generator plugins are local, run through `buf.gen.yaml`, and pinned
 outside it: `protoc-gen-go` by go.mod's tool directive, `protoc-gen-es` by
@@ -66,6 +73,29 @@ content schemas. Go access walks `structpb.Value`.
 is an optional parameter in the derived MCP tool; an unannotated field is
 required. proto3 cannot express caller-facing optionality on its own, so this
 annotation is what `tools/toolgen` reads.
+
+### A token's texts and an ability's outcomes
+
+`PlaceToken` and `TokenPlaced` carry a token's `name`, `notes`, `gm_name` and
+`gm_notes` (fields 5 to 8). The name and notes are what a player or a
+spectator whose character sees the token is told it is, and told of it; the GM
+name and GM notes are sent to the DM and the agent alone (SPEC-016, by the
+owner's rulings A-6, B-5 and K-1 of 2026-10-22). `place_token`'s tool keeps
+the four optional, and none is bounded in bytes (SPEC-018).
+
+`DescribeToken` and `TokenDescribed`, arm 34 of `ClientCommand.command` and of
+`Envelope.payload`, rewrite a placed token's four texts at once, each with the
+value it carries, so an empty one clears its text (VTT-479; "Ja, ett eget
+kommando", the owner's ruling of 2026-10-24). An omitted text and an emptied
+one are the same bytes, so `describe_token`'s tool requires all five fields.
+
+`AbilityUsed.outcomes` (field 6) holds one `Outcome` per target of an ability
+with a resolution: the target, the branch it resolved and the resolution
+roll's total, and nothing of what that total was compared with (VTT-473). An
+ability with no resolution carries none. `outcome_summary` is written beside
+it from the same roll, with the ability's display name and the compared total
+too, and stays whole ("utfallsraden står", the owner's ruling of
+2026-10-24).
 
 ### The ordering contract
 
@@ -188,6 +218,9 @@ required.
 
 `revoke_actor_control` requires both `actor_id` and `participant_id`.
 
+`describe_token` naming no token the world holds is refused by both folds and
+appends nothing (VTT-480).
+
 `set_join_door` carries `admit_limit`: how many people THIS OPENING may admit.
 A non-positive value means `identity.DefaultAdmitLimit`, because absent and 0
 arrive identically under protojson and "admit nobody" is undebuggable rather
@@ -270,4 +303,4 @@ Those readers are not reading this record.
 
 ## Requirements
 
-VTT-184, VTT-232.
+VTT-184, VTT-232, VTT-473, VTT-479, VTT-480.
