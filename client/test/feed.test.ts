@@ -68,6 +68,15 @@ test("unanchored narration stands on its own, in sequence", () => {
   expect(feed[1]!.narrations[0]!.text).toBe("Table talk.");
 });
 
+// VTT-502
+test("a line out of character keeps its mark, and one in character has none", () => {
+  const feed = buildFeed([
+    env(1, { case: "narrationAdded", value: create(NarrationAddedSchema, { text: "brb", as: "Ada", outOfCharacter: true }) }),
+    said(2, "Hold.", undefined, "Lera"),
+  ]);
+  expect(feed.map((e) => e.narrations[0]!.ooc)).toEqual([true, false]);
+});
+
 test("in-character speech keeps its speaker", () => {
   const feed = buildFeed([said(1, "You'll not pass!", undefined, "Goblin Cutter")]);
   expect(feed[0]!.narrations[0]!.as).toBe("Goblin Cutter");

@@ -13,7 +13,8 @@ import { renderSpectator } from "../src/view/spectator";
 import { newState } from "../src/state";
 import type { Me } from "../src/metadata";
 
-const ME: Me = { participantId: "p1", name: "Pat", role: "player" };
+// The DM's panel, which keeps both Say boxes; a player's draws one (VTT-500).
+const ME: Me = { participantId: "p1", name: "Pat", role: "dm" };
 const AS = '[data-field="say-as"]';
 const TEXT = '[data-field="say-text"]';
 const SEND = '[data-action="add-narration"]';
@@ -48,7 +49,8 @@ function table(ids: string[] = ["a1"]) {
   };
   const paint = (): void => {
     const panel = withPanel
-      ? renderPlayerPanel(st, ME, [], ui, (c) => sent.push(c), paint, switcher)
+      ? renderPlayerPanel(st, ME, [], ui, (c) => sent.push(c), paint,
+        ME.role === "player" ? switcher : undefined)
       : undefined;
     renderSpectator(root, st, log, "open", { panel });
   };

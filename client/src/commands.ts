@@ -76,6 +76,22 @@ export function useAbility(
   });
 }
 
+/** speakAs builds a player's line in character, as the party member actorId (VTT-500). */
+export function speakAs(text: string, actorId: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "addNarration", value: { text, actorId } },
+  });
+}
+
+/** speakOutOfCharacter builds a line out of character, carrying `as` when given (VTT-501). */
+export function speakOutOfCharacter(text: string, as?: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "addNarration", value: { text, outOfCharacter: true, ...(as ? { as } : {}) } },
+  });
+}
+
 /**
  * addNarration builds a story entry. `as` is the in-character speaker and is
  * omitted when empty; anchor is a BACKWARD-pointing inclusive range naming

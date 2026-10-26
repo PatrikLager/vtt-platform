@@ -502,7 +502,7 @@ test("player: neither the world sequence in a command's result nor the character
   await settle();
   expectLogDrawn(el);
 
-  const say = el.querySelector<HTMLInputElement>('input[placeholder="say or narrate"]');
+  const say = el.querySelector<HTMLInputElement>('input[data-field="say-text"]');
   const send = Array.from(el.querySelectorAll("button")).find((b) => b.textContent === "Send");
   if (!say || !send) throw new Error("the player panel offers nothing to say");
   say.value = "Hold the line";

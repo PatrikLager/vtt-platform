@@ -3,7 +3,7 @@ import "./support/dom"; // see that module: registers once, keeps real fetch/Web
 import { test, expect } from "bun:test";
 import { newState, type State } from "../src/state";
 import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
-import { controlledActors, affordable, withinRange, targetableTokens } from "../src/player";
+import { controlledActors, affordable, withinRange, targetableTokens, readLine } from "../src/player";
 import type { Ability } from "../src/metadata";
 
 function world(): State {
@@ -563,4 +563,21 @@ test("a prototype-injected empty-string scene defeats the `?? \"\"` equivalence 
   st.Tokens["t-mine"] = { ID: "t-mine", SceneID: "", ActorID: "mine", X: 1, Y: 1 };
   const node = renderPlayerPanel(st, me, [], doorUI(), () => {}, () => {});
   expect(node.querySelector('[data-action="arm-doors"]')).not.toBeNull();
+});
+
+// VTT-501
+test("a Say line whose first word is /ooc is out of character, with the rest as its text", () => {
+  expect(readLine("/ooc where is the pizza")).toEqual({ text: "where is the pizza", ooc: true });
+  expect(readLine("  /ooc   brb  ")).toEqual({ text: "brb", ooc: true });
+  expect(readLine("/ooc\tbrb")).toEqual({ text: "brb", ooc: true });
+  expect(readLine("/ooc")).toEqual({ text: "", ooc: true });
+});
+
+// VTT-501
+test("any other Say line is in character, trimmed, its slashes kept", () => {
+  expect(readLine("  I draw my sword. ")).toEqual({ text: "I draw my sword.", ooc: false });
+  expect(readLine("/oocx hi")).toEqual({ text: "/oocx hi", ooc: false });
+  expect(readLine("/OOC hi")).toEqual({ text: "/OOC hi", ooc: false });
+  expect(readLine("say /ooc hi")).toEqual({ text: "say /ooc hi", ooc: false });
+  expect(readLine("   ")).toEqual({ text: "", ooc: false });
 });

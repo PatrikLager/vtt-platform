@@ -16,8 +16,9 @@ import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 export interface Narration {
   seq: bigint;
   text: string;
-  /** Speaker label for in-character speech; empty for table talk. */
+  /** Speaker label: a character's, or the sender's out of character; empty for narration. */
   as: string;
+  ooc: boolean;
 }
 
 export interface FeedEntry {
@@ -76,7 +77,7 @@ export function buildFeed(log: Envelope[]): FeedEntry[] {
   for (const e of log) {
     if (e.payload.case !== "narrationAdded") continue;
     const n = e.payload.value;
-    const narration: Narration = { seq: e.sequence, text: n.text, as: n.as };
+    const narration: Narration = { seq: e.sequence, text: n.text, as: n.as, ooc: n.outOfCharacter };
     const anchored = n.anchorFromSeq > 0n && n.anchorToSeq > 0n;
     const target = anchored
       ? log.find(

@@ -6,12 +6,12 @@
 
 client/src/app.ts  48.7
 client/src/auth.ts  44.5
-client/src/commands.ts  42.0
+client/src/commands.ts  41.1
 client/src/fold.ts  32.7
 client/src/join.ts  53.1
 client/src/main.ts  83.4
 client/src/metadata.ts  50.0
-client/src/player.ts  48.2
+client/src/player.ts  46.5
 client/src/session.ts  35.2
 client/src/state.ts  61.3
 client/src/view/art-assets.ts  68.9
@@ -19,7 +19,7 @@ client/src/view/camera.ts  50.0
 client/src/view/canvas.ts  71.6
 client/src/view/dm.ts  38.6
 client/src/view/doors.ts  72.5
-client/src/view/feed.ts  36.1
+client/src/view/feed.ts  35.7
 client/src/view/focus.ts  19.1
 client/src/view/grid.ts  43.0
 client/src/view/join.ts  33.9
@@ -27,7 +27,7 @@ client/src/view/naming.ts  8.6
 client/src/view/pack-assets.ts  62.7
 client/src/view/player.ts  22.1
 client/src/view/scene-plan.ts  52.9
-client/src/view/spectator.ts  40.9
+client/src/view/spectator.ts  40.8
 client/src/wire.ts  30.0
 cmd/vtt/adventures.go  57.9
 cmd/vtt/adventures_test.go  25.2

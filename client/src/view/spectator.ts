@@ -153,8 +153,10 @@ export function describe(e: Envelope, names: Namer): string {
       return `a door closed at ${square(p.value.at)}`;
     case "sceneSeen":
       return "the view changed";
-    case "narrationAdded":
-      return p.value.as === "" ? p.value.text : `${p.value.as}: ${p.value.text}`;
+    case "narrationAdded": {
+      const text = p.value.outOfCharacter ? `(( ${p.value.text} ))` : p.value.text;
+      return p.value.as === "" ? text : `${p.value.as}: ${text}`;
+    }
     case "noteUpserted":
       return `note "${p.value.key}" updated`;
     case "noteDeleted":
@@ -437,9 +439,9 @@ function renderFeed(entries: FeedEntry[], names: Namer): HTMLElement {
   for (const entry of entries) {
     const item = el("article", "beat");
     for (const n of entry.narrations) {
-      const line = el("p", n.as ? "speech" : "narration");
+      const line = el("p", n.ooc ? "ooc" : n.as ? "speech" : "narration");
       if (n.as) line.appendChild(el("span", "speaker", `${n.as}: `));
-      line.appendChild(document.createTextNode(n.text));
+      line.appendChild(document.createTextNode(n.ooc ? `(( ${n.text} ))` : n.text));
       item.appendChild(line);
     }
     for (const e of entry.events) {

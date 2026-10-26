@@ -84,3 +84,9 @@ export function actableActors(st: State, me: Me): Actor[] {
       return [];
   }
 }
+
+/** readLine reads a Say line: out of character after a first word of /ooc (VTT-501). */
+export function readLine(raw: string): { text: string; ooc: boolean } {
+  const t = raw.trim();
+  return /^\/ooc(\s|$)/.test(t) ? { text: t.slice(4).trim(), ooc: true } : { text: t, ooc: false };
+}

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import {
   moveToken, useAbility, addNarration, upsertNote,
   setJoinDoor, rotateJoinLink, promoteParticipant, setViewpoint,
+  speakAs, speakOutOfCharacter,
 } from "../src/commands";
 
 // Commands are asserted against the COMMITTED protojson fixtures in
@@ -59,6 +60,21 @@ test("narration without a speaker omits `as`, and with one carries it", () => {
 
   const spoken = toJson(ClientCommandSchema, addNarration("You'll not pass!", "Goblin Cutter")) as Record<string, any>;
   expect(spoken["addNarration"]["as"]).toBe("Goblin Cutter");
+});
+
+// VTT-500
+test("speakAs matches the committed add_narration fixture", () => {
+  sameShape(toJson(ClientCommandSchema, speakAs("I draw my sword.", "act-fighter")) as Record<string, unknown>,
+    fixture("add_narration_command.json"));
+});
+
+// VTT-501
+test("speakOutOfCharacter matches the committed fixture, and carries a speaker only when given", () => {
+  sameShape(toJson(ClientCommandSchema, speakOutOfCharacter("where is the pizza")) as Record<string, unknown>,
+    fixture("add_narration_out_of_character_command.json"));
+  const dm = toJson(ClientCommandSchema, speakOutOfCharacter("brb", "Goblin")) as Record<string, any>;
+  expect(dm["addNarration"]["as"]).toBe("Goblin");
+  expect(dm["addNarration"]["outOfCharacter"]).toBe(true);
 });
 
 test("an anchored narration sends both ends as strings (int64 on the wire)", () => {

@@ -11,8 +11,8 @@
 
 import type { State } from "../state";
 import type { Ability, Me } from "../metadata";
-import { affordable, controlledActors, targetableTokens } from "../player";
-import { moveToken, useAbility, addNarration, setViewpoint } from "../commands";
+import { affordable, controlledActors, readLine, targetableTokens } from "../player";
+import { moveToken, useAbility, addNarration, setViewpoint, speakAs, speakOutOfCharacter } from "../commands";
 import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import { currentSceneId, mayWorkDoor } from "./doors";
 import { namer } from "./naming";
@@ -189,6 +189,8 @@ export function renderPlayerPanel(
   // --- speaking ---
   wrap.appendChild(el("h3", undefined, "Say something"));
   const form = el("div", "say");
+  // Never draw or send a typed speaker for a player (VTT-500).
+  const speaksFreely = me.role !== "player";
   const as = document.createElement("input");
   as.placeholder = "in character as… (optional)";
   as.className = "as";
@@ -198,7 +200,7 @@ export function renderPlayerPanel(
     ui.sayAs = as.value;
   });
   const text = document.createElement("input");
-  text.placeholder = "say or narrate";
+  text.placeholder = speaksFreely ? "say or narrate" : "say something, or /ooc to step out of character";
   text.className = "text";
   text.dataset["field"] = "say-text";
   text.value = ui.sayText ?? "";
@@ -208,9 +210,11 @@ export function renderPlayerPanel(
   const send3 = el("button", "chip", "Send");
   send3.dataset["action"] = "add-narration";
   const submit = () => {
-    const t = text.value.trim();
-    if (t === "") return;
-    send(addNarration(t, as.value.trim() || undefined));
+    const line = readLine(text.value);
+    if (line.text === "") return;
+    const name = speaksFreely ? as.value.trim() || undefined : undefined;
+    if (line.ooc) send(speakOutOfCharacter(line.text, name));
+    else send(speaksFreely ? addNarration(line.text, name) : speakAs(line.text, actorId));
     text.value = "";
     ui.sayAs = "";
     ui.sayText = "";
@@ -220,7 +224,8 @@ export function renderPlayerPanel(
   text.addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") submit();
   });
-  form.append(as, text, send3);
+  if (speaksFreely) form.append(as);
+  form.append(text, send3);
   wrap.appendChild(form);
 
   return wrap;

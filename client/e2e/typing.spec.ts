@@ -201,7 +201,7 @@ test("what a player types in Say survives a repaint, focus and all", async ({ pa
 
   await page.goto(`${base}/?token=${tokens.player}`);
   await expect(page.locator(".conn")).toHaveText("connected", { timeout: 15_000 });
-  const say = page.locator('.player .say input[placeholder="say or narrate"]');
+  const say = page.locator('.player .say input[data-field="say-text"]');
   await expect(say).toBeVisible({ timeout: 10_000 });
   await say.focus();
   await page.keyboard.type("I draw my");
