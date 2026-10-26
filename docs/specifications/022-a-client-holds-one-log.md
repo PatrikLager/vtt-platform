@@ -7,7 +7,8 @@ Accepted. The browser client implements it in `client/src/wire.ts`,
 `client/src/view/spectator.ts`, `client/src/view/feed.ts`,
 `client/src/view/player.ts`, `client/src/view/naming.ts`,
 `client/src/view/grid.ts`, `client/src/view/dm.ts`, `client/src/view/focus.ts`,
-`client/src/view/join.ts`, `client/src/commands.ts` and `client/src/style.css`;
+`client/src/view/join.ts`, `client/src/commands.ts`, `client/src/player.ts`
+and `client/src/style.css`;
 the Go readers in `internal/harness/client.go`, `internal/harness/engine.go`,
 `internal/harness/soak.go`, `cmd/vtt/client_run.go`'s `dialerFor`,
 `internal/mcp/server.go`, `internal/mcp/read_tools.go` and
@@ -61,7 +62,13 @@ typed until a narration is sent, by `client/test/focus.test.ts`,
 `client/test/app.test.ts`, `client/test/spectator-view.test.ts`,
 `client/test/qa-repaint-focus.test.ts`, `client/test/qa-say-boxes.test.ts`,
 `client/e2e/typing.spec.ts` and `client/e2e/qa-repaint.spec.ts` (VTT-491 to
-VTT-494). Every `client/e2e/` file runs outside `task check`.
+VTT-494); and that a player's line speaks as their party member, `/ooc` steps
+out of character, a DM's and an agent's panel draws its speaker box, and a
+line out of character is drawn under its speaker in `(( ))`, by
+`client/test/spectator-view.test.ts`, `client/test/player.test.ts`,
+`client/test/commands.test.ts`, `client/test/feed.test.ts`,
+`client/test/qa-speaking.test.ts` and `client/e2e/speaking.spec.ts` (VTT-500
+to VTT-502, VTT-504). Every `client/e2e/` file runs outside `task check`.
 
 That `internal/harness`'s client hands its reader every entry and each switch
 and that a dial names a log is held by
@@ -224,11 +231,28 @@ page when the tree is replaced. What a box shows after a repaint comes from
 outside the tree: the console's from `draft` in `client/src/view/dm.ts`, or,
 for a box with no draft, from the world and the join link the console is drawn
 from, or nothing; the join form's from `JoinViewState.name`; and the player
-panel's Say boxes, `say-as` and `say-text`, from `PlayerUIState`'s `sayAs` and
-`sayText`, which Send, or Enter in `say-text`, empties when it sends a
-narration (VTT-493). A focused select or button loses the focus at a repaint,
-and so does a box when `paint` draws the reason it cannot fold a log in its
-place.
+panel's Say boxes from `PlayerUIState`'s `sayAs` and `sayText`, which Send, or
+Enter in `say-text`, empties when it sends a narration (VTT-493). A focused
+select or button loses the focus at a repaint, and so does a box when `paint`
+draws the reason it cannot fold a log in its place.
+
+**Saying something.** A player's panel draws one Say box, `say-text`, and no
+box for a speaker; a DM's and an agent's draws `say-as` beside it (the owner's
+rulings of 2026-10-26, "Ja för DM" and "Ja, som DM"). Send reads the line with
+`readLine` in `client/src/player.ts`: a line whose first word is exactly
+`/ooc` goes out of character, with the rest of the line, trimmed, as its text,
+and Send sends nothing when the rest is empty, nor for an empty line in
+character (VTT-501). Any other line goes in character: a player's by
+`speakAs`, as the party member the panel acts as, the viewpoint (VTT-500); a
+DM's and an agent's by `addNarration`, with what `say-as` holds, trimmed, as
+`as`, and no `as` when it is blank (VTT-504). A line out of character goes by
+`speakOutOfCharacter`, carrying `say-as` only from a DM's or an agent's panel.
+The server writes the name a player's line in character and every line out of
+character is shown under, over any `say-as` a DM's or an agent's panel sent
+with it; a DM's and an agent's line in character keeps its `as` (SPEC-013).
+The Story draws a line out of character as its `as`, `: ` and its text between
+`(( ` and ` ))`, with the class `ooc`, and `describe` writes the same for the
+Events panel (VTT-502).
 
 ### How the window names what it shows
 
@@ -454,4 +478,5 @@ VTT-423, VTT-424, VTT-425, VTT-426, VTT-427, VTT-428, VTT-429, VTT-430,
 VTT-431, VTT-432, VTT-433, VTT-434, VTT-435, VTT-442, VTT-443, VTT-444,
 VTT-445, VTT-446, VTT-447, VTT-448, VTT-449, VTT-457, VTT-458, VTT-459,
 VTT-460, VTT-461, VTT-464, VTT-474, VTT-475, VTT-476, VTT-477, VTT-483,
-VTT-484, VTT-489, VTT-490, VTT-491, VTT-492, VTT-493, VTT-494.
+VTT-484, VTT-489, VTT-490, VTT-491, VTT-492, VTT-493, VTT-494, VTT-500,
+VTT-501, VTT-502, VTT-504.

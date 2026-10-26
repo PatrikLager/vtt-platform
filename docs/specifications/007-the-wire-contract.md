@@ -22,7 +22,17 @@ an ability's outcomes, by `TestTokenPlacedWithTextEnvelopeRoundTrip`,
 `contract/roundtrip_test.go`, and their tools by
 `TestPlaceTokenOffersTheFourTextsAsOptional`,
 `TestDescribeTokenStatesAllFourAtOnce` and
-`TestUseAbilitySaysAPlayersTargetMustBeSeen` in `tools/toolgen/main_test.go`.
+`TestUseAbilitySaysAPlayersTargetMustBeSeen` in `tools/toolgen/main_test.go`;
+whom a line speaks as, by `TestAddNarrationCommandRoundTrip`,
+`TestAddNarrationOutOfCharacterCommandRoundTrip`,
+`TestNarrationOutOfCharacterEnvelopeRoundTrip` in `contract/roundtrip_test.go`,
+that a `NarrationAdded` carries no actor id, is not proto3 `optional` and
+reads as in character without field 5 by `TestQANarrEventHasNoActorId`,
+`TestQANarrNewFieldsAreNotProto3Optional` and
+`TestQANarrOldMessagesDecodeAsNotOutOfCharacter` there and "qaNarr: the
+event has no actor id" in `contract/qa-narration-fields.test.ts` (VTT-505);
+and its tool by `TestAddNarrationRequiredOverrideReplacesDerivedList` and
+`TestAddNarrationFieldDocsNameOptionalFieldsAgainstFabrication`.
 Gated by `task check:drift` and `task check:breaking`, both inside `task
 check`.
 
@@ -96,6 +106,19 @@ ability with no resolution carries none. `outcome_summary` is written beside
 it from the same roll, with the ability's display name and the compared total
 too, and stays whole ("utfallsraden står", the owner's ruling of
 2026-10-24).
+
+### Whom a line speaks as
+
+`AddNarration` carries `actor_id` (field 5), the party member a player's line
+speaks as, and `out_of_character` (field 6); `NarrationAdded` carries
+`out_of_character` (field 5) beside `as`. The server writes `as` for a
+player's line in character, from the actor's name, and for any line out of
+character, from the sender's display name; the DM's and the agent's line in
+character keeps the `as` it gave (SPEC-013). The event carries no actor id
+(VTT-505); `as` is the only speaker it names. None of the three fields is
+proto3 `optional`, so a false mark is omitted, and a `NarrationAdded` without
+field 5 reads as not out of character. `add_narration`'s tool
+keeps every field but `text` optional, and its docs say what each seat sends.
 
 ### The ordering contract
 
@@ -303,4 +326,4 @@ Those readers are not reading this record.
 
 ## Requirements
 
-VTT-184, VTT-232, VTT-473, VTT-479, VTT-480.
+VTT-184, VTT-232, VTT-473, VTT-479, VTT-480, VTT-505.

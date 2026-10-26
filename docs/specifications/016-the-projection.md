@@ -223,7 +223,12 @@ board, roster and `sighted` it reads are the viewer's before the event, and
 the look is the one after it. It forwards `SessionStarted`, `SessionEnded` and
 `NarrationAdded` whatever the eyes see, so every active character log is
 written them (VTT-362, VTT-363); narration is addressed to the table, and
-`add_narration` is open to the player, the DM and the agent (SPEC-013). It
+`add_narration` is open to the player, the DM and the agent (SPEC-013). A line
+out of character names its sender in `as`, by display name and never by
+participant id, so every active character log is sent who said it, by the
+owner's ruling "Namn: (( text ))" of 2026-10-26; a player's line in character
+names the party member it speaks as, and the DM's and the agent's carries the
+`as` they gave, empty for plain narration. It
 withholds `SceneCreated`, `ActorAdded` and `TokenPlaced`, which `transitions`
 introduces; `TokenRemoved`, since `transitions` sends a viewer that held the
 token a `TokenHidden` once `st` no longer has it; `TokenHidden` and

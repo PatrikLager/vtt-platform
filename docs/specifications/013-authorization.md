@@ -3,13 +3,15 @@
 ## Status
 
 Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
-`Authorize`, `authorizePlayer`, `playerRules`, `errUndecided`, `unrestricted`,
-`mayWorkDoor`, `authorizeTokenOwnership`, `authorizeActorOwnership`,
-`controls`, `authorizeSelfRevoke`, `authorizePromotionTarget`, `commandName`,
-`ErrUnauthorized`), `internal/gateway/grant_validate.go`
+`Authorize`, `mayVoice`, `authorizePlayer`, `playerRules`, `errUndecided`,
+`unrestricted`, `mayWorkDoor`, `authorizeTokenOwnership`,
+`authorizeActorOwnership`, `controls`, `authorizeSelfRevoke`,
+`authorizePromotionTarget`, `commandName`, `ErrUnauthorized`),
+`internal/gateway/viewpoint.go` (`ownPartyMember`),
+`internal/gateway/grant_validate.go`
 (`validateGrantActorControl`), `internal/gateway/add_actor_validate.go`
 (`validateAddActor`), `internal/gateway/note_validate.go`
-(`validateUpsertNote`), `internal/gateway/convert.go` (`ToEvent`) and
+(`validateUpsertNote`), `internal/gateway/convert.go` (`ToEvent`, `voice`) and
 `internal/gateway/server.go` (`answerCommand`, `authorize`,
 `handleSetViewpoint`, `handleCommand`, `describeBlockage`), with
 `perceive.SeesActor` and `rules.UnknownTarget` for the sight gate, against
@@ -18,9 +20,9 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `note_validate_test.go`, `convert_test.go`, `server_test.go`,
 `server_visibility_test.go`, `server_internal_test.go`, `watch_test.go`,
 `seat_internal_test.go`, `viewpoint_test.go`, `qa_seat_test.go`,
-`qa_move_gate_test.go`, `qa_describe_token_test.go` and
-`qa_ability_sight_test.go`, and by
-`cmd/vtt/scenario_goldens_test.go`.
+`qa_move_gate_test.go`, `qa_describe_token_test.go`,
+`qa_ability_sight_test.go`, `narration_test.go` and `qa_speaking_test.go`,
+and by `cmd/vtt/scenario_goldens_test.go`.
 
 ## Principles served
 
@@ -93,31 +95,41 @@ for the name or the row holds no cell for the participant's role
 A command added to the oneof and not to the table, and an unset command, are
 refused for every role the same way.
 
-**Two checks for every role.** After the table and before the player half,
+**Three checks for every role.** After the table and before the player half,
 `Authorize` runs `authorizePromotionTarget` for `promote_participant`, which
 accepts a target role of player or spectator and refuses every other, for
 the DM's promotions as for anyone's; SPEC-009 states that bound and
 `handlePromotion`'s bound on the target's current role. For `set_viewpoint`
 it runs `MayWatch` against the snapshot's actors, whose rule is SPEC-015's.
-Both run for every role, so the DM is bound by
-promotion's bound and a spectator, whom the player half never reaches, is
-bound by `MayWatch`.
+For `add_narration` it runs `mayVoice` against the snapshot's actors, which
+decides whom a line may speak as:
+- a line out of character that names an actor is refused, for every role;
+- any other line out of character is accepted (VTT-495, VTT-497);
+- the DM and the agent name no actor (VTT-499), and voice anyone by `as`;
+- a player's line in character must name, in `actor_id`, a party member the
+  player controls (`ownPartyMember`), and is refused with one text whether the
+  id is absent, not theirs, or not a party member (VTT-506), then refused if
+  that party member has no name (VTT-495).
+
+All three run for every role, so the DM is bound by promotion's bound and by
+`mayVoice`, and a spectator, whom the player half never reaches, is bound by
+`MayWatch`.
 
 **The player half.** For every role but player, `Authorize` returns after
-those two checks. For a player it calls `authorizePlayer` with the name it
+those three checks. For a player it calls `authorizePlayer` with the name it
 derived and the command together, and a mismatched pair would judge a command
 by another's rule; `Authorize` is its one production caller (`grep -rn
 'authorizePlayer(' internal`). `authorizePlayer` looks the name up in
 `playerRules`, a table keyed like `commandRoles` whose entries are
 `playerRule` functions run against the participant, the command and the
 snapshot. A player cell with no entry is refused by `errUndecided`, whose
-message names the command. `unrestricted` is the entry for `add_narration`
-and for `set_viewpoint`, whose rule `MayWatch` has already applied, so a
-command that needs no rule says so in the table rather than by its
-absence. `TestEveryPlayerCommandHasARule` holds that every player cell has an
-entry and every entry a player cell; while the two agree no command reaches
-the missing-rule arm through `Authorize`, and `AuthorizeUndecidedForTest` in
-`export_test.go` reaches it directly.
+message names the command. `unrestricted` is the entry for `add_narration`,
+whose rule `mayVoice` has already applied, and for `set_viewpoint`, whose rule
+`MayWatch` has, so a command that needs no rule here says so in the table
+rather than by its absence. `TestEveryPlayerCommandHasARule` holds that every
+player cell has an entry and every entry a player cell; while the two agree no
+command reaches the missing-rule arm through `Authorize`, and
+`AuthorizeUndecidedForTest` in `export_test.go` reaches it directly.
 
 **The rules.** Each reads the snapshot's `Tokens` and `Actors` and nothing
 else, and `Authorize` performs no I/O: `authz.go` and `viewpoint.go` reach
@@ -141,7 +153,7 @@ network or the identity database.
   eight neighbouring squares count and a token on another scene does not. It
   asks where a controlled token stands and nothing about reach, movement cost
   or a ruleset.
-- `add_narration`: `unrestricted` accepts.
+- `add_narration`: `unrestricted` accepts what `mayVoice` accepted.
 
 **Control is membership.** `controls` answers whether the participant id is
 among the actor's `controller_ids`, through `GetControllerIds()`, and never
@@ -162,7 +174,7 @@ controls, and acting on it leaves its `controller_ids` as they were; they
 work a door from anywhere; they move a token onto any square, a wall and a
 square no player can see included (VTT-158, VTT-379); they aim an ability at
 an actor no character sees (VTT-482). The table's cells
-and the two checks for every role bind them.
+and the three checks for every role bind them.
 
 **The command path.** `serve`'s read loop decodes each frame, re-resolves the
 participant through `identity.Lookup` (SPEC-009) and hands the command to
@@ -189,7 +201,11 @@ runs, in this order, and stops at the first refusal:
 7. `ToEvent`, which makes every other command one envelope stamped with the
    participant's id and role;
 8. for a `TokenMoved`, the backfill of `SceneId` and `From` from the
-   snapshot's token;
+   snapshot's token; for a `NarrationAdded`, `voice`, which writes `as`: the
+   named actor's name from the same snapshot for a player's line in character
+   (VTT-496), and the sender's display name for any line out of character
+   (VTT-497); otherwise it leaves the `as` the DM or the agent gave
+   (VTT-498);
 9. `campaign.Append`, which folds a clone of the envelope and returns the
    fold's refusal before anything is persisted;
 10. an ok=true result carrying the sequence `campaign.Append` assigned.
@@ -276,9 +292,11 @@ through `campaign.AppendBatch`. `promote_participant` (`handlePromotion`),
 `set_join_door` (`handleJoinDoor`) and `rotate_join_link`
 (`handleRotateJoinLink`) are SPEC-009's and append nothing (SPEC-007), so
 their ok=true result carries no sequence. Every other command reaches
-`ToEvent` and becomes one envelope, carrying every field the command gave, a
-grant's `kind` and a move's `reason` included, and a move that gave no
-`reason` records none. For a `TokenMoved`, `handleCommand` sets
+`ToEvent` and becomes one envelope, carrying every field of the command that
+the event also has, a grant's `kind` and a move's `reason` included, but a
+narration's `as` where `voice` writes it (VTT-503); a move that gave no
+`reason` records none, and `AddNarration.actor_id` has no field in the
+event. For a `TokenMoved`, `handleCommand` sets
 `SceneId` and `From` from the snapshot's token before `campaign.Append`, so
 the log records the scene and the square the token left; `engine.Apply`'s
 `TokenMoved` arm reads `TokenId`, `To` and the lengths of `Reason` and
@@ -315,17 +333,22 @@ A client or tool author is bound by these:
 - A player aims an ability only at actors that party member sees; a target it
   does not see is answered as a target that names no actor.
 - A token's texts are written by the DM and the agent alone.
+- A player speaks as a named party member they control, or out of
+  character; the server writes the name either line is shown under. The DM
+  and the agent voice anyone in character by `as`, name no actor by id, and
+  out of character are shown under their display name.
 - A refusal is an ok=false result on a connection that stays open, seen by
   the issuer alone. A move refusal's text names nothing the character the
   move was judged by has not seen (VTT-156, VTT-159), and a player's
   `use_ability` at a target that character does not see is answered with the
-  text an absent id gets (VTT-472); no other refusal's text is bounded by this
-  record.
+  text an absent id gets (VTT-472), and a player's line in character naming an
+  actor that is absent, not theirs, or not a party member is answered with
+  one text (VTT-506); no other refusal's text is bounded by this record.
 - A `grant_actor_control` and an `add_actor` state what the actor is; an
   `add_actor` never confers control, and control is granted afterwards.
 - An `upsert_note` states who may read the note.
-- The DM and the agent are bound by the table's cells and by promotion's
-  bound, and by no player rule.
+- The DM and the agent are bound by the table's cells, by promotion's bound
+  and by `mayVoice`, and by no player rule.
 - What a reconnect opens on is SPEC-015's.
 
 And whoever changes the code:
@@ -340,4 +363,5 @@ And whoever changes the code:
 VTT-138, VTT-139, VTT-140, VTT-142, VTT-143, VTT-144, VTT-145, VTT-146,
 VTT-147, VTT-148, VTT-149, VTT-150, VTT-151, VTT-152, VTT-153, VTT-154,
 VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161, VTT-162, VTT-231,
-VTT-260, VTT-261, VTT-344, VTT-379, VTT-463, VTT-472, VTT-482, VTT-487.
+VTT-261, VTT-344, VTT-379, VTT-463, VTT-472, VTT-482, VTT-487, VTT-495,
+VTT-496, VTT-497, VTT-498, VTT-499, VTT-503, VTT-506.
