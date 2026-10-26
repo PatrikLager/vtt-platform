@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { fixture } from "./setup";
+import { asDM } from "./as-dm";
 
 // What someone is typing when a repaint arrives, in a real browser: the
 // focus, the page's scroll, and the text of a box that keeps none itself.
@@ -158,38 +159,11 @@ test("a box in a background tab keeps the focus across a repaint",
     await expect(box).toHaveValue("OpXen");
   });
 
-/** Send the DM's commands on a raw socket, one at a time; any refusal fails the test. */
-async function asDM(page: Page, commands: Record<string, unknown>[]) {
-  const refused = await page.evaluate(
-    async ([t, cs]) => {
-      const ws = new WebSocket(`${location.origin.replace("http", "ws")}/ws?token=${t}&after=0`);
-      await new Promise((r) => ws.addEventListener("open", r));
-      const out: string[] = [];
-      for (const [i, c] of cs.entries()) {
-        const requestId = `e2e-dm-${i}`;
-        const answer = new Promise<{ ok?: boolean; error?: string }>((r) =>
-          ws.addEventListener("message", (m) => {
-            const f = JSON.parse(String(m.data));
-            if (f.result?.requestId === requestId) r(f.result);
-          }),
-        );
-        ws.send(JSON.stringify({ requestId, ...c }));
-        const res = await answer;
-        if (!res.ok) out.push(`${Object.keys(c)[0]}: ${res.error}`);
-      }
-      ws.close();
-      return out;
-    },
-    [tokens.dm, commands] as const,
-  );
-  expect(refused).toEqual([]);
-}
-
 // VTT-491 VTT-493
 test("what a player types in Say survives a repaint, focus and all", async ({ page }) => {
   await page.goto(`${base}/?token=${tokens.dm}`);
   await expect(page.locator(".conn")).toHaveText("connected", { timeout: 15_000 });
-  await asDM(page, [
+  await asDM(page, tokens.dm, [
     { startSession: { name: "Say" } },
     { loadAdventure: { adventureId: "goblin-ambush" } },
     {
