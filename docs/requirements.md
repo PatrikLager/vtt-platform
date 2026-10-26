@@ -515,3 +515,13 @@ checked: `docs/specifications/008-requirement-ids-come-from-the-dispenser.md`.
 | VTT-504 | A DM's or an agent's player panel draws the in-character box, and its Send carries what the box holds as `as`. | client/test/spectator-view.test.ts#an in-character speaker is carried, and a blank one is omitted, client/test/spectator-view.test.ts#a DM's /ooc line goes out of character and still carries the speaker box |
 | VTT-505 | A `NarrationAdded` carries no actor id. | contract/roundtrip_test.go#TestQANarrEventHasNoActorId, contract/qa-narration-fields.test.ts#qaNarr: the event has no actor id |
 | VTT-506 | A player's `add_narration` that is not out of character and names an actor which is absent, not the player's, or not a party member is refused with one text. | internal/gateway/narration_test.go#TestAPlayersLineThatSpeaksAsNoPartyMemberOfTheirsIsRefused, internal/gateway/qa_speaking_test.go#TestQASpkNamedRefusalsShareOneText |
+| VTT-507 | `task check` starts no Stryker run and no container. | **OPEN — no test yet** |
+| VTT-508 | With the stored client mutation report out of date, `check:ts-mutation` exits 0 and does not judge the report. | **OPEN — no test yet** |
+| VTT-509 | With the stored client mutation report out of date, `check:ts-mutation` prints that the client's mutation was not measured, the commit the report measured, and each ticket under `docs/superpowers/specs/` that the commit's tree lacks. | **OPEN — no test yet** |
+| VTT-510 | With no stored client mutation report, `check:ts-mutation` exits 0 and prints that there is none. | **OPEN — no test yet** |
+| VTT-511 | With the stored client mutation report current, `check:ts-mutation` exits with the verdict of `tools/check-ts-mutation.py` over it. | **OPEN — no test yet** |
+| VTT-512 | A full run's stamp names the commit checked out when the run began. | **OPEN — no test yet** |
+| VTT-513 | A full run's stamp says whether any file the report's input hash reads differed from that commit, or was untracked, when the run began. | **OPEN — no test yet** |
+| VTT-514 | A full run that leaves no report newer than its start writes no stamp. | **OPEN — no test yet** |
+| VTT-515 | A full run's report is current for `check:ts-mutation` whatever the full run's verdict. | **OPEN — no test yet** |
+| VTT-516 | A change to a tracked file that a client source or test imports, or that a client test reads by a path written in it, moves the report's input hash. | **OPEN — no test yet** |
