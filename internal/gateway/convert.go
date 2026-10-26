@@ -9,6 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/engine"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
@@ -76,10 +77,11 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 		}}
 	case *vttv1.ClientCommand_AddNarration:
 		env.Payload = &vttv1.Envelope_NarrationAdded{NarrationAdded: &vttv1.NarrationAdded{
-			Text:          c.AddNarration.GetText(),
-			As:            c.AddNarration.GetAs(),
-			AnchorFromSeq: c.AddNarration.GetAnchorFromSeq(),
-			AnchorToSeq:   c.AddNarration.GetAnchorToSeq(),
+			Text:           c.AddNarration.GetText(),
+			As:             c.AddNarration.GetAs(),
+			AnchorFromSeq:  c.AddNarration.GetAnchorFromSeq(),
+			AnchorToSeq:    c.AddNarration.GetAnchorToSeq(),
+			OutOfCharacter: c.AddNarration.GetOutOfCharacter(),
 		}}
 	case *vttv1.ClientCommand_UpsertNote:
 		env.Payload = &vttv1.Envelope_NoteUpserted{NoteUpserted: &vttv1.NoteUpserted{
@@ -125,6 +127,20 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 	}
 	env.EventId = id
 	return env, nil
+}
+
+// Call voice only on what Authorize accepted, with the snapshot it judged (VTT-496).
+func voice(env *vttv1.Envelope, cmd *vttv1.ClientCommand, p *identity.Participant, st *engine.State) {
+	n := env.GetNarrationAdded()
+	if n == nil {
+		return
+	}
+	switch {
+	case n.GetOutOfCharacter():
+		n.As = p.Name
+	case p.Role == identity.RolePlayer:
+		n.As = st.Actors[cmd.GetAddNarration().GetActorId()].GetName()
+	}
 }
 
 func newEventID() (string, error) {

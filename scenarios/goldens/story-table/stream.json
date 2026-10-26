@@ -519,7 +519,8 @@
     "actorRole": "player",
     "participantId": "p-player",
     "narrationAdded": {
-      "text": "I raise my sword and step forward."
+      "text": "I raise my sword and step forward.",
+      "as": "Lera"
     }
   },
   {

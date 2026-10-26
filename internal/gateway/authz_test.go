@@ -144,13 +144,13 @@ func loadMapCmd() *vttv1.ClientCommand {
 	}}
 }
 
-// addNarrationCmd builds a plain, unanchored AddNarration ClientCommand — a
-// trivially valid command for authz purposes (Authorize never checks
-// narration content/anchor sanity, only role; that validation lives in the
-// fold, internal/engine/apply.go).
+// addNarrationCmd builds an unanchored AddNarration out of character, which
+// every role that may narrate may send (VTT-497): Authorize checks the
+// speaker, never content or anchors, which the fold checks
+// (internal/engine/apply.go).
 func addNarrationCmd() *vttv1.ClientCommand {
 	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddNarration{
-		AddNarration: &vttv1.AddNarration{Text: "the door creaks open"},
+		AddNarration: &vttv1.AddNarration{Text: "the door creaks open", OutOfCharacter: true},
 	}}
 }
 

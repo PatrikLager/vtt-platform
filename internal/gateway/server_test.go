@@ -968,7 +968,7 @@ func TestMoveTokenBroadcastBackfillsSceneAndFrom(t *testing.T) {
 	}
 }
 
-// VTT-260
+// VTT-503
 func TestAMoveWithAReasonAppendsItsReason(t *testing.T) {
 	const why = "the floor gives way under the hero"
 	f := newGWFixture(t)
@@ -1604,7 +1604,7 @@ func TestPresenceAnnouncesACleanDeparture(t *testing.T) {
 // tests stopped at Authorize and never crossed into conversion, so nothing
 // noticed. A test that ends at the permission check is not evidence the
 // command works.
-// VTT-147 VTT-260
+// VTT-147 VTT-503
 func TestDMGrantsControlOverTheWire(t *testing.T) {
 	f := newGWFixture(t)
 	dm := f.dial(f.dmToken, 0)
@@ -1797,7 +1797,7 @@ func TestAPromotionBitesWithoutReconnecting(t *testing.T) {
 	// As a spectator, narrating is refused.
 	sendCommand(t, watcher, &vttv1.ClientCommand{
 		RequestId: "before",
-		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "hello"}},
+		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "hello", OutOfCharacter: true}},
 	})
 	if res := readResult(t, watcher); res.GetOk() {
 		t.Fatal("a spectator must not be able to narrate")
@@ -1826,7 +1826,7 @@ func TestAPromotionBitesWithoutReconnecting(t *testing.T) {
 	// SAME connection, no reconnect: it now works.
 	sendCommand(t, watcher, &vttv1.ClientCommand{
 		RequestId: "after",
-		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "hello"}},
+		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "hello", OutOfCharacter: true}},
 	})
 	if res := readResult(t, watcher); !res.GetOk() {
 		t.Fatalf("a promoted participant must be able to act on their EXISTING connection, "+
@@ -2812,7 +2812,7 @@ func TestADescribeOfNoTokenIsRefusedAndAppendsNothing(t *testing.T) {
 	}
 }
 
-// VTT-479 VTT-260
+// VTT-479 VTT-503
 func TestADMsDescribeAppendsOneTokenDescribedCarryingEveryField(t *testing.T) {
 	f := newGWFixture(t)
 	dm := f.dial(f.dmToken, 0)

@@ -285,6 +285,12 @@ func qaIssCmdNarrate(text string) *vttv1.ClientCommand {
 	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: text}}}
 }
 
+func qaIssCmdSay(text, actor string) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{
+		Text: text, ActorId: actor,
+	}}}
+}
+
 func qaIssCmdPlace(tok, scene, actor string, x, y int32) *vttv1.ClientCommand {
 	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_PlaceToken{PlaceToken: &vttv1.PlaceToken{
 		TokenId: tok, SceneId: scene, ActorId: actor, Position: qaIssAt(x, y),
@@ -337,7 +343,7 @@ func qaIssPlayTable(t *testing.T) *qaIssPlay {
 	pl.actsAt = pl.p1.must(&vttv1.ClientCommand{Command: &vttv1.ClientCommand_MoveToken{MoveToken: &vttv1.MoveTokenRequest{
 		TokenId: "hero-tok", To: qaIssAt(2, 1), Reason: &reason,
 	}}})
-	pl.p1.must(qaIssCmdNarrate("knuckles crack"))
+	pl.p1.must(qaIssCmdSay("knuckles crack", "hero"))
 	pl.dm.must(qaIssCmdAbility("lurker", "chair-swing"))
 	pl.dm.must(qaIssCmdAbility("lurker", "splash-of-water"))
 	pl.p1.must(qaIssCmdAbility("hero", "chair-swing"))

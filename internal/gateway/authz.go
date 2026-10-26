@@ -44,7 +44,7 @@ var commandRoles = map[string]map[identity.Role]bool{
 // ErrUnauthorized is wrapped by every denial Authorize returns.
 var ErrUnauthorized = errors.New("gateway: not authorized")
 
-// Authorize decides whether p may issue cmd against st: the role table, the two
+// Authorize decides whether p may issue cmd against st: the role table, the
 // checks for every role, then the player rules (SPEC-013).
 func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.State) error {
 	name := commandName(cmd)
@@ -63,6 +63,12 @@ func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.Sta
 	// (SPEC-013).
 	if name == "set_viewpoint" {
 		if err := MayWatch(p, cmd.GetSetViewpoint().GetActorId(), st.Actors); err != nil {
+			return err
+		}
+	}
+	// Check this for every role: the DM and the agent may name no actor (VTT-499).
+	if name == "add_narration" {
+		if err := mayVoice(p, cmd.GetAddNarration(), st.Actors); err != nil {
 			return err
 		}
 	}
@@ -111,6 +117,34 @@ var playerRules = map[string]playerRule{
 	},
 	"add_narration": unrestricted,
 	"set_viewpoint": unrestricted,
+}
+
+// Answer an in-character line naming an actor that is absent, not theirs or not
+// a party member with one string: a varying refusal tells which ids exist (VTT-506).
+func mayVoice(p *identity.Participant, na *vttv1.AddNarration, actors map[string]*vttv1.Actor) error {
+	if na.GetOutOfCharacter() {
+		if na.GetActorId() != "" {
+			return fmt.Errorf("%w: a line out of character speaks as no actor", ErrUnauthorized)
+		}
+		return nil
+	}
+	if p.Role != identity.RolePlayer {
+		if na.GetActorId() != "" {
+			return fmt.Errorf("%w: role %q names its speaker with as, never an actor id",
+				ErrUnauthorized, p.Role)
+		}
+		return nil
+	}
+	a := actors[na.GetActorId()]
+	if !ownPartyMember(a, p.ID) {
+		return fmt.Errorf("%w: a player speaks as a party member of theirs, or out of character",
+			ErrUnauthorized)
+	}
+	if a.GetName() == "" {
+		return fmt.Errorf("%w: this party member has no name; ask the DM for one, or speak out of character",
+			ErrUnauthorized)
+	}
+	return nil
 }
 
 func errUndecided(p *identity.Participant, name string) error {

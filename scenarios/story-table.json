@@ -18,7 +18,7 @@
 
     {"by": "dm", "command": {"addNarration": {"text": "A hush falls over the tavern as the story begins."}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"addNarration": {"text": "You'll not pass, adventurer!", "as": "Goblin Cutter"}}, "expect": {"ok": true}},
-    {"by": "player", "command": {"addNarration": {"text": "I raise my sword and step forward."}}, "expect": {"ok": true}},
+    {"by": "player", "command": {"addNarration": {"text": "I raise my sword and step forward.", "actorId": "act-hero"}}, "expect": {"ok": true}},
 
     {"by": "dm", "command": {"upsertNote": {"key": "kobold-den", "title": "Kobold Den", "text": "Three kobolds guard the east tunnel.", "visibility": "NOTE_VISIBILITY_SECRET"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"upsertNote": {"key": "kobold-den", "title": "Kobold Den (cleared)", "text": "The tunnel is empty now; the kobolds fled west.", "visibility": "NOTE_VISIBILITY_PUBLIC"}}, "expect": {"ok": true}},

@@ -787,6 +787,7 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 			tm.TokenMoved.From = &vttv1.GridPosition{X: tok.X, Y: tok.Y}
 		}
 	}
+	voice(env, cmd, p, st)
 
 	seq, err := s.campaign.Append(env)
 	if err != nil {

@@ -86,7 +86,7 @@ func qaMRMoveCommand(req, tok string, to *vttv1.GridPosition, reason *string) *v
 	}}}
 }
 
-// VTT-260
+// VTT-503
 func TestQAMoveReasonToEventCarriesTheMovesReason(t *testing.T) {
 	const reason = "the floor gives way by the pool"
 	for _, p := range []*identity.Participant{
@@ -119,7 +119,7 @@ func TestQAMoveReasonToEventCarriesTheMovesReason(t *testing.T) {
 	}
 }
 
-// VTT-260
+// VTT-503
 func TestQAMoveReasonToEventCarriesAGrantsKind(t *testing.T) {
 	dm := &identity.Participant{ID: qaMRDM, Name: "Dee", Role: identity.RoleDM}
 	for _, kind := range []vttv1.ActorKind{vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, vttv1.ActorKind_ACTOR_KIND_NON_PARTY} {

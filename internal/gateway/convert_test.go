@@ -53,7 +53,7 @@ func TestToEventEventIDsAreUniquePerCall(t *testing.T) {
 	}
 }
 
-// VTT-260
+// VTT-503
 func TestToEventMoveTokenProducesTokenMoved(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_MoveToken{
@@ -80,7 +80,7 @@ func TestToEventMoveTokenProducesTokenMoved(t *testing.T) {
 	}
 }
 
-// VTT-260
+// VTT-503
 func TestToEventAddActorProducesActorAdded(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleAgent}
 	actor := &vttv1.Actor{ActorId: "a1", Name: "Goblin"}
@@ -101,7 +101,7 @@ func TestToEventAddActorProducesActorAdded(t *testing.T) {
 	}
 }
 
-// VTT-260
+// VTT-503
 func TestToEventPlaceTokenProducesTokenPlaced(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_PlaceToken{
@@ -133,7 +133,7 @@ func TestToEventPlaceTokenProducesTokenPlaced(t *testing.T) {
 	}
 }
 
-// VTT-260
+// VTT-503
 func TestToEventDescribeTokenProducesTokenDescribed(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_DescribeToken{
@@ -163,7 +163,7 @@ func TestToEventDescribeTokenProducesTokenDescribed(t *testing.T) {
 // shape as OpenDoor/CloseDoor/RemoveCondition — no adjacency or ownership
 // check here, since Authorize (a DM/agent-only row) has already decided this
 // participant may issue it by the time ToEvent runs.
-// VTT-260
+// VTT-503
 func TestToEventRemoveTokenProducesTokenRemoved(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RemoveToken{
@@ -183,7 +183,7 @@ func TestToEventRemoveTokenProducesTokenRemoved(t *testing.T) {
 	}
 }
 
-// VTT-260
+// VTT-503
 func TestToEventStartSessionProducesSessionStarted(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_StartSession{
@@ -222,7 +222,7 @@ func TestToEventEndSessionProducesSessionEnded(t *testing.T) {
 // command that DOES flow through ToEvent (use_ability does not — see
 // server.go's handleCommand): a plain single-Envelope conversion, exactly
 // like every pre-Task-6 command above.
-// VTT-260
+// VTT-503
 func TestToEventRemoveConditionProducesConditionRemoved(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RemoveCondition{
@@ -249,11 +249,14 @@ func TestToEventRemoveConditionProducesConditionRemoved(t *testing.T) {
 // three world-layer (Task 3) commands that flow through the SAME plain
 // ToEvent -> campaign.Append path as every pre-Task-6 command — no batch,
 // no special handling (unlike use_ability).
-// VTT-260
+// VTT-503
 func TestToEventAddNarrationProducesNarrationAdded(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddNarration{
-		AddNarration: &vttv1.AddNarration{Text: "the door creaks open", As: "Goblin Cutter", AnchorFromSeq: 2, AnchorToSeq: 3},
+		AddNarration: &vttv1.AddNarration{
+			Text: "the door creaks open", As: "Goblin Cutter", AnchorFromSeq: 2, AnchorToSeq: 3,
+			OutOfCharacter: true,
+		},
 	}}
 
 	env, err := gateway.ToEvent(cmd, p)
@@ -265,14 +268,15 @@ func TestToEventAddNarrationProducesNarrationAdded(t *testing.T) {
 		t.Fatalf("payload = %T, want *Envelope_NarrationAdded", env.Payload)
 	}
 	if na.NarrationAdded.Text != "the door creaks open" || na.NarrationAdded.As != "Goblin Cutter" ||
-		na.NarrationAdded.AnchorFromSeq != 2 || na.NarrationAdded.AnchorToSeq != 3 {
-		t.Fatalf("NarrationAdded = %+v, want text/as/anchors verbatim from the command", na.NarrationAdded)
+		na.NarrationAdded.AnchorFromSeq != 2 || na.NarrationAdded.AnchorToSeq != 3 ||
+		!na.NarrationAdded.OutOfCharacter {
+		t.Fatalf("NarrationAdded = %+v, want text/as/anchors/mark verbatim from the command", na.NarrationAdded)
 	}
 }
 
 // TestToEventUpsertNoteProducesNoteUpserted covers the second world-layer
 // command.
-// VTT-260
+// VTT-503
 func TestToEventUpsertNoteProducesNoteUpserted(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_UpsertNote{
@@ -298,7 +302,7 @@ func TestToEventUpsertNoteProducesNoteUpserted(t *testing.T) {
 
 // TestToEventDeleteNoteProducesNoteDeleted covers the third world-layer
 // command.
-// VTT-260
+// VTT-503
 func TestToEventDeleteNoteProducesNoteDeleted(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RoleDM}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_DeleteNote{
@@ -324,7 +328,7 @@ func TestToEventDeleteNoteProducesNoteDeleted(t *testing.T) {
 // single-Envelope conversion as remove_condition/grant_actor_control above
 // — no movement/adjacency check here, that is Task 6's job at the call
 // site (engine.State.Blocked doesn't exist until Task 5).
-// VTT-260
+// VTT-503
 func TestToEventOpenDoorProducesDoorOpened(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_OpenDoor{
@@ -344,7 +348,7 @@ func TestToEventOpenDoorProducesDoorOpened(t *testing.T) {
 	}
 }
 
-// VTT-260
+// VTT-503
 func TestToEventCloseDoorProducesDoorClosed(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CloseDoor{
@@ -377,7 +381,7 @@ func TestToEventCloseDoorProducesDoorClosed(t *testing.T) {
 // assumed. (This paragraph cited ToEvent's CreateScene arm, whose own comment
 // recorded the same failure mode for Tiles/Objects, until 2026-09-02, when
 // create_scene left the platform.)
-// VTT-260
+// VTT-503
 func TestToEventGrantActorControlCarriesTheKind(t *testing.T) {
 	p := &identity.Participant{ID: "p-dm", Role: identity.RoleDM}
 	for _, kind := range []vttv1.ActorKind{

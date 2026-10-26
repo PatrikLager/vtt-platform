@@ -186,14 +186,14 @@ var manifest = []toolSpec{
 	{
 		message:     "vtt.v1.AddNarration",
 		name:        "add_narration",
-		description: "Add a story entry to the table's shared narrative — narration, in-character speech (set `as`), or table talk; optionally anchored to the event sequences it narrates.",
+		description: "Add a story entry to the table's shared narrative — narration, in-character speech, or out-of-character table talk; optionally anchored to the event sequences it narrates. The DM and the agent voice anyone with `as`; a player speaks as a party member they control by `actorId`; `outOfCharacter` speaks as yourself, under the name the server writes.",
 		descriptor:  (&vttv1.AddNarration{}).ProtoReflect().Descriptor(),
 		// The fabrication trap (same shape as add_actor's fix above): none
 		// of AddNarration's fields are proto3 `optional`, so the derived
-		// required list would force `as` and both anchor fields even
-		// though spec §3 documents all three as optional — an LLM caller
-		// then fabricates a speaker label or an anchor pair rather than
-		// sending nothing. A fabricated backward anchor pair passes ALL
+		// required list would force every field but text, though each is
+		// optional for some seat — an LLM caller then fabricates a speaker
+		// label, an actor id or an anchor pair rather than sending
+		// nothing. A fabricated backward anchor pair passes ALL
 		// engine validation (internal/engine/apply.go) and persists
 		// forever in the append-only log. Only text is genuinely required
 		// to narrate at all. Unlike add_actor's override (keyed on the
@@ -204,9 +204,11 @@ var manifest = []toolSpec{
 			"vtt.v1.AddNarration": {
 				requiredOverride: []string{"text"},
 				fieldDocs: map[string]string{
-					"as":            "Optional speaker label — set to voice an NPC or PC in character; omit to speak as yourself (table talk).",
-					"anchorFromSeq": "Optional; omit (0) if this narration is unanchored. Set together with anchorToSeq as a backward-pointing range (both > 0, anchorFromSeq <= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other.",
-					"anchorToSeq":   "Optional; omit (0) if this narration is unanchored. Set together with anchorFromSeq as a backward-pointing range (both > 0, anchorFromSeq <= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other.",
+					"as":             "Optional speaker label, the DM's and the agent's — set to voice an NPC or a PC in character; omit for plain narration. The server writes a player's speaker, and an out-of-character line's, itself.",
+					"actorId":        "A player's line in character: the id of a named party member they control, whose name the server writes as the speaker. Refused from the DM and the agent, and beside outOfCharacter.",
+					"outOfCharacter": "Optional; set for table talk out of character. The server writes your own display name as the speaker; set no actorId with it.",
+					"anchorFromSeq":  "Optional; omit (0) if this narration is unanchored. Set together with anchorToSeq as a backward-pointing range (both > 0, anchorFromSeq <= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other.",
+					"anchorToSeq":    "Optional; omit (0) if this narration is unanchored. Set together with anchorFromSeq as a backward-pointing range (both > 0, anchorFromSeq <= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other.",
 				},
 			},
 		},

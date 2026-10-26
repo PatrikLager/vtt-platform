@@ -117,7 +117,7 @@ func TestQADTAuthorizeLeavesAnUnknownTokenToTheFoldForTheDM(t *testing.T) {
 	}
 }
 
-// VTT-260
+// VTT-503
 func TestQADTDescribeTokenBecomesTokenDescribedCarryingEveryField(t *testing.T) {
 	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent} {
 		p := &identity.Participant{ID: "p-" + string(role), Name: "Boss", Role: role}
@@ -143,7 +143,7 @@ func TestQADTDescribeTokenBecomesTokenDescribedCarryingEveryField(t *testing.T) 
 	}
 }
 
-// VTT-260
+// VTT-503
 func TestQADTEmptiedFieldsReachTheEventEmpty(t *testing.T) {
 	p := &identity.Participant{ID: "p-dm", Role: identity.RoleDM}
 	cases := []*vttv1.TokenDescribed{
@@ -166,7 +166,7 @@ func TestQADTEmptiedFieldsReachTheEventEmpty(t *testing.T) {
 	}
 }
 
-// VTT-260
+// VTT-503
 func TestQADTPlaceTokenTextsReachTokenPlaced(t *testing.T) {
 	p := &identity.Participant{ID: "p-agent", Role: identity.RoleAgent}
 	cases := []*vttv1.TokenPlaced{

@@ -326,10 +326,10 @@ func TestAddActorSaysAnIDIsNeverReused(t *testing.T) {
 // add_actor's, see TestAddActorRequiredOverrideReplacesDerivedList's own
 // doc comment): none of AddNarration's fields are proto3 `optional`
 // (ADR-007's synthetic-oneof annotation), so schemaFor's derived required
-// list would otherwise force `as`/anchorFromSeq/anchorToSeq alongside
-// `text` — spec §3 documents all three as optional (empty `as` = speak as
-// yourself; 0/0 anchors = unanchored), so an LLM caller obeying the
-// derived schema has no way to omit them and fabricates values instead.
+// list would otherwise force every field alongside `text`, though each is
+// optional for some seat (an empty `as` is plain narration; 0/0 anchors
+// are unanchored), so an LLM caller obeying the derived schema has no way
+// to omit them and fabricates values instead.
 // The manifest's requiredOverride on add_narration must replace the
 // derived list entirely, down to exactly "text" — unlike add_actor's
 // override (keyed on the nested "vtt.v1.Actor" message reached via
@@ -349,11 +349,10 @@ func TestAddNarrationRequiredOverrideReplacesDerivedList(t *testing.T) {
 }
 
 // TestAddNarrationFieldDocsNameOptionalFieldsAgainstFabrication covers the
-// per-field guidance half of the same fix: as/anchorFromSeq/anchorToSeq —
-// each demoted from required to optional — must carry a "description"
-// steering the LLM away from fabricating a value (omit-when-unanchored /
-// speaking-as-self), and text (the one field that stayed required) must
-// carry none.
+// per-field guidance half of the same fix: every field demoted from
+// required to optional must carry a "description" steering the LLM away
+// from fabricating a value (whose speaker, omit-when-unanchored), and text
+// (the one field that stayed required) must carry none.
 func TestAddNarrationFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T) {
 	tool := findTool(t, "add_narration")
 	schema := tool["inputSchema"].(map[string]any)
@@ -363,9 +362,11 @@ func TestAddNarrationFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T)
 	}
 
 	wantSubstr := map[string]string{
-		"as":            "speak as yourself",
-		"anchorFromSeq": "unanchored",
-		"anchorToSeq":   "unanchored",
+		"as":             "voice an NPC",
+		"actorId":        "party member they control",
+		"outOfCharacter": "your own display name",
+		"anchorFromSeq":  "unanchored",
+		"anchorToSeq":    "unanchored",
 	}
 	for field, substr := range wantSubstr {
 		prop, ok := props[field].(map[string]any)

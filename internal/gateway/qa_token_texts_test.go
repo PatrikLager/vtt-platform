@@ -191,7 +191,7 @@ func TestQATTALiveDescribeAppendsOneEventAndChangesTheToken(t *testing.T) {
 	}
 }
 
-// VTT-260
+// VTT-503
 func TestQATTALiveDescribeEventCarriesEveryFieldTheCommandGave(t *testing.T) {
 	tb := qattOpen(t, qattWorld())
 	dm := tb.dial(t)
@@ -231,7 +231,7 @@ func TestQATTALiveDescribeNamingNoTokenIsRefusedAndAppendsNothing(t *testing.T) 
 	}
 }
 
-// VTT-260
+// VTT-503
 func TestQATTToEventCarriesEveryFieldOfADescribe(t *testing.T) {
 	dm := &identity.Participant{ID: "p-dm", Name: "Dee", Role: identity.RoleDM}
 	env, err := gateway.ToEvent(qattDescribeCmd("r", "t1", "N", "No", "G", "Gn"), dm)
@@ -244,7 +244,7 @@ func TestQATTToEventCarriesEveryFieldOfADescribe(t *testing.T) {
 	}
 }
 
-// VTT-260
+// VTT-503
 func TestQATTToEventCarriesThePlacementsFourTexts(t *testing.T) {
 	dm := &identity.Participant{ID: "p-dm", Name: "Dee", Role: identity.RoleDM}
 	cmd := &vttv1.ClientCommand{RequestId: "r", Command: &vttv1.ClientCommand_PlaceToken{PlaceToken: &vttv1.PlaceToken{
