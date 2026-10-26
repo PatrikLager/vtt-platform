@@ -308,6 +308,9 @@
     "description": "Add a story entry to the table's shared narrative — narration, in-character speech (set `as`), or table talk; optionally anchored to the event sequences it narrates.",
     "inputSchema": {
       "properties": {
+        "actorId": {
+          "type": "string"
+        },
         "anchorFromSeq": {
           "description": "Optional; omit (0) if this narration is unanchored. Set together with anchorToSeq as a backward-pointing range (both \u003e 0, anchorFromSeq \u003c= anchorToSeq, anchorToSeq before this narration's own sequence) — never set one without the other.",
           "type": "integer"
@@ -319,6 +322,9 @@
         "as": {
           "description": "Optional speaker label — set to voice an NPC or PC in character; omit to speak as yourself (table talk).",
           "type": "string"
+        },
+        "outOfCharacter": {
+          "type": "boolean"
         },
         "text": {
           "type": "string"

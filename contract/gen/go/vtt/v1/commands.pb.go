@@ -911,8 +911,12 @@ type AddNarration struct {
 	As            string                 `protobuf:"bytes,2,opt,name=as,proto3" json:"as,omitempty"`
 	AnchorFromSeq int64                  `protobuf:"varint,3,opt,name=anchor_from_seq,json=anchorFromSeq,proto3" json:"anchor_from_seq,omitempty"`
 	AnchorToSeq   int64                  `protobuf:"varint,4,opt,name=anchor_to_seq,json=anchorToSeq,proto3" json:"anchor_to_seq,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Names an actor; see VTT-495, VTT-496 and VTT-499.
+	ActorId string `protobuf:"bytes,5,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	// See VTT-497.
+	OutOfCharacter bool `protobuf:"varint,6,opt,name=out_of_character,json=outOfCharacter,proto3" json:"out_of_character,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AddNarration) Reset() {
@@ -971,6 +975,20 @@ func (x *AddNarration) GetAnchorToSeq() int64 {
 		return x.AnchorToSeq
 	}
 	return 0
+}
+
+func (x *AddNarration) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
+func (x *AddNarration) GetOutOfCharacter() bool {
+	if x != nil {
+		return x.OutOfCharacter
+	}
+	return false
 }
 
 type UpsertNote struct {
@@ -2667,12 +2685,14 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"target_ids\x18\x03 \x03(\tR\ttargetIds\"O\n" +
 	"\x0fRemoveCondition\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12!\n" +
-	"\fcondition_id\x18\x02 \x01(\tR\vconditionId\"~\n" +
+	"\fcondition_id\x18\x02 \x01(\tR\vconditionId\"\xc3\x01\n" +
 	"\fAddNarration\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\x0e\n" +
 	"\x02as\x18\x02 \x01(\tR\x02as\x12&\n" +
 	"\x0fanchor_from_seq\x18\x03 \x01(\x03R\ranchorFromSeq\x12\"\n" +
-	"\ranchor_to_seq\x18\x04 \x01(\x03R\vanchorToSeq\"\x80\x01\n" +
+	"\ranchor_to_seq\x18\x04 \x01(\x03R\vanchorToSeq\x12\x19\n" +
+	"\bactor_id\x18\x05 \x01(\tR\aactorId\x12(\n" +
+	"\x10out_of_character\x18\x06 \x01(\bR\x0eoutOfCharacter\"\x80\x01\n" +
 	"\n" +
 	"UpsertNote\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +

@@ -1,13 +1,16 @@
 package contract_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 )
@@ -94,6 +97,15 @@ func TestTokenDescribedEnvelopeRoundTrip(t *testing.T) {
 }
 func TestDescribeTokenCommandRoundTrip(t *testing.T) {
 	roundTrip(t, "describe_token_command.json", &vttv1.ClientCommand{})
+}
+func TestAddNarrationCommandRoundTrip(t *testing.T) {
+	roundTrip(t, "add_narration_command.json", &vttv1.ClientCommand{})
+}
+func TestAddNarrationOutOfCharacterCommandRoundTrip(t *testing.T) {
+	roundTrip(t, "add_narration_out_of_character_command.json", &vttv1.ClientCommand{})
+}
+func TestNarrationOutOfCharacterEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "narration_out_of_character_envelope.json", &vttv1.Envelope{})
 }
 func TestAbilityUsedWithOutcomesEnvelopeRoundTrip(t *testing.T) {
 	roundTrip(t, "ability_used_with_outcomes_envelope.json", &vttv1.Envelope{})
@@ -317,4 +329,149 @@ func TestPresenceSnapshotFrameRoundTrip(t *testing.T) {
 
 func TestPresenceChangedFrameRoundTrip(t *testing.T) {
 	roundTrip(t, "presence_changed_frame.json", &vttv1.ServerFrame{})
+}
+
+// Phase 4a's tests of decision D1 of
+// docs/superpowers/plans/2026-10-26-a-player-speaks-as-their-character.md;
+// "D1" below is that decision. Keep them in this file: .go-arch-lint.yml
+// attaches no component to another *_test.go in contract/.
+
+// D1: AddNarration.actor_id = 5, out_of_character = 6 (fields).
+func TestQANarrCommandFieldNumbersOnTheWire(t *testing.T) {
+	b, err := proto.Marshal(&vttv1.AddNarration{
+		ActorId: "a", OutOfCharacter: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// tag 5 string = 0x2a, tag 6 varint = 0x30
+	want := []byte{0x2a, 0x01, 'a', 0x30, 0x01}
+	if !bytes.Equal(b, want) {
+		t.Fatalf("got % x want % x", b, want)
+	}
+}
+
+// D1: NarrationAdded.out_of_character = 5 (fields).
+func TestQANarrEventFieldNumberOnTheWire(t *testing.T) {
+	b, err := proto.Marshal(&vttv1.NarrationAdded{OutOfCharacter: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte{0x28, 0x01} // tag 5 varint
+	if !bytes.Equal(b, want) {
+		t.Fatalf("got % x want % x", b, want)
+	}
+}
+
+// D1: the command names actorId and outOfCharacter on the wire.
+func TestQANarrCommandJSONNames(t *testing.T) {
+	an := &vttv1.AddNarration{Text: "hi", ActorId: "ada", OutOfCharacter: true}
+	m := &vttv1.ClientCommand{RequestId: "r",
+		Command: &vttv1.ClientCommand_AddNarration{AddNarration: an}}
+	j, err := protojson.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := &vttv1.ClientCommand{}
+	if err := protojson.Unmarshal([]byte(`{"requestId":"r","addNarration":`+
+		`{"text":"hi","actorId":"ada","outOfCharacter":true}}`),
+		got); err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(m, got) {
+		t.Fatalf("json %s decoded to %v", j, got)
+	}
+	for _, k := range []string{`"actorId"`, `"outOfCharacter"`} {
+		if !bytes.Contains(j, []byte(k)) {
+			t.Fatalf("%s missing from %s", k, j)
+		}
+	}
+}
+
+// D1: "protojson omitting a false bool".
+func TestQANarrFalseAndEmptyAreOmitted(t *testing.T) {
+	cases := []struct {
+		m    proto.Message
+		keys []string
+	}{
+		{&vttv1.AddNarration{Text: "x"}, []string{"outOfCharacter", "actorId"}},
+		{&vttv1.NarrationAdded{Text: "x", As: "Ada"}, []string{"outOfCharacter"}},
+	}
+	for _, c := range cases {
+		j, err := protojson.Marshal(c.m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, k := range c.keys {
+			if bytes.Contains(j, []byte(k)) {
+				t.Fatalf("%s present in %s", k, j)
+			}
+		}
+	}
+}
+
+// D1: every NarrationAdded already in a log "reads as not out of
+// character"; the event is a fixture recorded before the field existed.
+func TestQANarrOldMessagesDecodeAsNotOutOfCharacter(t *testing.T) {
+	raw, err := os.ReadFile("testdata/narration_added_envelope.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := &vttv1.Envelope{}
+	if err := protojson.Unmarshal(raw, env); err != nil {
+		t.Fatal(err)
+	}
+	n := env.GetNarrationAdded()
+	if n.GetOutOfCharacter() || n.GetAs() != "Goblin Cutter" {
+		t.Fatalf("got %v", n)
+	}
+	cmd := &vttv1.AddNarration{}
+	if err := protojson.Unmarshal([]byte(`{"text":"t","as":"x"}`), cmd); err != nil {
+		t.Fatal(err)
+	}
+	if cmd.ActorId != "" || cmd.OutOfCharacter {
+		t.Fatalf("got %v", cmd)
+	}
+}
+
+// D1: the speaker's name stays in `as`; the event carries the mark
+// and the name.
+func TestQANarrEventCarriesMarkAndNameInAs(t *testing.T) {
+	in := `{"narrationAdded":{"text":"brb","as":"Ada",` +
+		`"outOfCharacter":true}}`
+	env := &vttv1.Envelope{}
+	if err := protojson.Unmarshal([]byte(in), env); err != nil {
+		t.Fatal(err)
+	}
+	n := env.GetNarrationAdded()
+	if !n.GetOutOfCharacter() || n.GetAs() != "Ada" {
+		t.Fatalf("got %v", n)
+	}
+}
+
+// VTT-505
+func TestQANarrEventHasNoActorId(t *testing.T) {
+	fields := (&vttv1.NarrationAdded{}).ProtoReflect().Descriptor().Fields()
+	for i := 0; i < fields.Len(); i++ {
+		if name := string(fields.Get(i).Name()); strings.Contains(name, "actor") {
+			t.Fatalf("NarrationAdded carries %s", name)
+		}
+	}
+	in := []byte(`{"text":"x","actorId":"a"}`)
+	if err := protojson.Unmarshal(in, &vttv1.NarrationAdded{}); err == nil {
+		t.Fatal("event accepted actorId")
+	}
+}
+
+// D1: "None is proto3 `optional`".
+func TestQANarrNewFieldsAreNotProto3Optional(t *testing.T) {
+	cf := (&vttv1.AddNarration{}).ProtoReflect().Descriptor().Fields()
+	ef := (&vttv1.NarrationAdded{}).ProtoReflect().Descriptor().Fields()
+	for _, f := range []protoreflect.FieldDescriptor{
+		cf.ByName("actor_id"), cf.ByName("out_of_character"),
+		ef.ByName("out_of_character")} {
+		if f.HasOptionalKeyword() {
+			t.Fatalf("field %d is optional", f.Number())
+		}
+	}
 }

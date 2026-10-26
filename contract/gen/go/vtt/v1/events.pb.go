@@ -2205,8 +2205,12 @@ type NarrationAdded struct {
 	As            string                 `protobuf:"bytes,2,opt,name=as,proto3" json:"as,omitempty"`
 	AnchorFromSeq int64                  `protobuf:"varint,3,opt,name=anchor_from_seq,json=anchorFromSeq,proto3" json:"anchor_from_seq,omitempty"`
 	AnchorToSeq   int64                  `protobuf:"varint,4,opt,name=anchor_to_seq,json=anchorToSeq,proto3" json:"anchor_to_seq,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// See VTT-497. Add no actor id to this message: narration reaches every
+	// active character log (VTT-362), and a creature's id would reach a log
+	// that never saw the creature (VTT-505).
+	OutOfCharacter bool `protobuf:"varint,5,opt,name=out_of_character,json=outOfCharacter,proto3" json:"out_of_character,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *NarrationAdded) Reset() {
@@ -2265,6 +2269,13 @@ func (x *NarrationAdded) GetAnchorToSeq() int64 {
 		return x.AnchorToSeq
 	}
 	return 0
+}
+
+func (x *NarrationAdded) GetOutOfCharacter() bool {
+	if x != nil {
+		return x.OutOfCharacter
+	}
+	return false
 }
 
 type NoteUpserted struct {
@@ -3221,12 +3232,13 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\x10ConditionRemoved\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12!\n" +
 	"\fcondition_id\x18\x02 \x01(\tR\vconditionId\x12\x16\n" +
-	"\x06reason\x18\x03 \x01(\tR\x06reason\"\x80\x01\n" +
+	"\x06reason\x18\x03 \x01(\tR\x06reason\"\xaa\x01\n" +
 	"\x0eNarrationAdded\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\x0e\n" +
 	"\x02as\x18\x02 \x01(\tR\x02as\x12&\n" +
 	"\x0fanchor_from_seq\x18\x03 \x01(\x03R\ranchorFromSeq\x12\"\n" +
-	"\ranchor_to_seq\x18\x04 \x01(\x03R\vanchorToSeq\"\x82\x01\n" +
+	"\ranchor_to_seq\x18\x04 \x01(\x03R\vanchorToSeq\x12(\n" +
+	"\x10out_of_character\x18\x05 \x01(\bR\x0eoutOfCharacter\"\x82\x01\n" +
 	"\fNoteUpserted\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x12\n" +

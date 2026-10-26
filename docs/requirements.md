@@ -513,3 +513,4 @@ checked: `docs/specifications/008-requirement-ids-come-from-the-dispenser.md`.
 | VTT-502 | The Story, and the Events panel where a window draws one, draw a narration out of character as its `as`, `: `, and its text between `(( ` and ` ))`. | **OPEN — no test yet** |
 | VTT-503 | The event a one-envelope command becomes carries every field of the command that the event also has, a grant's kind and a move's reason included, except a narration's `as` when it is a player's or out of character, which the server writes. | **OPEN — no test yet** |
 | VTT-504 | A DM's or an agent's player panel draws the in-character box, and its Send carries what the box holds as `as`. | **OPEN — no test yet** |
+| VTT-505 | A `NarrationAdded` carries no actor id. | contract/roundtrip_test.go#TestQANarrEventHasNoActorId, contract/qa-narration-fields.test.ts#qaNarr: the event has no actor id |

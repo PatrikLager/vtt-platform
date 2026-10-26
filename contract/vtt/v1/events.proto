@@ -531,6 +531,10 @@ message NarrationAdded {
   string as = 2;
   int64 anchor_from_seq = 3;
   int64 anchor_to_seq = 4;
+  // See VTT-497. Add no actor id to this message: narration reaches every
+  // active character log (VTT-362), and a creature's id would reach a log
+  // that never saw the creature (VTT-505).
+  bool out_of_character = 5;
 }
 // NoteVisibility says who may read a note. An enum rather than a bool:
 // protojson omits a false bool, so a secret note would travel as an absent

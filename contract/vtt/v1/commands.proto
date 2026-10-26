@@ -122,6 +122,10 @@ message AddNarration {
   string as = 2;
   int64 anchor_from_seq = 3;
   int64 anchor_to_seq = 4;
+  // Names an actor; see VTT-495, VTT-496 and VTT-499.
+  string actor_id = 5;
+  // See VTT-497.
+  bool out_of_character = 6;
 }
 message UpsertNote {
   string key = 1;

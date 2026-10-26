@@ -1,0 +1,12 @@
+{
+  "eventId": "01J9ZK7M2N3P4Q5R6S7T8U9V15",
+  "sequence": "46",
+  "occurredAt": "2026-07-26T09:13:00Z",
+  "sessionId": "sess-happy-dragon",
+  "actorRole": "player",
+  "narrationAdded": {
+    "text": "where is the pizza",
+    "as": "Ada",
+    "outOfCharacter": true
+  }
+}
