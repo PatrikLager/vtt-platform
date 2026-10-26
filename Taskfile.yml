@@ -50,32 +50,18 @@ tasks:
       - task: check:no-create-scene
       - task: check:no-pack
       - task: check:arch
-      # BEFORE the mutation gates: ~53s against their minutes, so a race
+      # BEFORE the Go mutation gate: ~53s against its minutes, so a race
       # failing here saves the long wait. NOT claimed to be first-cheapest
       # overall — check:coverage above runs the whole Go suite before this.
       - task: check:race
       - task: check:mutation
-      # Now covers EVERY file under client/src/ except the browser entry
-      # point -- the backlog that made this "scoped to two files" is closed,
-      # and tools/ts-mutation-scope.md records how it was worked down and what
-      # it cost. Same shape as check:mutation, whose tools/mutation-scope.md
-      # documents why internal/harness is out.
-      #
-      # RUNS ON LINUX, WHICH ON THIS MAC MEANS A CONTAINER THE TASK STARTS
-      # ITSELF. macOS 26's socket-accounting kernel bug (FB21686886) makes a
-      # native run arithmetically impossible. Until 2026-08-29 this comment
-      # said the task "skips loudly there and CI is authoritative", and BOTH
-      # halves were false: 334eae7 made it invoke the container, and ci.yml
-      # has been workflow_dispatch-only since 2026-08-10. Full detail in its
-      # desc.
-      #
-      # 334eae7 also made this the SECOND mutation gate in a row on one
-      # machine -- the list order above is older, but before that commit this
-      # task skipped on macOS, so the pair had never actually run back to
-      # back. It is not free: over byte-identical inputs the TS timeout count
-      # has read 31, 94, 322 and 31 again; the 94 and the 322 are the loaded
-      # runs and 31 is the floor. tools/mutation-scope.md has the table; read
-      # it before concluding anything from one run's timeout figure.
+      # JUDGES the client's stored mutation report and never produces one:
+      # the full run, check:ts-mutation:full, happens when the owner asks for
+      # it (SPEC-023). An out-of-date report passes here under THE CLIENT'S
+      # MUTATION WAS NOT MEASURED, so read that line before taking a green
+      # `task check` to cover the client. tools/ts-mutation-scope.md records
+      # how the gated set, every file under client/src/ but the browser entry
+      # point, was worked down.
       - task: check:ts-mutation
 
   # --- test tiers -----------------------------------------------------------
@@ -307,10 +293,11 @@ tasks:
 
   check:ts-mutation:
     desc: >
-      Mutation testing over the TypeScript client. Gates on ZERO
-      UNADJUDICATED SURVIVORS (tools/ts-mutation-equivalents.txt), not on a
-      mutation-score percentage -- a score is a ratio, and enough newly-killed
-      mutants mask a new survivor.
+      The client's mutation gate, as `task check` runs it: it judges the
+      stored report when that report is current, and never produces one.
+      Gates on ZERO UNADJUDICATED SURVIVORS (tools/ts-mutation-equivalents.txt),
+      not on a mutation-score percentage -- a score is a ratio, and enough
+      newly-killed mutants mask a new survivor.
 
       This exists because check:ts-coverage cannot see the gap it finds.
       undo.ts was at 100% line coverage and 78.75% mutation score, and the
@@ -318,43 +305,76 @@ tasks:
       [from,to] range that IS retraction. Every line ran; nothing checked the
       boundary.
 
+      THE FULL RUN HAPPENS WHEN THE OWNER ASKS FOR IT, as `task
+      check:ts-mutation:full` (SPEC-023, the owner's rule of 2026-10-26),
+      which stamps the report with its input hash and the commit it measured.
+      This step reads that stamp through tools/ts-mutation-report.py:
+      - CURRENT, the stamp's input hash being the tree's: the report is
+        judged by tools/check-ts-mutation.py, and a survivor no entry claims
+        fails the step;
+      - OUT OF DATE: nothing is judged; the step prints THE CLIENT'S
+        MUTATION WAS NOT MEASURED, the commit the report measured and the
+        tickets added since, and passes;
+      - MISSING: the step prints the same line and that there is no stored
+        report, and passes.
+      A green `task check` then says nothing about the client's mutants, and
+      that line is what says so.
+
+      NOT SCOPED. `mutate` is the glob `client/src/**/*` less the browser
+      entry point: every file in the client, including any added tomorrow, is
+      in the full run from birth. Work a new file's survivors to zero when the
+      full run first measures it, or the debt stays invisible: scene-plan.ts
+      and canvas.ts carried 65 survivors between them, unseen, while this gate
+      was broken from 2026-08-11 to 2026-08-25 (tools/ts-mutation-scope.md).
+    cmds:
+      # The gate-checker's own unit tests and QA's, and the decision's: they
+      # open no sockets, they run in seconds, and they run nowhere else in the
+      # repo. check-ts-mutation.py's header records that 8 of 9 defects across
+      # five review rounds were in hand-rolled enforcement rather than in the
+      # thing being enforced.
+      - python3 tools/check_ts_mutation_test.py -q
+      - python3 tools/check_ts_mutation_qa_test.py -q
+      # Hashing too little reports a stale report as current, which is the
+      # gate silently ceasing to cover the client while still printing a
+      # verdict.
+      - python3 tools/ts_mutation_inputs_test.py -q
+      # It reads this Taskfile with `task --dry`, which runs none of `check`'s
+      # commands, so it can be a command of this step without running it.
+      - python3 tools/ts_mutation_report_test.py -q
+      - python3 tools/ts_mutation_report_qa_test.py -q
+      # NEVER Stryker or its container here (VTT-507): the owner's rule.
+      - python3 tools/ts-mutation-report.py check
+
+  check:ts-mutation:full:
+    desc: >
+      The client's full mutation run: Stryker over the `mutate` list of
+      stryker.conf.json, then the stamp, then the verdict. It is not a step of
+      `task check`, and it runs when the owner asks for it (SPEC-023, the
+      owner's rule of 2026-10-26). It starts the client's tests, `bun test
+      --bail` over client/test, once per mutant.
+
+      In order. tools/ts-mutation-report.py snapshots the tree BEFORE Stryker
+      starts -- its input hash, the commit checked out, and whether a file the
+      hash reads differs from that commit -- so an edit made during the run
+      reads as out of date afterwards. Stryker writes
+      reports/mutation/mutation.json. The snapshot becomes the stamp, refused
+      unless that report is newer than the snapshot. Only then
+      tools/check-ts-mutation.py judges the report. Stamped before it is
+      judged, a report with a survivor stays current, so the next `task check`
+      judges it red again rather than calling it out of date and passing.
+
       Stryker has no bun test-runner plugin, so it drives `bun test` as an
       opaque command and reads the exit code; coverageAnalysis is off because
       the command runner cannot do per-test filtering. Config is
       stryker.conf.json -- note ignorePatterns, which excludes a symlinked
       adventures directory that Stryker's sandbox copy cannot follow.
 
-      IN `task check`, AND NOT SCOPED. `mutate` is the glob
-      `client/src/**/*` less the browser entry point: every file in the client,
-      including any added tomorrow. It was held out while the worked-down set
-      was one file; it is in because a gate nobody runs protects nothing.
-
-      CORRECTED 2026-08-25. This said `mutate` covered "undo.ts and fold.ts",
-      and that ts-mutation-scope.md carried "the twelve remaining files" -- both
-      true before 2026-08-03 and false since, when the list became the glob. It
-      also said "adding a file to `mutate` is the last step of working it down,
-      never the first", which the glob makes impossible: a new file is gated the
-      moment it is created, so that is always the FIRST step now.
-
-      That is the right trade and it is kept deliberately -- no file should be
-      able to escape the gate by being new -- but it has a cost worth naming,
-      because it was paid: scene-plan.ts and canvas.ts were created by the maps
-      and visibility arcs, gated instantly by the glob, and never worked down.
-      They carried 65 survivors between them, unseen, because this gate was
-      broken from 2026-08-11 to 2026-08-25. A new client file is gated from
-      birth; work it to zero in the commit that adds it, or the debt is invisible
-      until something makes the gate speak again.
-
-      Runtime grows with the gated set: ~1m12s for two files, and the full
-      client measured 4m55s over 1667 mutants. If that becomes the wrong trade
-      for the merge gate, move it to a pre-merge-only task -- do not narrow
-      `mutate` to make it fast, which would weaken the gate to pass it.
-
-      LINUX-ONLY SINCE 2026-08-03 (Patrik's call), and the reason is a KERNEL
-      BUG, not a trade. macOS 26.x leaks socket memory accounting on every
-      close(): soclose_locked() -> sofree() -> sofreelastref(so, 0) passes
-      dealloc=0, skipping the sodealloc() that decrements the counters. Apple
-      DTS has REPRODUCED it -- Feedback FB21686886, discussion at
+      ON macOS 26 STRYKER RUNS IN A LINUX CONTAINER (Patrik's call,
+      2026-08-03), and the reason is a KERNEL BUG, not a trade. macOS 26.x
+      leaks socket memory accounting on every close(): soclose_locked() ->
+      sofree() -> sofreelastref(so, 0) passes dealloc=0, skipping the
+      sodealloc() that decrements the counters. Apple DTS has REPRODUCED it --
+      Feedback FB21686886, discussion at
       developer.apple.com/forums/thread/813116 -- with no fix in any release
       or beta as of May 2026 and no workaround. OpenJDK disabled networking
       tests over it. macOS 15.7.x and earlier are unaffected.
@@ -370,207 +390,85 @@ tasks:
       2026-08-03, and it dates precisely to `mutate` expanding from two files
       to the whole client.
 
-      THIS IS NOT THE GATE NARROWED TO PASS. `mutate` is untouched and no
-      threshold moved; only the KERNEL it runs on changes.
+      A container closes that hole: Docker Desktop on macOS runs a Linux VM, so
+      sockets created in it are LINUX sockets and the kernel bug simply does
+      not apply. The run is NOT narrowed to fit: same stryker.conf.json, same
+      `mutate` list, same adjudication file, same checker. Only the kernel
+      underneath changes. Native override, from a fresh boot only:
+      VTT_FORCE_TS_MUTATION=1.
 
-      Run it with `task check:ts-mutation:docker`, which executes this exact
-      gate inside a Linux container on the same machine — same config, same
-      mutate list, same adjudication file, same checker. Measured 2026-08-07:
-      1772 mutants, 1692 killed, 19 timed out, 61 adjudicated, zero
-      unadjudicated survivors. So the local signal is NOT lost on a Mac; it
-      just is not this task that provides it.
+      BOTH Node and Bun are installed in the container, and that is not
+      redundancy. Stryker itself runs under NODE -- `bunx stryker` fails with
+      "generator is not a function", because Stryker is not Bun-compatible as
+      a RUNTIME. Bun is still required because stryker.conf.json's command
+      runner shells out to `bun test`. So Node runs the mutator and Bun runs
+      the tests, exactly as the native run does with `npx`.
 
-      CI RUNS THIS GATE ONLY WHEN SOMEBODY ASKS IT TO. `.github/workflows/
-      ci.yml` is `on: workflow_dispatch:` and nothing else -- no push trigger,
-      no pull_request trigger. THE CONTAINER IS THE ONLY THING THAT RUNS THIS
-      GATE UNASKED, so `task check:ts-mutation:docker` is not a convenience,
-      it is the gate.
+      node_modules is installed INSIDE the container, into an anonymous volume
+      over the mounted one. Bun's macOS binaries would otherwise be visible to
+      a Linux process and fail to load. Requires the Docker daemon (start
+      Docker Desktop).
 
-      CORRECTED 2026-08-25, and this sentence is why the correction matters.
-      It read "CI still runs it on every push to main", which was false, and it
-      was the belief that let this gate die: it tested ZERO mutants from
-      2026-08-11 to 2026-08-25 while everyone had a documented reason to think
-      something else was covering it. Fourteen days, 125 accumulated survivors,
-      and a green `task check` on a Mac the whole time. If you find yourself
-      trusting a downstream runner named in a comment, CHECK ITS TRIGGER.
-
-      A green `task check` on a Mac has still not proven THIS gate. That is
-      what the skip banner says, and it stays loud.
-
-      DO NOT "fix" this by sharing Bun.serve per test file. Measured: only
-      ~27 of the 175 are listeners (the shareable part); the rest are
-      connections each test genuinely makes. Ceiling is ~15%, and 1667 x 148
-      is still far over budget. At 175/run everyday `bun test` gets ~920 runs
-      per boot and was never the problem -- only the 1667x multiplier is.
+      DO NOT "fix" the socket cost by sharing Bun.serve per test file.
+      Measured: only ~27 of the 175 are listeners (the shareable part); the
+      rest are connections each test genuinely makes. Ceiling is ~15%, and
+      1667 x 148 is still far over budget. At 175/run everyday `bun test` gets
+      ~920 runs per boot and was never the problem -- only the 1667x
+      multiplier is.
 
       pcbcount IS NOT THE SIGNAL. It always drains (20,000 bare sockets take
       it 25 -> 20,025 and back to 25 within 15s). The leaking counter is not
       exported by any sysctl, so the machine reads healthy right up to the
       wall. Do not check pcbcount to decide whether it is safe to run.
+
+      Its timed-out count is a measurement of the machine, not of the tests:
+      over byte-identical inputs it has read 31, 94, 322 and 31 again, the 94
+      and the 322 being loaded runs. tools/mutation-scope.md has the table;
+      read it before concluding anything from one run's timeout figure.
     cmds:
-      # ABOVE the platform guard deliberately: these are the gate-checker's own
-      # unit tests and QA's, they open no sockets, they run in well under a
-      # second, and they run nowhere else in the repo. FB21686886 is no reason
-      # to stop proving the enforcement code -- check-ts-mutation.py's own
-      # header records that 8 of 9 defects across five review rounds were in
-      # hand-rolled enforcement rather than in the thing being enforced.
-      - python3 tools/check_ts_mutation_test.py -q
-      - python3 tools/check_ts_mutation_qa_test.py -q
-      # The split's own decision logic: hashing too little reports a stale
-      # report as current, which is the gate silently ceasing to cover the
-      # client while still printing a verdict.
-      - python3 tools/ts_mutation_inputs_test.py -q
       - |
         set -e
-        # PLATFORM GUARD -- full rationale in this task's desc. Short version:
-        # macOS 26 kernel bug FB21686886 makes this gate arithmetically
-        # impossible locally (~292,000 sockets needed, ~161,000 available).
-        #
-        # Version-gated, NOT a blanket Darwin skip: macOS 15.7.x and earlier
-        # do not have the bug, and skipping there would take a working gate
-        # away for no reason. Darwin major 25 IS macOS 26 (25.2.0 = 26.2), so
-        # the test is >= 25. When Apple ships a fix, raise the ceiling here
-        # rather than deleting the guard -- the affected range is closed at
-        # the bottom and still open at the top.
-        # SPLIT INTO A CHEAP HALF AND AN EXPENSIVE ONE (2026-08-28, Patrik's
-        # call). PRODUCING the report costs 62 minutes in the container;
-        # CHECKING it costs 2.7 seconds against the stored report. Only the
-        # second is needed when the checker or the adjudication file changes.
-        # On 2026-08-27 six commits were pushed, NONE of which touched anything
-        # Stryker mutates, and the 62 minutes were spent anyway.
-        #
-        # So the verify runs every time and the mutate runs only when the
-        # report's inputs hash differently than when it was made. That is what
-        # makes it affordable to invoke the CONTAINER from here rather than
-        # printing a banner and hoping somebody types it -- the honour-system
-        # arrangement that let this gate test zero mutants for fourteen days.
-        REPORT=reports/mutation/mutation.json
-        STAMP=reports/mutation/ts-inputs.sha256
-        WANT="$(python3 tools/ts-mutation-inputs.py || true)"
-        HAVE=""
-        [ -f "$STAMP" ] && HAVE="$(cat "$STAMP")"
-        # FAIL TOWARDS PRODUCING. No report, no stamp, an unhashable tree, or
-        # any mismatch all mean re-measure. Only an exact match on a report
-        # that exists may skip the expensive half.
-        NEED_REPORT=1
-        if [ -f "$REPORT" ] && [ -n "$WANT" ] && [ "$WANT" = "$HAVE" ]; then NEED_REPORT=0; fi
-
+        # BEFORE Stryker, and only this snapshot is stamped: re-hashing after
+        # an hour-long run would certify a report that predates any edit made
+        # while it ran.
+        SNAP="$(python3 tools/ts-mutation-report.py snapshot)"
+        # PLATFORM GUARD. Version-gated, NOT a blanket Darwin check: macOS
+        # 15.7.x and earlier do not have the bug. Darwin major 25 IS macOS 26
+        # (25.2.0 = 26.2), so the test is >= 25. When Apple ships a fix, raise
+        # the ceiling here rather than deleting the guard -- the affected
+        # range is closed at the bottom and still open at the top.
         DARWIN_MAJOR=0
         if [ "$(uname -s)" = "Darwin" ]; then DARWIN_MAJOR="$(uname -r | cut -d. -f1)"; fi
-
-        if [ "$NEED_REPORT" = "0" ]; then
-          echo "check:ts-mutation: client sources, tests, config and lockfile are"
-          echo "  unchanged since the stored report was produced. Verifying that"
-          echo "  report; not re-mutating. (Force: rm $STAMP)"
-        elif [ "$DARWIN_MAJOR" -ge 25 ] && [ "${VTT_FORCE_TS_MUTATION:-0}" != "1" ]; then
-          echo "==============================================================" >&2
-          echo "  check:ts-mutation cannot run NATIVELY on macOS 26" >&2
-          echo "  (kernel bug FB21686886), so it is running in the Linux" >&2
-          echo "  container instead. THIS IS NOT A SKIP." >&2
-          echo "" >&2
-          echo "  Needs ~292,000 socket creations; macOS 26 allows ~161,000" >&2
-          echo "  per boot before socket() returns ENOBUFS. Same config, same" >&2
-          echo "  mutate list, same checker -- only the kernel changes." >&2
-          echo "" >&2
-          echo "  IT COSTS ABOUT AN HOUR and needs Docker Desktop running." >&2
-          echo "  You are seeing this because the client sources, tests," >&2
-          echo "  config or lockfile changed since the stored report was" >&2
-          echo "  made; nothing else triggers it." >&2
-          echo "" >&2
-          echo "  NOTHING ELSE WILL PROVE IT FOR YOU. CI is" >&2
-          echo "  workflow_dispatch-only -- it runs when somebody asks, not" >&2
-          echo "  on push. This banner used to say CI was AUTHORITATIVE, and" >&2
-          echo "  that is how the gate tested zero mutants for 14 days in" >&2
-          echo "  August 2026 while everyone read this and moved on. It then" >&2
-          echo "  said to run the container YOURSELF, which was the same" >&2
-          echo "  honour system wearing a different hat; now the gate runs it." >&2
-          echo "" >&2
-          echo "  Native override (fresh boot only): VTT_FORCE_TS_MUTATION=1" >&2
-          echo "==============================================================" >&2
-          task check:ts-mutation:docker
-          # $WANT, not a fresh hash: it describes the tree the report was made
-          # from. Re-hashing after an hour-long run would certify a report that
-          # predates any edit made while it ran.
-          [ -n "$WANT" ] || { echo "check:ts-mutation: inputs unhashable; refusing to stamp" >&2; exit 1; }
-          printf '%s\n' "$WANT" > "$STAMP"
+        # NO PIPES anywhere below, for the reason check:coverage and
+        # check:mutation both document: `cmd | tail` takes the pipeline's
+        # status without pipefail, so under `set -e` a failing run ships green.
+        if [ "$DARWIN_MAJOR" -ge 25 ] && [ "${VTT_FORCE_TS_MUTATION:-0}" != "1" ]; then
+          if ! docker info >/dev/null 2>&1; then
+            echo "check:ts-mutation:full: the Docker daemon is not running — start Docker Desktop" >&2
+            exit 1
+          fi
+          docker run --rm \
+            -v "$PWD":/repo \
+            -v /repo/node_modules \
+            -w /repo \
+            --entrypoint bash \
+            oven/bun:1.3.10-debian \
+            -c 'set -e
+                apt-get update -qq && apt-get install -y -qq python3 nodejs npm procps >/dev/null
+                bun install --frozen-lockfile
+                # Stryker sandboxes carry a SYMLINKED node_modules, and a crashed
+                # run leaves them behind in the repo. check_mutation_test.py
+                # then fails the whole gate on "a symlink gremlins drops must be
+                # recorded with its consequence" — correctly, since an
+                # unrecorded symlink in the tree is exactly what that guard
+                # exists to catch. Clean up on the way out, whatever happened.
+                trap "rm -rf /repo/.stryker-tmp" EXIT
+                npx stryker run stryker.conf.json'
         else
-          # NO PIPES here, for the reason check:coverage and check:mutation both
-          # document: `cmd | tail` takes the pipeline's status without pipefail,
-          # so under `set -e` a failing gate ships green. A guard that swallows
-          # a real failure is worse than no guard at all.
           npx stryker run stryker.conf.json
-          [ -n "$WANT" ] || { echo "check:ts-mutation: inputs unhashable; refusing to stamp" >&2; exit 1; }
-          printf '%s\n' "$WANT" > "$STAMP"
         fi
-        # ALWAYS, on every path: the verdict is recomputed from the report
-        # against the CURRENT adjudication file, so an entry edited since the
-        # report was produced is still judged.
+        python3 tools/ts-mutation-report.py stamp "$SNAP"
         python3 tools/check-ts-mutation.py tools/ts-mutation-equivalents.txt
-
-  check:ts-mutation:docker:
-    desc: >
-      check:ts-mutation, run on LINUX inside a container, from a Mac.
-
-      This exists because the gate above cannot run on macOS 26.x — FB21686886
-      leaks socket accounting per close(), so the ~292,000 sockets a full run
-      costs exceed the machine's ~161,000-per-boot budget and take DNS, curl
-      and every socket-opening test down with it. CI on ubuntu-latest was the
-      only place the gate spoke.
-
-      A container closes that hole: Docker Desktop on macOS runs a Linux VM, so
-      sockets created in here are LINUX sockets and the kernel bug simply does
-      not apply. Verified by running the gate and watching it complete rather
-      than by reasoning about it.
-
-      The gate is NOT narrowed to fit: same stryker.conf.json, same `mutate`
-      list, same adjudication file, same checker. Only the kernel underneath
-      changes. That is what makes this a substitute for CI rather than a
-      weaker stand-in.
-
-      BOTH Node and Bun are installed, and that is not redundancy. Stryker
-      itself runs under NODE — `bunx stryker` fails with "generator is not a
-      function", because Stryker is not Bun-compatible as a RUNTIME. Bun is
-      still required because stryker.conf.json's command runner shells out to
-      `bun test`. So Node runs the mutator and Bun runs the tests, exactly as
-      the native task does with `npx`.
-
-      The Go toolchain is NOT needed, because this runs ONE gate.
-      Every other gate in `task check` already runs natively on macOS; this is
-      the single exception, which is exactly why it is worth containerising.
-
-      node_modules is installed INSIDE the container, into an anonymous volume
-      over the mounted one. Bun's macOS binaries would otherwise be visible to
-      a Linux process and fail to load.
-
-      Requires the Docker daemon (start Docker Desktop). Costs no GitHub
-      Actions minutes, which is the point while the allowance is exhausted.
-    cmds:
-      - |
-        set -e
-        if ! docker info >/dev/null 2>&1; then
-          echo "check:ts-mutation:docker: the Docker daemon is not running — start Docker Desktop" >&2
-          exit 1
-        fi
-        # NO PIPES, same reason the native task documents: a pipeline hides the
-        # exit status and a failing gate would ship green.
-        docker run --rm \
-          -v "$PWD":/repo \
-          -v /repo/node_modules \
-          -w /repo \
-          --entrypoint bash \
-          oven/bun:1.3.10-debian \
-          -c 'set -e
-              apt-get update -qq && apt-get install -y -qq python3 nodejs npm procps >/dev/null
-              bun install --frozen-lockfile
-              # Stryker sandboxes carry a SYMLINKED node_modules, and a crashed
-              # run leaves them behind in the repo. check_mutation_test.py
-              # then fails the whole gate on "a symlink gremlins drops must be
-              # recorded with its consequence" — correctly, since an
-              # unrecorded symlink in the tree is exactly what that guard
-              # exists to catch. Clean up on the way out, whatever happened.
-              trap "rm -rf /repo/.stryker-tmp" EXIT
-              npx stryker run stryker.conf.json
-              python3 tools/check-ts-mutation.py tools/ts-mutation-equivalents.txt'
 
   check:ts-coverage:
     desc: >

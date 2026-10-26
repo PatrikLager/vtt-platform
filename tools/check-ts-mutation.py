@@ -626,8 +626,8 @@ def main(argv):
     root = REPO
     report_path = root / "reports" / "mutation" / "mutation.json"
     if not report_path.exists():
-        print(f"check:ts-mutation: {report_path} not found — run stryker first "
-              f"(task check:ts-mutation does).", file=sys.stderr)
+        print(f"check:ts-mutation: {report_path} not found — the full run, "
+              f"task check:ts-mutation:full, writes it.", file=sys.stderr)
         return 1
     try:
         equivalents = read_equivalents(argv[1])

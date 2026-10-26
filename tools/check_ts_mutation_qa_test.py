@@ -11,8 +11,6 @@ import io
 import json
 import os
 import re
-import subprocess
-import sys
 import tempfile
 import unittest
 
@@ -40,21 +38,19 @@ REAL_REPORT = os.environ.get(
 
 
 def _report_is_current():
-    """Stryker's report describes the tree only while its input stamp matches;
-    a stale one would red these tests over a client change Stryker has not yet
-    measured, so they skip instead."""
+    """Stryker's report describes the tree only while its stamp's input hash is
+    the tree's; a stale one would red these tests over a client change Stryker
+    has not yet measured, so they skip instead. tools/ts-mutation-report.py is
+    the one reader of the stamp."""
     if not os.path.exists(REAL_REPORT):
         return False
     if os.environ.get("QA_TS_MUTATION_REPORT"):
         return True
-    try:
-        with open(os.path.join(REPO, "reports", "mutation", "ts-inputs.sha256")) as fh:
-            have = fh.read().strip()
-    except OSError:
-        return False
-    want = subprocess.run([sys.executable, os.path.join(REPO, "tools", "ts-mutation-inputs.py")],
-                          capture_output=True, text=True, cwd=REPO).stdout.strip()
-    return bool(want) and want == have
+    spec = importlib.util.spec_from_file_location(
+        "ts_mutation_report_for_qa", os.path.join(REPO, "tools", "ts-mutation-report.py"))
+    report = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(report)
+    return report.report_state(REPO)[0] == "current"
 
 A = "client/src/a.ts"
 B = "client/src/b.ts"
