@@ -338,6 +338,7 @@ tasks:
       # gate silently ceasing to cover the client while still printing a
       # verdict.
       - python3 tools/ts_mutation_inputs_test.py -q
+      - python3 tools/ts_mutation_inputs_qa_test.py -q
       # It reads this Taskfile with `task --dry`, which runs none of `check`'s
       # commands, so it can be a command of this step without running it.
       - python3 tools/ts_mutation_report_test.py -q

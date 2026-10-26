@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Gate the gate: ts-mutation-inputs.py decides whether 62 minutes are spent.
+"""Gate the gate: ts-mutation-inputs.py decides whether the stored client
+mutation report is current, and so whether `task check` judges it or says the
+client's mutation was not measured (SPEC-023).
 
 Its failure modes are asymmetric and that shapes every test here. Hashing too
-MUCH costs a re-mutation nobody needed — minutes. Hashing too LITTLE reports a
-stale report as current, which is a gate that stopped covering the client while
-still printing a verdict. So every test below asks "does this input move the
-hash", and the ones that must NOT move it are named explicitly rather than left
-to inference.
+MUCH calls a report out of date that still describes the client — a warning
+nobody needed. Hashing too LITTLE reports a stale report as current, which is a
+gate that stopped covering the client while still printing a verdict. So every
+test below asks "does this input move the hash", and the ones that must NOT
+move it are named explicitly rather than left to inference.
 """
 
 import importlib.util
@@ -28,6 +30,12 @@ def tree(**files):
         "client/test/wire.test.ts": "test('a', () => {})\n",
         "stryker.conf.json": '{"mutate":["client/src/**/*.ts"]}\n',
         "package.json": '{"devDependencies":{"@stryker-mutator/core":"8.2.6"}}\n',
+        "contract/gen/ts/vtt/v1/events_pb.ts": "export const e = 1\n",
+        "contract/testdata/join_url_format.json": '{"a": 1}\n',
+        "scenarios/goldens/adventure-night/state.json": '{"s": 1}\n',
+        "campaigns/example/art/goblin.png": "png\n",
+        "contract/gen/tools/tools.json": '{"tools": []}\n',
+        "campaigns/example/maps/cellar.json": '{"cells": []}\n',
     }
     base.update(files)
     for rel, content in base.items():
@@ -40,8 +48,8 @@ def tree(**files):
 
 class InputsHash(unittest.TestCase):
     def test_the_same_tree_hashes_the_same(self):
-        # The control. A hash that moved on its own would re-mutate every run
-        # and the split would buy nothing.
+        # The control. A hash that moved on its own would call every report out
+        # of date, and the client's mutation would never read as measured.
         root = tree()
         self.assertEqual(tsmi.inputs_hash(root), tsmi.inputs_hash(root))
 
@@ -78,9 +86,9 @@ class InputsHash(unittest.TestCase):
         self.assertNotEqual(a, b)
 
     def test_a_file_that_is_not_an_input_does_NOT_move_it(self):
-        # THE POINT OF THE WHOLE SPLIT. The checker and the adjudication file
-        # change the VERDICT, which is recomputed from the stored report every
-        # run — re-mutating for them would spend 62 minutes to learn nothing.
+        # The checker and the adjudication file change the VERDICT, which
+        # `task check` recomputes from a current report every run; counting
+        # them would call that report out of date for nothing.
         a = tsmi.inputs_hash(tree())
         b = tsmi.inputs_hash(tree(**{
             "tools/check-ts-mutation.py": "# edited\n",
@@ -89,7 +97,7 @@ class InputsHash(unittest.TestCase):
         self.assertEqual(a, b)
 
     def test_a_missing_mutated_tree_is_not_UNCHANGED(self):
-        # Fail towards producing: a client/src that is not there is a lookup
+        # Fail towards out of date: a client/src that is not there is a lookup
         # that went wrong, not evidence that nothing changed.
         root = tree()
         for f in os.listdir(os.path.join(root, "client/src")):
@@ -99,6 +107,84 @@ class InputsHash(unittest.TestCase):
 
     def test_an_unreadable_root_is_not_UNCHANGED(self):
         self.assertIsNone(tsmi.inputs_hash("/nonexistent/root/for/this/test"))
+
+    def test_a_package_json_that_is_not_an_object_still_hashes(self):
+        for text in ("[]\n", '{"devDependencies": []}\n'):
+            with self.subTest(text=text):
+                self.assertIsNotNone(tsmi.inputs_hash(tree(**{"package.json": text})))
+
+
+class OutsideTheClient(unittest.TestCase):
+    """What the client imports, or its tests read by a path written in them,
+    from outside client/ (VTT-516)."""
+
+    def moved(self, rel, content):
+        return tsmi.inputs_hash(tree()) != tsmi.inputs_hash(tree(**{rel: content}))
+
+    def test_the_generated_contract_moves_it(self):
+        # VTT-516
+        self.assertTrue(self.moved("contract/gen/ts/vtt/v1/events_pb.ts", "export const e = 2\n"))
+        self.assertTrue(self.moved("contract/gen/ts/vtt/v1/commands_pb.ts", "export const c = 1\n"))
+
+    def test_the_contract_testdata_moves_it(self):
+        # VTT-516
+        self.assertTrue(self.moved("contract/testdata/join_url_format.json", '{"a": 2}\n'))
+
+    def test_a_golden_moves_it(self):
+        # VTT-516
+        self.assertTrue(self.moved("scenarios/goldens/adventure-night/state.json", '{"s": 2}\n'))
+
+    def test_the_example_art_moves_it(self):
+        # VTT-516
+        self.assertTrue(self.moved("campaigns/example/art/goblin.png", "png2\n"))
+        self.assertTrue(self.moved("campaigns/example/art/goblin.json", '{"g": 1}\n'))
+
+    def test_the_tool_definitions_and_the_example_map_move_it(self):
+        # VTT-516
+        self.assertTrue(self.moved("contract/gen/tools/tools.json", '{"tools": [1]}\n'))
+        self.assertTrue(self.moved("campaigns/example/maps/cellar.json", '{"cells": [1]}\n'))
+
+    def test_a_missing_contract_tree_is_not_UNCHANGED(self):
+        root = tree()
+        os.remove(os.path.join(root, "contract/gen/ts/vtt/v1/events_pb.ts"))
+        for d in ("contract/gen/ts/vtt/v1", "contract/gen/ts/vtt", "contract/gen/ts"):
+            os.rmdir(os.path.join(root, d))
+        self.assertIsNone(tsmi.inputs_hash(root))
+
+    def test_every_path_the_client_writes_outside_client_is_hashed(self):
+        # VTT-516. A path built from pieces is not seen; a template literal
+        # opening ${import.meta.dir}/ is.
+        import re
+        repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        literal = re.compile(r"""["'`](?:\$\{import\.meta\.dir\}/)?(\.\./[^"'`$\s]+)["'`]""")
+        outside = set()
+        for top in ("client/src", "client/test"):
+            for dirpath, _dirs, names in os.walk(os.path.join(repo, top)):
+                for n in names:
+                    if not n.endswith(".ts"):
+                        continue
+                    path = os.path.join(dirpath, n)
+                    with open(path, encoding="utf-8") as fh:
+                        text = fh.read()
+                    for lit in literal.findall(text):
+                        rel = os.path.relpath(os.path.normpath(
+                            os.path.join(os.path.dirname(path), lit)), repo)
+                        if not rel.startswith("client" + os.sep):
+                            outside.add((rel.replace(os.sep, "/"), os.path.relpath(path, repo)))
+        self.assertTrue(outside, "no path leaves client/, so this test sees nothing")
+
+        def hashed(rel):
+            for cand in (rel, rel + ".ts", re.sub(r"\.js$", ".ts", rel)):
+                full = os.path.join(repo, cand)
+                if os.path.isdir(full):
+                    return any(cand == t or cand.startswith(t + "/") for t, _ in tsmi.TREES)
+                if os.path.isfile(full):
+                    return cand in tsmi.FILES or any(
+                        cand.startswith(t + "/") and cand.endswith(sfx) for t, sfx in tsmi.TREES)
+            return False
+
+        for rel, where in sorted(outside):
+            self.assertTrue(hashed(rel), f"{where} names {rel}, which the hash does not read")
 
 
 class Wiring(unittest.TestCase):
@@ -143,8 +229,8 @@ class Wiring(unittest.TestCase):
         self.assertEqual(len(buf.getvalue().strip()), 64)
 
     def test_main_refuses_rather_than_printing_nothing(self):
-        # The caller reads a non-zero exit as "produce the report". Printing an
-        # empty hash with status 0 would read as "unchanged" instead.
+        # The caller reads a non-zero exit as "out of date". Printing an empty
+        # hash with status 0 would read as "unchanged" instead.
         self.assertEqual(tsmi.main(["prog", "/nonexistent/root"]), 1)
 
 
