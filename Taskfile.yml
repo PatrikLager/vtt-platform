@@ -395,8 +395,9 @@ tasks:
       sockets created in it are LINUX sockets and the kernel bug simply does
       not apply. The run is NOT narrowed to fit: same stryker.conf.json, same
       `mutate` list, same adjudication file, same checker. Only the kernel
-      underneath changes. Native override, from a fresh boot only:
-      VTT_FORCE_TS_MUTATION=1.
+      underneath changes. Do not narrow `mutate` to make the run fast either,
+      which would weaken the gate to pass it. Native override, from a fresh
+      boot only: VTT_FORCE_TS_MUTATION=1.
 
       BOTH Node and Bun are installed in the container, and that is not
       redundancy. Stryker itself runs under NODE -- `bunx stryker` fails with

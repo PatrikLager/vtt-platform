@@ -1051,13 +1051,14 @@ output stops among passing tests, so the report does not show what killed
 them. `--only-failures` in `stryker.conf.json`'s command makes a passing run
 print almost nothing, which leaves a test that prints a great deal on its own.
 Recipe: add to any file under `client/test` a test that passes after
-`console.log("x".repeat(1_100_000))`; every mutant `check:ts-mutation` runs is
-then Killed, the surviving ones included, and the gate is green (not run). The
-gate should have caught it, and trusts the exit code it is given. Labels:
-`outside the tool`. Closing it needs `maxBuffer` raised through Stryker's
-configuration if it offers one, or a check in `tools/check-ts-mutation.py`
-that refuses a killed mutant whose output holds no failing test. Recorded
-2026-10-08 by the command-id report, from the review of the `--bail` change.
+`console.log("x".repeat(1_100_000))`; every mutant `check:ts-mutation:full`
+runs is then Killed, the surviving ones included, and the gate is green (not
+run). The gate should have caught it, and trusts the exit code it is given.
+Labels: `outside the tool`. Closing it needs `maxBuffer` raised through
+Stryker's configuration if it offers one, or a check in
+`tools/check-ts-mutation.py` that refuses a killed mutant whose output holds
+no failing test. Recorded 2026-10-08 by the command-id report, from the review
+of the `--bail` change.
 
 **The contract's doc comment on `PromoteParticipant` says it is the only
 command that appends no event.** `contract/vtt/v1/commands.proto` documents

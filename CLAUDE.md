@@ -41,8 +41,13 @@ guesses at these runs gates that do not run.
   commit unless a review record matches the tree being committed or a
   user-approved skip reason is given); pre-push runs tiers 2-3 and the contract
   gates, drift and breaking; everything else — coverage, race, the prose gates,
-  the requirements chain, `check:comments` and both mutation gates — runs when
-  somebody types `task check` and at no other time.
+  the requirements chain, `check:comments` and the Go mutation gate — runs when
+  somebody types `task check` and at no other time. `task check` also judges
+  the client's stored mutation report while it is current, naming the commit
+  it measured; when it is out of date, it judges nothing, names that commit
+  and the tickets added since, and passes. The client's full mutation run,
+  `task check:ts-mutation:full`, run only when the owner asks for it, produces
+  and judges it (SPEC-023).
   So the cycle's "run the gate locally" is not a courtesy here: half these
   gates run at no other time, and nothing downstream will notice if it is
   skipped.

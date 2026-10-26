@@ -142,9 +142,10 @@ function oneofCases(schema: OneofHolder, oneof: string): string[] {
  * green run. Narrow the pattern to `/^retract$/i` and both stay green forever
  * while a re-added `EventsRetracted` sails through. Break the descriptor walk
  * so it yields nothing and `[].filter(...)` is `[]`, which is the answer the
- * assertion wants. No mutation gate scores this file — `check:ts-mutation`'s
- * glob is `client/src/**` — and a repo-wide `retract` grep still sees the word
- * in the pattern and calls it clean, so nothing else catches either move.
+ * assertion wants. No mutation gate scores this file — `stryker.conf.json`'s
+ * `mutate` glob is `client/src/**` — and a repo-wide `retract` grep still
+ * sees the word in the pattern and calls it clean, so nothing else catches
+ * either move.
  *
  * The bounds are LOWER BOUNDS well under the real sizes (58 messages, 42 arms
  * at the time of writing) and no count is asserted: this must not rot the day

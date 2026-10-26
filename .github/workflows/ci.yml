@@ -7,7 +7,7 @@
 #
 # The tiers (Taskfile.yml) run earlier and faster: pre-commit gets tier 1 in
 # ~7s, pre-push gets tiers 2-3 in ~40s. CI is where coverage ratcheting and
-# mutation testing live, because they are minutes-long and belong to the
+# the Go mutation gate live, because they are minutes-long and belong to the
 # whole-product tier.
 
 name: check
@@ -24,9 +24,10 @@ name: check
 # WHAT ACTUALLY REPLACES IT, and this is why the gate is not weakened: `task
 # check` runs natively on the laptop and is the same single command CI runs —
 # CI deliberately has no parallel definition of "green" that could drift. The
-# one gate that cannot run on macOS (FB21686886) runs in a Linux container via
-# `task check:ts-mutation:docker`, locally, for nothing. So the signal is not
-# lost; it costs a developer's wall-clock instead of Patrik's money.
+# client's full mutation run, which cannot run on macOS (FB21686886), runs in a
+# Linux container via `task check:ts-mutation:full`, locally, when the owner
+# asks for it. So the signal is not lost; it costs a developer's wall-clock
+# instead of Patrik's money.
 #
 # WHAT IS GENUINELY LOST: a clean checkout. CI catches what a developer's tree
 # hides — a file never committed, a stale generated artifact, a tool only
@@ -57,7 +58,7 @@ jobs:
     #
     # The two obvious ways to fit inside 30 are both barred, and deliberately:
     # narrowing `mutate` is "weakening a gate to pass it" (CLAUDE.md rule 2,
-    # and check:ts-mutation's own desc says so outright), and splitting the
+    # and check:ts-mutation:full's own desc says so outright), and splitting the
     # mutation gates into a parallel job would grow the second definition of
     # "green" this workflow's header exists to prevent. So the honest lever is
     # the ceiling. Set well above the projection rather than just over it --
