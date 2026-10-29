@@ -898,9 +898,8 @@ test("every group carries a heading", () => {
 });
 
 test("a group's row holds only its elements, with no stray text", () => {
-  // `const row: HTMLElement[] = []` seeded with a sentinel, and
-  // `if (text !== undefined) n.textContent = text` forced true, both leak
-  // text into containers that should hold only controls.
+  // `const row: HTMLElement[] = []` seeded with a sentinel leaks that sentinel
+  // as text into a row that should hold only controls.
   //
   // BOTH `row` DECLARATIONS, not just Adventures': dm.ts has two identical
   // `const row: HTMLElement[] = [];` statements (Adventures and Maps), and
@@ -970,9 +969,8 @@ test("elements created without a class carry no class, not the string 'undefined
 });
 
 test("a group carries no stray text of its own", () => {
-  // `if (text !== undefined) n.textContent = text` -> always-assign sets
-  // textContent to undefined on the container elements, which renders the
-  // literal word "undefined" above every group.
+  // A group's own children are its heading and its row, both elements: a text
+  // node here is text written into the group itself.
   for (const g of Array.from(harness().node.querySelectorAll(".dmgroup"))) {
     for (const node of Array.from(g.childNodes)) expect(node.nodeType).toBe(1);
   }

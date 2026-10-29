@@ -1,11 +1,7 @@
 // The join form: the only screen a person sees before they have a credential.
 //
-// Written without the shared el() helper on purpose. That helper's optional
-// `text` argument carries a documented mutation the harness cannot observe
-// (happy-dom drops an undefined textContent, a real browser renders the word
-// "undefined"), and there is no reason to import that problem into a view this
-// small — every node here has text or does not, decided at the point it is
-// built.
+// Written without an el() helper on purpose: every node here has text or does
+// not, decided at the point it is built.
 
 import { replaceKeepingFocus } from "./focus";
 

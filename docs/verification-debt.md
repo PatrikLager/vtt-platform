@@ -605,6 +605,37 @@ Three tests, each seen red (observed 2026-10-25):
   all", on `1001ec5`'s bundle, where the Say boxes carried no `data-field`
   and kept no text.
 
+## 2026-10-25 — a dm-view comment said el()'s guard forced true leaks text
+
+**A dm-view comment says el()'s guard forced true leaks text.**
+`client/test/dm-view.test.ts`'s "a group's row holds only its elements, with
+no stray text" opens with a comment saying that `if (text !== undefined)
+n.textContent = text` forced true leaks text into containers. Under that
+mutant, made by hand in `client/src/view/dm.ts`, the client suite stays green,
+and el()'s own `// Stryker disable` comment says why: happy-dom coerces an
+undefined `textContent` to `""`. Recipe: none; the comment is false as it
+stands. Which gate should have caught it, and why not: none; no gate reads a
+test comment's claim about a mutant. Labels: `test asserts nothing`. Closing
+it needs the comment to say what the test does pin, the `const row` sentinel.
+Recorded 2026-10-25 by the reviews of Task 1 of
+`docs/superpowers/plans/2026-10-25-a-repaint-keeps-what-is-being-typed.md` and
+of `docs/reports/2026-10-25-a-repaint-keeps-what-is-being-typed.md`.
+
+**Closed by** the comments Task 1 of
+`docs/superpowers/plans/2026-10-29-a-refused-command-keeps-what-was-typed.md`
+rewrote. The claim was wider than this entry: el()'s `// Stryker disable`
+reasons in `client/src/view/dm.ts`, `client/src/view/spectator.ts` and
+`client/src/view/player.ts`, the header of `client/src/view/join.ts` and two
+paragraphs of `tools/ts-mutation-equivalents.txt` said a real browser writes
+the word "undefined", and the comments of this test and of "a group carries
+no stray text of its own" said the guard forced true puts text, or that word,
+into a container. Chromium 143 does not: `textContent = undefined`
+leaves a `div` that held a `span` empty, with no child nodes, as happy-dom
+does (observed 2026-10-29). The test comment now names the `const row`
+sentinel; the three directives stay, by the owner's ruling, each with a
+warning that only forced true is equivalent, and only while the element is
+empty, and that the directive hides forced false too. Recipe: none; the defect was prose.
+
 ## Open debt
 
 **`migrateLocked`'s re-read error arm is unreachable through `testdb`.**
@@ -1113,17 +1144,3 @@ Closing it needs a `server_internal_test.go` case whose `encodeFrame` fails a
 frame after it. Recorded 2026-10-21 by the reading review of the
 specification step of
 `docs/superpowers/specs/2026-10-20-the-client-follows-the-log-it-is-sent-design.md`.
-
-**A dm-view comment says el()'s guard forced true leaks text.**
-`client/test/dm-view.test.ts`'s "a group's row holds only its elements, with
-no stray text" opens with a comment saying that `if (text !== undefined)
-n.textContent = text` forced true leaks text into containers. Under that
-mutant, made by hand in `client/src/view/dm.ts`, the client suite stays green,
-and el()'s own `// Stryker disable` comment says why: happy-dom coerces an
-undefined `textContent` to `""`. Recipe: none; the comment is false as it
-stands. Which gate should have caught it, and why not: none; no gate reads a
-test comment's claim about a mutant. Labels: `test asserts nothing`. Closing
-it needs the comment to say what the test does pin, the `const row` sentinel.
-Recorded 2026-10-25 by the reviews of Task 1 of
-`docs/superpowers/plans/2026-10-25-a-repaint-keeps-what-is-being-typed.md` and
-of `docs/reports/2026-10-25-a-repaint-keeps-what-is-being-typed.md`.

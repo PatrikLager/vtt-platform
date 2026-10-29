@@ -24,15 +24,9 @@ import {
 function el(tag: string, cls?: string, text?: string): HTMLElement {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
-  // Stryker disable next-line ConditionalExpression: no test can evaluate this
-  // one. Removing the guard sets textContent to undefined, which a REAL
-  // browser stringifies to the word "undefined" above every container — a
-  // genuine defect — while happy-dom coerces it to "" and produces no text
-  // node at all (measured, not assumed). So the mutant is observable in
-  // production and invisible to the harness. Recorded here rather than in
-  // ts-mutation-equivalents.txt, because it is NOT equivalent and claiming so
-  // would be the exact wrong-adjudication that file warns about. The e2e in a
-  // real browser is where this would surface.
+  // Stryker disable next-line ConditionalExpression: only forced true is equivalent
+  // and only while n is empty, yet this hides forced false too: drop the directive
+  // before n can hold children when this line runs.
   if (text !== undefined) n.textContent = text;
   return n;
 }

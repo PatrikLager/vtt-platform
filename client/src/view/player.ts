@@ -36,11 +36,9 @@ export interface Switcher {
 function el(tag: string, cls?: string, text?: string): HTMLElement {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
-  // Stryker disable next-line ConditionalExpression: the third copy of this
-  // guard (see view/dm.ts and view/spectator.ts). Removing it sets textContent
-  // to undefined, which a real browser stringifies and happy-dom coerces to ""
-  // — observable in production, invisible to the harness, therefore NOT
-  // equivalent and deliberately not filed in ts-mutation-equivalents.txt.
+  // Stryker disable next-line ConditionalExpression: only forced true is equivalent
+  // and only while n is empty, yet this hides forced false too: drop the directive
+  // before n can hold children when this line runs.
   if (text !== undefined) n.textContent = text;
   return n;
 }
