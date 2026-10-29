@@ -3,9 +3,11 @@
 ## Status
 
 Accepted. Implemented by `tools/check-mutation.py`, the Go gate over gremlins,
-and `tools/check-ts-mutation.py`, the TypeScript gate over Stryker's report,
-which `Taskfile.yml`'s `check:mutation` and `check:ts-mutation` steps run
-inside `task check`, and by the entries in `tools/mutation-equivalents.txt`
+which `Taskfile.yml`'s `check:mutation` step runs inside `task check`, and
+`tools/check-ts-mutation.py`, the TypeScript gate over Stryker's report, which
+`check:ts-mutation` runs inside `task check` over a current stored report and
+`check:ts-mutation:full`, the full run, runs at its end, once the report is
+stamped (SPEC-023), and by the entries in `tools/mutation-equivalents.txt`
 and `tools/ts-mutation-equivalents.txt`; pinned by
 `tools/check_mutation_test.py` and `tools/check_ts_mutation_test.py`, and by
 QA's `tools/check_mutation_qa_test.py` and `tools/check_ts_mutation_qa_test.py`,
@@ -63,7 +65,9 @@ are stale. A timed-out mutant never becomes unadjudicated.
 
 **A static check of every entry against the tree runs before the gate matches
 any survivor:** in Go before gremlins runs, in TypeScript once Stryker has
-written its report and before the gate goes through its mutants. It refuses
+written its report and before the gate goes through its mutants. In `task
+check` the TypeScript gate and its static check run only over a current
+stored report (SPEC-023). The static check refuses
 an entry whose file cannot be read; whose code stands in the file a number of
 times other than `copies` (VTT-302); whose `nth` is above `copies`; that
 shares its key with another entry; whose code begins as a comment does (`//`,
