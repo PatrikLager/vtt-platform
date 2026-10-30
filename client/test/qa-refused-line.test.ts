@@ -1,7 +1,9 @@
-// Independent QA of the player panel's Say form, VTT-518, VTT-520 to VTT-524
-// and VTT-526.
+// Independent QA of the Say forms: a player's panel's (VTT-518, VTT-520,
+// VTT-522 to VTT-524, VTT-526) and the DM console's, which a DM's or an
+// agent's table draws (VTT-517, VTT-521, VTT-522, VTT-529, VTT-530, VTT-533
+// to VTT-537).
 
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import "./support/dom";
 import type {
   ClientCommand, CommandResult,
@@ -11,6 +13,7 @@ import type { Me } from "../src/metadata";
 import { newState } from "../src/state";
 import { renderPlayerPanel, type PlayerUIState } from "../src/view/player";
 import { held, ok, refused, settle } from "./support/answers";
+import { forgetTheSay, sayConsole } from "./support/say";
 
 type Send = (c: ClientCommand) => Promise<CommandResult>;
 
@@ -40,16 +43,21 @@ function table(role: Me["role"], answer: Send): Table {
     repaints: 0,
     view: document.createElement("div"),
     paint() {
-      t.view = renderPlayerPanel(st, me, [], t.ui, send, () => {
+      const asked = () => {
         t.repaints++;
         t.paint();
-      });
+      };
+      t.view = role === "player"
+        ? renderPlayerPanel(st, me, [], t.ui, send, asked)
+        : sayConsole(st, send, asked);
       return t.view;
     },
   };
   t.paint();
   return t;
 }
+
+afterEach(forgetTheSay);
 
 const answering = (r: CommandResult): Send => () => Promise.resolve(r);
 
@@ -186,7 +194,7 @@ test("after a refusal, Send sends the same line again", async () => {
   expect(line(t.sent[1]).actorId).toBe("a1");
 });
 
-// VTT-504, VTT-520, VTT-521, VTT-522
+// VTT-529, VTT-533, VTT-521, VTT-522
 test("a DM's accepted line keeps say-as and the next line carries it", async () => {
   const t = table("dm", answering(ok()));
   type(t.view, "say-as", "Grimble");
@@ -205,7 +213,7 @@ test("a DM's accepted line keeps say-as and the next line carries it", async () 
   expect(line(t.sent[1]).as).toBe("Grimble");
 });
 
-// VTT-518, VTT-521, VTT-522
+// VTT-517, VTT-521, VTT-522, VTT-534
 test("a DM's refused line keeps both say-as and say-text", async () => {
   const t = table("dm", answering(refused("not now")));
   type(t.view, "say-as", "Grimble");
@@ -218,7 +226,7 @@ test("a DM's refused line keeps both say-as and say-text", async () => {
   expect(field(next, "say-text").value).toBe("Hello");
 });
 
-// VTT-518, VTT-521, VTT-501
+// VTT-517, VTT-521, VTT-530
 test("a DM's refused /ooc line keeps both boxes", async () => {
   const t = table("dm", answering(refused("not now")));
   type(t.view, "say-as", "Grimble");
@@ -232,7 +240,7 @@ test("a DM's refused /ooc line keeps both boxes", async () => {
   expect(field(next, "say-text").value).toBe("/ooc brb");
 });
 
-// VTT-520, VTT-521, VTT-501
+// VTT-533, VTT-521, VTT-530
 test("a DM's accepted /ooc line empties say-text, keeps say-as", async () => {
   const t = table("dm", answering(ok()));
   type(t.view, "say-as", "Grimble");
@@ -270,7 +278,7 @@ test("a speaker changed while waiting is kept after the answer", async () => {
   expect(field(t.paint(), "say-as").value).toBe("Mog");
 });
 
-// VTT-504, VTT-520, VTT-521
+// VTT-529, VTT-533, VTT-521
 test("an agent's accepted line keeps say-as, empties say-text", async () => {
   const t = table("agent", answering(ok()));
   type(t.view, "say-as", "Grimble");
@@ -283,7 +291,7 @@ test("an agent's accepted line keeps say-as, empties say-text", async () => {
   expect(field(next, "say-text").value).toBe("");
 });
 
-// VTT-518, VTT-521
+// VTT-517, VTT-521
 test("an agent's refused line keeps both boxes", async () => {
   const t = table("agent", answering(refused("not now")));
   type(t.view, "say-as", "Grimble");
@@ -367,7 +375,7 @@ test("Send or Enter on a later paint before the answer sends nothing", async () 
   await settle();
 });
 
-// VTT-523
+// VTT-535
 test("a DM's Send then Enter before the answer sends one line", async () => {
   const h = held();
   const t = table("dm", h.send);
@@ -386,7 +394,7 @@ test("a DM's Send then Enter before the answer sends one line", async () => {
   await settle();
 });
 
-// VTT-523
+// VTT-535
 test("an agent's Send twice before the answer sends one line", async () => {
   const h = held();
   const t = table("agent", h.send);
@@ -450,7 +458,7 @@ test("a player's unanswered Enter changes nothing a paint draws", async () => {
   await settle();
 });
 
-// VTT-524
+// VTT-536
 test("a DM's unanswered line changes nothing a paint draws", async () => {
   const h = held();
   const t = table("dm", h.send);
@@ -494,7 +502,7 @@ test("a refused answer keeps what was typed while waiting", async () => {
   expect(field(t.paint(), "say-text").value).toBe("Hello and more");
 });
 
-// VTT-522, VTT-521, VTT-526
+// VTT-522, VTT-534, VTT-521, VTT-537
 test("a send that rejects keeps both boxes as typed", async () => {
   const real = console.error;
   console.error = () => {};

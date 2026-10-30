@@ -1,4 +1,4 @@
-// "D7", "D9" and "Q1" below are a decision and a question of
+// "D7" and "D9" below are decisions of
 // docs/superpowers/plans/2026-10-26-a-player-speaks-as-their-character.md;
 // "ticket done-N" is item N of its ticket's "Done looks like", and "ticket
 // rules" its "Rules this puts on the system".
@@ -21,6 +21,7 @@ import { renderPlayerPanel } from "../src/view/player";
 import type { PlayerUIState } from "../src/view/player";
 import { renderSpectator } from "../src/view/spectator";
 import { ok, settle } from "./support/answers";
+import { forgetTheSay, sayConsole } from "./support/say";
 
 function world(): State {
   const st = newState();
@@ -35,34 +36,32 @@ function world(): State {
   };
   return st;
 }
-afterEach(() => { document.body.replaceChildren(); });
+afterEach(() => {
+  document.body.replaceChildren();
+  forgetTheSay();
+});
 
 const player: Me = { participantId: "p1", name: "Ada", role: "player" };
 const dm: Me = { participantId: "d1", name: "Dee", role: "dm" };
 const agent: Me = { participantId: "g1", name: "Bot", role: "agent" };
 
+// A player's panel, or a DM's or an agent's console.
 function rig(me: Me, sel = "a2") {
   const st = world();
-  if (me.role !== "player") {
-    for (const a of Object.values(st.Actors)) {
-      a.controllerId = me.participantId;
-      a.controllerIds = [me.participantId];
-    }
-  }
   const ui: PlayerUIState = {
     selectedActorId: sel, selectedAbilityId: "", doorsArmed: false,
   };
   const sent: ClientCommand[] = [];
   const root = document.createElement("div");
   document.body.appendChild(root);
+  const answer = async (c: ClientCommand) => {
+    sent.push(c);
+    return ok();
+  };
   const paint = () => {
-    const panel = renderPlayerPanel(
-      st, me, [], ui, async (c) => {
-        sent.push(c);
-        return ok();
-      }, paint,
-    );
-    renderSpectator(root, st, [], "connected", { panel });
+    renderSpectator(root, st, [], "connected", me.role === "player"
+      ? { panel: renderPlayerPanel(st, me, [], ui, answer, paint) }
+      : { console: sayConsole(st, answer, paint) });
   };
   paint();
   const q = (f: string) =>
@@ -259,9 +258,9 @@ describe("say form", () => {
 
 describe("DM and agent", () => {
   for (const me of [dm, agent]) {
-    test(`qaSpk: a ${me.role} panel draws the as box`, () => {
+    test(`qaSpk: a ${me.role} console draws the as box`, () => {
       const r = rig(me);
-      // VTT-504 "draws the in-character box"
+      // VTT-527 "draws a speaker box say-as, a line box say-text"
       expect(r.q("say-as") === null).toBe(false);
       expect(r.q("say-text") === null).toBe(false);
     });
@@ -272,7 +271,7 @@ describe("DM and agent", () => {
       r.type("say-text", "Grr");
       r.send();
       const n = narr(r.sent[0]!);
-      // VTT-504 "Send carries what the box holds as as"
+      // VTT-529 "with what say-as holds, trimmed, as as"
       expect(n.as).toBe("Goblin chief");
       expect(n.text).toBe("Grr");
       expect(n.outOfCharacter).toBe(false);
@@ -283,7 +282,7 @@ describe("DM and agent", () => {
       r.type("say-text", "The door creaks");
       r.send();
       const n = narr(r.sent[0]!);
-      // ticket rules "keeps the speaker they give it, or none"
+      // VTT-529 "and no as when it is blank"
       expect(n.as).toBe("");
       expect(n.text).toBe("The door creaks");
     });
@@ -293,7 +292,7 @@ describe("DM and agent", () => {
       r.type("say-text", "/ooc break time");
       r.send();
       const n = narr(r.sent[0]!);
-      // D7 "reads /ooc too under Q1's yes"
+      // VTT-530 "goes out of character, with the rest of the line"
       expect(n.outOfCharacter).toBe(true);
       expect(n.text).toBe("break time");
     });
@@ -305,6 +304,7 @@ describe("DM and agent", () => {
       r.paint();
       // VTT-522 "say-as shows what it showed before it"
       expect(r.q("say-as")!.value).toBe("Goblin");
+      // VTT-534 "say-text shows what was typed in it"
       expect(r.q("say-text")!.value).toBe("Grr");
     });
 
@@ -331,7 +331,7 @@ describe("DM and agent", () => {
       await settle();
       // VTT-521 "Send leaves ... say-as holding what it held"
       expect(r.q("say-as")!.value).toBe("Goblin");
-      // VTT-520 "A line the server accepts leaves ... say-text empty"
+      // VTT-533 "leaves each DM console field that fed it as it is drawn"
       expect(r.q("say-text")!.value).toBe("");
     });
   }

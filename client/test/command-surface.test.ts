@@ -91,12 +91,6 @@ export const COMMAND_SURFACE: Record<
   loadMap: { surface: "dm-console", action: "load-map" },
   upsertNote: { surface: "dm-console", action: "upsert-note" },
   deleteNote: { surface: "dm-console", action: "delete-note" },
-  // Rendered in the PLAYER PANEL (view/player.ts's "Say something" — a DM
-  // also sees that panel beside the console, per app.ts's `canAct`), despite
-  // the "dm-console" tag above: that tag predates this task and is left
-  // alone here (fixing it is not this task's job), but controlExistsFor
-  // renders both surfaces together, so the control is found regardless of
-  // which of the two this row claims.
   addNarration: { surface: "dm-console", action: "add-narration" },
   removeCondition: { surface: "dm-console", action: "remove-condition" },
   grantActorControl: { surface: "dm-console", action: "grant-actor-control" },

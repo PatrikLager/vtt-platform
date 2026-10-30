@@ -3473,10 +3473,10 @@ test("an accepted Start session that brings no event empties the name", async ()
 
 // --- what the server's answer does to the Say boxes ------------------------
 
-// VTT-521 VTT-520
+// VTT-533 VTT-521
 test("a DM's accepted line keeps the speaker's name in say-as and empties say-text", async () => {
   const { r, s, sock } = await tableAs("dm");
-  const box = (field: string) => r.querySelector<HTMLInputElement>(`[data-field="${field}"]`)!;
+  const box = (field: string) => r.querySelector<HTMLInputElement>(`.dm [data-field="${field}"]`)!;
   try {
     for (const [field, typed] of [["say-as", "Grimble"], ["say-text", "Hello"]] as const) {
       box(field).value = typed;
@@ -3491,6 +3491,7 @@ test("a DM's accepted line keeps the speaker's name in say-as and empties say-te
 
     expect([box("say-as").value, box("say-text").value]).toEqual(["Grimble", ""]);
   } finally {
+    forgetTheSay();
     s?.close();
   }
 });
@@ -3515,5 +3516,24 @@ test("a DM who controls no actor speaks from the console, and an accepted line e
   } finally {
     forgetTheSay();
     s?.close();
+  }
+});
+
+// VTT-532
+test("a DM's and an agent's page holds one line box, the console's, and a player's the panel's", async () => {
+  for (const role of ["dm", "agent", "player"]) {
+    const { r, s } = await tableAs(role);
+    try {
+      const where = Array.from(r.querySelectorAll('[data-field="say-text"]'))
+        .map((b) => (b.closest(".dm") !== null ? "dm" : b.closest(".player") !== null ? "player" : "?"));
+      expect([
+        role,
+        r.querySelector(".player .chip")?.textContent,
+        where,
+        r.querySelector('.player [data-action="add-narration"]') !== null,
+      ]).toEqual([role, "Lera", [role === "player" ? "player" : "dm"], role === "player"]);
+    } finally {
+      s?.close();
+    }
   }
 });

@@ -12,7 +12,7 @@
 import type { State } from "../state";
 import type { Ability, Me } from "../metadata";
 import { affordable, controlledActors, readLine, targetableTokens } from "../player";
-import { moveToken, useAbility, addNarration, setViewpoint, speakAs, speakOutOfCharacter } from "../commands";
+import { moveToken, useAbility, setViewpoint, speakAs, speakOutOfCharacter } from "../commands";
 import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import { currentSceneId, mayWorkDoor } from "./doors";
 import { namer } from "./naming";
@@ -22,8 +22,7 @@ export interface PlayerUIState {
   selectedAbilityId: string;
   /** Whether a board click works a door instead of moving a token (SPEC-022). */
   doorsArmed: boolean;
-  /** What the Say boxes hold across paints (VTT-521, VTT-522). */
-  sayAs?: string;
+  // VTT-522
   sayText?: string;
   /** A line the panel sent is unanswered: Send and Enter send nothing (VTT-523). */
   saying?: boolean;
@@ -186,21 +185,12 @@ export function renderPlayerPanel(
     wrap.appendChild(armBtn);
   }
 
-  // --- speaking ---
+  // VTT-532 VTT-540
+  if (me.role !== "player") return wrap;
   wrap.appendChild(el("h3", undefined, "Say something"));
   const form = el("div", "say");
-  // Never draw or send a typed speaker for a player (VTT-500).
-  const speaksFreely = me.role !== "player";
-  const as = document.createElement("input");
-  as.placeholder = "in character as… (optional)";
-  as.className = "as";
-  as.dataset["field"] = "say-as";
-  as.value = ui.sayAs ?? "";
-  as.addEventListener("input", () => {
-    ui.sayAs = as.value;
-  });
   const text = document.createElement("input");
-  text.placeholder = speaksFreely ? "say or narrate" : "say something, or /ooc to step out of character";
+  text.placeholder = "say something, or /ooc to step out of character";
   text.className = "text";
   text.dataset["field"] = "say-text";
   text.value = ui.sayText ?? "";
@@ -209,16 +199,13 @@ export function renderPlayerPanel(
   });
   const send3 = el("button", "chip", "Send");
   send3.dataset["action"] = "add-narration";
-  // Never empty or repaint at the press, nor touch `say-as` (VTT-521, VTT-524).
+  // VTT-524
   const submit = () => {
     if (ui.saying) return;
     const line = readLine(text.value);
     if (line.text === "") return;
-    const name = speaksFreely ? as.value.trim() || undefined : undefined;
     ui.saying = true;
-    const said = line.ooc
-      ? send(speakOutOfCharacter(line.text, name))
-      : send(speaksFreely ? addNarration(line.text, name) : speakAs(line.text, actorId));
+    const said = send(line.ooc ? speakOutOfCharacter(line.text) : speakAs(line.text, actorId));
     void said
       .then((res) => {
         if (!res.ok) return;
@@ -234,7 +221,6 @@ export function renderPlayerPanel(
   text.addEventListener("keydown", (e) => {
     if ((e as KeyboardEvent).key === "Enter") submit();
   });
-  if (speaksFreely) form.append(as);
   form.append(text, send3);
   wrap.appendChild(form);
 

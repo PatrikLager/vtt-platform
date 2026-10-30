@@ -13,8 +13,10 @@ import { renderSpectator } from "../src/view/spectator";
 import { newState } from "../src/state";
 import type { Me } from "../src/metadata";
 import { ok, settle } from "./support/answers";
+import { forgetTheSay, sayConsole } from "./support/say";
 
-// The DM's panel, which keeps both Say boxes; a player's draws one (VTT-500).
+// The DM console's Say, in a DM's window beside their panel, which draws none
+// (VTT-532).
 const ME: Me = { participantId: "p1", name: "Pat", role: "dm" };
 const AS = '[data-field="say-as"]';
 const TEXT = '[data-field="say-text"]';
@@ -32,8 +34,9 @@ function party(...ids: string[]) {
   return st;
 }
 
-// One table as `startSession`'s paint draws it: one ui across every paint,
-// the panel rebuilt and handed to renderSpectator, rerender repainting.
+// One table as `startSession`'s paint draws a DM's: one ui across every paint,
+// the panel and the console rebuilt and handed to renderSpectator, rerender
+// repainting.
 function table(ids: string[] = ["a1"]) {
   const root = document.createElement("div");
   document.body.replaceChildren(root);
@@ -43,20 +46,15 @@ function table(ids: string[] = ["a1"]) {
     selectedActorId: ids[0] ?? "", selectedAbilityId: "", doorsArmed: false,
   };
   const sent: ClientCommand[] = [];
-  let withPanel = true;
-  const switcher = {
-    actors: ids.map((id) => ({ actorId: id, name: id.toUpperCase() })),
-    onSwitch: () => {},
+  let withConsole = true;
+  const send = async (c: ClientCommand) => {
+    sent.push(c);
+    return ok();
   };
   const paint = (): void => {
-    const panel = withPanel
-      ? renderPlayerPanel(st, ME, [], ui, async (c) => {
-        sent.push(c);
-        return ok();
-      }, paint,
-        ME.role === "player" ? switcher : undefined)
-      : undefined;
-    renderSpectator(root, st, log, "open", { panel });
+    const panel = renderPlayerPanel(st, ME, [], ui, send, paint);
+    const dm = withConsole ? sayConsole(st, send, paint) : undefined;
+    renderSpectator(root, st, log, "open", { panel, console: dm });
   };
   paint();
   const box = (sel: string): HTMLInputElement => {
@@ -74,7 +72,7 @@ function table(ids: string[] = ["a1"]) {
       }));
       paint();
     },
-    hidePanel(hide: boolean): void { withPanel = !hide; },
+    hideConsole(hide: boolean): void { withConsole = !hide; },
     said(): Said[] {
       return sent.flatMap((c) => c.command.case === "addNarration"
         ? [{ text: c.command.value.text, as: c.command.value.as }] : []);
@@ -87,7 +85,10 @@ function typeInto(el: HTMLInputElement, value: string): void {
   el.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-afterEach(() => { document.body.replaceChildren(); });
+afterEach(() => {
+  document.body.replaceChildren();
+  forgetTheSay();
+});
 
 // VTT-491
 test("qaSay: both Say boxes are boxes, each with its own data-field", () => {
@@ -103,14 +104,14 @@ test("qaSay: both Say boxes are boxes, each with its own data-field", () => {
   expect(t.root.querySelectorAll(TEXT).length).toBe(1);
 });
 
-// VTT-522
+// VTT-522 VTT-534
 test("qaSay: a first paint shows both boxes empty", () => {
   const t = table();
   expect(t.box(AS).value).toBe("");
   expect(t.box(TEXT).value).toBe("");
 });
 
-// VTT-522
+// VTT-522 VTT-534
 test("qaSay: the DM's narration repaints and both boxes keep what was typed", () => {
   const t = table();
   const oldAs = t.box(AS);
@@ -161,18 +162,19 @@ test("qaSay: the focused 'as' box keeps the focus and a backward selection", () 
   expect(t.box(TEXT).value).toBe("hello there");
 });
 
-// VTT-522
-test("qaSay: Send after a repaint sends the narration with both boxes", () => {
+// VTT-522 VTT-534
+test("qaSay: Send after a repaint sends the narration with both boxes", async () => {
   const t = table();
   typeInto(t.box(AS), "Brother Tuck");
   typeInto(t.box(TEXT), "I draw my sword");
   t.dmNarrates("Wind.");
   t.root.querySelector<HTMLButtonElement>(SEND)?.click();
   expect(t.said()).toEqual([{ text: "I draw my sword", as: "Brother Tuck" }]);
+  await settle();
 });
 
-// VTT-522
-test("qaSay: text typed into the new box after a repaint joins the kept text", () => {
+// VTT-534
+test("qaSay: text typed into the new box after a repaint joins the kept text", async () => {
   const t = table();
   const old = t.box(TEXT);
   typeInto(old, "I draw my");
@@ -183,9 +185,10 @@ test("qaSay: text typed into the new box after a repaint joins the kept text", (
   typeInto(now, `${now.value} sword`);
   t.root.querySelector<HTMLButtonElement>(SEND)?.click();
   expect(t.said()).toEqual([{ text: "I draw my sword", as: "" }]);
+  await settle();
 });
 
-// VTT-520 VTT-521 VTT-522
+// VTT-533 VTT-521 VTT-522
 test("qaSay: after an accepted Send the text box is empty and the 'as' box kept at the paints that follow", async () => {
   const t = table();
   typeInto(t.box(AS), "Brother Tuck");
@@ -201,7 +204,7 @@ test("qaSay: after an accepted Send the text box is empty and the 'as' box kept 
   expect(t.box(TEXT).value).toBe("");
 });
 
-// VTT-520 VTT-521 VTT-522
+// VTT-533 VTT-521 VTT-522 VTT-534
 test("qaSay: a second Send sends the text typed since the first's answer, as the same speaker", async () => {
   const t = table();
   typeInto(t.box(AS), "Tuck");
@@ -218,9 +221,10 @@ test("qaSay: a second Send sends the text typed since the first's answer, as the
     { text: "first line", as: "Tuck" },
     { text: "second line", as: "Tuck" },
   ]);
+  await settle();
 });
 
-// VTT-522
+// VTT-522 VTT-534 VTT-531
 test("qaSay: a blank Send sends nothing and leaves both boxes as typed", async () => {
   const t = table();
   typeInto(t.box(AS), "Brother Tuck");
@@ -236,7 +240,7 @@ test("qaSay: a blank Send sends nothing and leaves both boxes as typed", async (
   await settle();
 });
 
-// VTT-520 VTT-521 VTT-522
+// VTT-533 VTT-521 VTT-522
 test("qaSay: an accepted Enter in the text box keeps the 'as' box and empties the text box", async () => {
   const t = table();
   typeInto(t.box(AS), "Tuck");
@@ -267,7 +271,7 @@ test("qaSay: Enter's repaint leaves the focus in the new text box", async () => 
   expect(document.activeElement === now).toBe(true);
 });
 
-// VTT-522
+// VTT-522 VTT-534
 test("qaSay: the 'as' box alone keeps its text and the text box stays empty", () => {
   const t = table();
   const as = t.box(AS);
@@ -279,7 +283,7 @@ test("qaSay: the 'as' box alone keeps its text and the text box stays empty", ()
   expect(document.activeElement === t.box(AS)).toBe(true);
 });
 
-// VTT-522
+// VTT-522 VTT-534
 test("qaSay: a box its typist emptied stays empty after a repaint", () => {
   const t = table();
   typeInto(t.box(AS), "Tuck");
@@ -315,21 +319,21 @@ test("qaSay: a focused Send button: a repaint focuses nothing in the window", ()
   expect(t.box(TEXT).value).toBe("I wait");
 });
 
-// VTT-522
-test("qaSay: a paint without the panel in between loses nothing typed", () => {
+// VTT-522 VTT-534
+test("qaSay: a paint without the console in between loses nothing typed", () => {
   const t = table();
   typeInto(t.box(AS), "Tuck");
   typeInto(t.box(TEXT), "I wait");
-  t.hidePanel(true);
+  t.hideConsole(true);
   t.dmNarrates("Rain.");
   expect(t.root.querySelector(TEXT) === null).toBe(true);
-  t.hidePanel(false);
+  t.hideConsole(false);
   t.paint();
   expect(t.box(AS).value).toBe("Tuck");
   expect(t.box(TEXT).value).toBe("I wait");
 });
 
-// VTT-522
+// VTT-522 VTT-534
 test("qaSay: a switch of the watched party member keeps the boxes' text", () => {
   const t = table(["a1", "a2"]);
   typeInto(t.box(AS), "Tuck");
@@ -346,10 +350,10 @@ test("qaSay: a repaint that takes the focused box away focuses nothing", () => {
   const text = t.box(TEXT);
   typeInto(text, "I wait");
   text.focus();
-  t.hidePanel(true);
+  t.hideConsole(true);
   expect(() => t.dmNarrates("Rain.")).not.toThrow();
   expect(document.activeElement === document.body).toBe(true);
-  t.hidePanel(false);
+  t.hideConsole(false);
   t.paint();
   expect(t.root.contains(document.activeElement)).toBe(false);
   expect(t.box(TEXT).value).toBe("I wait");

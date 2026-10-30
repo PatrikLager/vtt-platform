@@ -144,7 +144,6 @@ h3 { margin: 0 0 2px; font-size: 14px; }
   background: #0d0f13; color: var(--ink); border: 1px solid var(--line);
   border-radius: 4px; padding: 4px 8px; font: inherit;
 }
-.say .as { width: 150px; }
 .say .text { flex: 1; }
 /* A refusal must be readable, not a flash: a player needs to know WHY the
    server said no. */

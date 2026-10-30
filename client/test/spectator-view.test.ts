@@ -1,6 +1,6 @@
 import "./support/dom"; // see that module: registers once, keeps real fetch/WebSocket
 
-import { test, expect, spyOn } from "bun:test";
+import { test, expect, afterEach, spyOn } from "bun:test";
 import { create, type DescMessage } from "@bufbuild/protobuf";
 import {
   EnvelopeSchema, SessionStartedSchema, SessionEndedSchema, SceneCreatedSchema,
@@ -24,6 +24,9 @@ import { worldFromScreen } from "../src/view/camera";
 import { cellFromPoint, type Geometry } from "../src/view/grid";
 import { UNNAMED, namer } from "../src/view/naming";
 import { ok, refused, held, settle } from "./support/answers";
+import { forgetTheSay, sayConsole } from "./support/say";
+
+afterEach(forgetTheSay);
 
 /** Move an actor's control to someone else, mirror and set together. */
 function reassign(a: { controllerId: string; controllerIds: string[] }, to: string): void {
@@ -391,10 +394,11 @@ test("sending narration requires text, and clears the box once it is accepted", 
 });
 
 /**
- * The table with a panel for `who`, repainted as app.ts's paint does: one
- * `ui` across paints, into a root on the document so the focus means
- * something. `answer` is what the server answers each line: a result,
- * "held" until the test calls release(), or an Error the send rejects with.
+ * The table where `who` speaks, repainted as app.ts's paint does: a player's
+ * panel, with one `ui` across paints, or a DM's or an agent's console, into a
+ * root on the document so the focus means something. `answer` is what the
+ * server answers each line: a result, "held" until the test calls release(),
+ * or an Error the send rejects with.
  */
 function sayTable(who: Me, answer: CommandResult | "held" | Error = ok()) {
   const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "", doorsArmed: false };
@@ -410,16 +414,16 @@ function sayTable(who: Me, answer: CommandResult | "held" | Error = ok()) {
     if (answer instanceof Error) throw answer;
     return answer;
   };
+  const asked = (): void => {
+    repaints++;
+    paint();
+  };
   const paint = (): void =>
-    renderSpectator(root, world(), [], "connected", {
-      panel: renderPlayerPanel(world(), who, [], ui, answerLine, () => {
-        repaints++;
-        paint();
-      }),
-    });
+    renderSpectator(root, world(), [], "connected", who.role === "player"
+      ? { panel: renderPlayerPanel(world(), who, [], ui, answerLine, asked) }
+      : { console: sayConsole(world(), answerLine, asked) });
   paint();
-  // By class, which the boxes carry with or without a data-field.
-  const box = (kind: "as" | "text") => root.querySelector<HTMLInputElement>(`.say .${kind}`)!;
+  const box = (kind: "as" | "text") => root.querySelector<HTMLInputElement>(`[data-field="say-${kind}"]`)!;
   const type = (kind: "as" | "text", text: string): void => {
     box(kind).value = text;
     box(kind).dispatchEvent(new Event("input"));
@@ -437,13 +441,9 @@ function sayTable(who: Me, answer: CommandResult | "held" | Error = ok()) {
 }
 
 // VTT-522 VTT-491
-test("what a DM typed in Say survives a repaint, with the as box focused", () => {
+test("what a DM typed in Say survives a repaint, with the as box focused", async () => {
   const t = sayTable(dmMe);
   expect([t.box("as").value, t.box("text").value]).toEqual(["", ""]);
-  // The fields address the boxes, and differ from every one the DM console
-  // draws beside them.
-  expect([t.box("as").dataset["field"], t.box("text").dataset["field"]])
-    .toEqual(["say-as", "say-text"]);
   t.type("as", "Lera");
   t.type("text", "I draw my");
   const was = t.box("as");
@@ -458,12 +458,13 @@ test("what a DM typed in Say survives a repaint, with the as box focused", () =>
   expect(t.sent.map((c) => c.command.value)).toEqual([
     expect.objectContaining({ text: "I draw my", as: "Lera" }),
   ]);
+  await settle();
 });
 
 // VTT-522 VTT-491
 test("what a player typed in Say survives a repaint, with the text box focused", () => {
   const t = sayTable(me);
-  expect(t.root.querySelector(".say .as") === null).toBe(true);
+  expect(t.root.querySelector('[data-field="say-as"]') === null).toBe(true);
   expect(t.box("text").dataset["field"]).toBe("say-text");
   t.type("text", "I draw my");
   const was = t.box("text");
@@ -480,7 +481,7 @@ test("what a player typed in Say survives a repaint, with the text box focused",
   ]);
 });
 
-// VTT-520 VTT-521 VTT-522
+// VTT-533 VTT-521 VTT-522
 test("an accepted Send empties say-text and leaves say-as for the paints after it", async () => {
   const t = sayTable(dmMe);
   t.type("as", "Lera");
@@ -572,7 +573,7 @@ test("a line the server accepts empties say-text, with one repaint asked for aft
   }
 });
 
-// VTT-521 VTT-520 VTT-522
+// VTT-521 VTT-533 VTT-522
 test("a DM's or an agent's say-as keeps its name after an accepted line, and the next line speaks as it", async () => {
   for (const who of [dmMe, agentMe]) {
     const t = sayTable(who);
@@ -593,7 +594,7 @@ test("a DM's or an agent's say-as keeps its name after an accepted line, and the
   }
 });
 
-// VTT-518 VTT-521 VTT-522
+// VTT-517 VTT-521 VTT-522
 test("a DM's or an agent's refused line leaves say-as and say-text as typed", async () => {
   for (const who of [dmMe, agentMe]) {
     const t = sayTable(who, refused("not authorized"));
@@ -672,7 +673,7 @@ test("a line whose send rejects frees Send, keeps say-text, and reports the erro
   }
 });
 
-// VTT-524
+// VTT-524 VTT-536
 test("a press of Send or Enter that sends a line draws nothing new until its answer", async () => {
   for (const who of [me, dmMe]) {
     for (const press of ["send", "enter"] as const) {
@@ -680,7 +681,8 @@ test("a press of Send or Enter that sends a line draws nothing new until its ans
       try {
         if (who.role !== "player") t.type("as", "Grimble");
         t.type("text", "I draw my sword");
-        const boxes = () => Array.from(t.root.querySelectorAll<HTMLInputElement>(".say input"));
+        const boxes = () =>
+          Array.from(t.root.querySelectorAll<HTMLInputElement>('[data-field="say-as"], [data-field="say-text"]'));
         // outerHTML carries no input's value, so the values are read as well.
         const drawn = () => {
           t.paint();
@@ -705,9 +707,9 @@ test("a press of Send or Enter that sends a line draws nothing new until its ans
   }
 });
 
-// VTT-500
-test("a player's /ooc sends no speaker, whatever the panel's state holds", () => {
-  const p = panel(world(), [], { sayAs: "DM" });
+// VTT-501
+test("a player's /ooc sends no speaker", () => {
+  const p = panel(world(), []);
   p.input("text").value = "/ooc hi";
   p.button("Send").click();
   expect(p.sent.map((c) => c.command.value)).toEqual([
@@ -743,15 +745,16 @@ test("only /ooc as the line's first word steps out of character", async () => {
   ]);
 });
 
-// VTT-501 VTT-504
-test("a DM's /ooc line goes out of character and still carries the speaker box", () => {
-  const p = panel(world(), [], {}, dmMe);
-  p.input("as").value = "Goblin";
-  p.input("text").value = "/ooc brb";
-  p.button("Send").click();
-  expect(p.sent.map((c) => c.command.value)).toEqual([
+// VTT-530
+test("a DM's /ooc line goes out of character and still carries the speaker box", async () => {
+  const t = sayTable(dmMe);
+  t.type("as", "Goblin");
+  t.type("text", "/ooc brb");
+  t.send();
+  expect(t.sent.map((c) => c.command.value)).toEqual([
     expect.objectContaining({ text: "brb", outOfCharacter: true, as: "Goblin", actorId: "" }),
   ]);
+  await settle();
 });
 
 const ooc = (seq: number, text: string, as: string): Envelope =>
@@ -1706,20 +1709,22 @@ test("Send narrates the trimmed text, and an accepted line clears the box and re
   expect(p.repaints()).toBe(1);
 });
 
-// VTT-504
-test("an in-character speaker is carried, and a blank one is omitted", () => {
+// VTT-529
+test("an in-character speaker is carried, and a blank one is omitted", async () => {
   for (const who of [dmMe, agentMe]) {
-    const named = panel(world(), [], {}, who);
-    named.input("as").value = "  Lera  ";
-    named.input("text").value = "Hold.";
-    named.button("Send").click();
+    const named = sayTable(who);
+    named.type("as", "  Lera  ");
+    named.type("text", "Hold.");
+    named.send();
+    await settle();
     expect(named.sent[0]!.command.value).toEqual(expect.objectContaining({ as: "Lera" }));
   }
 
-  const anon = panel(world(), [], {}, dmMe);
-  anon.input("as").value = "   ";
-  anon.input("text").value = "ooc: brb";
-  anon.button("Send").click();
+  const anon = sayTable(dmMe);
+  anon.type("as", "   ");
+  anon.type("text", "ooc: brb");
+  anon.send();
+  await settle();
   expect((anon.sent[0]!.command.value as Record<string, unknown>)["as"] ?? "").toBe("");
 });
 
@@ -1755,7 +1760,6 @@ test("the panel's structure carries the classes the stylesheet targets", () => {
   expect(p.node.className).toBe("player");
   expect(p.node.querySelectorAll(".row").length).toBeGreaterThan(0);
   expect(p.input("text").className).toBe("text");
-  expect(panel(world(), [atWill], {}, dmMe).input("as").className).toBe("as");
   // Headings are built without a class; an always-assign writes the string
   // "undefined" into className.
   for (const h of Array.from(p.node.querySelectorAll("h2,h3"))) expect(h.className).toBe("");
@@ -1827,13 +1831,37 @@ test("the panel's rows, form and chips carry their classes", () => {
 test("both say-something boxes carry a placeholder", () => {
   // Presence, not wording — the same rule as the DM console: an unlabelled
   // pair of boxes gives no clue which one is the speaker.
-  const p = panel(world(), [], {}, dmMe);
+  const t = sayTable(dmMe);
   expect(panel(world(), []).input("text").placeholder.length).toBeGreaterThan(0);
-  // A player's says how to step out of character; a DM's speaker box is theirs.
-  expect(panel(world(), []).input("text").placeholder).not.toBe(p.input("text").placeholder);
-  expect(p.input("as").placeholder.length).toBeGreaterThan(0);
-  expect(p.input("text").placeholder.length).toBeGreaterThan(0);
-  expect(p.input("as").placeholder).not.toBe(p.input("text").placeholder);
+  expect(t.box("as").placeholder.length).toBeGreaterThan(0);
+  expect(t.box("text").placeholder.length).toBeGreaterThan(0);
+  expect(t.box("as").placeholder).not.toBe(t.box("text").placeholder);
+});
+
+// VTT-532
+test("a DM's or an agent's panel draws no Say, and a player's draws its line box and Send", () => {
+  for (const who of [dmMe, agentMe]) {
+    const p = panel(world(), [], {}, who);
+    const headings = Array.from(p.node.querySelectorAll("h3")).map((h) => h.textContent);
+    expect([
+      who.role,
+      p.button("Lera") !== undefined,
+      p.node.querySelector('[data-field="say-as"]') !== null,
+      p.node.querySelector('[data-field="say-text"]') !== null,
+      p.node.querySelector('[data-action="add-narration"]') !== null,
+      headings.includes("Say something"),
+    ]).toEqual([who.role, true, false, false, false, false]);
+  }
+  const player = panel(world(), []);
+  expect([
+    player.node.querySelector('[data-field="say-text"]')?.tagName,
+    player.node.querySelector('[data-action="add-narration"]')?.textContent,
+  ]).toEqual(["INPUT", "Send"]);
+});
+
+// VTT-528
+test("a player's line box names /ooc in its placeholder", () => {
+  expect(panel(world(), []).input("text").placeholder).toContain("/ooc");
 });
 
 // --- presence and manual reconnect (T5) ------------------------------------
