@@ -15,11 +15,12 @@ import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/
 import {
   startSession, endSession, placeToken, describeToken, removeToken, loadAdventure, loadMap,
   upsertNote, deleteNote, removeCondition, parseActorJSON, addActor, removeActor,
-  grantActorControl, revokeActorControl,
+  grantActorControl, revokeActorControl, addNarration, speakOutOfCharacter,
   setJoinDoor,
   rotateJoinLink,
   promoteParticipant,
 } from "../commands";
+import { readLine } from "../player";
 
 function el(tag: string, cls?: string, text?: string): HTMLElement {
   const n = document.createElement(tag);
@@ -57,7 +58,7 @@ interface Sending {
 
 /**
  * Take `key` only once a command is sent, free it at any answer (VTT-523);
- * clear only at ok (VTT-517, VTT-519).
+ * clear only at ok (VTT-517, VTT-533).
  */
 function sending(d: DMDeps, key: string, press: () => Sending | undefined): () => void {
   return () => {
@@ -261,7 +262,7 @@ export interface DMDeps {
    * could have read one back (2026-09-02-art-is-a-flat-library Task 2).
    */
   send: (c: ClientCommand) => Promise<CommandResult>;
-  /** Repaint the table, once an accepted command has cleared its form (VTT-519). */
+  /** Repaint the table, once an accepted command has cleared its form (VTT-533). */
   rerender: () => void;
   notify: (msg: string) => void;
   confirm: (msg: string) => boolean;
@@ -285,6 +286,23 @@ export interface DMDeps {
 export function renderDMConsole(d: DMDeps): HTMLElement {
   const wrap = el("section", "dm");
   wrap.appendChild(el("h2", undefined, "DM console"));
+
+  // VTT-527 VTT-528 VTT-529 VTT-530 VTT-531 VTT-533 VTT-535
+  const sayAs = input("in character as… (optional)", "say-as");
+  const sayText = input("say or narrate, or /ooc to step out of character", "say-text", "wide");
+  const say = sending(d, "add-narration", () => {
+    const line = readLine(sayText.value);
+    if (line.text === "") return;
+    const as = sayAs.value.trim() || undefined;
+    return {
+      command: line.ooc ? speakOutOfCharacter(line.text, as) : addNarration(line.text, as),
+      clears: ["say-text"],
+    };
+  });
+  sayText.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") say();
+  });
+  wrap.appendChild(group("Say something", sayAs, sayText, button("Send", say, "add-narration")));
 
   const openSession = d.st.Sessions.find((s) => s.EndSeq === 0);
 

@@ -7,6 +7,7 @@ import { boot } from "../src/app";
 // just 'something non-empty was drawn'", and a copy here would go on agreeing
 // with itself after the real one moved.
 import { missingTileColors, plainObjectColors } from "../src/view/canvas";
+import { forgetTheSay } from "./support/say";
 
 // happy-dom starts at about:blank and does NOT move location on
 // history.replaceState — setURL is its control surface. Discovered the hard
@@ -3459,7 +3460,7 @@ test("a refused Start session leaves the name typed beside the refusal", async (
   }
 });
 
-// VTT-519
+// VTT-533
 test("an accepted Start session that brings no event empties the name", async () => {
   const { r, s } = await startSessionAnswered({ ok: true });
   try {
@@ -3490,6 +3491,29 @@ test("a DM's accepted line keeps the speaker's name in say-as and empties say-te
 
     expect([box("say-as").value, box("say-text").value]).toEqual(["Grimble", ""]);
   } finally {
+    s?.close();
+  }
+});
+
+// VTT-527 VTT-529 VTT-533
+test("a DM who controls no actor speaks from the console, and an accepted line empties its box", async () => {
+  const { r, s, sock } = await dmPage();
+  const boxes = () => Array.from(r.querySelectorAll<HTMLInputElement>('[data-field="say-text"]'));
+  try {
+    expect(r.querySelector(".player .empty")?.textContent).toBe("You do not control an actor yet.");
+    expect(boxes().map((b) => b.closest(".dm") !== null)).toEqual([true]);
+    boxes()[0]!.value = "Hello";
+    boxes()[0]!.dispatchEvent(new Event("input"));
+    boxes()[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await settle();
+    const sent = sock.sent.map((f) => JSON.parse(f));
+    expect(sent.map((c) => c.addNarration)).toEqual([{ text: "Hello" }]);
+    sock.deliver({ result: { requestId: sent[0].requestId, ok: true } });
+    await settle();
+
+    expect(boxes().map((b) => [b.closest(".dm") !== null, b.value])).toEqual([[true, ""]]);
+  } finally {
+    forgetTheSay();
     s?.close();
   }
 });

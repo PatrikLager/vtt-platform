@@ -1,6 +1,6 @@
 import "./support/dom"; // see that module: registers once, keeps real fetch/WebSocket
 
-import { test, expect, beforeEach, spyOn } from "bun:test";
+import { test, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { newState, type State } from "../src/state";
 import { ActorKind, NoteVisibility } from "../../contract/gen/ts/vtt/v1/events_pb";
 import type { Roster, MapMeta } from "../src/metadata";
@@ -10,6 +10,7 @@ import {
   JoinDoor, type ClientCommand, type CommandResult,
 } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { held, ok, refused, settle } from "./support/answers";
+import { forgetTheSay } from "./support/say";
 
 function harness(
   st: State = newState(),
@@ -104,6 +105,8 @@ function harness(
 beforeEach(() => {
   document.body.innerHTML = "";
 });
+
+afterEach(forgetTheSay);
 
 // --- validation guards ------------------------------------------------------
 
@@ -290,6 +293,7 @@ test("every input the console owns is reachable by its stable data-field", () =>
     "actor-id", "actor-name", "actor-json",
     "token-id", "token-scene", "token-actor", "token-x", "token-y",
     "note-key", "note-title", "note-text",
+    "say-as", "say-text",
   ]) {
     expect(h.field(f)).not.toBeNull();
   }
@@ -1008,7 +1012,7 @@ test("the console's styling hooks are the ones the stylesheet targets", () => {
   for (const f of ["token-x", "token-y"]) {
     expect(h.field(f).className).toBe("tiny");
   }
-  for (const f of ["session-name", "note-text"]) {
+  for (const f of ["session-name", "note-text", "say-text"]) {
     expect(h.field(f).className).toBe("wide");
   }
   expect((h.node.querySelector('[data-field="actor-json"]') as HTMLElement).className).toBe("paste");
@@ -1026,6 +1030,7 @@ test("every box carries a placeholder saying what belongs in it", () => {
     "actor-id", "actor-name",
     "token-id", "token-scene", "token-actor", "token-x", "token-y",
     "note-key", "note-title", "note-text",
+    "say-as", "say-text",
   ]) {
     expect(h.field(f).placeholder.length).toBeGreaterThan(0);
   }
@@ -2125,7 +2130,7 @@ function forgetEveryForm(): void {
   enter(everyForm(), Object.fromEntries(all.flatMap((f) => Object.keys(f.typed)).map((s) => [s, ""])));
 }
 
-// VTT-517
+// VTT-517 VTT-538
 test("a refused command leaves every field of its form as typed", async () => {
   try {
     for (const form of FORMS) {
@@ -2143,7 +2148,7 @@ test("a refused command leaves every field of its form as typed", async () => {
   }
 });
 
-// VTT-517 VTT-519
+// VTT-517 VTT-533
 test("a note's key, title and text stay as typed, refused or accepted", async () => {
   const note = FORMS.find((f) => f.name === "Save note")!;
   const kept = ["note-key", "note-title", "note-text"].map(box);
@@ -2166,7 +2171,7 @@ test("a note's key, title and text stay as typed, refused or accepted", async ()
   }
 });
 
-// VTT-519
+// VTT-533
 test("an accepted Start session empties the name, and asks for one repaint after the answer", async () => {
   const h = harness();
   try {
@@ -2184,7 +2189,7 @@ test("an accepted Start session empties the name, and asks for one repaint after
   }
 });
 
-// VTT-519
+// VTT-533
 test("an accepted command clears the fields of its own form and of no other", async () => {
   try {
     for (const form of FORMS) {
@@ -2205,7 +2210,7 @@ test("an accepted command clears the fields of its own form and of no other", as
   }
 });
 
-// VTT-523
+// VTT-523 VTT-539
 test("a control whose command is unanswered sends nothing when pressed again, each row its own", async () => {
   const controls = [...FORMS, describeForm("tok-r2"), grantForm("act-r2")];
   const h = everyForm("held");
@@ -2295,4 +2300,251 @@ test("a send that rejects lets its control go, clears nothing, and reports the e
     reported.mockRestore();
     type(harness(), { "session-name": "" });
   }
+});
+
+// --- the console's Say -------------------------------------------------------
+
+/** Two actors, one held by the DM and one by a player. */
+function tableWithHeldActors(): State {
+  const st = tableWithActor();
+  st.Actors["act-dm"] = {
+    actorId: "act-dm", name: "Grimble", moduleId: "", attributes: {}, resources: {},
+    controllerId: "p-dm", controllerIds: ["p-dm"], kind: ActorKind.NON_PARTY,
+  };
+  return st;
+}
+
+const sendLine = (h: Harness) => h.action("add-narration").click();
+const pressKey = (h: Harness, key = "Enter") =>
+  h.field("say-text").dispatchEvent(new KeyboardEvent("keydown", { key }));
+const PRESS = { send: sendLine, enter: (h: Harness) => pressKey(h) };
+
+/** Each line the console sent, as the wire carries it. */
+function lines(h: Harness) {
+  return h.sent.map((c) => {
+    const v = c.command.value as { text: string; as: string; outOfCharacter: boolean; actorId: string };
+    return { case: c.command.case, text: v.text, as: v.as, ooc: v.outOfCharacter, actorId: v.actorId };
+  });
+}
+
+// VTT-527
+test("the console draws its Say first, whether or not anybody controls an actor", () => {
+  for (const [world, st] of [["no actor", newState()], ["actors held", tableWithHeldActors()]] as const) {
+    const h = harness(st);
+    const first = h.node.querySelector(".dmgroup")!;
+    expect([
+      world,
+      first.querySelector("h3")!.textContent,
+      first.querySelector('[data-field="say-as"]')?.tagName,
+      first.querySelector('[data-field="say-text"]')?.tagName,
+      first.querySelector('[data-action="add-narration"]')?.textContent,
+    ]).toEqual([world, "Say something", "INPUT", "INPUT", "Send"]);
+  }
+});
+
+// VTT-528
+test("the console's line box names /ooc, and its speaker box says something else", () => {
+  const h = harness();
+  expect(h.field("say-text").placeholder).toContain("/ooc");
+  expect(h.field("say-as").placeholder.length).toBeGreaterThan(0);
+  expect(h.field("say-as").placeholder).not.toBe(h.field("say-text").placeholder);
+});
+
+// VTT-529
+test("the console's Send speaks in character as say-as holds it, trimmed, or as nobody when it is blank", async () => {
+  const named = harness();
+  type(named, { "say-as": "  Grimble ", "say-text": "Hello" });
+  sendLine(named);
+  await named.settle();
+  const blank = harness();
+  type(blank, { "say-as": "   ", "say-text": "Hold." });
+  sendLine(blank);
+  await blank.settle();
+
+  expect([...lines(named), ...lines(blank)]).toEqual([
+    { case: "addNarration", text: "Hello", as: "Grimble", ooc: false, actorId: "" },
+    { case: "addNarration", text: "Hold.", as: "", ooc: false, actorId: "" },
+  ]);
+});
+
+// VTT-530
+test("a console line whose first word is /ooc goes out of character, with the rest as its text", async () => {
+  const h = harness();
+  for (const line of ["/ooc brb", "/oocx hi", "say /ooc now"]) {
+    type(h, { "say-text": line });
+    sendLine(h);
+    await h.settle();
+  }
+  expect(lines(h).map(({ text, ooc }) => ({ text, ooc }))).toEqual([
+    { text: "brb", ooc: true },
+    { text: "/oocx hi", ooc: false },
+    { text: "say /ooc now", ooc: false },
+  ]);
+});
+
+// VTT-531
+test("a blank console line, or /ooc with nothing after it, sends nothing and holds nothing back", async () => {
+  const h = harness(newState(), { answer: "held" });
+  try {
+    for (const line of ["", "   ", "/ooc", "/ooc   "]) {
+      type(h, { "say-text": line });
+      sendLine(h);
+      pressKey(h);
+    }
+    expect(h.sent).toHaveLength(0);
+    type(h, { "say-text": "Hello" });
+    sendLine(h);
+    expect(lines(h).map((l) => l.text)).toEqual(["Hello"]);
+  } finally {
+    h.release(refused("not authorized"));
+    await h.settle();
+  }
+});
+
+// VTT-529
+test("Enter in the console's say-text sends the line, and another key does not", async () => {
+  const h = harness();
+  type(h, { "say-text": "Hello" });
+  pressKey(h, "a");
+  pressKey(h, "Shift");
+  expect(h.sent).toHaveLength(0);
+  pressKey(h);
+  await h.settle();
+  expect(lines(h).map((l) => l.text)).toEqual(["Hello"]);
+});
+
+// VTT-517
+test("a refused console line leaves say-as and say-text as typed, in character or out", async () => {
+  for (const line of ["Hello", "/ooc brb"]) {
+    const h = harness(newState(), { answer: refused("not authorized") });
+    type(h, { "say-as": "Grimble", "say-text": line });
+    sendLine(h);
+    await h.settle();
+
+    const next = harness();
+    expect([line, h.sent.length, h.repaints(), next.field("say-as").value, next.field("say-text").value])
+      .toEqual([line, 1, 0, "Grimble", line]);
+  }
+});
+
+// VTT-533 VTT-521
+test("an accepted console line empties say-text, keeps say-as, and the next line speaks as it", async () => {
+  const h = harness(newState(), { answer: "held" });
+  try {
+    type(h, { "say-as": "Grimble", "say-text": "Hello" });
+    sendLine(h);
+    type(h, { "say-text": "Hello, and" });
+    expect(h.repaints()).toBe(0);
+    h.release(ok());
+    await h.settle();
+    expect(h.repaints()).toBe(1);
+
+    const next = harness();
+    expect([next.field("say-as").value, next.field("say-text").value]).toEqual(["Grimble", ""]);
+    type(next, { "say-text": "Bye" });
+    sendLine(next);
+    await next.settle();
+    expect([...lines(h), ...lines(next)].map(({ text, as }) => ({ text, as }))).toEqual([
+      { text: "Hello", as: "Grimble" },
+      { text: "Bye", as: "Grimble" },
+    ]);
+  } finally {
+    h.release(refused("not authorized"));
+    await h.settle();
+  }
+});
+
+// VTT-535 VTT-539
+test("while a console line is unanswered, Send and Enter send nothing, and another control still sends", async () => {
+  const pairs = [["send", "send"], ["send", "enter"], ["enter", "enter"]] as const;
+  for (const [first, second] of pairs) {
+    const h = harness(newState(), { answer: "held" });
+    const again = harness(newState(), { answer: "held" });
+    try {
+      type(h, { "say-text": "Hello" });
+      PRESS[first](h);
+      PRESS[second](h);
+      PRESS[second](again);
+      expect([first, second, h.sent.length, again.sent.length]).toEqual([first, second, 1, 0]);
+
+      type(h, { "session-name": "Night One" });
+      h.action("start-session").click();
+      expect([first, second, h.sent.map((c) => c.command.case)])
+        .toEqual([first, second, ["addNarration", "startSession"]]);
+
+      h.release(refused("not authorized"));
+      await h.settle();
+      type(h, { "say-text": "Bye" });
+      PRESS[second](h);
+      const said = lines(h).filter((l) => l.case === "addNarration").map((l) => l.text);
+      expect([first, second, said]).toEqual([first, second, ["Hello", "Bye"]]);
+    } finally {
+      h.release(refused("not authorized"));
+      again.release(refused("not authorized"));
+      await h.settle();
+      type(harness(), { "session-name": "" });
+    }
+  }
+});
+
+// VTT-536
+test("a press of the console's Send or Enter that sends a line changes nothing drawn until its answer", async () => {
+  for (const by of ["send", "enter"] as const) {
+    const h = harness(newState(), { answer: "held" });
+    try {
+      type(h, { "say-as": "Grimble", "say-text": "Hello" });
+      // outerHTML carries no box's value, so the values are read as well.
+      const drawn = () => {
+        const c = harness();
+        const boxes = Array.from(c.node.querySelectorAll<HTMLInputElement>("input, textarea, select"));
+        return [by, c.node.outerHTML, boxes.map((b) => b.value)];
+      };
+      const before = drawn();
+
+      PRESS[by](h);
+
+      expect([by, h.sent.length, h.repaints()]).toEqual([by, 1, 0]);
+      expect([by, h.field("say-as").value, h.field("say-text").value]).toEqual([by, "Grimble", "Hello"]);
+      expect(drawn()).toEqual(before);
+    } finally {
+      h.release(refused("not authorized"));
+      await h.settle();
+    }
+  }
+});
+
+// VTT-537
+test("a console line whose send rejects is reported, clears nothing, and frees Send and Enter", async () => {
+  const thrown = new Error("paint threw");
+  const h = harness(newState(), { answer: thrown });
+  const reported = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    type(h, { "say-as": "Grimble", "say-text": "Hello" });
+    sendLine(h);
+    await h.settle();
+    pressKey(h);
+    await h.settle();
+
+    const next = harness();
+    expect([h.sent.length, h.repaints()]).toEqual([2, 0]);
+    expect([next.field("say-as").value, next.field("say-text").value]).toEqual(["Grimble", "Hello"]);
+    expect(reported.mock.calls).toEqual([[thrown], [thrown]]);
+  } finally {
+    reported.mockRestore();
+  }
+});
+
+// VTT-534
+test("what was typed in the console's say-text survives a render, before a line and after one", async () => {
+  const h = harness();
+  type(h, { "say-text": "Hel" });
+  expect(harness().field("say-text").value).toBe("Hel");
+  type(h, { "say-text": "Hello" });
+  sendLine(h);
+  await h.settle();
+
+  const after = harness();
+  expect(after.field("say-text").value).toBe("");
+  type(after, { "say-text": "Bye" });
+  expect(harness().field("say-text").value).toBe("Bye");
 });

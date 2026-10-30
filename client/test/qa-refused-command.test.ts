@@ -299,7 +299,7 @@ for (const why of ["the scene is busy", "wire: not connected"]) {
 }
 
 for (const name of NINE) {
-  // VTT-519
+  // VTT-533
   test(`${name} accepted draws each field as with nothing typed`, async () => {
     const s = sfx();
     const ctl = controlNamed(name, s);
@@ -315,7 +315,7 @@ for (const name of NINE) {
 }
 
 for (const name of NINE) {
-  // VTT-519
+  // VTT-533
   test(`${name} accepted asks the app to paint again`, async () => {
     const s = sfx();
     const ctl = controlNamed(name, s);
@@ -367,7 +367,7 @@ for (const name of NINE) {
 }
 
 for (const name of NINE) {
-  // VTT-519
+  // VTT-533
   test(`${name}: typed into while unanswered, an accepted answer still ` +
     "clears it", async () => {
     const s = sfx();
@@ -559,7 +559,7 @@ test("a refused Start session keeps Night One at the paint after the answer",
     expect(byField("session-name")(c.paint()).value).toBe("Night One");
   });
 
-// VTT-519 VTT-524
+// VTT-533 VTT-524
 test("an accepted Start session draws session-name empty at the next paint",
   async () => {
     const s = sfx();
