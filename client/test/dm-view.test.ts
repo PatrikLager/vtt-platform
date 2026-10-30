@@ -2275,7 +2275,7 @@ test("a press the console's own guard refuses holds nothing back", async () => {
   }
 });
 
-// VTT-523 VTT-525
+// VTT-523 VTT-526
 test("a send that rejects lets its control go, clears nothing, and reports the error", async () => {
   const thrown = new Error("paint threw");
   const h = harness(newState(), { answer: thrown });

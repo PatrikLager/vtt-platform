@@ -1,4 +1,5 @@
-// Independent QA of the player panel's Say form, VTT-518 and VTT-520 to VTT-525.
+// Independent QA of the player panel's Say form, VTT-518, VTT-520 to VTT-524
+// and VTT-526.
 
 import { expect, test } from "bun:test";
 import "./support/dom";
@@ -493,7 +494,7 @@ test("a refused answer keeps what was typed while waiting", async () => {
   expect(field(t.paint(), "say-text").value).toBe("Hello and more");
 });
 
-// VTT-522, VTT-521, VTT-525
+// VTT-522, VTT-521, VTT-526
 test("a send that rejects keeps both boxes as typed", async () => {
   const real = console.error;
   console.error = () => {};
@@ -513,7 +514,7 @@ test("a send that rejects keeps both boxes as typed", async () => {
   }
 });
 
-// VTT-525
+// VTT-526
 test("a send that rejects frees the form, logs, and asks no paint", async () => {
   const errors: unknown[][] = [];
   const real = console.error;

@@ -650,7 +650,7 @@ test("a blank line takes no lock: the line typed after it sends", async () => {
   }
 });
 
-// VTT-523 VTT-525
+// VTT-523 VTT-526
 test("a line whose send rejects frees Send, keeps say-text, and reports the error", async () => {
   const thrown = new Error("paint threw");
   const reported = spyOn(console, "error").mockImplementation(() => {});
