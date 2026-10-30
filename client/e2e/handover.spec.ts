@@ -97,6 +97,9 @@ test("a DM hands a second character over, and the player keeps both across a rec
       await dm.locator('[data-action="add-actor"]').click();
       await dm.waitForTimeout(300);
       await expectNoRefusal(dm, `add actor ${id}`);
+      // Wait for each answer before the next round refills its boxes: a press
+      // sends nothing while its command is unanswered (VTT-523).
+      await expect(dm.locator('[data-field="actor-id"]')).toHaveValue("");
 
       await dm.locator('[data-field="token-id"]').fill(`tok-${id}`);
       await dm.locator('[data-field="token-scene"]').fill(sceneId ?? "");
@@ -104,6 +107,7 @@ test("a DM hands a second character over, and the player keeps both across a rec
       await dm.locator('[data-action="place-token"]').click();
       await dm.waitForTimeout(300);
       await expectNoRefusal(dm, `place token for ${id}`);
+      await expect(dm.locator('[data-field="token-id"]')).toHaveValue("");
     }
     await expect(dm.locator(`[data-token-id="tok-${SECOND}"]`)).toBeVisible({ timeout: 10_000 });
 

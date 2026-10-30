@@ -63,6 +63,9 @@ test("another player's Story names a line by its speaker, in character and out o
     const spoken = watcher.locator(".feed p").filter({ hasText: "I draw my sword" });
     await expect(spoken).toHaveText("Human Fighter: I draw my sword", { timeout: 10_000 });
     await expect(spoken).toHaveClass(/speech/);
+    // Wait for Lera's own answer, not the watcher's feed, before the next
+    // line: Enter sends nothing while a line is unanswered (VTT-523).
+    await expect(say).toHaveValue("", { timeout: 10_000 });
 
     await say.fill("/ooc brb");
     await say.press("Enter");

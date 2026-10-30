@@ -159,7 +159,7 @@ test("a box in a background tab keeps the focus across a repaint",
     await expect(box).toHaveValue("OpXen");
   });
 
-// VTT-491 VTT-493
+// VTT-491 VTT-522
 test("what a player types in Say survives a repaint, focus and all", async ({ page }) => {
   await page.goto(`${base}/?token=${tokens.dm}`);
   await expect(page.locator(".conn")).toHaveText("connected", { timeout: 15_000 });
