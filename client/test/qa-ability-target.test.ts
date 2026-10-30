@@ -6,6 +6,7 @@ import { newState, type Actor, type State, type Token } from "../src/state";
 import type { Ability, Me } from "../src/metadata";
 import type { ClientCommand, UseAbility } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
+import { ok } from "./support/answers";
 
 const SCENE = "cellar";
 const OTHER_SCENE = "taproom";
@@ -57,7 +58,7 @@ interface Drawn {
 
 function draw(st: State, me: Me, abilities: Ability[], ui: PlayerUIState): Drawn {
   const sent: ClientCommand[] = [];
-  const el = renderPlayerPanel(st, me, abilities, ui, (c) => { sent.push(c); }, () => {});
+  const el = renderPlayerPanel(st, me, abilities, ui, async (c) => { sent.push(c); return ok(); }, () => {});
   document.body.appendChild(el);
   return { el, sent };
 }

@@ -1,6 +1,6 @@
 import "./support/dom"; // see that module: registers once, keeps real fetch/WebSocket
 
-import { test, expect } from "bun:test";
+import { test, expect, spyOn } from "bun:test";
 import { create, type DescMessage } from "@bufbuild/protobuf";
 import {
   EnvelopeSchema, SessionStartedSchema, SessionEndedSchema, SceneCreatedSchema,
@@ -18,11 +18,12 @@ import { newState, type State } from "../src/state";
 import { ActorKind, NoteVisibility } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderPlayerPanel, type PlayerUIState } from "../src/view/player";
 import type { Ability, Me } from "../src/metadata";
-import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
+import type { ClientCommand, CommandResult } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { paint, missingTileColors, type ImageMap } from "../src/view/canvas";
 import { worldFromScreen } from "../src/view/camera";
 import { cellFromPoint, type Geometry } from "../src/view/grid";
 import { UNNAMED, namer } from "../src/view/naming";
+import { ok, refused, held, settle } from "./support/answers";
 
 /** Move an actor's control to someone else, mirror and set together. */
 function reassign(a: { controllerId: string; controllerIds: string[] }, to: string): void {
@@ -332,7 +333,10 @@ function panel(
   // repaint leaves the panel showing the old selection, which is the same
   // symptom as not handling the click at all.
   let repaints = 0;
-  const node = renderPlayerPanel(st, who, abilities, ui, (c) => sent.push(c), () => { repaints++; });
+  const node = renderPlayerPanel(st, who, abilities, ui, async (c) => {
+    sent.push(c);
+    return ok();
+  }, () => { repaints++; });
   return {
     node, sent, ui,
     repaints: () => repaints,
@@ -370,7 +374,8 @@ test("with no ability armed the panel invites a move instead", () => {
   expect(panel(world(), [atWill]).node.textContent).toContain("Click the board to move");
 });
 
-test("sending narration requires text, and clears the box afterwards", () => {
+// VTT-520
+test("sending narration requires text, and clears the box once it is accepted", async () => {
   const { node, sent } = panel(world(), []);
   const text = node.querySelector(".text") as HTMLInputElement;
   const send = Array.from(node.querySelectorAll("button")).find((b) => b.textContent === "Send")!;
@@ -381,22 +386,36 @@ test("sending narration requires text, and clears the box afterwards", () => {
   text.value = "I step forward.";
   send.click();
   expect(sent).toHaveLength(1);
+  await settle();
   expect(text.value).toBe("");
 });
 
 /**
  * The table with a panel for `who`, repainted as app.ts's paint does: one
  * `ui` across paints, into a root on the document so the focus means
- * something.
+ * something. `answer` is what the server answers each line: a result,
+ * "held" until the test calls release(), or an Error the send rejects with.
  */
-function sayTable(who: Me) {
+function sayTable(who: Me, answer: CommandResult | "held" | Error = ok()) {
   const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "", doorsArmed: false };
   const sent: ClientCommand[] = [];
+  const waiting = held();
+  // Counted apart from the test's own paints: these the panel asked for.
+  let repaints = 0;
   const root = document.createElement("div");
   document.body.replaceChildren(root);
+  const answerLine = async (c: ClientCommand): Promise<CommandResult> => {
+    sent.push(c);
+    if (answer === "held") return waiting.send(c);
+    if (answer instanceof Error) throw answer;
+    return answer;
+  };
   const paint = (): void =>
     renderSpectator(root, world(), [], "connected", {
-      panel: renderPlayerPanel(world(), who, [], ui, (c) => sent.push(c), paint),
+      panel: renderPlayerPanel(world(), who, [], ui, answerLine, () => {
+        repaints++;
+        paint();
+      }),
     });
   paint();
   // By class, which the boxes carry with or without a data-field.
@@ -407,10 +426,17 @@ function sayTable(who: Me) {
   };
   const send = (): void =>
     document.querySelector<HTMLButtonElement>('[data-action="add-narration"]')!.click();
-  return { root, sent, paint, box, type, send };
+  const enter = (): void => {
+    box("text").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  };
+  return {
+    root, sent, paint, box, type, send, enter,
+    repaints: () => repaints,
+    release: waiting.release,
+  };
 }
 
-// VTT-493 VTT-491
+// VTT-522 VTT-491
 test("what a DM typed in Say survives a repaint, with the as box focused", () => {
   const t = sayTable(dmMe);
   expect([t.box("as").value, t.box("text").value]).toEqual(["", ""]);
@@ -434,7 +460,7 @@ test("what a DM typed in Say survives a repaint, with the as box focused", () =>
   ]);
 });
 
-// VTT-493 VTT-491
+// VTT-522 VTT-491
 test("what a player typed in Say survives a repaint, with the text box focused", () => {
   const t = sayTable(me);
   expect(t.root.querySelector(".say .as") === null).toBe(true);
@@ -454,17 +480,18 @@ test("what a player typed in Say survives a repaint, with the text box focused",
   ]);
 });
 
-// VTT-493
-test("Send empties both Say boxes for the paints after it", () => {
+// VTT-520 VTT-521 VTT-522
+test("an accepted Send empties say-text and leaves say-as for the paints after it", async () => {
   const t = sayTable(dmMe);
   t.type("as", "Lera");
   t.type("text", "Hold.");
   t.send();
+  await settle();
 
   t.paint();
 
   expect(t.sent).toHaveLength(1);
-  expect([t.box("as").value, t.box("text").value]).toEqual(["", ""]);
+  expect([t.box("as").value, t.box("text").value]).toEqual(["Lera", ""]);
 });
 
 // VTT-500
@@ -486,7 +513,7 @@ test("with no party member chosen, a player's Send speaks as their first", () =>
   expect(p.sent.map((c) => c.command.value)).toEqual([expect.objectContaining({ actorId: "a1" })]);
 });
 
-// VTT-500 VTT-493
+// VTT-500 VTT-522
 test("a player's switch of party member keeps the Say text, and Send speaks as the new one", () => {
   const ui: PlayerUIState = { selectedActorId: "a1", selectedAbilityId: "", doorsArmed: false };
   const sent: ClientCommand[] = [];
@@ -495,7 +522,10 @@ test("a player's switch of party member keeps the Say text, and Send speaks as t
   const st = twoParty();
   const paint = (): void =>
     renderSpectator(root, st, [], "connected", {
-      panel: renderPlayerPanel(st, me, [], ui, (c) => sent.push(c), paint),
+      panel: renderPlayerPanel(st, me, [], ui, async (c) => {
+        sent.push(c);
+        return ok();
+      }, paint),
     });
   paint();
   const box = () => root.querySelector<HTMLInputElement>('[data-field="say-text"]')!;
@@ -508,6 +538,171 @@ test("a player's switch of party member keeps the Say text, and Send speaks as t
   expect(sent.map((c) => c.command.value)).toEqual([
     expect.objectContaining({ text: "I wait", actorId: "a2" }),
   ]);
+});
+
+// --- what the server's answer does to the Say boxes ------------------------
+
+// VTT-518 VTT-522
+test("a line the server refuses stays in say-text at the next paint, in character or out", async () => {
+  for (const line of ["I draw my sword", "/ooc where is the pizza"]) {
+    const t = sayTable(me, refused("not authorized"));
+    t.type("text", line);
+    t.send();
+    await settle();
+
+    t.paint();
+
+    expect([line, t.box("text").value]).toEqual([line, line]);
+    expect([line, t.sent.length, t.repaints()]).toEqual([line, 1, 0]);
+  }
+});
+
+// VTT-520 VTT-522
+test("a line the server accepts empties say-text, with one repaint asked for after the answer", async () => {
+  for (const line of ["I draw my sword", "/ooc where is the pizza"]) {
+    const t = sayTable(me);
+    t.type("text", line);
+    t.send();
+    expect([line, t.repaints(), t.box("text").value]).toEqual([line, 0, line]);
+    await settle();
+
+    expect([line, t.sent.length, t.repaints(), t.box("text").value]).toEqual([line, 1, 1, ""]);
+    t.paint();
+    expect([line, t.box("text").value]).toEqual([line, ""]);
+  }
+});
+
+// VTT-521 VTT-520 VTT-522
+test("a DM's or an agent's say-as keeps its name after an accepted line, and the next line speaks as it", async () => {
+  for (const who of [dmMe, agentMe]) {
+    const t = sayTable(who);
+    t.type("as", "Grimble");
+    t.type("text", "Hello");
+    t.send();
+    await settle();
+
+    t.paint();
+    expect([who.role, t.box("as").value, t.box("text").value]).toEqual([who.role, "Grimble", ""]);
+    t.type("text", "Bye");
+    t.send();
+    await settle();
+    expect(t.sent.map((c) => c.command.value)).toEqual([
+      expect.objectContaining({ text: "Hello", as: "Grimble" }),
+      expect.objectContaining({ text: "Bye", as: "Grimble" }),
+    ]);
+  }
+});
+
+// VTT-518 VTT-521 VTT-522
+test("a DM's or an agent's refused line leaves say-as and say-text as typed", async () => {
+  for (const who of [dmMe, agentMe]) {
+    const t = sayTable(who, refused("not authorized"));
+    t.type("as", "Grimble");
+    t.type("text", "Hello");
+    t.send();
+    await settle();
+
+    t.paint();
+    expect([who.role, t.box("as").value, t.box("text").value]).toEqual([who.role, "Grimble", "Hello"]);
+  }
+});
+
+// VTT-523
+test("Send or Enter while a line is unanswered sends nothing, until the answer frees them", async () => {
+  const pairs = [["send", "send"], ["send", "enter"], ["enter", "enter"]] as const;
+  for (const [first, second] of pairs) {
+    const t = sayTable(me, "held");
+    try {
+      t.type("text", "I draw my sword");
+      t[first]();
+      t[second]();
+      expect([first, second, t.sent.length]).toEqual([first, second, 1]);
+
+      t.release(refused("not authorized"));
+      await settle();
+      t.type("text", "I wait");
+      t[second]();
+      expect([first, second, t.sent.length]).toEqual([first, second, 2]);
+      expect(t.sent[1]!.command.value).toEqual(expect.objectContaining({ text: "I wait" }));
+    } finally {
+      t.release(refused("not authorized"));
+      await settle();
+    }
+  }
+});
+
+// VTT-523
+test("a blank line takes no lock: the line typed after it sends", async () => {
+  const t = sayTable(me, "held");
+  try {
+    t.type("text", "   ");
+    t.send();
+    t.enter();
+    expect(t.sent).toHaveLength(0);
+    t.type("text", "I draw my sword");
+    t.send();
+    expect(t.sent.map((c) => c.command.value)).toEqual([
+      expect.objectContaining({ text: "I draw my sword" }),
+    ]);
+  } finally {
+    t.release(refused("not authorized"));
+    await settle();
+  }
+});
+
+// VTT-523 VTT-525
+test("a line whose send rejects frees Send, keeps say-text, and reports the error", async () => {
+  const thrown = new Error("paint threw");
+  const reported = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const t = sayTable(me, thrown);
+    t.type("text", "I draw my sword");
+    t.send();
+    await settle();
+    t.send();
+    await settle();
+
+    t.paint();
+    expect(t.sent).toHaveLength(2);
+    expect(t.repaints()).toBe(0);
+    expect(t.box("text").value).toBe("I draw my sword");
+    expect(reported.mock.calls).toEqual([[thrown], [thrown]]);
+  } finally {
+    reported.mockRestore();
+  }
+});
+
+// VTT-524
+test("a press of Send or Enter that sends a line draws nothing new until its answer", async () => {
+  for (const who of [me, dmMe]) {
+    for (const press of ["send", "enter"] as const) {
+      const t = sayTable(who, "held");
+      try {
+        if (who.role !== "player") t.type("as", "Grimble");
+        t.type("text", "I draw my sword");
+        const boxes = () => Array.from(t.root.querySelectorAll<HTMLInputElement>(".say input"));
+        // outerHTML carries no input's value, so the values are read as well.
+        const drawn = () => {
+          t.paint();
+          return [who.role, press, t.root.outerHTML, boxes().map((b) => b.value)];
+        };
+        const before = drawn();
+        const live = boxes();
+        const typed = live.map((b) => b.value);
+        expect(typed).toEqual(who.role === "player" ? ["I draw my sword"] : ["Grimble", "I draw my sword"]);
+
+        t[press]();
+
+        expect([who.role, press, t.sent.length, t.repaints()]).toEqual([who.role, press, 1, 0]);
+        const same = boxes().length === live.length && boxes().every((b, i) => b === live[i]);
+        expect([who.role, press, same, live.map((b) => b.value)]).toEqual([who.role, press, true, typed]);
+        expect(drawn()).toEqual(before);
+      } finally {
+        t.release(refused("not authorized"));
+        await settle();
+      }
+    }
+  }
 });
 
 // VTT-500
@@ -531,7 +726,7 @@ test("a player's /ooc line goes out of character with the rest of the line", () 
 });
 
 // VTT-501
-test("only /ooc as the line's first word steps out of character", () => {
+test("only /ooc as the line's first word steps out of character", async () => {
   const p = panel(world(), []);
   p.input("text").value = "/ooc";
   p.button("Send").click();
@@ -540,6 +735,7 @@ test("only /ooc as the line's first word steps out of character", () => {
   for (const line of ["/oocx hi", "/OOC hi"]) {
     p.input("text").value = line;
     p.input("text").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await settle();
   }
   expect(p.sent.map((c) => c.command.value)).toEqual([
     expect.objectContaining({ text: "/oocx hi", outOfCharacter: false, actorId: "a1" }),
@@ -1497,13 +1693,15 @@ test("an armed ability always lists at least the actor's own square", () => {
 
 // --- saying something -------------------------------------------------------
 
-test("Send narrates the trimmed text, clears the box and repaints", () => {
+// VTT-520
+test("Send narrates the trimmed text, and an accepted line clears the box and repaints", async () => {
   const p = panel(world(), []);
   p.input("text").value = "  The door groans.  ";
   p.button("Send").click();
   expect(p.sent).toHaveLength(1);
   expect(p.sent[0]!.command.case).toBe("addNarration");
   expect(p.sent[0]!.command.value).toEqual(expect.objectContaining({ text: "The door groans." }));
+  await settle();
   expect(p.input("text").value).toBe("");
   expect(p.repaints()).toBe(1);
 });
@@ -1599,7 +1797,7 @@ test("a selection naming an actor that no longer exists renders nothing further"
   const st = world();
   const ui: PlayerUIState = { selectedActorId: "gone", selectedAbilityId: "", doorsArmed: false };
   let node: HTMLElement | null = null;
-  expect(() => { node = renderPlayerPanel(st, me, [atWill], ui, () => {}, () => {}); }).not.toThrow();
+  expect(() => { node = renderPlayerPanel(st, me, [atWill], ui, async () => ok(), () => {}); }).not.toThrow();
   expect(Array.from(node!.querySelectorAll("h3")).some((n) => n.textContent === "Abilities")).toBe(false);
 });
 

@@ -12,6 +12,7 @@ import { describe as lineOf, renderSpectator } from "../src/view/spectator";
 import { initialOf, namer, UNNAMED } from "../src/view/naming";
 import { renderPlayerPanel } from "../src/view/player";
 import type { Ability, Me } from "../src/metadata";
+import { ok } from "./support/answers";
 
 const PT = "pt-mira";
 const DM_PT = "pt-dm";
@@ -165,7 +166,7 @@ function panelFor(role: Me["role"], sent: ClientCommand[] = []): HTMLElement {
   const me: Me = { participantId: role === "player" ? PT : DM_PT, name: "x", role };
   return renderPlayerPanel(world(), me, ABILITIES, {
     selectedActorId: "act-p1", selectedAbilityId: "ab-strike", doorsArmed: false,
-  }, (c) => sent.push(c), () => {});
+  }, async (c) => { sent.push(c); return ok(); }, () => {});
 }
 
 // VTT-475

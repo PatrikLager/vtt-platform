@@ -393,6 +393,7 @@ test("an empty participant matches nothing, even against an empty id in the set"
 // --- the arm-doors toggle (Task 4) ------------------------------------------
 
 import { renderPlayerPanel } from "../src/view/player";
+import { ok } from "./support/answers";
 
 /** world() with sceneId "s1" carrying exactly the given Tiles. */
 function worldWithTiles(tiles: Record<string, { Kind: string; Material: string; Art: string }>): State {
@@ -407,7 +408,7 @@ test("a player with a controlled token adjacent to a door is offered the toggle"
   // "mine" sits at (1,1) (world()'s own fixture); a door at (0,0) is
   // Chebyshev distance 1 away -- adjacent.
   const st = worldWithTiles({ "0,0": { Kind: "door", Material: "wood", Art: "" } });
-  const node = renderPlayerPanel(st, me, [], doorUI(), () => {}, () => {});
+  const node = renderPlayerPanel(st, me, [], doorUI(), async () => ok(), () => {});
   expect(node.querySelector('[data-action="arm-doors"]')).not.toBeNull();
 });
 
@@ -417,13 +418,13 @@ test("a player with no controlled token near any door gets no toggle at all", ()
   // whose every use mayWorkDoor would refuse is exactly what this must not
   // do (doors.ts's own reasoning about mayWorkDoor, one level up).
   const st = worldWithTiles({ "9,0": { Kind: "door", Material: "wood", Art: "" } });
-  const node = renderPlayerPanel(st, me, [], doorUI(), () => {}, () => {});
+  const node = renderPlayerPanel(st, me, [], doorUI(), async () => ok(), () => {});
   expect(node.querySelector('[data-action="arm-doors"]')).toBeNull();
 });
 
 test("a scene with no doors at all offers no toggle", () => {
   // world()'s scene carries no Tiles entry whatsoever (undefined, not {}).
-  const node = renderPlayerPanel(world(), me, [], doorUI(), () => {}, () => {});
+  const node = renderPlayerPanel(world(), me, [], doorUI(), async () => ok(), () => {});
   expect(node.querySelector('[data-action="arm-doors"]')).toBeNull();
 });
 
@@ -433,7 +434,7 @@ test("a non-door tile next to a controlled token does not offer the toggle", () 
   // toggle for working a door that is not there. Same adjacency as the
   // first test above (door at (0,0)); only the tile's Kind differs.
   const st = worldWithTiles({ "0,0": { Kind: "wall", Material: "stone", Art: "" } });
-  const node = renderPlayerPanel(st, me, [], doorUI(), () => {}, () => {});
+  const node = renderPlayerPanel(st, me, [], doorUI(), async () => ok(), () => {});
   expect(node.querySelector('[data-action="arm-doors"]')).toBeNull();
 });
 
@@ -443,7 +444,7 @@ test("a DM sees no panel toggle -- they already have one in the console", () => 
   // beside this very panel (app.ts's canAct/isDM both admit a DM).
   const st = worldWithTiles({ "0,0": { Kind: "door", Material: "wood", Art: "" } });
   const dm: Me = { participantId: "p-me", name: "DM", role: "dm" };
-  const node = renderPlayerPanel(st, dm, [], doorUI(), () => {}, () => {});
+  const node = renderPlayerPanel(st, dm, [], doorUI(), async () => ok(), () => {});
   expect(node.querySelector('[data-action="arm-doors"]')).toBeNull();
 });
 
@@ -451,7 +452,7 @@ test("clicking the toggle flips ui.doorsArmed and repaints", () => {
   const st = worldWithTiles({ "0,0": { Kind: "door", Material: "wood", Art: "" } });
   const ui = doorUI();
   let repaints = 0;
-  const node = renderPlayerPanel(st, me, [], ui, () => {}, () => { repaints++; });
+  const node = renderPlayerPanel(st, me, [], ui, async () => ok(), () => { repaints++; });
   node.querySelector<HTMLButtonElement>('[data-action="arm-doors"]')!.click();
   expect(ui.doorsArmed).toBe(true);
   expect(repaints).toBe(1);
@@ -472,7 +473,7 @@ test("no scenes at all means no toggle, even with a controlled actor", () => {
     actorId: "mine", name: "MINE", moduleId: "", attributes: {}, resources: {},
     controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED,
   };
-  const node = renderPlayerPanel(st, me, [], doorUI(), () => {}, () => {});
+  const node = renderPlayerPanel(st, me, [], doorUI(), async () => ok(), () => {});
   expect(node.querySelector('[data-action="arm-doors"]')).toBeNull();
 });
 
@@ -496,7 +497,7 @@ test("the current scene is the lexicographically GREATEST id, not the one insert
     controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED,
   };
   st.Tokens["t-mine"] = { ID: "t-mine", SceneID: "zzz", ActorID: "mine", X: 1, Y: 1 };
-  const node = renderPlayerPanel(st, me, [], doorUI(), () => {}, () => {});
+  const node = renderPlayerPanel(st, me, [], doorUI(), async () => ok(), () => {});
   expect(node.querySelector('[data-action="arm-doors"]')).not.toBeNull();
 });
 
@@ -509,12 +510,12 @@ test("the toggle's class and label reflect whether doors are currently armed", (
   // at render time" for the DM console's identically-shaped pair.
   const st = worldWithTiles({ "0,0": { Kind: "door", Material: "wood", Art: "" } });
 
-  const off = renderPlayerPanel(st, me, [], { ...doorUI(), doorsArmed: false }, () => {}, () => {})
+  const off = renderPlayerPanel(st, me, [], { ...doorUI(), doorsArmed: false }, async () => ok(), () => {})
     .querySelector<HTMLButtonElement>('[data-action="arm-doors"]')!;
   expect(off.className).toBe("chip");
   expect(off.textContent).toBe("Arm doors");
 
-  const on = renderPlayerPanel(st, me, [], { ...doorUI(), doorsArmed: true }, () => {}, () => {})
+  const on = renderPlayerPanel(st, me, [], { ...doorUI(), doorsArmed: true }, async () => ok(), () => {})
     .querySelector<HTMLButtonElement>('[data-action="arm-doors"]')!;
   expect(on.className).toBe("chip sel");
   expect(on.textContent).toBe("Doors armed");
@@ -561,7 +562,7 @@ test("a prototype-injected empty-string scene defeats the `?? \"\"` equivalence 
   // SceneID "" -- matching the fallback string the REAL code yields, not the
   // mutant's -- and adjacent (Chebyshev 1) to the door at (0,0).
   st.Tokens["t-mine"] = { ID: "t-mine", SceneID: "", ActorID: "mine", X: 1, Y: 1 };
-  const node = renderPlayerPanel(st, me, [], doorUI(), () => {}, () => {});
+  const node = renderPlayerPanel(st, me, [], doorUI(), async () => ok(), () => {});
   expect(node.querySelector('[data-action="arm-doors"]')).not.toBeNull();
 });
 

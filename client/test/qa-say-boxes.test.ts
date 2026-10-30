@@ -12,6 +12,7 @@ import { renderPlayerPanel, type PlayerUIState } from "../src/view/player";
 import { renderSpectator } from "../src/view/spectator";
 import { newState } from "../src/state";
 import type { Me } from "../src/metadata";
+import { ok, settle } from "./support/answers";
 
 // The DM's panel, which keeps both Say boxes; a player's draws one (VTT-500).
 const ME: Me = { participantId: "p1", name: "Pat", role: "dm" };
@@ -49,7 +50,10 @@ function table(ids: string[] = ["a1"]) {
   };
   const paint = (): void => {
     const panel = withPanel
-      ? renderPlayerPanel(st, ME, [], ui, (c) => sent.push(c), paint,
+      ? renderPlayerPanel(st, ME, [], ui, async (c) => {
+        sent.push(c);
+        return ok();
+      }, paint,
         ME.role === "player" ? switcher : undefined)
       : undefined;
     renderSpectator(root, st, log, "open", { panel });
@@ -99,14 +103,14 @@ test("qaSay: both Say boxes are boxes, each with its own data-field", () => {
   expect(t.root.querySelectorAll(TEXT).length).toBe(1);
 });
 
-// VTT-493
+// VTT-522
 test("qaSay: a first paint shows both boxes empty", () => {
   const t = table();
   expect(t.box(AS).value).toBe("");
   expect(t.box(TEXT).value).toBe("");
 });
 
-// VTT-493
+// VTT-522
 test("qaSay: the DM's narration repaints and both boxes keep what was typed", () => {
   const t = table();
   const oldAs = t.box(AS);
@@ -157,7 +161,7 @@ test("qaSay: the focused 'as' box keeps the focus and a backward selection", () 
   expect(t.box(TEXT).value).toBe("hello there");
 });
 
-// VTT-493
+// VTT-522
 test("qaSay: Send after a repaint sends the narration with both boxes", () => {
   const t = table();
   typeInto(t.box(AS), "Brother Tuck");
@@ -167,7 +171,7 @@ test("qaSay: Send after a repaint sends the narration with both boxes", () => {
   expect(t.said()).toEqual([{ text: "I draw my sword", as: "Brother Tuck" }]);
 });
 
-// VTT-493
+// VTT-522
 test("qaSay: text typed into the new box after a repaint joins the kept text", () => {
   const t = table();
   const old = t.box(TEXT);
@@ -181,71 +185,81 @@ test("qaSay: text typed into the new box after a repaint joins the kept text", (
   expect(t.said()).toEqual([{ text: "I draw my sword", as: "" }]);
 });
 
-// VTT-493
-test("qaSay: after Send both boxes are empty at the paints that follow", () => {
+// VTT-520 VTT-521 VTT-522
+test("qaSay: after an accepted Send the text box is empty and the 'as' box kept at the paints that follow", async () => {
   const t = table();
   typeInto(t.box(AS), "Brother Tuck");
   typeInto(t.box(TEXT), "I draw my sword");
   t.root.querySelector<HTMLButtonElement>(SEND)?.click();
   expect(t.said().length).toBe(1);
+  await settle();
   t.dmNarrates("Silence.");
-  expect(t.box(AS).value).toBe("");
+  expect(t.box(AS).value).toBe("Brother Tuck");
   expect(t.box(TEXT).value).toBe("");
   t.paint();
-  expect(t.box(AS).value).toBe("");
+  expect(t.box(AS).value).toBe("Brother Tuck");
   expect(t.box(TEXT).value).toBe("");
 });
 
-// VTT-493
-test("qaSay: a second Send sends only what was typed since the first", () => {
+// VTT-520 VTT-521 VTT-522
+test("qaSay: a second Send sends the text typed since the first's answer, as the same speaker", async () => {
   const t = table();
   typeInto(t.box(AS), "Tuck");
   typeInto(t.box(TEXT), "first line");
   t.root.querySelector<HTMLButtonElement>(SEND)?.click();
+  await settle();
+  expect(t.box(TEXT).value).toBe("");
   typeInto(t.box(TEXT), "second line");
   t.dmNarrates("Hm.");
-  expect(t.box(AS).value).toBe("");
+  expect(t.box(AS).value).toBe("Tuck");
   expect(t.box(TEXT).value).toBe("second line");
   t.root.querySelector<HTMLButtonElement>(SEND)?.click();
   expect(t.said()).toEqual([
     { text: "first line", as: "Tuck" },
-    { text: "second line", as: "" },
+    { text: "second line", as: "Tuck" },
   ]);
 });
 
-// VTT-493
-test("qaSay: a blank Send leaves the boxes as its sending decides", () => {
+// VTT-522
+test("qaSay: a blank Send sends nothing and leaves both boxes as typed", async () => {
   const t = table();
   typeInto(t.box(AS), "Brother Tuck");
   typeInto(t.box(TEXT), "   ");
   t.root.querySelector<HTMLButtonElement>(SEND)?.click();
-  const sentOne = t.said().length > 0;
+  expect(t.said()).toEqual([]);
   t.dmNarrates("Rain.");
-  expect(t.box(AS).value).toBe(sentOne ? "" : "Brother Tuck");
-  expect(t.box(TEXT).value).toBe(sentOne ? "" : "   ");
+  expect(t.box(AS).value).toBe("Brother Tuck");
+  expect(t.box(TEXT).value).toBe("   ");
+  typeInto(t.box(TEXT), "Amen");
+  t.root.querySelector<HTMLButtonElement>(SEND)?.click();
+  expect(t.said()).toEqual([{ text: "Amen", as: "Brother Tuck" }]);
+  await settle();
 });
 
-// VTT-493
-test("qaSay: Enter in the text box leaves the boxes as its sending decides", () => {
+// VTT-520 VTT-521 VTT-522
+test("qaSay: an accepted Enter in the text box keeps the 'as' box and empties the text box", async () => {
   const t = table();
   typeInto(t.box(AS), "Tuck");
   const text = t.box(TEXT);
   typeInto(text, "I bow");
   text.focus();
   text.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-  const sentOne = t.said().length > 0;
+  expect(t.said()).toEqual([{ text: "I bow", as: "Tuck" }]);
+  await settle();
   t.dmNarrates("Applause.");
-  expect(t.box(AS).value).toBe(sentOne ? "" : "Tuck");
-  expect(t.box(TEXT).value).toBe(sentOne ? "" : "I bow");
+  expect(t.box(AS).value).toBe("Tuck");
+  expect(t.box(TEXT).value).toBe("");
 });
 
 // VTT-491
-test("qaSay: Enter's repaint leaves the focus in the new text box", () => {
+test("qaSay: Enter's repaint leaves the focus in the new text box", async () => {
   const t = table();
   const text = t.box(TEXT);
   typeInto(text, "I bow");
   text.focus();
   text.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  await settle();
+  expect(t.box(TEXT) === text).toBe(false);
   expect(document.activeElement === t.box(TEXT)).toBe(true);
   t.dmNarrates("Applause.");
   const now = t.box(TEXT);
@@ -253,7 +267,7 @@ test("qaSay: Enter's repaint leaves the focus in the new text box", () => {
   expect(document.activeElement === now).toBe(true);
 });
 
-// VTT-493
+// VTT-522
 test("qaSay: the 'as' box alone keeps its text and the text box stays empty", () => {
   const t = table();
   const as = t.box(AS);
@@ -265,7 +279,7 @@ test("qaSay: the 'as' box alone keeps its text and the text box stays empty", ()
   expect(document.activeElement === t.box(AS)).toBe(true);
 });
 
-// VTT-493
+// VTT-522
 test("qaSay: a box its typist emptied stays empty after a repaint", () => {
   const t = table();
   typeInto(t.box(AS), "Tuck");
@@ -301,7 +315,7 @@ test("qaSay: a focused Send button: a repaint focuses nothing in the window", ()
   expect(t.box(TEXT).value).toBe("I wait");
 });
 
-// VTT-493
+// VTT-522
 test("qaSay: a paint without the panel in between loses nothing typed", () => {
   const t = table();
   typeInto(t.box(AS), "Tuck");
@@ -315,7 +329,7 @@ test("qaSay: a paint without the panel in between loses nothing typed", () => {
   expect(t.box(TEXT).value).toBe("I wait");
 });
 
-// VTT-493
+// VTT-522
 test("qaSay: a switch of the watched party member keeps the boxes' text", () => {
   const t = table(["a1", "a2"]);
   typeInto(t.box(AS), "Tuck");

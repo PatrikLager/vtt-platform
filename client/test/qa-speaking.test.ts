@@ -20,6 +20,7 @@ import type { Me } from "../src/metadata";
 import { renderPlayerPanel } from "../src/view/player";
 import type { PlayerUIState } from "../src/view/player";
 import { renderSpectator } from "../src/view/spectator";
+import { ok, settle } from "./support/answers";
 
 function world(): State {
   const st = newState();
@@ -56,7 +57,10 @@ function rig(me: Me, sel = "a2") {
   document.body.appendChild(root);
   const paint = () => {
     const panel = renderPlayerPanel(
-      st, me, [], ui, (c) => sent.push(c), paint,
+      st, me, [], ui, async (c) => {
+        sent.push(c);
+        return ok();
+      }, paint,
     );
     renderSpectator(root, st, [], "connected", { panel });
   };
@@ -207,19 +211,21 @@ describe("say form", () => {
     expect(r.sent.length).toBe(0);
   });
 
-  test("qaSpk: Send empties the box", () => {
+  test("qaSpk: Send empties the box", async () => {
     const r = rig(player);
     r.type("say-text", "hello");
     r.send();
-    // VTT-493 "since the panel last sent a narration"
+    await settle();
+    // VTT-520 "A line the server accepts leaves ... say-text empty"
     expect(r.q("say-text")!.value).toBe("");
   });
 
-  test("qaSpk: an /ooc Send empties the box", () => {
+  test("qaSpk: an /ooc Send empties the box", async () => {
     const r = rig(player);
     r.type("say-text", "/ooc hi");
     r.send();
-    // VTT-493 same, for the out-of-character send
+    await settle();
+    // VTT-520 same, for the out-of-character send
     expect(r.q("say-text")!.value).toBe("");
   });
 
@@ -227,7 +233,7 @@ describe("say form", () => {
     const r = rig(player);
     r.type("say-text", "half a sent");
     r.paint();
-    // VTT-493 "show what was typed in them"
+    // VTT-522 "shows what was typed in it"
     expect(r.q("say-text")!.value).toBe("half a sent");
     r.paint();
     expect(r.q("say-text")!.value).toBe("half a sent");
@@ -297,7 +303,7 @@ describe("DM and agent", () => {
       r.type("say-as", "Goblin");
       r.type("say-text", "Grr");
       r.paint();
-      // VTT-493 "the player panel's Say boxes"
+      // VTT-522 "say-as shows what it showed before it"
       expect(r.q("say-as")!.value).toBe("Goblin");
       expect(r.q("say-text")!.value).toBe("Grr");
     });
@@ -317,13 +323,15 @@ describe("DM and agent", () => {
       expect(now.selectionDirection).toBe("backward");
     });
 
-    test(`qaSpk: a ${me.role} Send empties both boxes`, () => {
+    test(`qaSpk: a ${me.role} Send keeps the as box and empties the text box`, async () => {
       const r = rig(me);
       r.type("say-as", "Goblin");
       r.type("say-text", "Grr");
       r.send();
-      // VTT-493 "since the panel last sent a narration"
-      expect(r.q("say-as")!.value).toBe("");
+      await settle();
+      // VTT-521 "Send leaves ... say-as holding what it held"
+      expect(r.q("say-as")!.value).toBe("Goblin");
+      // VTT-520 "A line the server accepts leaves ... say-text empty"
       expect(r.q("say-text")!.value).toBe("");
     });
   }

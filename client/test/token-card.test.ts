@@ -9,6 +9,7 @@ import { renderPlayerPanel } from "../src/view/player";
 import { newState, type State } from "../src/state";
 import { UNNAMED, namer } from "../src/view/naming";
 import type { Ability, Me } from "../src/metadata";
+import { ok } from "./support/answers";
 
 const IDS = ["act-lera", "act-gob", "act-rat", "t-lera", "tok-gob", "tok-rat"];
 
@@ -153,7 +154,7 @@ test("the target buttons are labelled by the window's naming, never by an id", (
     const me: Me = { participantId: "p-me", name: "Me", role };
     const ui = { selectedActorId: "act-lera", selectedAbilityId: "reach", doorsArmed: false };
     const sent: ClientCommand[] = [];
-    const node = renderPlayerPanel(table(), me, [reach], ui, (c) => sent.push(c), () => {});
+    const node = renderPlayerPanel(table(), me, [reach], ui, async (c) => { sent.push(c); return ok(); }, () => {});
     return Array.from(node.querySelectorAll('[data-action="use-ability"]'), (b) => b.textContent);
   };
   expect(labels("player")).toEqual(["Lera", "a hunched goblin", UNNAMED]);

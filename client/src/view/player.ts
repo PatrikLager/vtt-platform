@@ -13,7 +13,7 @@ import type { State } from "../state";
 import type { Ability, Me } from "../metadata";
 import { affordable, controlledActors, readLine, targetableTokens } from "../player";
 import { moveToken, useAbility, addNarration, setViewpoint, speakAs, speakOutOfCharacter } from "../commands";
-import type { ClientCommand } from "../../../contract/gen/ts/vtt/v1/commands_pb";
+import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import { currentSceneId, mayWorkDoor } from "./doors";
 import { namer } from "./naming";
 
@@ -22,9 +22,11 @@ export interface PlayerUIState {
   selectedAbilityId: string;
   /** Whether a board click works a door instead of moving a token (SPEC-022). */
   doorsArmed: boolean;
-  /** What the Say boxes hold until Send sends it (VTT-493). */
+  /** What the Say boxes hold across paints (VTT-521, VTT-522). */
   sayAs?: string;
   sayText?: string;
+  /** A line the panel sent is unanswered: Send and Enter send nothing (VTT-523). */
+  saying?: boolean;
 }
 
 /** A player's switch between the party members the gateway lets them watch (VTT-457). */
@@ -69,7 +71,7 @@ export function renderPlayerPanel(
   me: Me,
   abilities: Ability[],
   ui: PlayerUIState,
-  send: (c: ClientCommand) => void,
+  send: (c: ClientCommand) => Promise<CommandResult>,
   rerender: () => void,
   switcher?: Switcher,
 ): HTMLElement {
@@ -142,7 +144,7 @@ export function renderPlayerPanel(
       const b = el("button", "chip", names.token(t.ID));
       b.dataset["action"] = "use-ability";
       b.addEventListener("click", () => {
-        send(useAbility(actorId, armed.id, [t.ActorID]));
+        void send(useAbility(actorId, armed.id, [t.ActorID]));
         ui.selectedAbilityId = "";
         rerender();
       });
@@ -207,16 +209,26 @@ export function renderPlayerPanel(
   });
   const send3 = el("button", "chip", "Send");
   send3.dataset["action"] = "add-narration";
+  // Never empty or repaint at the press, nor touch `say-as` (VTT-521, VTT-524).
   const submit = () => {
+    if (ui.saying) return;
     const line = readLine(text.value);
     if (line.text === "") return;
     const name = speaksFreely ? as.value.trim() || undefined : undefined;
-    if (line.ooc) send(speakOutOfCharacter(line.text, name));
-    else send(speaksFreely ? addNarration(line.text, name) : speakAs(line.text, actorId));
-    text.value = "";
-    ui.sayAs = "";
-    ui.sayText = "";
-    rerender();
+    ui.saying = true;
+    const said = line.ooc
+      ? send(speakOutOfCharacter(line.text, name))
+      : send(speaksFreely ? addNarration(line.text, name) : speakAs(line.text, actorId));
+    void said
+      .then((res) => {
+        if (!res.ok) return;
+        text.value = "";
+        ui.sayText = "";
+        rerender();
+      }, (e: unknown) => console.error(e))
+      .finally(() => {
+        ui.saying = false;
+      });
   };
   send3.addEventListener("click", submit);
   text.addEventListener("keydown", (e) => {

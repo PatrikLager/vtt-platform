@@ -299,7 +299,7 @@ function playerFixture(): HTMLElement {
   const me: Me = { participantId: "p-me", name: "Hero's Player", role: "player" };
   const ability: Ability = { id: "poke", name: "Poke", range: 1, maxTargets: 1, usage: { kind: "atWill" } };
   const ui: PlayerUIState = { selectedActorId: "a1", selectedAbilityId: "poke", doorsArmed: false };
-  return renderPlayerPanel(st, me, [ability], ui, () => {}, () => {});
+  return renderPlayerPanel(st, me, [ability], ui, async () => create(CommandResultSchema, { ok: true }), () => {});
 }
 
 /**

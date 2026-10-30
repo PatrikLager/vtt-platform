@@ -3469,3 +3469,27 @@ test("an accepted Start session that brings no event empties the name", async ()
     forgetTheName(r, s);
   }
 });
+
+// --- what the server's answer does to the Say boxes ------------------------
+
+// VTT-521 VTT-520
+test("a DM's accepted line keeps the speaker's name in say-as and empties say-text", async () => {
+  const { r, s, sock } = await tableAs("dm");
+  const box = (field: string) => r.querySelector<HTMLInputElement>(`[data-field="${field}"]`)!;
+  try {
+    for (const [field, typed] of [["say-as", "Grimble"], ["say-text", "Hello"]] as const) {
+      box(field).value = typed;
+      box(field).dispatchEvent(new Event("input"));
+    }
+    box("say-text").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await settle();
+    const line = JSON.parse(sock.sent.at(-1)!);
+    expect(line.addNarration).toMatchObject({ text: "Hello", as: "Grimble" });
+    sock.deliver({ result: { requestId: line.requestId, ok: true } });
+    await settle();
+
+    expect([box("say-as").value, box("say-text").value]).toEqual(["Grimble", ""]);
+  } finally {
+    s?.close();
+  }
+});
