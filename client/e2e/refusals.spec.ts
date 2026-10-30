@@ -57,7 +57,7 @@ test("a refused Place leaves its five boxes as typed, beside the refusal",
     await page.screenshot(shot("r1-refused-place-keeps-what-was-typed"));
   });
 
-// Run before the next test: its grant outlives the session it ends.
+// Run before the next test: its grant outlives the session it starts.
 // VTT-521 VTT-529 VTT-533
 test("a DM's accepted line empties say-text and keeps say-as for the next line",
   async ({ page }) => {
