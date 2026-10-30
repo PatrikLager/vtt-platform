@@ -280,6 +280,7 @@ function dmFixture(open: boolean): HTMLElement {
     // (client/src/view/dm.ts) — this fixture only cares that a command
     // FORM renders and dispatches, never what the server would answer.
     send: async () => create(CommandResultSchema, { ok: true }),
+    rerender: () => {},
     notify: () => {},
     confirm: () => true,
     doorsArmed: false,

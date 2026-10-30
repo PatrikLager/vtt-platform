@@ -391,6 +391,7 @@ function startSession(root: HTMLElement, token: string): Session {
             origin: location.origin,
             refreshSharing,
             send: act,
+            rerender: paint,
             notify: (m) => {
               toast = m;
               paint();

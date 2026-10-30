@@ -3421,3 +3421,51 @@ test("a refused join leaves the joiner typing in the name box", async () => {
   expect(document.activeElement === next).toBe(true);
   expect(next.value).toBe("Kim");
 });
+
+// --- what the server's answer does to the console's typed text -------------
+
+/** Type a session name on a DM's page, press Start, and answer it. */
+async function startSessionAnswered(result: Frame) {
+  const { r, s, sock } = await dmPage();
+  const name = r.querySelector<HTMLInputElement>('[data-field="session-name"]')!;
+  name.value = "Night One";
+  name.dispatchEvent(new Event("input"));
+  byText(r, "Start session")!.click();
+  await settle();
+  const requestId = JSON.parse(sock.sent.at(-1)!).requestId as string;
+  sock.deliver({ result: { requestId, ...result } });
+  await settle();
+  return { r, s };
+}
+
+/** Leave the console's draft empty for later files, and close the page. */
+function forgetTheName(r: HTMLElement, s: ReturnType<typeof boot>) {
+  const box = r.querySelector<HTMLInputElement>('[data-field="session-name"]');
+  if (box !== null) {
+    box.value = "";
+    box.dispatchEvent(new Event("input"));
+  }
+  s?.close();
+}
+
+// VTT-517
+test("a refused Start session leaves the name typed beside the refusal", async () => {
+  const { r, s } = await startSessionAnswered({ ok: false, error: "a session is already open" });
+  try {
+    expect(r.querySelector<HTMLInputElement>('[data-field="session-name"]')!.value).toBe("Night One");
+    expect(r.querySelector(".toast")!.textContent).toBe("refused: a session is already open");
+  } finally {
+    forgetTheName(r, s);
+  }
+});
+
+// VTT-519
+test("an accepted Start session that brings no event empties the name", async () => {
+  const { r, s } = await startSessionAnswered({ ok: true });
+  try {
+    expect(r.querySelector<HTMLInputElement>('[data-field="session-name"]')!.value).toBe("");
+    expect(r.querySelector(".toast")).toBeNull();
+  } finally {
+    forgetTheName(r, s);
+  }
+});

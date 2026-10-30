@@ -114,6 +114,7 @@ function deps(st: State): DMDeps {
     origin: "http://localhost:8080",
     refreshSharing: () => {},
     send: async () => create(CommandResultSchema, { ok: true }),
+    rerender: () => {},
     notify: () => {},
     confirm: () => true,
     doorsArmed: false,

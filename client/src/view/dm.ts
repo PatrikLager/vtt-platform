@@ -46,6 +46,35 @@ function clearDraft(...fields: string[]): void {
   for (const f of fields) delete draft[f];
 }
 
+// Keep the locks beside `draft`, outside renderDMConsole: the console is
+// rebuilt at every paint, and a lock held inside it would not last (VTT-523).
+const unanswered = new Set<string>();
+
+interface Sending {
+  command: ClientCommand;
+  clears: string[];
+}
+
+/**
+ * Take `key` only once a command is sent, free it at any answer (VTT-523);
+ * clear only at ok (VTT-517, VTT-519).
+ */
+function sending(d: DMDeps, key: string, press: () => Sending | undefined): () => void {
+  return () => {
+    if (unanswered.has(key)) return;
+    const out = press();
+    if (out === undefined) return;
+    unanswered.add(key);
+    void d.send(out.command)
+      .then((res) => {
+        if (!res.ok) return;
+        clearDraft(...out.clears);
+        d.rerender();
+      }, (e: unknown) => console.error(e))
+      .finally(() => unanswered.delete(key));
+  };
+}
+
 /**
  * The wire NAME a kind <select> carries, back to the enum the command needs.
  *
@@ -232,6 +261,8 @@ export interface DMDeps {
    * could have read one back (2026-09-02-art-is-a-flat-library Task 2).
    */
   send: (c: ClientCommand) => Promise<CommandResult>;
+  /** Repaint the table, once an accepted command has cleared its form (VTT-519). */
+  rerender: () => void;
   notify: (msg: string) => void;
   confirm: (msg: string) => boolean;
   /**
@@ -266,12 +297,11 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
         ? [button("End session", () => d.send(endSession()), "end-session")]
         : [
             sessionName,
-            button("Start session", () => {
+            button("Start session", sending(d, "start-session", () => {
               const n = sessionName.value.trim();
-              if (n === "") return d.notify("a session needs a name");
-              d.send(startSession(n));
-              clearDraft("session-name");
-            }, "start-session"),
+              if (n === "") return void d.notify("a session needs a name");
+              return { command: startSession(n), clears: ["session-name"] };
+            }), "start-session"),
           ]),
     ),
   );
@@ -289,15 +319,17 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     group(
       "Add actor",
       actorId, actorName, actorKind,
-      button("Add", () => {
-        if (actorId.value.trim() === "") return d.notify("an actor needs an id");
+      button("Add", sending(d, "add-actor", () => {
+        if (actorId.value.trim() === "") return void d.notify("an actor needs an id");
         const kind = actorKindFromWireName(actorKind.value);
         if (kind === null) {
-          return d.notify("Say what it is: a party member, or a monster the party has to find.");
+          return void d.notify("Say what it is: a party member, or a monster the party has to find.");
         }
-        d.send(addActor(actorId.value.trim(), actorName.value.trim(), kind));
-        clearDraft("actor-id", "actor-name", "actor-kind");
-      }, "add-actor"),
+        return {
+          command: addActor(actorId.value.trim(), actorName.value.trim(), kind),
+          clears: ["actor-id", "actor-name", "actor-kind"],
+        };
+      }), "add-actor"),
       // Takes an actor out of the world for good, and every token it has on
       // the board with it (retraction-leaves Task 9, spec §5.2) — the DM's
       // reach for the one command in this arc that emits a batch. Shares
@@ -308,11 +340,10 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
       // NO CONFIRMATION, per this file's own opening rule: exactly one control
       // asks first, and it is the one whose damage lands OUTSIDE the room. A
       // removal lands on the log every seat at this table can see.
-      button("Remove", () => {
-        if (actorId.value.trim() === "") return d.notify("name the actor to remove");
-        d.send(removeActor(actorId.value.trim()));
-        clearDraft("actor-id");
-      }, "remove-actor"),
+      button("Remove", sending(d, "remove-actor", () => {
+        if (actorId.value.trim() === "") return void d.notify("name the actor to remove");
+        return { command: removeActor(actorId.value.trim()), clears: ["actor-id"] };
+      }), "remove-actor"),
     ),
   );
 
@@ -329,14 +360,13 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     group(
       "…or paste actor JSON",
       paste,
-      button("Add from JSON", () => {
+      button("Add from JSON", sending(d, "actor-json", () => {
         const result = parseActorJSON(paste.value);
         // Parse errors are shown, never thrown: the DM is mid-edit and
         // blanking the console would lose what they typed.
-        if (result instanceof Error) return d.notify(result.message);
-        d.send(result);
-        clearDraft("actor-json");
-      }),
+        if (result instanceof Error) return void d.notify(result.message);
+        return { command: result, clears: ["actor-json"] };
+      })),
     ),
   );
 
@@ -352,25 +382,26 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     group(
       "Place token",
       tokId, tokScene, tokActor, tx, ty,
-      button("Place", () => {
+      button("Place", sending(d, "place-token", () => {
         if (!tokId.value.trim() || !tokScene.value.trim() || !tokActor.value.trim()) {
-          return d.notify("a token needs an id, a scene and an actor");
+          return void d.notify("a token needs an id, a scene and an actor");
         }
-        d.send(placeToken(tokId.value.trim(), tokScene.value.trim(), tokActor.value.trim(), {
-          x: Number(tx.value) || 0,
-          y: Number(ty.value) || 0,
-        }));
-        clearDraft("token-id", "token-scene", "token-actor", "token-x", "token-y");
-      }, "place-token"),
+        return {
+          command: placeToken(tokId.value.trim(), tokScene.value.trim(), tokActor.value.trim(), {
+            x: Number(tx.value) || 0,
+            y: Number(ty.value) || 0,
+          }),
+          clears: ["token-id", "token-scene", "token-actor", "token-x", "token-y"],
+        };
+      }), "place-token"),
       // Takes a piece off the board for good (retraction-leaves Task 8, spec
       // §5.1) — the DM control this branch's own Task 3 left without one
       // when the Undo group came out. Shares tokId with Place rather than a
       // field of its own: naming a token to remove needs nothing else.
-      button("Remove", () => {
-        if (!tokId.value.trim()) return d.notify("name the token to remove");
-        d.send(removeToken(tokId.value.trim()));
-        clearDraft("token-id");
-      }, "remove-token"),
+      button("Remove", sending(d, "remove-token", () => {
+        if (!tokId.value.trim()) return void d.notify("name the token to remove");
+        return { command: removeToken(tokId.value.trim()), clears: ["token-id"] };
+      }), "remove-token"),
     ),
   );
 
@@ -388,10 +419,11 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
       const gmName = input("GM name", `describe-gm-name:${id}`, "", tok.GMName ?? "");
       const gmNotes = textarea("GM notes", `describe-gm-notes:${id}`, tok.GMNotes ?? "");
       const boxes = [name, notes, gmName, gmNotes];
-      row.append(el("span", "describe-id", id), ...boxes, button("Describe", () => {
-        d.send(describeToken(id, name.value, notes.value, gmName.value, gmNotes.value));
-        clearDraft(...boxes.map((b) => b.dataset["field"]!));
-      }, "describe-token"));
+      const describe = sending(d, `describe-token:${id}`, () => ({
+        command: describeToken(id, name.value, notes.value, gmName.value, gmNotes.value),
+        clears: boxes.map((b) => b.dataset["field"]!),
+      }));
+      row.append(el("span", "describe-id", id), ...boxes, button("Describe", describe, "describe-token"));
       g.appendChild(row);
     }
     wrap.appendChild(g);
@@ -451,18 +483,19 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     group(
       "Notes",
       noteKey, noteTitle, noteText, noteVisibility,
-      button("Save", () => {
+      button("Save", sending(d, "upsert-note", () => {
         if (!noteKey.value.trim() || !noteText.value.trim()) {
-          return d.notify("a note needs a key and some text");
+          return void d.notify("a note needs a key and some text");
         }
         const visibility = noteVisibilityFromWireName(noteVisibility.value);
         if (visibility === null) {
-          return d.notify("Say who may read it: every player and spectator, or the DM alone.");
+          return void d.notify("Say who may read it: every player and spectator, or the DM alone.");
         }
-        d.send(upsertNote(noteKey.value.trim(), noteTitle.value.trim(), noteText.value.trim(), visibility));
-        noteVisibility.value = "";
-        clearDraft("note-visibility");
-      }, "upsert-note"),
+        return {
+          command: upsertNote(noteKey.value.trim(), noteTitle.value.trim(), noteText.value.trim(), visibility),
+          clears: ["note-visibility"],
+        };
+      }), "upsert-note"),
       button("Delete", () => {
         if (!noteKey.value.trim()) return d.notify("name the note to delete");
         d.send(deleteNote(noteKey.value.trim()));
@@ -605,7 +638,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     give.className = "chip grant";
     give.textContent = "Grant";
     give.dataset["action"] = "grant-actor-control";
-    give.addEventListener("click", () => {
+    give.addEventListener("click", sending(d, `grant-actor-control:${a.actorId}`, () => {
       // Refused HERE rather than sent and bounced: the server rejects an empty
       // participant (gateway authz, engine controlTarget), and a toast saying
       // what the DM did wrong beats one relaying a protocol error.
@@ -622,9 +655,8 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
         d.notify("Say what it is: a party member, or a monster the party has to find.");
         return;
       }
-      d.send(grantActorControl(a.actorId, target.value, kind));
-      clearDraft(field, kindField);
-    });
+      return { command: grantActorControl(a.actorId, target.value, kind), clears: [field, kindField] };
+    }));
     row.appendChild(give);
     controlRows.push(row);
   }

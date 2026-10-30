@@ -5,6 +5,7 @@ import { ClientCommandSchema } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { describeToken } from "../src/commands";
 import { newState, type State } from "../src/state";
 import { renderDMConsole, type DMDeps } from "../src/view/dm";
+import { ok } from "./support/answers";
 
 // "Plan" below is
 // docs/superpowers/plans/2026-10-24-a-token-carries-what-a-player-may-see-of-it.md.
@@ -32,8 +33,9 @@ function deps(st: State, sent: Cmd[]): DMDeps {
     refreshSharing: () => {},
     send: async (c) => {
       sent.push(c);
-      return {} as Awaited<ReturnType<DMDeps["send"]>>;
+      return ok();
     },
+    rerender: () => {},
     notify: () => {},
     confirm: () => true,
     doorsArmed: false,

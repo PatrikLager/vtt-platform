@@ -23,6 +23,7 @@ function dmConsole(): HTMLElement {
     origin: "https://table.example",
     refreshSharing: () => {},
     send: async () => create(CommandResultSchema, { ok: true }),
+    rerender: () => {},
     notify: () => {},
     confirm: () => true,
     doorsArmed: false,

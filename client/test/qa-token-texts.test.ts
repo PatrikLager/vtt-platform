@@ -344,6 +344,7 @@ function harness(): Harness {
         sent.push(c);
         return create(CommandResultSchema, { requestId: c.requestId, ok: true });
       },
+      rerender: () => {},
       notify: () => {},
       confirm: () => true,
       doorsArmed: false,

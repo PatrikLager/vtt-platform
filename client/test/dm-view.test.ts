@@ -1,28 +1,15 @@
 import "./support/dom"; // see that module: registers once, keeps real fetch/WebSocket
 
-import { test, expect, beforeEach } from "bun:test";
-import { create } from "@bufbuild/protobuf";
+import { test, expect, beforeEach, spyOn } from "bun:test";
 import { newState, type State } from "../src/state";
 import { ActorKind, NoteVisibility } from "../../contract/gen/ts/vtt/v1/events_pb";
 import type { Roster, MapMeta } from "../src/metadata";
 import { renderDMConsole } from "../src/view/dm";
 import joinURL from "../../contract/testdata/join_url_format.json";
 import {
-  JoinDoor, CommandResultSchema, type ClientCommand, type CommandResult,
+  JoinDoor, type ClientCommand, type CommandResult,
 } from "../../contract/gen/ts/vtt/v1/commands_pb";
-
-/**
- * The ordinary, no-warnings answer these fixtures' fake `send` resolves
- * with — every test below cares whether a command was SENT (the `sent`
- * array each fixture also tracks), never what the server answered, so one
- * shared ok=true stands in everywhere. `renderDMConsole`'s `send` field
- * resolves to a real CommandResult since
- * 2026-09-02-art-is-a-flat-library Task 2 (client/src/view/dm.ts): it used
- * to be Promise<void>, which these fixtures satisfied with a bare `{}`.
- */
-function okResult(): CommandResult {
-  return create(CommandResultSchema, { ok: true });
-}
+import { held, ok, refused, settle } from "./support/answers";
 
 function harness(
   st: State = newState(),
@@ -33,10 +20,18 @@ function harness(
     participants?: { participantId: string; displayName: string }[];
     roster?: Roster[];
     doorsArmed?: boolean;
+    // What the server answers each command: a result, "held" until the test
+    // calls release(), or an Error the send rejects with. ok() when unset.
+    answer?: CommandResult | "held" | Error;
   } = {},
 ) {
   const sent: ClientCommand[] = [];
   const notices: string[] = [];
+  const answer = opts.answer ?? ok();
+  const waiting = held();
+  // Counted, as toggles are: the console asks for a repaint, and app.ts's
+  // paint() is what would draw it.
+  let repaints = 0;
   let confirmAnswer = true;
   // Counted, not just answered: some guards must run BEFORE the dialog opens,
   // and "nothing was sent" cannot tell a validation refusal from a declined
@@ -68,7 +63,15 @@ function harness(
     })),
     origin: "https://table.example",
     refreshSharing: () => {},
-    send: async (c) => { sent.push(c); return okResult(); },
+    send: async (c) => {
+      sent.push(c);
+      if (answer === "held") return waiting.send(c);
+      if (answer instanceof Error) throw answer;
+      return answer;
+    },
+    rerender: () => {
+      repaints++;
+    },
     notify: (m) => notices.push(m),
     confirm: (m: string) => {
       confirmCount++;
@@ -88,6 +91,9 @@ function harness(
     setConfirm: (v: boolean) => (confirmAnswer = v),
     doorsArmed: () => doorsArmed,
     toggles: () => toggles,
+    repaints: () => repaints,
+    release: waiting.release,
+    settle,
     field: (f: string) => node.querySelector(`[data-field="${f}"]`) as HTMLInputElement,
     action: (a: string) => node.querySelector(`[data-action="${a}"]`) as HTMLButtonElement,
     button: (label: string) =>
@@ -210,28 +216,34 @@ test("text survives a re-render, so an incoming event cannot eat what the DM is 
   expect(second.field("token-scene").value).toBe("cave");
 });
 
-test("a submitted session name is not restored on the next render", () => {
+test("a submitted session name is not restored on the next render", async () => {
   const h = harness();
   h.field("session-name").value = "Night One";
   h.field("session-name").dispatchEvent(new Event("input"));
   h.action("start-session").click();
   expect(h.sent).toHaveLength(1);
+  await h.settle();
 
   expect(harness().field("session-name").value).toBe("");
 });
 
-test("a REFUSED start still clears the name — the text is gone with the command", () => {
-  // Pins current behaviour, which does not match the comment on clearDraft
-  // ("after the command it fed succeeded"): send() is fire-and-forget here,
-  // so the draft is cleared whether or not the gateway accepts it. A DM
-  // whose command is refused has to retype. Deliberately recorded as-is
-  // rather than quietly changed — see the note raised with this test.
-  const h = harness();
-  h.field("session-name").value = "Night One";
-  h.field("session-name").dispatchEvent(new Event("input"));
-  h.action("start-session").click();
+// VTT-517
+test("a refused Start session keeps the name as typed, whatever the refusal", async () => {
+  try {
+    for (const why of ["a session is already open", "wire: not connected"]) {
+      const h = harness(newState(), { answer: refused(why) });
+      h.field("session-name").value = "Night One";
+      h.field("session-name").dispatchEvent(new Event("input"));
+      h.action("start-session").click();
+      await h.settle();
 
-  expect(harness().field("session-name").value).toBe("");
+      expect(h.sent).toHaveLength(1);
+      expect(h.repaints()).toBe(0);
+      expect(harness().field("session-name").value).toBe("Night One");
+    }
+  } finally {
+    type(harness(), { "session-name": "" });
+  }
 });
 
 test("a name rejected by the client's own guard is kept, because nothing was sent", () => {
@@ -485,7 +497,7 @@ test("a token's ids are trimmed and its coordinates parsed, defaulting to 0", ()
 
 // removeToken (retraction-leaves Task 8, fix round 1): the restored DM
 // control, sharing token-id with Place rather than a field of its own.
-test("removing a token sends its trimmed id and clears the field", () => {
+test("removing a token sends its trimmed id and clears the field", async () => {
   const h = harness();
   fill(h, { "token-id": " t1 " });
   // THROUGH THE EVENT, the way "placing a token clears exactly the token
@@ -499,6 +511,7 @@ test("removing a token sends its trimmed id and clears the field", () => {
   const [p] = payloads(h);
   expect(p!.case).toBe("removeToken");
   expect(p!.value["tokenId"]).toBe("t1");
+  await h.settle();
 
   const next = harness();
   expect(next.field("token-id").value).toBe("");
@@ -513,7 +526,7 @@ test("removing a token sends its trimmed id and clears the field", () => {
 // damage lands OUTSIDE the room (rotating the join link strands copies held by
 // people who are not here). A removal lands on the log every seat at this
 // table can see.
-test("removing an actor sends its trimmed id and clears the field", () => {
+test("removing an actor sends its trimmed id and clears the field", async () => {
   const h = harness();
   fill(h, { "actor-id": " a1 " });
   // Through the event, for the reason the token twin above states.
@@ -522,6 +535,7 @@ test("removing an actor sends its trimmed id and clears the field", () => {
   const [p] = payloads(h);
   expect(p!.case).toBe("removeActor");
   expect(p!.value["actorId"]).toBe("a1");
+  await h.settle();
 
   const next = harness();
   expect(next.field("actor-id").value).toBe("");
@@ -539,7 +553,7 @@ test("a note is not sent until who may read it is chosen", () => {
 });
 
 // VTT-229
-test("a saved note carries the visibility chosen", () => {
+test("a saved note carries the visibility chosen", async () => {
   for (const [wire, want] of [
     ["NOTE_VISIBILITY_PUBLIC", NoteVisibility.PUBLIC],
     ["NOTE_VISIBILITY_SECRET", NoteVisibility.SECRET],
@@ -551,21 +565,26 @@ test("a saved note carries the visibility chosen", () => {
     expect(payloads(h)).toEqual([
       { case: "upsertNote", value: expect.objectContaining({ key: "k", visibility: want }) },
     ]);
+    await h.settle();
   }
 });
 
 // VTT-229
-test("a choice is not carried to the next note, re-rendered or not", () => {
+test("a choice is not carried to the next note once the server accepts one", async () => {
   const h = harness();
   fill(h, { "note-key": "k", "note-text": "body" });
   const vis = h.node.querySelector(".note-visibility") as HTMLSelectElement;
   vis.value = "NOTE_VISIBILITY_SECRET";
   vis.dispatchEvent(new Event("change"));
   h.button("Save").click();
-  expect(vis.options[vis.selectedIndex]!.value).toBe("");
-  h.button("Save").click();
+  await h.settle();
   expect(h.sent).toHaveLength(1);
-  expect((harness().node.querySelector(".note-visibility") as HTMLSelectElement).value).toBe("");
+
+  const next = harness();
+  fill(next, { "note-key": "k", "note-text": "body" });
+  expect((next.node.querySelector(".note-visibility") as HTMLSelectElement).value).toBe("");
+  next.button("Save").click();
+  expect(next.sent).toHaveLength(0);
 });
 
 test("a note's key, title and text are trimmed on the way out", () => {
@@ -777,7 +796,7 @@ test("pasted JSON that parses is sent as an addActor command", () => {
 // free to be blanked: clearing the wrong key leaves stale text in the box the
 // DM just submitted, and wipes one they are still typing in.
 
-test("adding an actor clears exactly the actor fields", () => {
+test("adding an actor clears exactly the actor fields", async () => {
   const h = harness();
   fill(h, { "actor-id": "a1", "actor-name": "Lera", "token-scene": "keep-me" });
   for (const f of ["actor-id", "actor-name", "token-scene"]) {
@@ -787,6 +806,7 @@ test("adding an actor clears exactly the actor fields", () => {
   kind.value = "ACTOR_KIND_NON_PARTY";
   kind.dispatchEvent(new Event("change"));
   h.action("add-actor").click();
+  await h.settle();
 
   const next = harness();
   expect(next.field("actor-id").value).toBe("");
@@ -799,13 +819,14 @@ test("adding an actor clears exactly the actor fields", () => {
   expect(next.field("token-scene").value).toBe("keep-me");
 });
 
-test("placing a token clears exactly the token fields", () => {
+test("placing a token clears exactly the token fields", async () => {
   const h = harness();
   fill(h, { "token-id": "t1", "token-scene": "s1", "token-actor": "a1", "token-x": "2", "token-y": "3", "note-key": "keep-me" });
   for (const f of ["token-id", "token-scene", "token-actor", "token-x", "token-y", "note-key"]) {
     h.field(f).dispatchEvent(new Event("input"));
   }
   h.action("place-token").click();
+  await h.settle();
 
   const next = harness();
   for (const f of ["token-id", "token-scene", "token-actor", "token-x", "token-y"]) {
@@ -814,12 +835,13 @@ test("placing a token clears exactly the token fields", () => {
   expect(next.field("note-key").value).toBe("keep-me");
 });
 
-test("adding an actor from JSON clears the paste box", () => {
+test("adding an actor from JSON clears the paste box", async () => {
   const h = harness();
   const box = h.node.querySelector('[data-field="actor-json"]') as HTMLTextAreaElement;
   box.value = '{"actorId":"a9","name":"Nine","kind":"ACTOR_KIND_NON_PARTY"}';
   box.dispatchEvent(new Event("input"));
   h.button("Add from JSON").click();
+  await h.settle();
 
   const next = harness();
   expect((next.node.querySelector('[data-field="actor-json"]') as HTMLTextAreaElement).value).toBe("");
@@ -1379,7 +1401,8 @@ function shareConsole(opts: {
     roster: opts.roster === undefined ? [] : opts.roster,
     origin: "https://table.example",
     refreshSharing: () => refreshes++,
-    send: async (c) => { sent.push(c); return okResult(); },
+    send: async (c) => { sent.push(c); return ok(); },
+    rerender: () => {},
     notify: (m) => notices.push(m),
     confirm: () => true,
   });
@@ -1446,7 +1469,7 @@ test("rotating asks first, because it locks out a link already sent", () => {
     st: emptyState(), adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s3cret" }, roster: [],
     origin: "https://table.example", refreshSharing: () => {},
-    send: async (c) => { sent.push(c); return okResult(); }, notify: () => {},
+    send: async (c) => { sent.push(c); return ok(); }, rerender: () => {}, notify: () => {},
     doorsArmed: false, toggleDoors: () => {},
     confirm: () => {
       asked++;
@@ -1510,7 +1533,8 @@ test("ending a session is addressable, not just clickable by its label", () => {
   const node = renderDMConsole({
     st, adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: null, roster: [], origin: "https://table.example",
-    refreshSharing: () => {}, send: async (c) => { sent.push(c); return okResult(); }, notify: () => {}, confirm: () => true,
+    refreshSharing: () => {}, send: async (c) => { sent.push(c); return ok(); }, notify: () => {}, confirm: () => true,
+    rerender: () => {},
     doorsArmed: false, toggleDoors: () => {},
   });
 
@@ -1527,7 +1551,8 @@ test("rotating goes through once the DM says yes", async () => {
     st: newState(), adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s3cret" }, roster: [],
     origin: "https://table.example", refreshSharing: () => refreshes++,
-    send: async (c) => { sent.push(c); return okResult(); }, notify: () => {}, confirm: () => true,
+    send: async (c) => { sent.push(c); return ok(); }, notify: () => {}, confirm: () => true,
+    rerender: () => {},
     doorsArmed: false, toggleDoors: () => {},
   });
 
@@ -1615,7 +1640,7 @@ test("the rotate confirmation says what is lost, not just 'are you sure'", () =>
     st: newState(), adventures: [], maps: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s" }, roster: [],
     origin: "https://table.example", refreshSharing: () => {},
-    send: async () => okResult(), notify: () => {},
+    send: async () => ok(), rerender: () => {}, notify: () => {},
     confirm: (m) => {
       asked = m;
       return false;
@@ -1914,7 +1939,7 @@ function type(h: ReturnType<typeof harness>, values: Record<string, string>) {
   for (const f of Object.keys(values)) h.field(f).dispatchEvent(new Event("input"));
 }
 
-test("a typed describe field survives a repaint until sent, and Describe clears only its own row", () => {
+test("a typed describe field survives a repaint, and an accepted Describe clears only its own row", async () => {
   const h = harness(tableWithTokens("t1", "t2"));
   type(h, { "describe-notes:t1": "asleep", "describe-gm-notes:t2": "the leader" });
 
@@ -1923,13 +1948,14 @@ test("a typed describe field survives a repaint until sent, and Describe clears 
   expect(again.field("describe-gm-notes:t2").value).toBe("the leader");
 
   (again.node.querySelector('.describe-row[data-token="t1"] [data-action="describe-token"]') as HTMLButtonElement).click();
+  await again.settle();
   const after = harness(tableWithTokens("t1", "t2"));
   expect(after.field("describe-notes:t1").value).toBe("");
   expect(after.field("describe-gm-notes:t2").value).toBe("the leader");
   type(after, { "describe-gm-notes:t2": "" });
 });
 
-test("a describe field with no draft shows the token's present text", () => {
+test("a describe field with no draft shows the token's present text", async () => {
   const st = newState();
   st.Tokens["t9"] = {
     ID: "t9", SceneID: "s1", ActorID: "a1", X: 0, Y: 0,
@@ -1946,5 +1972,327 @@ test("a describe field with no draft shows the token's present text", () => {
   type(harness(st), { "describe-name:t9": "" });
   expect(harness(st).field("describe-name:t9").value).toBe("");
   (harness(st).node.querySelector('.describe-row[data-token="t9"] [data-action="describe-token"]') as HTMLButtonElement).click();
+  await settle();
   expect(harness(st).field("describe-name:t9").value).toBe("a hunched goblin");
+});
+
+// --- what the server's answer does to the fields that fed it ----------------
+//
+// Each form the console clears is listed once: what is typed into it, and
+// what each field it clears reads when nothing has been typed in it. A field
+// is named by a selector, because the selects carry no data-field.
+
+/** Two tokens with text of their own and two actors, so every form draws. */
+function tableForEveryForm(): State {
+  const st = newState();
+  for (const id of ["tok-r1", "tok-r2"]) {
+    st.Tokens[id] = {
+      ID: id, SceneID: "s1", ActorID: "a1", X: 0, Y: 0,
+      Name: `${id} name`, Notes: `${id} notes`, GMName: `${id} gm`, GMNotes: `${id} gm notes`,
+    };
+  }
+  for (const id of ["act-r1", "act-r2"]) {
+    st.Actors[id] = {
+      actorId: id, name: id, moduleId: "", attributes: {}, resources: {},
+      controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
+    };
+  }
+  return st;
+}
+
+function everyForm(answer: CommandResult | "held" | Error = ok()) {
+  return harness(tableForEveryForm(), {
+    participants: [{ participantId: "p-bo", displayName: "Bo" }],
+    answer,
+  });
+}
+
+type Harness = ReturnType<typeof harness>;
+
+interface Form {
+  name: string;
+  /** What is typed into each field the form reads, by selector. */
+  typed: Record<string, string>;
+  /** Each field an accepted answer clears, as drawn with nothing typed in it. */
+  cleared: Record<string, string>;
+  press: (h: Harness) => void;
+}
+
+const box = (field: string) => `[data-field="${field}"]`;
+const grantRow = (actor: string) => `.control-actor[data-actor="${actor}"]`;
+const click = (selector: string) => (h: Harness) =>
+  (h.node.querySelector(selector) as HTMLButtonElement).click();
+
+function describeForm(token: string): Form {
+  const typed: Record<string, string> = {};
+  const cleared: Record<string, string> = {};
+  for (const [part, present] of [
+    ["name", "name"], ["notes", "notes"], ["gm-name", "gm"], ["gm-notes", "gm notes"],
+  ] as const) {
+    typed[box(`describe-${part}:${token}`)] = `typed ${part}`;
+    cleared[box(`describe-${part}:${token}`)] = `${token} ${present}`;
+  }
+  return {
+    name: `Describe ${token}`, typed, cleared,
+    press: click(`.describe-row[data-token="${token}"] [data-action="describe-token"]`),
+  };
+}
+
+function grantForm(actor: string): Form {
+  const target = `${grantRow(actor)} .grant-target`;
+  const kind = `${grantRow(actor)} .grant-kind`;
+  return {
+    name: `Grant ${actor}`,
+    typed: { [target]: "p-bo", [kind]: "ACTOR_KIND_NON_PARTY" },
+    cleared: { [target]: "", [kind]: "" },
+    press: click(`${grantRow(actor)} .grant`),
+  };
+}
+
+const PLACE = ["token-id", "token-scene", "token-actor", "token-x", "token-y"].map(box);
+
+const FORMS: Form[] = [
+  {
+    name: "Start session",
+    typed: { [box("session-name")]: "Night One" },
+    cleared: { [box("session-name")]: "" },
+    press: click('[data-action="start-session"]'),
+  },
+  {
+    name: "Add actor",
+    typed: {
+      [box("actor-id")]: "act-new", [box("actor-name")]: "Lera",
+      ".actor-kind": "ACTOR_KIND_PARTY_MEMBER",
+    },
+    cleared: { [box("actor-id")]: "", [box("actor-name")]: "", ".actor-kind": "" },
+    press: click('[data-action="add-actor"]'),
+  },
+  {
+    name: "Remove actor",
+    typed: { [box("actor-id")]: "act-gone" },
+    cleared: { [box("actor-id")]: "" },
+    press: click('[data-action="remove-actor"]'),
+  },
+  {
+    name: "Add from JSON",
+    typed: { [box("actor-json")]: '{"actorId":"a9","name":"Nine","kind":"ACTOR_KIND_NON_PARTY"}' },
+    cleared: { [box("actor-json")]: "" },
+    press: (h) => h.button("Add from JSON").click(),
+  },
+  {
+    name: "Place token",
+    typed: Object.fromEntries(PLACE.map((sel, i) => [sel, ["tok-new", "s1", "a1", "2", "3"][i]!])),
+    cleared: Object.fromEntries(PLACE.map((sel) => [sel, ""])),
+    press: click('[data-action="place-token"]'),
+  },
+  {
+    name: "Remove token",
+    typed: { [box("token-id")]: "tok-gone" },
+    cleared: { [box("token-id")]: "" },
+    press: click('[data-action="remove-token"]'),
+  },
+  describeForm("tok-r1"),
+  {
+    name: "Save note",
+    typed: {
+      [box("note-key")]: "ravine", [box("note-title")]: "Ravine",
+      [box("note-text")]: "The trail is watched.", ".note-visibility": "NOTE_VISIBILITY_PUBLIC",
+    },
+    cleared: { ".note-visibility": "" },
+    press: click('[data-action="upsert-note"]'),
+  },
+  grantForm("act-r1"),
+];
+
+/** Type into a box through `input`, or choose in a select through `change`. */
+function enter(h: Harness, values: Record<string, string>): void {
+  for (const [selector, v] of Object.entries(values)) {
+    const control = h.node.querySelector(selector) as HTMLInputElement | HTMLSelectElement;
+    control.value = v;
+    control.dispatchEvent(new Event(control.tagName === "SELECT" ? "change" : "input"));
+  }
+}
+
+function read(h: Harness, selectors: string[]): Record<string, string> {
+  return Object.fromEntries(
+    selectors.map((sel) => [sel, (h.node.querySelector(sel) as HTMLInputElement).value]),
+  );
+}
+
+/** Leave no typed text for a later test: every form's fields typed empty. */
+function forgetEveryForm(): void {
+  const all = [...FORMS, describeForm("tok-r2"), grantForm("act-r2")];
+  enter(everyForm(), Object.fromEntries(all.flatMap((f) => Object.keys(f.typed)).map((s) => [s, ""])));
+}
+
+// VTT-517
+test("a refused command leaves every field of its form as typed", async () => {
+  try {
+    for (const form of FORMS) {
+      const h = everyForm(refused("not authorized"));
+      enter(h, form.typed);
+      form.press(h);
+      await h.settle();
+
+      expect([form.name, h.sent.length, h.repaints()]).toEqual([form.name, 1, 0]);
+      expect([form.name, read(everyForm(), Object.keys(form.typed))])
+        .toEqual([form.name, form.typed]);
+    }
+  } finally {
+    forgetEveryForm();
+  }
+});
+
+// VTT-517 VTT-519
+test("a note's key, title and text stay as typed, refused or accepted", async () => {
+  const note = FORMS.find((f) => f.name === "Save note")!;
+  const kept = ["note-key", "note-title", "note-text"].map(box);
+  try {
+    for (const answer of [refused("not authorized"), ok()]) {
+      const h = everyForm(answer);
+      enter(h, note.typed);
+      note.press(h);
+      await h.settle();
+
+      expect(h.sent).toHaveLength(1);
+      expect(read(everyForm(), kept)).toEqual({
+        [box("note-key")]: "ravine",
+        [box("note-title")]: "Ravine",
+        [box("note-text")]: "The trail is watched.",
+      });
+    }
+  } finally {
+    forgetEveryForm();
+  }
+});
+
+// VTT-519
+test("an accepted Start session empties the name, and asks for one repaint after the answer", async () => {
+  const h = harness();
+  try {
+    h.field("session-name").value = "Night One";
+    h.field("session-name").dispatchEvent(new Event("input"));
+    h.action("start-session").click();
+    expect(h.repaints()).toBe(0);
+    await h.settle();
+
+    expect(h.sent).toHaveLength(1);
+    expect(h.repaints()).toBe(1);
+    expect(harness().field("session-name").value).toBe("");
+  } finally {
+    type(harness(), { "session-name": "" });
+  }
+});
+
+// VTT-519
+test("an accepted command clears the fields of its own form and of no other", async () => {
+  try {
+    for (const form of FORMS) {
+      const typed: Record<string, string> = {};
+      for (const other of FORMS) if (other !== form) Object.assign(typed, other.typed);
+      Object.assign(typed, form.typed);
+      const h = everyForm(ok());
+      enter(h, typed);
+      form.press(h);
+      await h.settle();
+
+      expect([form.name, h.sent.length]).toEqual([form.name, 1]);
+      expect([form.name, read(everyForm(), Object.keys(typed))])
+        .toEqual([form.name, { ...typed, ...form.cleared }]);
+    }
+  } finally {
+    forgetEveryForm();
+  }
+});
+
+// VTT-523
+test("a control whose command is unanswered sends nothing when pressed again, each row its own", async () => {
+  const controls = [...FORMS, describeForm("tok-r2"), grantForm("act-r2")];
+  const h = everyForm("held");
+  let repainted: Harness | undefined;
+  try {
+    for (const form of controls) enter(h, form.typed);
+    for (const [i, form] of controls.entries()) {
+      form.press(h);
+      expect([form.name, h.sent.length]).toEqual([form.name, i + 1]);
+    }
+    repainted = everyForm("held");
+    for (const form of controls) {
+      form.press(h);
+      form.press(repainted);
+    }
+    expect([h.sent.length, repainted.sent.length]).toEqual([controls.length, 0]);
+
+    h.release(refused("not authorized"));
+    await h.settle();
+    for (const form of controls) form.press(h);
+    expect(h.sent).toHaveLength(2 * controls.length);
+  } finally {
+    h.release(refused("not authorized"));
+    repainted?.release(refused("not authorized"));
+    await h.settle();
+    forgetEveryForm();
+  }
+});
+
+// VTT-524
+test("a press that sends changes nothing the next render draws until its answer", async () => {
+  const h = everyForm("held");
+  try {
+    for (const form of FORMS) {
+      enter(h, form.typed);
+      const drawn = () => {
+        const c = everyForm();
+        return [form.name, c.node.outerHTML, read(c, Object.keys(form.typed))];
+      };
+      const before = drawn();
+      form.press(h);
+      expect(drawn()).toEqual(before);
+    }
+    expect([h.sent.length, h.repaints()]).toEqual([FORMS.length, 0]);
+  } finally {
+    h.release(refused("not authorized"));
+    await h.settle();
+    forgetEveryForm();
+  }
+});
+
+// VTT-523
+test("a press the console's own guard refuses holds nothing back", async () => {
+  try {
+    for (const form of FORMS.filter((f) => !f.name.startsWith("Describe"))) {
+      forgetEveryForm();
+      const h = everyForm(refused("not authorized"));
+      form.press(h);
+      expect([form.name, h.sent.length, h.notices.length]).toEqual([form.name, 0, 1]);
+      enter(h, form.typed);
+      form.press(h);
+      expect([form.name, h.sent.length]).toEqual([form.name, 1]);
+      await h.settle();
+    }
+  } finally {
+    forgetEveryForm();
+  }
+});
+
+// VTT-523
+test("a send that rejects lets its control go, clears nothing, and reports the error", async () => {
+  const thrown = new Error("paint threw");
+  const h = harness(newState(), { answer: thrown });
+  const reported = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    type(h, { "session-name": "Night One" });
+    h.action("start-session").click();
+    await h.settle();
+    h.action("start-session").click();
+    await h.settle();
+
+    expect(h.sent).toHaveLength(2);
+    expect(h.repaints()).toBe(0);
+    expect(harness().field("session-name").value).toBe("Night One");
+    expect(reported.mock.calls).toEqual([[thrown], [thrown]]);
+  } finally {
+    reported.mockRestore();
+    type(harness(), { "session-name": "" });
+  }
 });

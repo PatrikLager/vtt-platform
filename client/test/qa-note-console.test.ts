@@ -39,6 +39,7 @@ function dmConsole(): Console {
       sent.push(c);
       return create(CommandResultSchema, { requestId: c.requestId, ok: true });
     },
+    rerender: () => {},
     notify: (msg: string) => {
       told.push(msg);
     },
