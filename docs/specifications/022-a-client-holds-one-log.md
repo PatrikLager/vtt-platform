@@ -58,13 +58,25 @@ rewrite, by `client/test/dm-view.test.ts` and
 `client/test/qa-describe-token.test.ts` (VTT-464); and that a repaint gives the
 box being typed in its focus and selection back, focuses nothing else and
 leaves the page scrolled where it was, and that the Say boxes keep what was
-typed until a narration is sent, by `client/test/focus.test.ts`,
-`client/test/app.test.ts`, `client/test/spectator-view.test.ts`,
-`client/test/qa-repaint-focus.test.ts`, `client/test/qa-say-boxes.test.ts`,
-`client/e2e/typing.spec.ts` and `client/e2e/qa-repaint.spec.ts` (VTT-491 to
-VTT-494); and that a player's line speaks as their party member, `/ooc` steps
-out of character, a DM's and an agent's panel draws its speaker box, and a
-line out of character is drawn under its speaker in `(( ))`, by
+typed, `say-text` until the server accepts a line and `say-as` until it is
+changed, by `client/test/focus.test.ts`, `client/test/app.test.ts`,
+`client/test/spectator-view.test.ts`, `client/test/qa-repaint-focus.test.ts`,
+`client/test/qa-say-boxes.test.ts`, `client/test/qa-speaking.test.ts`,
+`client/test/qa-refused-line.test.ts`, `client/e2e/typing.spec.ts`,
+`client/e2e/qa-repaint.spec.ts` and `client/e2e/refusals.spec.ts` (VTT-491,
+VTT-492, VTT-494, VTT-518 and VTT-520 to VTT-522); and that a console field
+keeps what was typed until the server accepts the command it fed, that a
+press of one of the console's controls that clear a field, or of the panel's
+Send or Enter in `say-text`, whose command is unanswered sends nothing, that
+a press of one of them that sends changes nothing drawn until its answer, and
+that such a send whose promise rejects clears nothing and frees its
+control, by `client/test/dm-view.test.ts`, `client/test/app.test.ts`,
+`client/test/spectator-view.test.ts`, `client/test/qa-refused-command.test.ts`,
+`client/test/qa-refused-line.test.ts` and `client/e2e/refusals.spec.ts`
+(VTT-517, VTT-519, VTT-523, VTT-524, VTT-526); and that a player's line
+speaks as their party member, `/ooc` steps out of character, a DM's and an
+agent's panel draws its speaker box, and a line out of character is drawn
+under its speaker in `(( ))`, by
 `client/test/spectator-view.test.ts`, `client/test/player.test.ts`,
 `client/test/commands.test.ts`, `client/test/feed.test.ts`,
 `client/test/qa-speaking.test.ts` and `client/e2e/speaking.spec.ts` (VTT-500
@@ -231,10 +243,12 @@ page when the tree is replaced. What a box shows after a repaint comes from
 outside the tree: the console's from `draft` in `client/src/view/dm.ts`, or,
 for a box with no draft, from the world and the join link the console is drawn
 from, or nothing; the join form's from `JoinViewState.name`; and the player
-panel's Say boxes from `PlayerUIState`'s `sayAs` and `sayText`, which Send, or
-Enter in `say-text`, empties when it sends a narration (VTT-493). A focused
-select or button loses the focus at a repaint, and so does a box when `paint`
-draws the reason it cannot fold a log in its place.
+panel's Say boxes from `PlayerUIState`'s `sayAs` and `sayText`. `sayText`
+holds what was typed in `say-text` since the server last accepted a line from
+the panel, and `sayAs` what was last typed in `say-as`, which no Send and no
+answer changes (VTT-522). A focused select or button loses the focus at a
+repaint, and so does a box when `paint` draws the reason it cannot fold a log
+in its place.
 
 **Saying something.** A player's panel draws one Say box, `say-text`, and no
 box for a speaker; a DM's and an agent's draws `say-as` beside it (the owner's
@@ -247,12 +261,70 @@ character (VTT-501). Any other line goes in character: a player's by
 DM's and an agent's by `addNarration`, with what `say-as` holds, trimmed, as
 `as`, and no `as` when it is blank (VTT-504). A line out of character goes by
 `speakOutOfCharacter`, carrying `say-as` only from a DM's or an agent's panel.
+Send, or Enter in `say-text`, leaves `say-as` holding what it held, refused or
+accepted, so the next line carries the same `as` until `say-as` is changed
+(VTT-521; the owner's ruling "Ja, behåll namnet" of 2026-10-29).
 The server writes the name a player's line in character and every line out of
 character is shown under, over any `say-as` a DM's or an agent's panel sent
 with it; a DM's and an agent's line in character keeps its `as` (SPEC-013).
 The Story draws a line out of character as its `as`, `: ` and its text between
 `(( ` and ` ))`, with the class `ooc`, and `describe` writes the same for the
 Events panel (VTT-502).
+
+**What a command's answer leaves typed** (the owner's rulings "Ja, Say och
+alla formulär" and "Töm ändå", 2026-10-29). The console's controls that
+clear a field, Start session, Add actor, Remove actor, Add from JSON, Place
+token, Remove token, a row's Describe, Save note and a row's Grant, each send
+through `sending` in `client/src/view/dm.ts`. The player panel's Send, and
+Enter in `say-text`, send through `submit` in `renderPlayerPanel`. Both are
+handed `act` from `client/src/app.ts` as `send`: it resolves to the command's
+`CommandResult`, shows a refusal as the toast `refused: ` and its error, and
+paints at every answer before the console's or the panel's own handling of
+that answer runs. Until the answer, what was typed for the command stays in
+its field and in `draft` or `PlayerUIState`. When the server accepts it
+(`ok`):
+- the console clears the drafts of the fields that fed the command, Save
+  note's key, title and text excepted, and asks for a repaint through
+  `DMDeps.rerender`, which `app.ts` sets to `paint`. Each of those fields is
+  then drawn as with nothing typed: empty, the blank option, or for a
+  Describe box the token's present text (VTT-519). Remove actor is fed by
+  `actor-id` alone and Remove token by `token-id` alone, so the rest of their
+  forms stays as typed;
+- the panel empties `PlayerUIState.sayText` and the `say-text` box it read
+  the line from, and asks for a repaint through its `rerender`, which
+  `app.ts` sets to `paint` (VTT-520).
+
+Text typed into those fields after the command was sent is cleared with
+them. Any other answer clears nothing and asks for no repaint of its own: a
+refusal, and the `ok: false` that `Wire.send` gives a command on a socket that
+is not open or that closes before the result arrives, alike (VTT-517,
+VTT-518). A refusal is not logged: `git grep -n 'console\.' client/src`
+finds only the two handlers of a rejected send.
+
+**One press, one command** (VTT-523). While a command one of those console
+controls sent is unanswered, pressing that control again sends nothing; while
+a line the panel sent is unanswered, Send and Enter in `say-text` send
+nothing. The console keeps its locks in `unanswered`, beside `draft`, so they
+last across paints, one per control: keyed by the control's action, by the
+action and the row's token or actor id for a Describe or a Grant, and by
+`actor-json` for Add from JSON. So another control, or another row's
+Describe or Grant, sends meanwhile, Add actor and Remove actor included
+though they share `actor-id`. The panel's lock is `PlayerUIState.saying`, one
+for Send and Enter. A press the console's own checks refuse, or a line in
+which `readLine` finds nothing to send, sends nothing and takes no lock. A
+lock is taken when the command is sent and freed at its answer, whatever it
+is, a socket's close included, or when the send's promise rejects.
+
+**A press of one of those controls that sends draws nothing new before its
+answer** (VTT-524; the owner's ruling "Nej, osynligt lås" of 2026-10-29). A
+press of one of them that sends neither clears, nor disables, nor repaints
+anything, and a press a lock stops shows no notice and asks for no repaint.
+The toast, or the cleared field, follows the answer.
+
+**A send of one of those controls whose promise rejects** clears nothing,
+asks for no repaint, frees the control that sent it, and passes its error to
+`console.error` (VTT-526; the owner's ruling "console.error(e)" of
+2026-10-29).
 
 ### How the window names what it shows
 
@@ -318,8 +390,10 @@ when the world holds a token, a "Describe tokens" group with one row per token
 of the world, by id, each with the token's id and boxes for its name, notes,
 GM name and GM notes, the two notes as textareas. A box with no draft shows
 the token's present text. "Describe" sends `describeToken` with the four as
-typed, empty ones included, and clears that row's drafts (VTT-464; "Ja, en
-kontroll i konsolen", the owner's ruling of 2026-10-24).
+typed, empty ones included (VTT-464; "Ja, en kontroll i konsolen", the owner's
+ruling of 2026-10-24). Once the server accepts it, the console clears that
+row's drafts and no other row's, so the row's boxes are drawn as with no
+draft (VTT-519).
 
 ### What a Go reader holds
 
@@ -425,6 +499,11 @@ each entry it is sent, and no switch.
   first box in tree order with the same field.
 - Text a box must keep across a repaint needs a home outside the tree, as
   `draft`, `JoinViewState` and `PlayerUIState` are; a box keeps none itself.
+- A view handed `act` that changes what it draws at an answer asks for its
+  own repaint: `act`'s paint runs before the view's handling of the answer.
+- A command whose answer never comes holds the control that sent it:
+  nothing in `client/src` times a command out (`git grep -n
+  'setTimeout\|setInterval' client/src` prints nothing).
 
 - The Events panel is no boundary: it shows only entries of the log the window
   holds, and the window's Story shows each of them. What a connection is sent
@@ -478,5 +557,6 @@ VTT-423, VTT-424, VTT-425, VTT-426, VTT-427, VTT-428, VTT-429, VTT-430,
 VTT-431, VTT-432, VTT-433, VTT-434, VTT-435, VTT-442, VTT-443, VTT-444,
 VTT-445, VTT-446, VTT-447, VTT-448, VTT-449, VTT-457, VTT-458, VTT-459,
 VTT-460, VTT-461, VTT-464, VTT-474, VTT-475, VTT-476, VTT-477, VTT-483,
-VTT-484, VTT-489, VTT-490, VTT-491, VTT-492, VTT-493, VTT-494, VTT-500,
-VTT-501, VTT-502, VTT-504.
+VTT-484, VTT-489, VTT-490, VTT-491, VTT-492, VTT-494, VTT-500, VTT-501,
+VTT-502, VTT-504, VTT-517, VTT-518, VTT-519, VTT-520, VTT-521, VTT-522,
+VTT-523, VTT-524, VTT-526.
