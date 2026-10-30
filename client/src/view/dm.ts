@@ -289,7 +289,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
 
   // VTT-527 VTT-528 VTT-529 VTT-530 VTT-531 VTT-533 VTT-535
   const sayAs = input("in character as… (optional)", "say-as");
-  const sayText = input("say or narrate, or /ooc to step out of character", "say-text", "wide");
+  const sayText = input("say or narrate, or /ooc to step out of character", "say-text");
   const say = sending(d, "add-narration", () => {
     const line = readLine(sayText.value);
     if (line.text === "") return;

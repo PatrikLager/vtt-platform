@@ -1012,9 +1012,10 @@ test("the console's styling hooks are the ones the stylesheet targets", () => {
   for (const f of ["token-x", "token-y"]) {
     expect(h.field(f).className).toBe("tiny");
   }
-  for (const f of ["session-name", "note-text", "say-text"]) {
+  for (const f of ["session-name", "note-text"]) {
     expect(h.field(f).className).toBe("wide");
   }
+  expect(h.field("say-text").className).toBe("");
   expect((h.node.querySelector('[data-field="actor-json"]') as HTMLElement).className).toBe("paste");
   for (const b of Array.from(h.node.querySelectorAll("button"))) expect(b.className).toBe("chip");
 });

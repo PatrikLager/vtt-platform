@@ -57,8 +57,38 @@ test("a refused Place leaves its five boxes as typed, beside the refusal",
     await page.screenshot(shot("r1-refused-place-keeps-what-was-typed"));
   });
 
-// VTT-520 VTT-521
+// Run before the next test: its grant outlives the session it ends.
+// VTT-521 VTT-529 VTT-533
 test("a DM's accepted line empties say-text and keeps say-as for the next line",
+  async ({ page }) => {
+    await openAsDM(page);
+    // Granted nothing: the panel is drawn, with no Say in it.
+    const panel = page.locator(".player");
+    await expect(panel).toContainText("You do not control an actor yet.");
+    await expect(page.locator('[data-field="say-text"]')).toHaveCount(1);
+    await expect(panel.locator('[data-field="say-text"]')).toHaveCount(0);
+
+    const speaker = page.locator('.dm [data-field="say-as"]');
+    const say = page.locator('.dm [data-field="say-text"]');
+    const line = (text: string) => page.locator(".feed p").filter({ hasText: text });
+    await speaker.fill("Grimble");
+    await say.fill("Hello");
+    await say.press("Enter");
+    await expect(line("Hello")).toHaveText("Grimble: Hello", { timeout: 10_000 });
+    // say-text first: it empties at the answer, so say-as is read after it.
+    // Enter sends nothing while a line is unanswered (VTT-535).
+    await expect(say).toHaveValue("", { timeout: 10_000 });
+    await expect(speaker).toHaveValue("Grimble");
+
+    await say.fill("Bye");
+    await page.locator('.dm [data-action="add-narration"]').click();
+    await expect(line("Bye")).toHaveText("Grimble: Bye", { timeout: 10_000 });
+    await expect(say).toHaveValue("", { timeout: 10_000 });
+    await expect(speaker).toHaveValue("Grimble");
+  });
+
+// VTT-532 VTT-540
+test("a DM granted a character draws its chip, and the console's Say alone",
   async ({ page }) => {
     await openAsDM(page);
     await asDM(page, tokens.dm!, [
@@ -71,22 +101,27 @@ test("a DM's accepted line empties say-text and keeps say-as for the next line",
       },
     ]);
 
-    const speaker = page.locator('.player .say input[data-field="say-as"]');
-    const say = page.locator('.player .say input[data-field="say-text"]');
-    const line = (text: string) => page.locator(".feed p").filter({ hasText: text });
-    await expect(speaker).toBeVisible({ timeout: 10_000 });
-    await speaker.fill("Grimble");
-    await say.fill("Hello");
-    await say.press("Enter");
-    await expect(line("Hello")).toHaveText("Grimble: Hello", { timeout: 10_000 });
-    // Wait for the accepted answer before the next line: Enter sends nothing
-    // while a line is unanswered (VTT-523).
-    await expect(say).toHaveValue("", { timeout: 10_000 });
-    await expect(speaker).toHaveValue("Grimble");
+    const panel = page.locator(".player");
+    const chip = panel.locator("button.chip", { hasText: "Goblin Cutter" });
+    await expect(chip).toBeVisible({ timeout: 10_000 });
+    for (const sel of ['[data-field="say-text"]', '[data-field="say-as"]',
+      '[data-action="add-narration"]']) {
+      await expect(panel.locator(sel)).toHaveCount(0);
+    }
+    await expect(page.locator('.dm [data-field="say-text"]')).toHaveCount(1);
+    await expect(page.locator('[data-field="say-text"]')).toHaveCount(1);
+    // The panel's text and attributes, as the client's VTT-540 tests read them.
+    const said = await panel.evaluate((p) => {
+      const saying = /\bsay|speak|narrat|\booc\b|\/ooc|console|\bsend\b/i;
+      const words = [p.textContent ?? ""];
+      for (const n of [p, ...Array.from(p.querySelectorAll("*"))]) {
+        for (const a of Array.from(n.attributes)) words.push(a.value);
+      }
+      return words.filter((w) => saying.test(w));
+    });
+    expect(said).toEqual([]);
 
-    await say.fill("Bye");
-    await say.press("Enter");
-    await expect(line("Bye")).toHaveText("Grimble: Bye", { timeout: 10_000 });
-    await expect(say).toHaveValue("", { timeout: 10_000 });
-    await expect(speaker).toHaveValue("Grimble");
+    await page.screenshot({
+      ...shot("r2-a-dms-panel-draws-no-say"), fullPage: true,
+    });
   });
