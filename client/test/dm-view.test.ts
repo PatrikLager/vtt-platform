@@ -2211,7 +2211,7 @@ test("an accepted command clears the fields of its own form and of no other", as
   }
 });
 
-// VTT-523 VTT-539
+// VTT-523 VTT-541
 test("a control whose command is unanswered sends nothing when pressed again, each row its own", async () => {
   const controls = [...FORMS, describeForm("tok-r2"), grantForm("act-r2")];
   const h = everyForm("held");
@@ -2455,7 +2455,7 @@ test("an accepted console line empties say-text, keeps say-as, and the next line
   }
 });
 
-// VTT-535 VTT-539
+// VTT-535 VTT-541
 test("while a console line is unanswered, Send and Enter send nothing, and another control still sends", async () => {
   const pairs = [["send", "send"], ["send", "enter"], ["enter", "enter"]] as const;
   for (const [first, second] of pairs) {

@@ -1,6 +1,6 @@
 // Independent QA of the DM console's Say: VTT-517, VTT-521, VTT-522,
-// VTT-527 to VTT-531 and VTT-533 to VTT-539, with the owner's rulings the
-// ticket quotes, and D9 of the plan.
+// VTT-527 to VTT-531, VTT-533 to VTT-538 and VTT-541, with the owner's
+// rulings the ticket quotes, and D9 of the plan.
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import "./support/dom";
@@ -532,7 +532,7 @@ describe("one press, one line", () => {
     await settle();
   });
 
-  // VTT-539
+  // VTT-541
   test("another console control sends while the Say is unanswered", async () => {
     const t = table();
     const h = held();
