@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -748,8 +749,8 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		}
 	}
 
-	// Dispatch these four before ToEvent: each appends a batch, never one envelope
-	// (SPEC-012, SPEC-013).
+	// Dispatch these five before ToEvent: each appends a batch or nothing, never one
+	// envelope (SPEC-012, SPEC-013).
 	if ua, ok := cmd.GetCommand().(*vttv1.ClientCommand_UseAbility); ok {
 		return s.handleUseAbility(requestID, ua.UseAbility, st, p)
 	}
@@ -761,6 +762,9 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	}
 	if ra, ok := cmd.GetCommand().(*vttv1.ClientCommand_RemoveActor); ok {
 		return s.handleRemoveActor(requestID, ra.RemoveActor, st, p)
+	}
+	if rp, ok := cmd.GetCommand().(*vttv1.ClientCommand_RemoveParticipant); ok {
+		return s.handleRemoval(requestID, rp.RemoveParticipant, st, p)
 	}
 	// Answer these three without ToEvent: they append nothing (SPEC-007).
 	if pp, ok := cmd.GetCommand().(*vttv1.ClientCommand_PromoteParticipant); ok {
@@ -916,6 +920,58 @@ func (s *Server) handleRemoveActor(requestID string, cmd *vttv1.RemoveActor,
 	firstSeq, err := s.campaign.AppendBatch(envs)
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq}
+}
+
+// handleRemoval applies remove_participant (SPEC-009).
+// Keep the order: revoke, signal, then append, so the removed participant's
+// connections close before the batch can reach them (VTT-566), and a refused
+// removal appends nothing (VTT-162).
+func (s *Server) handleRemoval(requestID string, req *vttv1.RemoveParticipant,
+	st *engine.State, p *identity.Participant) *vttv1.CommandResult {
+	refused := func(msg string) *vttv1.CommandResult {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: msg}
+	}
+	target, err := s.ids.Lookup(req.GetParticipantId())
+	if err != nil {
+		return refused(err.Error())
+	}
+	if target.Role == identity.RoleDM || target.Role == identity.RoleAgent {
+		return refused("gateway: not authorized: a dm or an agent cannot be removed")
+	}
+
+	var actorIDs []string
+	for id, a := range st.Actors {
+		if slices.Contains(a.GetControllerIds(), target.ID) {
+			actorIDs = append(actorIDs, id)
+		}
+	}
+	sort.Strings(actorIDs)
+	envs := make([]*vttv1.Envelope, 0, len(actorIDs))
+	now := timestamppb.Now()
+	for _, actorID := range actorIDs {
+		id, err := newEventID()
+		if err != nil {
+			return refused(err.Error())
+		}
+		envs = append(envs, &vttv1.Envelope{
+			EventId: id, ParticipantId: p.ID, ActorRole: string(p.Role), OccurredAt: now,
+			Payload: &vttv1.Envelope_ActorControlRevoked{ActorControlRevoked: &vttv1.ActorControlRevoked{
+				ActorId: actorID, ParticipantId: target.ID}},
+		})
+	}
+
+	if err := s.ids.Revoke(target.ID); err != nil {
+		return refused(err.Error())
+	}
+	s.presence.rejudge(target.ID)
+	if len(envs) == 0 {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: true}
+	}
+	firstSeq, err := s.campaign.AppendBatch(envs)
+	if err != nil {
+		return refused(err.Error())
 	}
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq}
 }
