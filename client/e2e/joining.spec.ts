@@ -107,6 +107,28 @@ test("a stranger with one link joins, watches, is promoted, and plays", async ({
   // connection that was already open.
   await expect(dm.locator(".participant")).toContainText(["Robin"], { timeout: 15_000 });
 
+  // --- beat 2b: a second joiner under a name somebody holds is told so ---
+  //
+  // Keep "robin" in lower case: the server's compare ignores case.
+  // VTT-542 VTT-546 VTT-556 VTT-548 VTT-011
+  const twinCtx = await browser.newContext();
+  const twin = await twinCtx.newPage();
+  await twin.goto(link);
+  await twin.locator('[data-field="join-name"]').fill("robin");
+  await twin.locator('[data-action="join"]').click();
+  await expect(twin.locator(".error")).toHaveText(
+    "that name is already taken at this table; choose another",
+    { timeout: 10_000 },
+  );
+  await expect(twin.locator('[data-field="join-name"]')).toHaveValue("robin");
+  await twin.screenshot(shot("j4b-second-robin-told-the-name-is-taken"));
+  await twinCtx.close();
+  const names = await dm.evaluate(async (t) => {
+    const r = await fetch("/api/participants", { headers: { Authorization: `Bearer ${t}` } });
+    return ((await r.json()) as { name: string }[]).map((p) => p.name.trim().toLowerCase());
+  }, tokens.dm);
+  expect(names.filter((n) => n === "robin")).toHaveLength(1);
+
   // --- beat 3: a spectator can only watch --------------------------------
   //
   // Asserted before the promotion, so every change after it means something.
