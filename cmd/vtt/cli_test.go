@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -403,11 +404,11 @@ func TestJoinLinkOpenTakesAnAdmissionBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := range 3 {
-		if ok, err := ids.JoinAdmits(secret); !ok {
+		if ok, err := ids.JoinAdmits(secret, "Newcomer"); !ok {
 			t.Fatalf("admission %d of 3 refused (%v) — --admit did not reach the door", i+1, err)
 		}
 	}
-	if ok, _ := ids.JoinAdmits(secret); ok {
+	if ok, _ := ids.JoinAdmits(secret, "Newcomer"); ok {
 		t.Fatal("a fourth joiner got in against --admit 3")
 	}
 }
@@ -434,7 +435,7 @@ func TestJoinLinkOpenWithNoBudgetAdmitsSomebody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := ids.JoinAdmits(secret); !ok {
+	if ok, err := ids.JoinAdmits(secret, "Newcomer"); !ok {
 		t.Fatalf("a door opened without --admit let nobody in (%v) — the default is zero, "+
 			"which is an open door that refuses everyone", err)
 	}
@@ -470,7 +471,7 @@ func TestJoinLinkShowReportsWhatIsLeftOfTheBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := ids.JoinAdmits(secret); !ok {
+	if ok, err := ids.JoinAdmits(secret, "Newcomer"); !ok {
 		t.Fatalf("admission refused: %v", err)
 	}
 	ids.Close()
@@ -529,4 +530,47 @@ func TestCampaignDirectoryWorksInEitherCLIOrdering(t *testing.T) {
 			t.Fatalf("invite after serve: %v", err)
 		}
 	})
+}
+
+// VTT-543
+func TestInviteRefusesANameAnUnrevokedParticipantHolds(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign")
+	for _, pair := range [][2]string{{"Kim", "kim"}, {"Åsa", "åsa"}} {
+		if _, err := runCLI(t, "invite", "--campaign", campaignPath, "--name", pair[0], "--role", "player"); err != nil {
+			t.Fatalf("invite %s: %v", pair[0], err)
+		}
+		out, err := runCLI(t, "invite", "--campaign", campaignPath, "--name", pair[1], "--role", "dm")
+		if !errors.Is(err, identity.ErrNameTaken) {
+			t.Fatalf("invite %s while %s is held: err = %v, want ErrNameTaken", pair[1], pair[0], err)
+		}
+		if strings.Contains(out, "token (shown once") {
+			t.Fatalf("a refused invite printed a token: %q", out)
+		}
+	}
+	if _, err := runCLI(t, "invite", "--campaign", campaignPath, "--name", "Kimberly", "--role", "player"); err != nil {
+		t.Fatalf("invite Kimberly: %v", err)
+	}
+	ids, err := identity.Open(campaign.LogPath(campaignPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ids.Close()
+	if list, err := ids.List(); err != nil || len(list) != 3 {
+		t.Fatalf("List: %d participants (%v), want Kim, Åsa and Kimberly", len(list), err)
+	}
+}
+
+// VTT-544
+func TestInviteTakesANameOnlyARevokedParticipantHeld(t *testing.T) {
+	campaignPath := filepath.Join(t.TempDir(), "campaign")
+	out, err := runCLI(t, "invite", "--campaign", campaignPath, "--name", "Kim", "--role", "spectator")
+	if err != nil {
+		t.Fatalf("invite Kim: %v", err)
+	}
+	if _, err := runCLI(t, "revoke", "--campaign", campaignPath, "--id", extractField(t, out, "participant id: ")); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if _, err := runCLI(t, "invite", "--campaign", campaignPath, "--name", "kim", "--role", "player"); err != nil {
+		t.Fatalf("invite kim with Kim revoked: %v", err)
+	}
 }

@@ -73,7 +73,7 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 
 	// Ask JoinAdmits alone, and refuse its error as a refusal: a database that
 	// cannot answer must not open the door (SPEC-009, VTT-046).
-	allowed, err := s.ids.JoinAdmits(req.Secret)
+	allowed, err := s.ids.JoinAdmits(req.Secret, name)
 	if err != nil || !allowed {
 		// Answer every refusal with this status and body: a difference tells a
 		// prober which half it got right (VTT-009).

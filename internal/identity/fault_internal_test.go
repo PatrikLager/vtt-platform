@@ -180,7 +180,7 @@ func TestAnAdmissionThatCannotBeSpentIsNotGranted(t *testing.T) {
 	}
 
 	tripped := testdb.Arm("SET admitted = admitted + 1", errDBDown)
-	ok, err := d.JoinAdmits(secret)
+	ok, err := d.JoinAdmits(secret, "Newcomer")
 	if !tripped() {
 		t.Fatal("the fault was never reached — this test proved nothing")
 	}
@@ -212,7 +212,7 @@ func TestTheDoorStateReadFailingIsNotAnAdmission(t *testing.T) {
 	}
 
 	tripped := testdb.Arm("SELECT secret, open, admitted, admit_limit", errDBDown)
-	ok, err := d.JoinAdmits(secret)
+	ok, err := d.JoinAdmits(secret, "Newcomer")
 	if !tripped() {
 		t.Fatal("the fault was never reached — this test proved nothing")
 	}
@@ -279,12 +279,12 @@ func TestASpentBudgetRefusesWithoutTouchingTheDatabase(t *testing.T) {
 	if err := d.SetJoinOpen(true, 1); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := d.JoinAdmits(secret); !ok {
+	if ok, err := d.JoinAdmits(secret, "Newcomer"); !ok {
 		t.Fatalf("the one admission was refused: %v", err)
 	}
 
 	reached := testdb.Arm("SET admitted = admitted + 1", errDBDown)
-	ok, err := d.JoinAdmits(secret)
+	ok, err := d.JoinAdmits(secret, "Newcomer")
 	if reached() {
 		t.Fatal("a refusal against a spent budget reached the UPDATE — it takes SQLite's " +
 			"write lock on the campaign file, so a stranger hammering a spent door " +
@@ -315,7 +315,7 @@ func TestAWrongSecretRefusesWithoutTouchingTheDatabase(t *testing.T) {
 	}
 
 	reached := testdb.Arm("SET admitted = admitted + 1", errDBDown)
-	ok, err := d.JoinAdmits("not-the-secret")
+	ok, err := d.JoinAdmits("not-the-secret", "Newcomer")
 	if reached() {
 		t.Fatal("a wrong secret reached the UPDATE — an anonymous guess must not be able " +
 			"to take the campaign file's write lock")
@@ -348,12 +348,113 @@ func TestAShutDoorRefusesWithoutTouchingTheDatabase(t *testing.T) {
 	}
 
 	reached := testdb.Arm("SET admitted = admitted + 1", errDBDown)
-	ok, err := d.JoinAdmits(secret)
+	ok, err := d.JoinAdmits(secret, "Newcomer")
 	if reached() {
 		t.Fatal("a shut door reached the UPDATE — a refused request must not take " +
 			"SQLite's write lock on the file internal/store appends events to")
 	}
 	if ok || err != nil {
 		t.Fatalf("a shut door answered (%v, %v), want (false, nil)", ok, err)
+	}
+}
+
+const namesRead = "SELECT display_name FROM participants WHERE revoked = 0"
+
+func kimHeldAtAnOpenDoor(t *testing.T) (*DB, string, string) {
+	t.Helper()
+	d, path := qaFaultDB(t)
+	if _, _, err := d.CreateInvite("Kim", RoleSpectator); err != nil {
+		t.Fatal(err)
+	}
+	secret, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true, 5); err != nil {
+		t.Fatal(err)
+	}
+	return d, path, secret
+}
+
+// VTT-545
+func TestATakenNameAtTheDoorReachesNoWrite(t *testing.T) {
+	d, path, secret := kimHeldAtAnOpenDoor(t)
+	watch := qaWatch(t, path)
+	before := watch.read()
+	if hit := refuseUnderEachArm(t, func() (bool, error) { return d.JoinAdmits(secret, "kim") }); len(hit) != 0 {
+		t.Fatalf("a join under a taken name reached %v", hit)
+	}
+	ok, err := d.JoinAdmits(secret, "kim")
+	if ok || !errors.Is(err, ErrNameTaken) {
+		t.Fatalf("JoinAdmits(kim) = (%v, %v), want (false, ErrNameTaken)", ok, err)
+	}
+	if after := watch.read(); after != before {
+		t.Fatalf("data_version moved %d -> %d: a refused name wrote", before, after)
+	}
+	if admitted, _, err := d.JoinBudget(); err != nil || admitted != 0 {
+		t.Fatalf("JoinBudget after a refused name: spent %d (%v), want 0", admitted, err)
+	}
+}
+
+// VTT-009
+func TestADoorThatRefusesNeverReadsTheNames(t *testing.T) {
+	d, _, secret := kimHeldAtAnOpenDoor(t)
+	for _, c := range []struct {
+		label string
+		set   func()
+		offer string
+	}{
+		{"a wrong secret", func() {}, "not-the-secret"},
+		{"a shut door", func() { _ = d.SetJoinOpen(false, 0) }, secret},
+		{"a spent budget", func() {
+			_ = d.SetJoinOpen(true, 1)
+			if ok, err := d.JoinAdmits(secret, "Ann"); !ok || err != nil {
+				t.Fatalf("fixture: spending the one admission = (%v, %v)", ok, err)
+			}
+		}, secret},
+	} {
+		c.set()
+		tripped := testdb.Arm(namesRead, errDBDown)
+		ok, err := d.JoinAdmits(c.offer, "kim")
+		if tripped() || ok || err != nil {
+			t.Fatalf("%s under a taken name: (%v, %v), names read reached; want (false, nil) unread",
+				c.label, ok, err)
+		}
+	}
+	if err := d.SetJoinOpen(true, 5); err != nil {
+		t.Fatal(err)
+	}
+	tripped := testdb.Arm(namesRead, errDBDown)
+	_, _ = d.JoinAdmits(secret, "kim")
+	if !tripped() {
+		t.Fatal("control: an open door with the current secret never read the names, so the refusals prove nothing")
+	}
+}
+
+// VTT-046 VTT-070
+func TestANamesReadThatFailsAdmitsAndMintsNobody(t *testing.T) {
+	d, _, secret := kimHeldAtAnOpenDoor(t)
+	tripped := testdb.Arm(namesRead, errDBDown)
+	ok, err := d.JoinAdmits(secret, "Zed")
+	if !tripped() {
+		t.Fatal("the names read was never reached — this test proved nothing")
+	}
+	if ok || err == nil || errors.Is(err, ErrNameTaken) {
+		t.Fatalf("JoinAdmits over a failed names read = (%v, %v), want (false, a read error)", ok, err)
+	}
+	if admitted, _, err := d.JoinBudget(); err != nil || admitted != 0 {
+		t.Fatalf("JoinBudget after a failed names read: spent %d (%v), want 0", admitted, err)
+	}
+
+	tripped = testdb.Arm(namesRead, errDBDown)
+	token, _, err := d.CreateInvite("Zed", RolePlayer)
+	if !tripped() {
+		t.Fatal("CreateInvite never read the names — this test proved nothing")
+	}
+	if err == nil || token != "" {
+		t.Fatalf("CreateInvite over a failed names read = (%q, %v), want an error and no token", token, err)
+	}
+	if list, err := d.List(); err != nil || len(list) != 1 {
+		t.Fatalf("List after a failed invite: %d participants (%v), want 1", len(list), err)
 	}
 }

@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -144,7 +144,7 @@ func TestParseRoleAcceptsExactlyTheFourRoles(t *testing.T) {
 	}
 }
 
-// VTT-024
+// VTT-551
 func TestTwoInvitesProduceDistinctTokensAndIDs(t *testing.T) {
 	d, _ := openTemp(t)
 	token1, id1, err := d.CreateInvite("Lera", identity.RolePlayer)
@@ -326,7 +326,7 @@ func TestTheJoinSecretIsStableUntilRotated(t *testing.T) {
 	}
 }
 
-// VTT-019
+// VTT-550
 func TestRotatingTheSecretInvalidatesTheOldLink(t *testing.T) {
 	d, _ := openTemp(t)
 	old, err := d.JoinSecret()
@@ -692,7 +692,7 @@ func TestRotatingBeforeAnythingElseLeavesTheDoorSHUT(t *testing.T) {
 			"the DM would be handed a live link by an operation that says nothing about " +
 			"letting anyone in")
 	}
-	allowed, err := d.JoinAdmits(secret)
+	allowed, err := d.JoinAdmits(secret, "Newcomer")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -702,7 +702,7 @@ func TestRotatingBeforeAnythingElseLeavesTheDoorSHUT(t *testing.T) {
 }
 
 // Walks all four cells; only the open-door, right-secret cell admits.
-// VTT-042
+// VTT-552
 func TestTheDoorNeedsBOTHTheFlagAndTheSecret(t *testing.T) {
 	d, _ := openTemp(t)
 	right, err := d.JoinSecret()
@@ -723,7 +723,7 @@ func TestTheDoorNeedsBOTHTheFlagAndTheSecret(t *testing.T) {
 		if err := d.SetJoinOpen(c.open, 100); err != nil {
 			t.Fatal(err)
 		}
-		got, err := d.JoinAdmits(c.offer)
+		got, err := d.JoinAdmits(c.offer, "Newcomer")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -773,18 +773,25 @@ func TestListingParticipantsShowsWhoIsHereAndWhatTheyMayDo(t *testing.T) {
 
 // VTT-072
 func TestListingBreaksTiesOnIdSoTwoKimsHaveAFixedOrder(t *testing.T) {
-	// Keep the duplicate names and the id tie-break: `ORDER BY display_name, id`
-	// could lose its second column and no other test would notice.
-	d, _ := openTemp(t)
-	var ids []string
-	for range 4 {
-		_, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
-		if err != nil {
+	// Keep the Kims raw, as a campaign from before CreateInvite refused a held
+	// name, and out of order: `ORDER BY display_name, id` could lose its id unseen.
+	d, path := openTemp(t)
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"c3", "a1", "d4", "b2"} {
+		if _, err := raw.Exec(
+			`INSERT INTO participants (id, display_name, role, token_hash, revoked) VALUES (?, 'Kim', 'spectator', ?, 0)`,
+			id, []byte(id),
+		); err != nil {
 			t.Fatal(err)
 		}
-		ids = append(ids, id)
 	}
-	slices.Sort(ids)
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{"a1", "b2", "c3", "d4"}
 
 	// Read twice: a single read could match the order by luck.
 	for attempt := range 2 {
@@ -901,7 +908,7 @@ INSERT INTO join_access (id, secret, open) VALUES (1, 'old-secret', 1);`); err !
 
 	// Assert an admission, not just no error: columns added with a budget of zero
 	// would lock every existing campaign out of its link.
-	admitted, err := db.JoinAdmits("old-secret")
+	admitted, err := db.JoinAdmits("old-secret", "Newcomer")
 	if err != nil {
 		t.Fatalf("JoinAdmits on a migrated campaign: %v", err)
 	}
@@ -912,7 +919,7 @@ INSERT INTO join_access (id, secret, open) VALUES (1, 'old-secret', 1);`); err !
 }
 
 // More goroutines than slots, released together, so the race is contended.
-// VTT-023
+// VTT-554
 func TestOnlyOneJoinerTakesTheLastSlot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "race.db")
 	d, err := identity.Open(path)
@@ -948,7 +955,7 @@ func TestOnlyOneJoinerTakesTheLastSlot(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				<-start
-				ok, err := d.JoinAdmits(secret)
+				ok, err := d.JoinAdmits(secret, "Newcomer")
 				if err != nil {
 					return
 				}
@@ -986,17 +993,17 @@ func TestABudgetIsPerOpeningNotPerCampaign(t *testing.T) {
 	if err := d.SetJoinOpen(true, 1); err != nil {
 		t.Fatal(err)
 	}
-	if ok, _ := d.JoinAdmits(secret); !ok {
+	if ok, _ := d.JoinAdmits(secret, "Newcomer"); !ok {
 		t.Fatal("the first joiner must get the only slot")
 	}
-	if ok, _ := d.JoinAdmits(secret); ok {
+	if ok, _ := d.JoinAdmits(secret, "Newcomer"); ok {
 		t.Fatal("a spent budget must refuse")
 	}
 
 	if err := d.SetJoinOpen(true, 1); err != nil { // opened again
 		t.Fatal(err)
 	}
-	if ok, _ := d.JoinAdmits(secret); !ok {
+	if ok, _ := d.JoinAdmits(secret, "Newcomer"); !ok {
 		t.Fatal("re-opening the door must restore the budget — otherwise a campaign runs " +
 			"out of admissions permanently and only a database edit brings it back")
 	}
@@ -1022,10 +1029,10 @@ func TestAClosedDoorSpendsNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if ok, _ := d.JoinAdmits(secret); ok {
+	if ok, _ := d.JoinAdmits(secret, "Newcomer"); ok {
 		t.Fatal("a closed door must admit nobody")
 	}
-	if ok, _ := d.JoinAdmits("wrong"); ok {
+	if ok, _ := d.JoinAdmits("wrong", "Newcomer"); ok {
 		t.Fatal("a wrong secret must admit nobody")
 	}
 
@@ -1069,13 +1076,13 @@ func TestAnEmptyStoredSecretAdmitsNobodyThroughTheLivePath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if ok, _ := d.JoinAdmits(""); ok {
+	if ok, _ := d.JoinAdmits("", "Newcomer"); ok {
 		t.Fatal("an empty stored secret admitted an empty candidate — the degenerate row " +
 			"admits the world, because ConstantTimeCompare(\"\", \"\") is 1")
 	}
 }
 
-// VTT-044 VTT-019
+// VTT-553 VTT-550
 func TestRotatingAfterASpentBudgetGivesAWorkingLink(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "rotate.db")
 	d, err := identity.Open(path)
@@ -1091,7 +1098,7 @@ func TestRotatingAfterASpentBudgetGivesAWorkingLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := range 2 {
-		if ok, err := d.JoinAdmits(secret); !ok {
+		if ok, err := d.JoinAdmits(secret, "Newcomer"); !ok {
 			t.Fatalf("admission %d of 2 refused (%v)", i+1, err)
 		}
 	}
@@ -1100,11 +1107,11 @@ func TestRotatingAfterASpentBudgetGivesAWorkingLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := d.JoinAdmits(fresh); !ok {
+	if ok, err := d.JoinAdmits(fresh, "Newcomer"); !ok {
 		t.Fatalf("the freshly rotated link admits nobody (%v) — the documented cure for a "+
 			"leak hands the DM a door that reads open and refuses everyone", err)
 	}
-	if ok, _ := d.JoinAdmits(secret); ok {
+	if ok, _ := d.JoinAdmits(secret, "Newcomer"); ok {
 		t.Fatal("the old secret still admits — rotating did not close the leak")
 	}
 }
@@ -1196,7 +1203,7 @@ func TestJoinBudgetReportsWhatHasBeenSpent(t *testing.T) {
 		t.Fatalf("a freshly opened door reports %d/%d (%v), want 0/3", admitted, limit, err)
 	}
 
-	if ok, err := d.JoinAdmits(secret); !ok {
+	if ok, err := d.JoinAdmits(secret, "Newcomer"); !ok {
 		t.Fatal(err)
 	}
 	if admitted, limit, err = d.JoinBudget(); err != nil || admitted != 1 || limit != 3 {
@@ -1229,7 +1236,7 @@ func TestTheJoinPathReportsDatabaseFailuresRatherThanAdmitting(t *testing.T) {
 	// Keep the door open and the secret right: only the dead database can refuse below.
 	d.Close()
 
-	if ok, err := d.JoinAdmits(secret); ok || err == nil {
+	if ok, err := d.JoinAdmits(secret, "Newcomer"); ok || err == nil {
 		t.Fatalf("JoinAdmits on a closed database returned (%v, %v) — it must report the "+
 			"failure and admit nobody", ok, err)
 	}
@@ -1394,7 +1401,7 @@ func TestJoinAdmitsOnACampaignWithNoDoorRowRefusesWithoutCreatingOne(t *testing.
 	}
 	defer d.Close()
 
-	if ok, err := d.JoinAdmits("anything"); ok || err != nil {
+	if ok, err := d.JoinAdmits("anything", "Newcomer"); ok || err != nil {
 		t.Fatalf("JoinAdmits on a campaign with no door row returned (%v, %v), want (false, nil)", ok, err)
 	}
 
@@ -1465,7 +1472,7 @@ func TestADoorOpenedWithNoStatedBudgetStillAdmits(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if ok, err := d.JoinAdmits(secret); !ok {
+	if ok, err := d.JoinAdmits(secret, "Newcomer"); !ok {
 		t.Fatalf("a door opened with a budget of 0 admitted nobody (%v) — 0 means "+
 			"'unstated', and reading it literally opens a door no one can get through", err)
 	}
@@ -1481,10 +1488,122 @@ func TestADoorOpenedWithNoStatedBudgetStillAdmits(t *testing.T) {
 	if err := d.SetJoinOpen(true, -1); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := d.JoinAdmits(secret); !ok {
+	if ok, err := d.JoinAdmits(secret, "Newcomer"); !ok {
 		t.Fatalf("a door opened with a budget of -1 admitted nobody (%v)", err)
 	}
 	if _, limit, err := d.JoinBudget(); err != nil || limit != identity.DefaultAdmitLimit {
 		t.Fatalf("a negative budget became %d (%v), want the default of %d", limit, err, identity.DefaultAdmitLimit)
+	}
+}
+
+func heldNamesAtAnOpenDoor(t *testing.T) (*identity.DB, string, string) {
+	t.Helper()
+	d, path := openTemp(t)
+	for _, p := range []struct {
+		name string
+		role identity.Role
+	}{
+		{"Kim", identity.RoleSpectator},
+		{"Åsa", identity.RolePlayer},
+		{"DM", identity.RoleDM},
+		{"Agent", identity.RoleAgent},
+	} {
+		if _, _, err := d.CreateInvite(p.name, p.role); err != nil {
+			t.Fatal(err)
+		}
+	}
+	secret, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true, 100); err != nil {
+		t.Fatal(err)
+	}
+	return d, path, secret
+}
+
+// VTT-542
+func TestAJoinUnderANameSomebodyHoldsIsRefusedWhateverItsCase(t *testing.T) {
+	d, _, secret := heldNamesAtAnOpenDoor(t)
+	for _, name := range []string{"kim", "åsa", "dm", "AGENT"} {
+		ok, err := d.JoinAdmits(secret, name)
+		if ok || !errors.Is(err, identity.ErrNameTaken) {
+			t.Fatalf("JoinAdmits(%q) = (%v, %v), want (false, ErrNameTaken)", name, ok, err)
+		}
+	}
+	if ok, err := d.JoinAdmits(secret, "Kimberly"); !ok || err != nil {
+		t.Fatalf("JoinAdmits(Kimberly) = (%v, %v), want (true, nil)", ok, err)
+	}
+}
+
+// VTT-543
+func TestAnInviteUnderANameSomebodyHoldsIsRefusedAtAnyRole(t *testing.T) {
+	d, _, _ := heldNamesAtAnOpenDoor(t)
+	for _, c := range []struct {
+		name string
+		role identity.Role
+	}{
+		{"kim", identity.RoleDM},
+		{"åsa", identity.RoleAgent},
+		{"dm", identity.RolePlayer},
+		{"AGENT", identity.RoleSpectator},
+	} {
+		token, id, err := d.CreateInvite(c.name, c.role)
+		if !errors.Is(err, identity.ErrNameTaken) || token != "" || id != "" {
+			t.Fatalf("CreateInvite(%q, %s) = (%q, %q, %v), want ErrNameTaken and nothing else",
+				c.name, c.role, token, id, err)
+		}
+	}
+	if list, err := d.List(); err != nil || len(list) != 4 {
+		t.Fatalf("List after four refused invites: %d participants (%v), want 4", len(list), err)
+	}
+	if _, _, err := d.CreateInvite("Kimberly", identity.RoleSpectator); err != nil {
+		t.Fatalf("CreateInvite(Kimberly): %v", err)
+	}
+}
+
+// VTT-544
+func TestANameOnlyARevokedParticipantHeldIsFree(t *testing.T) {
+	d, _ := openTemp(t)
+	_, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Revoke(id); err != nil {
+		t.Fatal(err)
+	}
+	secret, err := d.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetJoinOpen(true, 5); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := d.JoinAdmits(secret, "kim"); !ok || err != nil {
+		t.Fatalf("JoinAdmits(kim) with Kim revoked = (%v, %v), want (true, nil)", ok, err)
+	}
+	if _, _, err := d.CreateInvite("KIM", identity.RolePlayer); err != nil {
+		t.Fatalf("CreateInvite(KIM) with Kim revoked: %v", err)
+	}
+}
+
+func TestANameThatCannotBeReadRefusesTheJoinAndTheInvite(t *testing.T) {
+	d, path, secret := heldNamesAtAnOpenDoor(t)
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`UPDATE participants SET display_name = NULL WHERE display_name = 'Kim'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := d.JoinAdmits(secret, "Zed")
+	if ok || err == nil || errors.Is(err, identity.ErrNameTaken) {
+		t.Fatalf("JoinAdmits over an unreadable name = (%v, %v), want (false, a read error)", ok, err)
+	}
+	if _, _, err := d.CreateInvite("Zed", identity.RolePlayer); err == nil || errors.Is(err, identity.ErrNameTaken) {
+		t.Fatalf("CreateInvite over an unreadable name: %v, want a read error", err)
 	}
 }

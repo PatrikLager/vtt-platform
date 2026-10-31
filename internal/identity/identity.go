@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -213,6 +214,10 @@ type Participant struct {
 // answer is a token-probing oracle.
 var ErrInvalidToken = errors.New("identity: invalid or revoked token")
 
+// ErrNameTaken is CreateInvite's answer, and JoinAdmits's past the door, for a
+// display name a participant who is not revoked holds, by strings.EqualFold.
+var ErrNameTaken = errors.New("identity: that name is already taken at this table")
+
 // DB is a handle on a campaign's identity tables.
 type DB struct {
 	db *sql.DB
@@ -307,12 +312,13 @@ func (d *DB) JoinSecret() (string, error) {
 // field and "admit nobody" are the same bytes (SPEC-009).
 const DefaultAdmitLimit = 8
 
-// JoinAdmits reports whether this candidate may come through the door and spends
-// one admission if so; a refusal the read can decide writes nothing.
+// JoinAdmits reports whether this candidate may come through the door under name
+// and spends one admission if so; a refusal the read can decide writes nothing.
+// Read the names only past the door's refusals: a stranger learns none (VTT-009).
 // Keep the compare here, in Go, constant-time: the secret is never handed out to
 // be checked, and an empty stored secret must refuse ("" matches ""). Keep every
 // refusal before the UPDATE: one matching no rows still takes the write lock.
-func (d *DB) JoinAdmits(candidate string) (bool, error) {
+func (d *DB) JoinAdmits(candidate, name string) (bool, error) {
 	var (
 		secret                 string
 		open, admitted, budget int
@@ -331,6 +337,9 @@ func (d *DB) JoinAdmits(candidate string) (bool, error) {
 	if open != 1 || secret == "" || !match || admitted >= budget {
 		return false, nil
 	}
+	if err := d.nameHeld(name); err != nil {
+		return false, err
+	}
 
 	// Do not add a compensating decrement for a CreateInvite failure after this:
 	// a second write that can itself fail can only err toward admitting more
@@ -346,8 +355,30 @@ func (d *DB) JoinAdmits(candidate string) (bool, error) {
 		return false, fmt.Errorf("identity: spend join admission: %w", err)
 	}
 	// Keep n == 0 a refusal: a concurrent joiner took the last slot between the
-	// read and the update, and nothing is spent (VTT-023).
+	// read and the update, and nothing is spent (VTT-554).
 	return n == 1, nil
+}
+
+// Keep the compare in Go: SQLite's lower() and NOCASE fold ASCII alone (VTT-542).
+func (d *DB) nameHeld(name string) error {
+	rows, err := d.db.Query(`SELECT display_name FROM participants WHERE revoked = 0`)
+	if err != nil {
+		return fmt.Errorf("identity: read display names: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var held string
+		if err := rows.Scan(&held); err != nil {
+			return fmt.Errorf("identity: read display names: %w", err)
+		}
+		if strings.EqualFold(held, name) {
+			return ErrNameTaken
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("identity: read display names: %w", err)
+	}
+	return nil
 }
 
 // RotateJoinSecret replaces the secret and returns the new one; participants
@@ -356,7 +387,7 @@ func (d *DB) RotateJoinSecret() (string, error) {
 	secret := newSecret()
 	// Keep the DO UPDATE off `open` and `admit_limit`: rotating says nothing about
 	// the door (VTT-043) or the budget. Reset admitted: a new secret is a new
-	// opening, or a link rotated after a spent budget admits nobody (VTT-044).
+	// opening, or a link rotated after a spent budget admits nobody (VTT-553).
 	if _, err := d.db.Exec(
 		`INSERT INTO join_access (id, secret, open, admitted, admit_limit) VALUES (1, ?, 0, 0, 0)
 		 ON CONFLICT(id) DO UPDATE SET secret = excluded.secret, admitted = 0`, secret,
@@ -430,10 +461,14 @@ func (d *DB) Close() error {
 }
 
 // CreateInvite mints a participant and a one-time invite token, returned exactly
-// once; only its SHA-256 hash is stored (VTT-041). Take no list of actors:
+// once; only its SHA-256 hash is stored (VTT-041). A name a participant who is
+// not revoked holds is refused with ErrNameTaken. Take no list of actors:
 // control is an ActorControlGranted in the log (SPEC-009).
 func (d *DB) CreateInvite(name string, role Role) (token string, id string, err error) {
 	if _, err := ParseRole(string(role)); err != nil {
+		return "", "", err
+	}
+	if err := d.nameHeld(name); err != nil {
 		return "", "", err
 	}
 

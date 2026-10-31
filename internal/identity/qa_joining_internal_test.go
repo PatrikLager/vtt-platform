@@ -128,7 +128,7 @@ func TestQAAShutDoorRefusalReachesNoWriteStatement(t *testing.T) {
 			before := watch.read()
 
 			candidate := tc.candidate(secret)
-			hit := refuseUnderEachArm(t, func() (bool, error) { return db.JoinAdmits(candidate) })
+			hit := refuseUnderEachArm(t, func() (bool, error) { return db.JoinAdmits(candidate, "Newcomer") })
 			if len(hit) != 0 {
 				t.Errorf("a shut-door refusal reached write statements %v; VTT-008 says it writes nothing", hit)
 			}
@@ -146,7 +146,7 @@ func TestQAAnUntouchedDoorRefusalReachesNoWriteStatement(t *testing.T) {
 	watch := qaWatch(t, path)
 	before := watch.read()
 
-	hit := refuseUnderEachArm(t, func() (bool, error) { return db.JoinAdmits("anything") })
+	hit := refuseUnderEachArm(t, func() (bool, error) { return db.JoinAdmits("anything", "Newcomer") })
 	if len(hit) != 0 {
 		t.Errorf("an untouched-door refusal reached write statements %v", hit)
 	}
@@ -174,7 +174,7 @@ func TestQAAnOpenDoorAdmissionIsSeenByTheSameProbes(t *testing.T) {
 	var hit []string
 	for _, v := range []string{"UPDATE", "update"} {
 		tripped := testdb.Arm(v, errQAFault)
-		ok, _ := db.JoinAdmits(secret)
+		ok, _ := db.JoinAdmits(secret, "Newcomer")
 		if tripped() {
 			hit = append(hit, v)
 			if ok {
@@ -189,11 +189,41 @@ func TestQAAnOpenDoorAdmissionIsSeenByTheSameProbes(t *testing.T) {
 	// Probe 2: the data_version watcher sees an admission commit.
 	watch := qaWatch(t, path)
 	before := watch.read()
-	ok, err := db.JoinAdmits(secret)
+	ok, err := db.JoinAdmits(secret, "Newcomer")
 	if err != nil || !ok {
 		t.Fatalf("JoinAdmits at an open door with budget = (%v, %v), want (true, nil)", ok, err)
 	}
 	if after := watch.read(); after == before {
 		t.Errorf("data_version did not move across an admission: the watcher observes nothing")
+	}
+}
+
+// VTT-545
+func TestQAHeldNameRefusalReachesNoWriteStatement(t *testing.T) {
+	db, _ := qaFaultDB(t)
+	if err := db.SetJoinOpen(true, 8); err != nil {
+		t.Fatal(err)
+	}
+	secret, err := db.JoinSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := db.CreateInvite("Kim", RolePlayer); err != nil {
+		t.Fatal(err)
+	}
+	reached := refuseUnderEachArm(t, func() (bool, error) {
+		ok, err := db.JoinAdmits(secret, "kIM")
+		if !errors.Is(err, ErrNameTaken) {
+			t.Errorf("held name answered %v, want ErrNameTaken", err)
+		}
+		return ok, nil
+	})
+	if len(reached) != 0 {
+		t.Errorf("a held-name refusal reached write statements %v", reached)
+	}
+	trip := testdb.Arm("UPDATE", errQAFault)
+	ok, _ := db.JoinAdmits(secret, "Free")
+	if !trip() {
+		t.Errorf("a free-name admission reached no armed UPDATE (ok=%v): the arms observe nothing", ok)
 	}
 }
