@@ -1144,3 +1144,27 @@ Closing it needs a `server_internal_test.go` case whose `encodeFrame` fails a
 frame after it. Recorded 2026-10-21 by the reading review of the
 specification step of
 `docs/superpowers/specs/2026-10-20-the-client-follows-the-log-it-is-sent-design.md`.
+
+**The chain gate passes a citation of a withdrawn row.**
+`tools/check-requirements-chain.py` resolves a cited id to its row whether or
+not the row's requirement reads `WITHDRAWN`, so a test, a specification or an
+evidence entry that names a withdrawn row passes. Recipe: on `1fb5a9a`, put
+`// VTT-547` above any test in `client/test/join.test.ts`;
+`python3 tools/check-requirements-chain.py .` stays clean. Labels: `outside
+the tool`. Closing it needs the gate to refuse a citation of a withdrawn row
+and to tell a fixture from a citation: `tools/check_comments_qa_test.py` and
+`tools/check_comments_test.py` write `// VTT-042`, now withdrawn, as sample
+citation lines. Recorded 2026-10-31 by the reading review of Task 3 of
+`docs/superpowers/plans/2026-10-31-a-name-belongs-to-one-participant.md`.
+
+**`client/e2e/joining.spec.ts` cannot run twice against one campaign.** Its
+guest joins under the fixed name `Robin`, and the campaign outlives a run, so
+`bunx playwright test joining.spec.ts --repeat-each=2` fails its second
+repetition: on `690ff7e` at beat 3, where two roster rows match `Robin`
+(strict mode), and from `e54e1de` at beat 2, where the second `Robin` is
+refused as taken. The file's `test.afterAll` comment and `client/e2e/setup.ts`
+say a rerun is how a new e2e is checked for flakiness. Labels: `test data
+missing`. Closing it needs a guest name that differs per repetition, for
+instance from `test.info().repeatEachIndex`, in every place the file names
+the guest. Recorded 2026-10-31 by Task 4 of
+`docs/superpowers/plans/2026-10-31-a-name-belongs-to-one-participant.md`.
