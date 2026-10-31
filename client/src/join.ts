@@ -1,18 +1,9 @@
-// Joining a table through the shared link (joining-a-table spec §2).
-//
-// The caller of this has NO credential and no way to get one except here, so
-// the failure paths carry more weight than the success. The server draws the
-// line for us and it is worth preserving exactly:
-//
-//   400 — the joiner's own input. Safe to describe, because saying "that name
-//         is too long" reveals nothing about the door or the secret.
-//   403 — a closed door AND a wrong secret, deliberately identical, so a
-//         prober cannot learn which half they got right (spec §5). Collapsing
-//         this into the 400 message would leave somebody retyping their name
-//         at a door that is simply shut, with no reason to ever stop.
-//
-// Auth is the point of this call rather than something it carries: unlike
-// metadata.ts there is no Bearer header, because nobody has a token yet.
+// Joining a table through the shared link (SPEC-009). Keep 400 the name's
+// refusal, its body shown as VTT-556 says, and 403 the door's, one message for
+// every cause: a shut door, a wrong secret and a spent budget are answered
+// alike (VTT-009), and a held name gets its 400 only past the door, so that 400
+// tells its caller the door is open (VTT-013, VTT-546). Send no Bearer header:
+// nobody joining has a token yet.
 
 export type JoinOutcome =
   | { ok: true; token: string }
@@ -47,32 +38,11 @@ function humanReadable(body: string): string {
 }
 
 /** The reader half of the ?join= link format, and the client's ONLY reader of
- *  that parameter name.
- *
- *  A function rather than a bare constant, and it lives here rather than in
- *  app.ts, because of what has to be able to check it. The name has three
- *  writers — `vtt join-link` show and rotate on the Go side, and the DM
- *  console's share box on this one — against this single reader, so what needs
- *  pinning is that the reader asks for what the writers wrote; the shared
- *  truth is contract/testdata/join_url_format.json, which no constant in
- *  either language can be derived from.
- *
- *  It used to be pinned by READING app.ts's source and asserting the text
- *  `params.get("join")` appeared in it. That worked until the text stopped
- *  being the text: Stryker instruments every mutated file and rewrites string
- *  literals into ternaries, so the assertion failed in the DRY RUN and the
- *  whole TypeScript mutation gate died before testing a single mutant. It had
- *  been dead since 2026-08-11 and nothing said so: the gate skips itself on
- *  macOS, and CI — which the Taskfile then described as running it "on every
- *  push to main" — is `on: workflow_dispatch:` and runs only when asked. The
- *  container target is the only thing that runs it unasked.
- *
- *  So the lookup is a function taking the params it reads: the test calls it
- *  with a URL built from the fixture and checks the secret comes back. That
- *  survives instrumentation because it never looks at source, and it is the
- *  stronger assertion anyway — the old one passed on text alone, and would
- *  have passed on a `params.get` sitting in dead code.
- */
+ *  that parameter name. Keep it a function taking the params it reads: the
+ *  writers, `vtt join-link` and the DM console's share box, are held to
+ *  contract/testdata/join_url_format.json by their own tests, and this reader
+ *  by join-url-format.test.ts calling it with a URL built from that fixture,
+ *  never by reading source text, which Stryker rewrites. */
 export function joinSecretFrom(params: URLSearchParams): string | null {
   return params.get("join");
 }

@@ -62,8 +62,8 @@ test("joining posts the secret and the name, and comes back with a credential", 
 });
 
 test("a refused name is reported as the joiner's own, and without the wire prefix", async () => {
-  // 400 is the one refusal the server describes, deliberately: it is the
-  // joiner's own input, so saying what is wrong leaks nothing about the door.
+  // 400 is the refusal of the joiner's own input, the one the server
+  // describes. VTT-556
   stubJoin(400, "gateway: a display name is required, up to 64 ordinary characters\n");
 
   const out = await requestJoin("http://table.example", "s3cret", "");
@@ -253,6 +253,7 @@ test("a refusal is shown, and the name the person already typed survives it", ()
   // The repaint that carries the error also rebuilds the input. Losing the
   // value there makes every failed attempt cost the joiner their typing,
   // which is worst exactly when the door is shut and they will try again.
+  // VTT-548
   const r = root();
   renderJoinView(r, state({ name: "Kim", error: "The DM has not opened this table yet." }), {
     onName: () => {},

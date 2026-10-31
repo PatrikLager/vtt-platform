@@ -1804,9 +1804,9 @@ test("when the roster and presence disagree about a name, the roster wins", () =
 });
 
 test("an EMPTY roster name falls through to the one presence announced", () => {
-  // identity.CreateInvite does not validate the name, so `--name ""` is
-  // reachable. Nullish-coalescing would render a blank where a name belongs,
-  // which reads as nobody rather than as somebody unnamed.
+  // identity.CreateInvite does not refuse a name for being empty, so
+  // `--name ""` is reachable. Nullish-coalescing would render a blank where a
+  // name belongs, which reads as nobody rather than as somebody unnamed.
   const h = harness(tableWithActor(), {
     roster: [{ participantId: "p-ana", name: "", role: "player" }],
     participants: [{ participantId: "p-ana", displayName: "Ana" }],

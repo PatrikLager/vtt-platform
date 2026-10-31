@@ -557,8 +557,8 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
   for (const p of d.participants) {
     const had = known.get(p.participantId);
     // `||`, not `??`: an EMPTY roster name must fall through to the presence
-    // one. identity.CreateInvite does not validate the name, so `--name ""` is
-    // reachable, and nullish-coalescing would render a blank where a name goes.
+    // one. identity.CreateInvite does not refuse a name for being empty, so
+    // `--name ""` is reachable, and nullish-coalescing would render a blank.
     known.set(p.participantId, { name: had?.name || p.displayName, present: true });
   }
   // Sorted by NAME, ties broken on id: the console is rebuilt on every event,

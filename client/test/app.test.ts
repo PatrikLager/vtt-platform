@@ -1887,6 +1887,28 @@ test("a refused join leaves the form up, says why, and stores nothing", async ()
   expect(r.querySelector<HTMLButtonElement>('[data-action="join"]')!.disabled).toBe(false);
 });
 
+test("a join refused for a taken name says so, and keeps the name in the box", async () => {
+  // VTT-556 VTT-548
+  setURL("http://localhost/?join=s3cret");
+  useFakeSocket();
+  stubJoinRoute(400, "gateway: that name is already taken at this table; choose another\n");
+
+  const r = root();
+  boot(r);
+  const name = r.querySelector<HTMLInputElement>('[data-field="join-name"]')!;
+  name.value = "Kim";
+  name.dispatchEvent(new Event("input"));
+  r.querySelector<HTMLButtonElement>('[data-action="join"]')!.click();
+  await settle();
+
+  const error = r.querySelector(".error")!.textContent;
+  expect(error).toBe("that name is already taken at this table; choose another");
+  expect(r.querySelector<HTMLInputElement>('[data-field="join-name"]')!.value).toBe("Kim");
+  expect(localStorage.getItem("vtt.token")).toBeNull();
+  expect(FakeSocket.instances).toHaveLength(0);
+  expect(r.querySelector<HTMLButtonElement>('[data-action="join"]')!.disabled).toBe(false);
+});
+
 test("Enter while a join is in flight does not mint a second you", async () => {
   // Found reviewing my own wiring rather than by a test, which is why it is
   // here: the double-press guard is the DISABLED BUTTON, and Enter never

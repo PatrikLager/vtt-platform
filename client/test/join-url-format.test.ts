@@ -35,7 +35,8 @@ test("the client's reader returns the secret a fixture-shaped link carries", () 
   // That assertion could not survive mutation testing: Stryker rewrites string
   // literals in every file it mutates, so the text it looked for stopped
   // existing and the gate died in its dry run, before a single mutant ran.
-  // See joinSecretFrom's own comment for the whole story.
+  // The rest of that story is in
+  // docs/reports/2026-10-31-a-name-belongs-to-one-participant.md.
   //
   // Behaviour is also the better assertion. Text proved a call was WRITTEN;
   // this proves it WORKS, on a URL built from the fixture rather than from a
