@@ -4,11 +4,18 @@
 
 Accepted. Implemented by `internal/identity/identity.go`,
 `internal/gateway/join.go`, `internal/gateway/authz.go`,
-`internal/gateway/server.go`, `internal/gateway/presence.go` and
-`internal/gateway/metadata.go`; pinned by the checks the rows under
-Requirements name, in `internal/identity/identity_test.go`,
+`internal/gateway/server.go`, `internal/gateway/presence.go`,
+`internal/gateway/metadata.go`, `cmd/vtt/invite.go`, `client/src/join.ts`,
+`client/src/app.ts` and `client/src/view/join.ts`;
+pinned by the checks the rows under Requirements name, in
+`internal/identity/identity_test.go`, `internal/identity/qa_names_test.go`,
+`internal/identity/qa_joining_internal_test.go`,
 `internal/identity/fault_internal_test.go`,
 `internal/identity/identity_failure_test.go`, `internal/gateway/join_test.go`,
+`internal/gateway/qa_names_test.go`, `cmd/vtt/cli_test.go`,
+`cmd/vtt/qa_invite_names_test.go`, `client/test/join.test.ts`,
+`client/test/app.test.ts`, `client/test/qa-join-names.test.ts`,
+`client/e2e/joining.spec.ts`,
 `internal/gateway/authz_test.go`, `internal/gateway/server_test.go`,
 `internal/gateway/qa_promotion_revoked_test.go`,
 `internal/gateway/qa_seat_test.go`, `internal/gateway/seat_internal_test.go`,
@@ -73,13 +80,19 @@ role that does not parse is refused by `Verify`, `Lookup` and `List`, never
 skipped or defaulted.
 
 **One shared link admits people; the DM promotes them afterwards.** `POST
-/join` is unauthenticated. It reads at most `maxJoinBody` bytes, refuses a
-display name `usableDisplayName` rejects with its own 400 before the door is
-consulted, and asks `identity.JoinAdmits` with the secret the body carries. A
-refusal, and an identity error, are answered with one 403 and one body. An
-admission mints a participant at `identity.RoleSpectator` through
-`CreateInvite`, and the credential it returns is the only copy: the table holds
-its SHA-256 hash. A participant who reconnects with that credential resolves to
+/join` is unauthenticated. It reads at most `maxJoinBody` bytes, trims the
+display name of surrounding white space before anything judges or stores it,
+refuses a name `usableDisplayName` rejects with its own 400 before the door is
+consulted, and asks `identity.JoinAdmits` with the secret the body carries and
+the trimmed name. `JoinAdmits` answers `identity.ErrNameTaken` for a name a
+participant who is not revoked holds, and `handleJoin` answers that with a 400
+of its own, whose body says the name is taken. Every other refusal `JoinAdmits`
+gives, and every other error it returns, is answered with one 403 and one body.
+A body that does not decode within `maxJoinBody` is refused as malformed with a
+400 of its own. An admission mints a
+participant at `identity.RoleSpectator` through `CreateInvite`, and the
+credential it returns is the only copy: the table holds its SHA-256 hash.
+A participant who reconnects with that credential resolves to
 the same id, so they keep their name, their role and, through the log, their
 characters. The DM reads the secret, the door and the budget together from `GET
 /api/join-link`, open to the roles in `joinLinkRoles`; the secret is readable
@@ -98,7 +111,13 @@ before any statement writes, and the refusing path runs that one `SELECT` and
 no other statement, so it takes no write lock and opens no write transaction; a
 campaign with no door row is refused without creating one. The empty-secret
 term is there because a constant-time compare of two empty strings is a match
-and an omitted JSON field decodes to the empty string. The admission is one
+and an omitted JSON field decodes to the empty string. Only past those
+refusals does `JoinAdmits` read the display names of every participant who is
+not revoked, so of the callers of `POST /join`, only one holding the current
+secret at an open door with budget left learns from it whether a name is held;
+a held name is refused with
+`ErrNameTaken` before the `UPDATE`, so that refusal also writes nothing.
+The admission is one
 `UPDATE` whose `WHERE` re-states the door and the budget, so two joiners racing
 for the last slot are serialised by the database and the one whose update
 matches no row is refused; that joiner, and one whose door was shut between the
@@ -146,6 +165,30 @@ and this is one of them.
 0`, ordered by display name and then id, and `GET /api/participants`, open to
 the roles in `participantRoles`, is built on it.
 
+**A display name a participant who is not revoked holds is refused to anyone
+new.** `CreateInvite` and `JoinAdmits` read the names of every participant who
+is not revoked and compare each with the name offered under
+`strings.EqualFold`, letter by letter ignoring case, in Go, because SQLite's
+`lower()` and `NOCASE` fold ASCII alone. `CreateInvite` refuses a held name
+with `ErrNameTaken` before it inserts, and outside test files its `INSERT INTO
+participants` is the only one (`grep -rln "INSERT INTO participants" internal
+cmd | grep -v _test.go`), so every path that mints a participant is held to
+it: `handleJoin`, `vtt invite` (`newInviteCmd`), which returns the error
+before it prints a token, and `mintInvites` in `cmd/vtt/harness_boot.go`. A
+name held only by a revoked participant is free. A campaign that already
+holds two participants of one name keeps them; `List` orders them by display
+name and then id, so two names alike byte for byte come in id order. A
+failure to read the names is an error, never "not held": `JoinAdmits` refuses
+and spends nothing, `CreateInvite` mints nothing.
+
+**The join form shows the name's refusal and keeps what was typed.**
+`requestJoin` in `client/src/join.ts` reads a 400 as the name's refusal: its
+body trimmed of surrounding white space, then without a leading `gateway: `, or
+a fixed refusal of the name when the trimmed body is empty. A 403 is the door's,
+one message for every cause. `runJoin` in `client/src/app.ts` keeps the typed
+name after any refusal, and `renderJoinView` in `client/src/view/join.ts` puts
+it back in the box on each repaint.
+
 **The door's columns arrive by migration, and the migration takes the write
 lock only when it has something to do.** `identity.Open` applies its schema
 with `CREATE TABLE IF NOT EXISTS`, which is why `join_access` is a table of its
@@ -161,11 +204,16 @@ name is left in place and is inert.
 ## Consequences
 
 A join at a shut door, with a wrong secret, against a spent budget or against
-an identity store that cannot answer the door's question is refused with one
-answer; a `CreateInvite` that fails after an admission is answered as a server
-error with its own body; a display name that is empty, over
+an identity store that cannot answer the door's or the names' question is
+refused with one answer; a `CreateInvite` that fails after an admission is
+answered as a server error with its own body; a display name that is empty, over
 `maxDisplayNameRunes`, or carries control, bidi or invisible-only content is
 refused distinctly, before the door is consulted.
+
+A join under a display name a participant who is not revoked holds is refused
+with its own 400, after the door, and writes nothing; to a caller the door
+refuses, a held name and a free one get the same answer. `vtt invite` naming a
+held name exits non-zero and prints no token.
 
 A promotion to dm or agent is refused, and so is a promotion of a dm or an
 agent. A `set_join_door` that says neither open nor closed is refused.
@@ -188,12 +236,13 @@ minted out of band, by `vtt invite`.
 
 ## Requirements
 
-VTT-005, VTT-006, VTT-007, VTT-008, VTT-009, VTT-010, VTT-011, VTT-012,
-VTT-013, VTT-014, VTT-015, VTT-016, VTT-017, VTT-018, VTT-019, VTT-020,
-VTT-021, VTT-022, VTT-023, VTT-024, VTT-025, VTT-026, VTT-027, VTT-028,
-VTT-029, VTT-030, VTT-031, VTT-032, VTT-033, VTT-034, VTT-036, VTT-037,
-VTT-038, VTT-039, VTT-040, VTT-041, VTT-042, VTT-043, VTT-044, VTT-045,
-VTT-046, VTT-047, VTT-048, VTT-049, VTT-060, VTT-061, VTT-062, VTT-063,
-VTT-064, VTT-065, VTT-066, VTT-067, VTT-068, VTT-069, VTT-070, VTT-071,
-VTT-072, VTT-073, VTT-074, VTT-075, VTT-076, VTT-077, VTT-256, VTT-309,
-VTT-310, VTT-352, VTT-376.
+VTT-005, VTT-006, VTT-007, VTT-008, VTT-009, VTT-010, VTT-011, VTT-013,
+VTT-014, VTT-015, VTT-016, VTT-017, VTT-018, VTT-020, VTT-021, VTT-022,
+VTT-025, VTT-026, VTT-027, VTT-028, VTT-029, VTT-030, VTT-031, VTT-032,
+VTT-033, VTT-034, VTT-036, VTT-037, VTT-038, VTT-039, VTT-040, VTT-041,
+VTT-043, VTT-045, VTT-046, VTT-047, VTT-048, VTT-049, VTT-060, VTT-061,
+VTT-062, VTT-063, VTT-064, VTT-065, VTT-066, VTT-067, VTT-068, VTT-069,
+VTT-070, VTT-071, VTT-072, VTT-073, VTT-074, VTT-075, VTT-076, VTT-077,
+VTT-256, VTT-309, VTT-310, VTT-352, VTT-376, VTT-542, VTT-543, VTT-544,
+VTT-545, VTT-546, VTT-548, VTT-549, VTT-550, VTT-551, VTT-552, VTT-553,
+VTT-554, VTT-555, VTT-556.
