@@ -8,7 +8,7 @@ client/src/app.ts  48.6
 client/src/auth.ts  44.5
 client/src/commands.ts  41.1
 client/src/fold.ts  32.7
-client/src/join.ts  53.1
+client/src/join.ts  36.5
 client/src/main.ts  83.4
 client/src/metadata.ts  50.0
 client/src/player.ts  46.5
@@ -17,7 +17,7 @@ client/src/state.ts  61.3
 client/src/view/art-assets.ts  68.9
 client/src/view/camera.ts  50.0
 client/src/view/canvas.ts  71.6
-client/src/view/dm.ts  37.5
+client/src/view/dm.ts  36.7
 client/src/view/doors.ts  72.5
 client/src/view/feed.ts  35.7
 client/src/view/focus.ts  19.1
@@ -25,7 +25,7 @@ client/src/view/grid.ts  43.0
 client/src/view/join.ts  29.9
 client/src/view/naming.ts  8.6
 client/src/view/pack-assets.ts  62.7
-client/src/view/player.ts  21.3
+client/src/view/player.ts  21.1
 client/src/view/scene-plan.ts  52.9
 client/src/view/spectator.ts  40.4
 client/src/wire.ts  30.0
@@ -33,7 +33,7 @@ cmd/vtt/adventures.go  57.9
 cmd/vtt/adventures_test.go  25.2
 cmd/vtt/art.go  43.2
 cmd/vtt/art_test.go  30.9
-cmd/vtt/cli_test.go  25.6
+cmd/vtt/cli_test.go  23.6
 cmd/vtt/client_e2e_test.go  33.3
 cmd/vtt/client_run.go  23.3
 cmd/vtt/client_soak.go  31.1
@@ -59,6 +59,7 @@ cmd/vtt/mcp_ruleset_e2e_test.go  23.1
 cmd/vtt/named_token_dump_test.go  4.5
 cmd/vtt/qa_e2e_wait_test.go  1.4
 cmd/vtt/qa_fixture_startup_test.go  0.0
+cmd/vtt/qa_invite_names_test.go  0.0
 cmd/vtt/qa_note_schema_test.go  0.0
 cmd/vtt/qa_state_dump_switch_test.go  0.0
 cmd/vtt/qa_writer_hold_test.go  1.9
@@ -166,8 +167,8 @@ internal/gateway/creature_test.go  0.0
 internal/gateway/export_test.go  45.9
 internal/gateway/grant_validate.go  26.4
 internal/gateway/grant_validate_test.go  38.0
-internal/gateway/join.go  17.9
-internal/gateway/join_test.go  25.7
+internal/gateway/join.go  16.7
+internal/gateway/join_test.go  20.3
 internal/gateway/keepalive.go  22.7
 internal/gateway/keepalive_conn_internal_test.go  23.0
 internal/gateway/keepalive_internal_test.go  29.7
@@ -194,6 +195,7 @@ internal/gateway/qa_move_gate_test.go  1.5
 internal/gateway/qa_move_reason_bound_test.go  1.4
 internal/gateway/qa_move_reason_test.go  0.6
 internal/gateway/qa_name_bound_test.go  1.9
+internal/gateway/qa_names_test.go  0.0
 internal/gateway/qa_note_refusal_test.go  0.4
 internal/gateway/qa_player_perch_test.go  0.0
 internal/gateway/qa_promotion_opening_test.go  0.0
@@ -250,11 +252,12 @@ internal/harness/soak_test.go  34.6
 internal/harness/states_equal_conditions_internal_test.go  17.3
 internal/harness/states_equal_notes_internal_test.go  12.5
 internal/harness/switch_quiet_internal_test.go  0.0
-internal/identity/fault_internal_test.go  7.4
-internal/identity/identity.go  19.9
+internal/identity/fault_internal_test.go  5.7
+internal/identity/identity.go  19.7
 internal/identity/identity_failure_test.go  6.9
-internal/identity/identity_test.go  2.5
-internal/identity/qa_joining_internal_test.go  12.2
+internal/identity/identity_test.go  2.3
+internal/identity/qa_joining_internal_test.go  10.6
+internal/identity/qa_names_test.go  0.0
 internal/mapdef/apidoc_test.go  30.0
 internal/mapdef/boundary_test.go  32.6
 internal/mapdef/compile.go  54.6
