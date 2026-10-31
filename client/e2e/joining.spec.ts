@@ -154,7 +154,7 @@ test("a stranger with one link joins, watches, is promoted, and plays", async ({
   // a reconnect here would sit on the critical path of every person who ever
   // joins — the shared link would be more cumbersome than the invites it
   // replaces.
-  await dm.locator('.roster-row:has-text("Robin") button').click();
+  await dm.locator('.roster-row:has-text("Robin") [data-action^="promote-"]').click();
   await expect(
     dm.locator('.roster-row:has-text("Robin") .role'),
   ).toHaveText("player", { timeout: 15_000 });
