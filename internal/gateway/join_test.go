@@ -263,7 +263,7 @@ func TestAnOversizedBodyIsRefusedBeforeItIsRead(t *testing.T) {
 	}
 }
 
-// VTT-012 VTT-013
+// VTT-549 VTT-013
 func TestAnEmptyDisplayNameIsRefused(t *testing.T) {
 	// It is what the whole table sees. Blank, or whitespace pretending to be
 	// blank, is not a name.
@@ -293,7 +293,7 @@ func TestAnEmptyDisplayNameIsRefused(t *testing.T) {
 	}
 }
 
-// VTT-012
+// VTT-549
 func TestADisplayNameIsBoundedAndPrintable(t *testing.T) {
 	// An UNAUTHENTICATED caller chooses this string, and every client at the
 	// table then renders it in every presence frame. Length and control
@@ -353,7 +353,7 @@ func TestADisplayNameIsBoundedAndPrintable(t *testing.T) {
 	}
 }
 
-// VTT-024
+// VTT-551
 func TestTwoJoinersGetDistinctIdentities(t *testing.T) {
 	// The point of minting per person rather than sharing one credential: two
 	// people through the same link are two participants, separately revocable,
@@ -373,7 +373,7 @@ func TestTwoJoinersGetDistinctIdentities(t *testing.T) {
 	}
 }
 
-// VTT-019
+// VTT-550
 func TestRotatingTheLinkRefusesTheOldSecret(t *testing.T) {
 	// The property spec §2 calls close to required: a leaked link is closable.
 	f := newJoinFixture(t)
@@ -446,5 +446,129 @@ func TestTheDoorStopsAdmittingWhenItsBudgetIsSpent(t *testing.T) {
 	// And it minted exactly the two it admitted.
 	if n := f.count("participants"); n != 2 {
 		t.Fatalf("%d participants exist, want 2 — the refused join minted one anyway", n)
+	}
+}
+
+func (f *joinFixture) open(limit int) string {
+	f.t.Helper()
+	secret, err := f.ids.JoinSecret()
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if err := f.ids.SetJoinOpen(true, limit); err != nil {
+		f.t.Fatal(err)
+	}
+	return secret
+}
+
+func (f *joinFixture) invite(name string, role identity.Role) string {
+	f.t.Helper()
+	_, id, err := f.ids.CreateInvite(name, role)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return id
+}
+
+// VTT-542 VTT-546 VTT-555 VTT-011 VTT-013
+func TestAJoinUnderANameSomebodyHoldsIsToldTheNameIsTaken(t *testing.T) {
+	f := newJoinFixture(t)
+	f.invite("Kim", identity.RoleSpectator)
+	f.invite("Åsa", identity.RolePlayer)
+	f.invite("DM", identity.RoleDM)
+	secret := f.open(100)
+	_, _, door := f.post("not-the-secret", "Zed")
+	before := f.count("participants")
+
+	for _, name := range []string{"kim", "  KIM ", "åsa", "dm"} {
+		resp, got, body := f.post(secret, name)
+		if resp.StatusCode != http.StatusBadRequest || !strings.Contains(body, "taken") ||
+			body == door || got.Token != "" {
+			t.Fatalf("join as %q: %d %q, want 400 saying the name is taken", name, resp.StatusCode, body)
+		}
+	}
+	if n := f.count("participants"); n != before {
+		t.Fatalf("participants %d -> %d: a refused name minted somebody", before, n)
+	}
+	if resp, got, body := f.post(secret, "Kimberly"); resp.StatusCode != http.StatusOK || got.Token == "" {
+		t.Fatalf("join as Kimberly: %d %q, want 200 with a credential", resp.StatusCode, body)
+	}
+}
+
+// VTT-545
+func TestAJoinRefusedForATakenNameSpendsNoAdmission(t *testing.T) {
+	f := newJoinFixture(t)
+	f.invite("Kim", identity.RoleSpectator)
+	secret := f.open(1)
+
+	for _, name := range []string{"kim", "  KIM "} {
+		if resp, _, body := f.post(secret, name); resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("join as %q: %d %q, want 400", name, resp.StatusCode, body)
+		}
+		if admitted, _, err := f.ids.JoinBudget(); err != nil || admitted != 0 {
+			t.Fatalf("after %q: spent %d (%v), want 0", name, admitted, err)
+		}
+	}
+	if resp, _, body := f.post(secret, "Ann"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("join as Ann: %d %q, want 200: the one admission is still there", resp.StatusCode, body)
+	}
+	if resp, _, body := f.post(secret, "Bo"); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("join as Bo: %d %q, want 403: Ann spent the one admission", resp.StatusCode, body)
+	}
+}
+
+// VTT-009
+func TestATakenNameGetsTheDoorsOneAnswerWhenTheDoorRefuses(t *testing.T) {
+	f := newJoinFixture(t)
+	f.invite("Kim", identity.RoleSpectator)
+	secret := f.open(5)
+	want, _, wantBody := f.post("not-the-secret", "Zed")
+	if want.StatusCode != http.StatusForbidden {
+		t.Fatalf("fixture: a wrong secret answered %d, want 403", want.StatusCode)
+	}
+	check := func(label, offer string) {
+		t.Helper()
+		resp, _, body := f.post(offer, "kim")
+		if resp.StatusCode != want.StatusCode || body != wantBody {
+			t.Fatalf("%s under a taken name: %d %q, want the door's %d %q",
+				label, resp.StatusCode, body, want.StatusCode, wantBody)
+		}
+	}
+
+	check("a wrong secret", "not-the-secret")
+	if err := f.ids.SetJoinOpen(false, 0); err != nil {
+		t.Fatal(err)
+	}
+	check("a shut door", secret)
+	f.open(1)
+	if resp, _, body := f.post(secret, "Ann"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("fixture: join as Ann: %d %q", resp.StatusCode, body)
+	}
+	check("a spent budget", secret)
+}
+
+// VTT-544
+func TestAJoinTakesANameOnlyARevokedParticipantHeld(t *testing.T) {
+	f := newJoinFixture(t)
+	if err := f.ids.Revoke(f.invite("Kim", identity.RoleSpectator)); err != nil {
+		t.Fatal(err)
+	}
+	secret := f.open(5)
+	if resp, got, body := f.post(secret, "kim"); resp.StatusCode != http.StatusOK || got.Token == "" {
+		t.Fatalf("join as kim with Kim revoked: %d %q, want 200 with a credential", resp.StatusCode, body)
+	}
+}
+
+// VTT-555
+func TestAJoinStoresItsNameTrimmed(t *testing.T) {
+	f := newJoinFixture(t)
+	secret := f.open(5)
+	resp, got, body := f.post(secret, "  Zed  ")
+	if resp.StatusCode != http.StatusOK || got.Name != "Zed" {
+		t.Fatalf("join as \"  Zed  \": %d %q, want 200 naming Zed", resp.StatusCode, body)
+	}
+	list, err := f.ids.List()
+	if err != nil || len(list) != 1 || list[0].Name != "Zed" {
+		t.Fatalf("List: %+v (%v), want one participant named Zed", list, err)
 	}
 }

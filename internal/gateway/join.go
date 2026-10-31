@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"unicode"
@@ -15,10 +16,10 @@ import (
 const maxJoinBody = 4 << 10
 
 // Count runes, never bytes: a byte cap gives a non-ASCII name as little as a
-// quarter of the room (VTT-012).
+// quarter of the room (VTT-549).
 const maxDisplayNameRunes = 64
 
-// usableDisplayName holds the display-name rule SPEC-009 states (VTT-012).
+// usableDisplayName holds the display-name rule SPEC-009 states (VTT-549).
 func usableDisplayName(name string) bool {
 	if name == "" || utf8.RuneCountInString(name) > maxDisplayNameRunes {
 		return false
@@ -29,7 +30,7 @@ func usableDisplayName(name string) bool {
 			return false
 		}
 		// Keep Other_Default_Ignorable_Code_Point: U+3164 HANGUL FILLER is a
-		// letter and draws nothing (VTT-012).
+		// letter and draws nothing (VTT-549).
 		switch {
 		case unicode.Is(unicode.Other_Default_Ignorable_Code_Point, r):
 		case unicode.Is(unicode.Cf, r):
@@ -62,8 +63,8 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Refuse the name first, and distinctly: it says nothing about the door
-	// (VTT-013).
+	// Refuse an unusable name before the door, and distinctly: that refusal says
+	// nothing about the door (VTT-013).
 	name := strings.TrimSpace(req.DisplayName)
 	if !usableDisplayName(name) {
 		http.Error(w, "gateway: a display name is required, up to 64 ordinary characters",
@@ -71,9 +72,15 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ask JoinAdmits alone, and refuse its error as a refusal: a database that
-	// cannot answer must not open the door (SPEC-009, VTT-046).
+	// Ask JoinAdmits alone, and refuse every error but ErrNameTaken as the door's:
+	// a database that cannot answer must not open the door (SPEC-009, VTT-046).
 	allowed, err := s.ids.JoinAdmits(req.Secret, name)
+	if errors.Is(err, identity.ErrNameTaken) {
+		// VTT-546
+		http.Error(w, "gateway: that name is already taken at this table; choose another",
+			http.StatusBadRequest)
+		return
+	}
 	if err != nil || !allowed {
 		// Answer every refusal with this status and body: a difference tells a
 		// prober which half it got right (VTT-009).
