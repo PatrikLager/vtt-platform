@@ -193,6 +193,7 @@ message ClientCommand {
     // Task 9 report).
     RemoveActor remove_actor = 33;
     DescribeToken describe_token = 34;
+    RemoveParticipant remove_participant = 35;
   }
 }
 
@@ -283,10 +284,10 @@ message RevokeActorControl {
 
 // PromoteParticipant changes what a participant is ALLOWED to do.
 //
-// It is the only command that changes IDENTITY rather than campaign state, and
-// so the only one that produces NO EVENT: a role lives in the participants
-// table beside the token, one source of truth, never in the log (joining-a-
-// table spec §3.1). The gateway's ToEvent allowlist names it for that reason.
+// It changes IDENTITY rather than campaign state, and so produces NO EVENT: a
+// role lives in the participants table beside the token, one source of truth,
+// never in the log (joining-a-table spec §3.1). The gateway's ToEvent allowlist
+// names it for that reason.
 //
 // role may be ONLY "player" or "spectator" (spec §3.1a). A shared join link
 // mints spectators, and letting promotion reach "dm" or "agent" would make
@@ -299,6 +300,18 @@ message RevokeActorControl {
 message PromoteParticipant {
   string participant_id = 1;
   string role = 2;
+}
+
+// RemoveParticipant revokes a participant for good (SPEC-009): their credential
+// stops working, their connections close, their display name is free again, and
+// nothing undoes it. It also revokes their control of every actor they control,
+// one ActorControlRevoked each, in actor-id order, as ONE batch; a participant
+// who controls nothing appends nothing.
+//
+// May remove ONLY a player or a spectator. A dm or an agent is minted and
+// revoked out of band (`vtt invite`, `vtt revoke`). DM and agent only.
+message RemoveParticipant {
+  string participant_id = 1;
 }
 
 message CommandResult {

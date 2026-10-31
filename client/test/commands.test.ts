@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   moveToken, useAbility, addNarration, upsertNote,
-  setJoinDoor, rotateJoinLink, promoteParticipant, setViewpoint,
+  setJoinDoor, rotateJoinLink, promoteParticipant, removeParticipant, setViewpoint,
   speakAs, speakOutOfCharacter,
 } from "../src/commands";
 
@@ -430,6 +430,13 @@ test("promotion names the participant and the role", () => {
   const cmd = promoteParticipant("p-7", "player");
   expect(cmd.command.case).toBe("promoteParticipant");
   expect(cmd.command.value).toMatchObject({ participantId: "p-7", role: "player" });
+});
+
+test("a removal names the participant and carries a request id", () => {
+  const cmd = removeParticipant("p-7");
+  expect(cmd.command.case).toBe("removeParticipant");
+  expect(cmd.command.value).toMatchObject({ participantId: "p-7" });
+  expect(cmd.requestId).not.toBe("");
 });
 
 // --- door and map commands (Task 1: hands on the board) ---------------------

@@ -2549,3 +2549,66 @@ test("what was typed in the console's say-text survives a render, before a line 
   type(after, { "say-text": "Bye" });
   expect(harness().field("say-text").value).toBe("Bye");
 });
+
+function bootConsole(answer: boolean) {
+  const sent: ClientCommand[] = [];
+  const asked: string[] = [];
+  let refreshes = 0;
+  let release: (r: CommandResult) => void = () => {};
+  const node = renderDMConsole({
+    st: emptyState(), adventures: [], maps: [], guideFor: async () => null,
+    doorsArmed: false, toggleDoors: () => {}, participants: [],
+    joinLink: { open: false, secret: "s3cret" },
+    roster: [
+      { participantId: "p-watch", name: "Zoe", role: "spectator" },
+      { participantId: "p-play", name: "Lera", role: "player" },
+      { participantId: "p-dm", name: "Ari", role: "dm" },
+      { participantId: "p-agent", name: "Oracle", role: "agent" },
+    ],
+    origin: "https://table.example",
+    refreshSharing: () => refreshes++,
+    send: (c) => {
+      sent.push(c);
+      return new Promise<CommandResult>((r) => (release = r));
+    },
+    rerender: () => {}, notify: () => {},
+    confirm: (m) => {
+      asked.push(m);
+      return answer;
+    },
+  });
+  return { node, sent, asked, refreshes: () => refreshes, release: (r: CommandResult) => release(r) };
+}
+
+test("Boot is offered on a player's and a spectator's row, and on no dm's or agent's", () => {
+  // VTT-568
+  const c = bootConsole(true);
+  for (const id of ["p-watch", "p-play"]) {
+    expect(c.node.querySelector(`[data-action="boot-${id}"]`)!.textContent).toBe("Boot");
+  }
+  for (const id of ["p-dm", "p-agent"]) {
+    expect(c.node.querySelector(`[data-action="boot-${id}"]`)).toBeNull();
+  }
+});
+
+test("Boot asks first, naming the participant, and a no sends nothing", () => {
+  // VTT-569
+  const c = bootConsole(false);
+  c.node.querySelector<HTMLButtonElement>('[data-action="boot-p-play"]')!.click();
+  expect(c.asked).toHaveLength(1);
+  expect(c.asked[0]).toContain("Lera");
+  expect(c.sent).toHaveLength(0);
+});
+
+test("a confirmed Boot removes its row's participant and reads the roster again once answered", async () => {
+  // VTT-570 VTT-571
+  const c = bootConsole(true);
+  c.node.querySelector<HTMLButtonElement>('[data-action="boot-p-play"]')!.click();
+  expect(c.sent).toHaveLength(1);
+  expect(c.sent[0]!.command.case).toBe("removeParticipant");
+  expect(c.sent[0]!.command.value).toMatchObject({ participantId: "p-play" });
+  expect(c.refreshes()).toBe(0);
+  c.release(ok());
+  await settle();
+  expect(c.refreshes()).toBe(1);
+});

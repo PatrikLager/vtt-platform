@@ -62,15 +62,15 @@ export const COMMAND_SURFACE: Record<
      * STARTS WITH the old one. Fix round 1 (2026-08-30) demonstrated exactly
      * that hole against the first draft of this table, which matched every
      * entry by prefix. Only `dynamic: true` below opts an entry OUT of exact
-     * matching, and only one entry needs to.
+     * matching, and only the entries drawn once per roster row need to.
      */
     action?: string;
     /**
-     * True for the one entry whose control's data-action is not a single
-     * literal string: dm.ts renders promoteParticipant per roster row as
-     * `promote-${participantId}` / `demote-${participantId}`
-     * (dm-view.test.ts's own promotion tests pin those exact dynamic
-     * strings), so no fixed action string ever appears in the DOM for it.
+     * True for the entries whose control's data-action is not a single
+     * literal string: dm.ts renders promoteParticipant and removeParticipant
+     * per roster row as `promote-${participantId}` / `demote-${participantId}`
+     * and `boot-${participantId}` (dm-view.test.ts pins those exact dynamic
+     * strings), so no fixed action string ever appears in the DOM for them.
      * `action` for such an entry is a PATTERN PREFIX, matched by
      * controlExistsFor as `^${action}.+` (at least one character after the
      * prefix, so the bare prefix itself — a row nobody renders — does not
@@ -96,6 +96,7 @@ export const COMMAND_SURFACE: Record<
   grantActorControl: { surface: "dm-console", action: "grant-actor-control" },
   revokeActorControl: { surface: "dm-console", action: "revoke-actor-control" },
   promoteParticipant: { surface: "dm-console", action: "promote-", dynamic: true },
+  removeParticipant: { surface: "dm-console", action: "boot-", dynamic: true },
   setJoinDoor: { surface: "join-flow" },
   rotateJoinLink: { surface: "join-flow" },
   moveToken: { surface: "board" },

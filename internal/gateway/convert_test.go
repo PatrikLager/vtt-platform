@@ -453,6 +453,9 @@ func TestEveryClientCommandConverts(t *testing.T) {
 			"ActorRemoved on its own would leave a world whose own INTRODUCTIONS no " +
 			"longer fold: the projection synthesizes a TokenPlaced naming an actor no " +
 			"path can introduce, and the seat that receives it never folds again",
+		"remove_participant": "revokes the participant in identity and then revokes their " +
+			"control of every actor they control as one batch of ActorControlRevoked, never a single event, " +
+			"so ToEvent does not convert it",
 		"promote_participant": "changes IDENTITY, not campaign state, so it produces no " +
 			"event at all — a role lives in participants.role beside the token, one " +
 			"source of truth, never in the log (joining-a-table spec §3.1, §3.1a)",

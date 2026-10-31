@@ -46,7 +46,7 @@ var wantCommandToolNames = []string{
 	"add_narration", "upsert_note", "delete_note",
 	"load_adventure",
 	"grant_actor_control", "revoke_actor_control",
-	"promote_participant",
+	"promote_participant", "remove_participant",
 	"set_join_door", "rotate_join_link",
 	"open_door", "close_door",
 	"load_map",

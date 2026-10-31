@@ -291,6 +291,12 @@ var manifest = []toolSpec{
 		descriptor:  (&vttv1.PromoteParticipant{}).ProtoReflect().Descriptor(),
 	},
 	{
+		message:     "vtt.v1.RemoveParticipant",
+		name:        "remove_participant",
+		description: "Remove a player or a spectator from the table for good. This cannot be undone: their credential stops working, every connection they have open is closed, their display name is free for someone else to join under, and they are no longer listed. It also revokes their control of every actor they control, writing one actor-control revocation per actor, so each is left to whoever else controls it, or to no one, until you grant it again. Use it for a participant who will not be back, such as the old identity of someone who joined again from a new browser. A dm or an agent cannot be removed this way. DM/agent only.",
+		descriptor:  (&vttv1.RemoveParticipant{}).ProtoReflect().Descriptor(),
+	},
+	{
 		message:     "vtt.v1.SetJoinDoor",
 		name:        "set_join_door",
 		description: "Open or close the table's shared join link. While it is OPEN, the next few people holding the link can join as spectators without an invite; while it is CLOSED the link is inert and admits nobody, which is how a campaign starts. door must be \"JOIN_DOOR_OPEN\" or \"JOIN_DOOR_CLOSED\" — leaving it unset is refused rather than guessed at, because guessing wrong either admits strangers or locks the table out mid-session. DM/agent only. Changes operational state, not the campaign, so it writes no event.",

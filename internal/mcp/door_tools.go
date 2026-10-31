@@ -109,7 +109,7 @@ const getJoinLinkDescription = "Read the table's shared join link, whether the d
 
 const getParticipantsDescription = "List everyone at the table: participant id, display name, and role. " +
 	"DM/agent only. This is how to learn the participantId that promote_participant, " +
-	"grant_actor_control and revoke_actor_control all require — somebody who joined through the " +
+	"remove_participant, grant_actor_control and revoke_actor_control all require — somebody who joined through the " +
 	"shared link arrives as a spectator controlling no actor, so their id appears nowhere in " +
 	"get_state. Revoked participants are omitted. Roles are \"dm\", \"agent\", \"player\" or " +
 	"\"spectator\"."

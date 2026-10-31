@@ -1,11 +1,8 @@
-// The DM console (client spec §4): run the table.
-//
-// Every destructive or structural action lives here rather than in the player
-// panel. Exactly one of them asks first, and it is the one whose damage lands
-// OUTSIDE the room: rotating the join link strands every copy of the old one,
-// including the copies held by people who are not here to be told.
-//
-// Invite management is deliberately absent: it stays CLI (spec §4 non-goal).
+// The DM console: run the table. Keep every destructive or structural action
+// here rather than in the player panel. Ask first before an action nothing
+// undoes, whose damage reaches people not here to be told: New link strands
+// every copy of the old one, and Boot removes a participant for good
+// (VTT-569). Keep invite management out: it stays `vtt invite`.
 
 import type { State } from "../state";
 import type { Participant } from "../session";
@@ -19,6 +16,7 @@ import {
   setJoinDoor,
   rotateJoinLink,
   promoteParticipant,
+  removeParticipant,
 } from "../commands";
 import { readLine } from "../player";
 
@@ -715,6 +713,16 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
             promoteParticipant(person.participantId, "spectator"),
           ).then(d.refreshSharing), `demote-${person.participantId}`),
         );
+      }
+      if (person.role === "spectator" || person.role === "player") {
+        row.appendChild(button("Boot", () => {
+          if (!d.confirm(`Boot ${person.name}? Their sign-in stops working for good, and ` +
+            "they no longer control any character. They can come back only through the " +
+            "share link while it is open.")) {
+            return;
+          }
+          void d.send(removeParticipant(person.participantId)).then(d.refreshSharing);
+        }, `boot-${person.participantId}`));
       }
       rosterRows.push(row);
     }

@@ -46,6 +46,7 @@ var theCommandTools = []string{
 	"grant_actor_control",
 	"revoke_actor_control",
 	"promote_participant",
+	"remove_participant",
 	"set_join_door",
 	"rotate_join_link",
 	"open_door",

@@ -34,6 +34,7 @@ var commandRoles = map[string]map[identity.Role]bool{
 	"grant_actor_control":  {identity.RoleDM: true, identity.RoleAgent: true},
 	"revoke_actor_control": {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"promote_participant":  {identity.RoleDM: true, identity.RoleAgent: true},
+	"remove_participant":   {identity.RoleDM: true, identity.RoleAgent: true},
 	"set_join_door":        {identity.RoleDM: true, identity.RoleAgent: true},
 	"rotate_join_link":     {identity.RoleDM: true, identity.RoleAgent: true},
 	"open_door":            {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
@@ -286,6 +287,8 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "revoke_actor_control"
 	case *vttv1.ClientCommand_PromoteParticipant:
 		return "promote_participant"
+	case *vttv1.ClientCommand_RemoveParticipant:
+		return "remove_participant"
 	case *vttv1.ClientCommand_OpenDoor:
 		return "open_door"
 	case *vttv1.ClientCommand_CloseDoor:

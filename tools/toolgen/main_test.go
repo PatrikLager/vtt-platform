@@ -290,6 +290,16 @@ func TestRevokeActorControlSaysItEndsAPlayersRunOfACreature(t *testing.T) {
 	}
 }
 
+// VTT-567
+func TestRemoveParticipantSaysItIsPermanentAndTakesTheirActors(t *testing.T) {
+	desc, _ := findTool(t, "remove_participant")["description"].(string)
+	for _, want := range []string{"cannot be undone", "revokes their control of every actor they control"} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("remove_participant description = %q, want it to contain %q", desc, want)
+		}
+	}
+}
+
 // VTT-390
 func TestAddActorSaysAnIDIsNeverReused(t *testing.T) {
 	tool := findTool(t, "add_actor")

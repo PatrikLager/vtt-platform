@@ -437,3 +437,11 @@ export function promoteParticipant(participantId: string, role: "player" | "spec
     command: { case: "promoteParticipant", value: { participantId, role } },
   });
 }
+
+/** Remove a participant from the table for good (SPEC-009). */
+export function removeParticipant(participantId: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "removeParticipant", value: { participantId } },
+  });
+}

@@ -31,6 +31,10 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return grantActorControlCmd("p-2")
 	case "promote_participant":
 		return promoteCmd("p-2", "player")
+	case "remove_participant":
+		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RemoveParticipant{
+			RemoveParticipant: &vttv1.RemoveParticipant{ParticipantId: "p-2"},
+		}}
 	case "set_join_door":
 		return &vttv1.ClientCommand{
 			RequestId: "r-door",
@@ -448,6 +452,11 @@ var authzCases = []authzCase{
 	{"promote_participant", identity.RolePlayer, false},
 	{"promote_participant", identity.RoleSpectator, false},
 
+	{"remove_participant", identity.RoleDM, true},
+	{"remove_participant", identity.RoleAgent, true},
+	{"remove_participant", identity.RolePlayer, false},
+	{"remove_participant", identity.RoleSpectator, false},
+
 	// open_door/close_door (maps-as-geometry Task 6, spec §6: "hard for
 	// players, free for DM"). dm/agent/player all TRUE — a player may work a
 	// door same as they may move a token — spectator FALSE, same shape as
@@ -510,10 +519,10 @@ func ownershipFixture() *engine.State {
 	return st
 }
 
-// VTT-028 VTT-139 VTT-140 VTT-450 VTT-344
+// VTT-028 VTT-139 VTT-140 VTT-450 VTT-344 VTT-565
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 92 {
-		t.Fatalf("authzCases has %d entries, want 92 (23 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 96 {
+		t.Fatalf("authzCases has %d entries, want 96 (24 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {
