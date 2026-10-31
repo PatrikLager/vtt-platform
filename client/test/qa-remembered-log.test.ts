@@ -202,7 +202,7 @@ afterEach(() => {
 });
 
 describe("Wire given a remembered actor, before any ViewpointChanged", () => {
-  // VTT-442
+  // VTT-579
   test("qaRL: connect names the remembered actor in log, once, with after 0", async () => {
     const gw = gateway();
     const p = wireOn(gw, REMEMBERED);
@@ -212,7 +212,7 @@ describe("Wire given a remembered actor, before any ViewpointChanged", () => {
     expect(gw.dial(0).getAll("after")).toEqual(["0"]);
   });
 
-  // VTT-442
+  // VTT-579
   test("qaRL: a reconnect after a refused dial names the remembered actor with after 0", async () => {
     const gw = gateway();
     gw.refuse(0);
@@ -226,7 +226,7 @@ describe("Wire given a remembered actor, before any ViewpointChanged", () => {
     }
   });
 
-  // VTT-442
+  // VTT-579
   test("qaRL: reconnects after sockets opened and closed with no ViewpointChanged name the remembered actor with after 0", async () => {
     const gw = gateway();
     const p = wireOn(gw, REMEMBERED);
@@ -249,7 +249,7 @@ describe.each([
   ["nobody (\"\")", ""],
   ["nothing (null)", null],
 ] as const)("Wire remembering %s, before any ViewpointChanged", (_label, remembered) => {
-  // VTT-442
+  // VTT-579
   test("qaRL: connect, a reconnect after a closed socket and a reconnect after a refused dial name no log", async () => {
     const gw = gateway();
     gw.refuse(2);
@@ -268,7 +268,7 @@ describe.each([
 });
 
 describe("Wire.onViewpoint", () => {
-  // VTT-442
+  // VTT-579
   test("qaRL: called with the actor of every ViewpointChanged, the remembered one, repeats and nobody included", async () => {
     const gw = gateway();
     const p = wireOn(gw, REMEMBERED);
@@ -418,7 +418,7 @@ describe("Wire.viewpoint", () => {
 });
 
 describe("Session given a remembered actor", () => {
-  // VTT-442
+  // VTT-579
   test("qaRL: start and every reconnect before a ViewpointChanged name the remembered actor with after 0", async () => {
     const gw = gateway();
     gw.refuse(2);
@@ -457,7 +457,7 @@ describe("Session given a remembered actor", () => {
     expect(gw.dial(2).has("log")).toBe(false);
   });
 
-  // VTT-442
+  // VTT-579
   test("qaRL: Session.onViewpoint is called with the actor of every ViewpointChanged, the remembered one, repeats and nobody included", async () => {
     const gw = gateway();
     const p = sessionOn(gw, REMEMBERED);
@@ -497,7 +497,7 @@ describe.each([
   ["nobody (\"\")", ""],
   ["nothing (null)", null],
 ] as const)("Session remembering %s", (_label, remembered) => {
-  // VTT-442
+  // VTT-579
   test("qaRL: start and reconnects before a ViewpointChanged name no log", async () => {
     const gw = gateway();
     const p = sessionOn(gw, remembered);

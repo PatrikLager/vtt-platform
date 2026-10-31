@@ -128,7 +128,7 @@ class FakeSocket {
   readonly sent: string[] = [];
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((ev: { code: number; reason: string }) => void) | null = null;
   onmessage: ((ev: { data: string }) => void) | null = null;
   constructor(readonly url: string) {
     FakeSocket.instances.push(this);
@@ -145,7 +145,7 @@ class FakeSocket {
   }
   close() {
     this.readyState = 3;
-    this.onclose?.();
+    this.onclose?.({ code: 1000, reason: "" });
   }
 }
 
@@ -3161,7 +3161,7 @@ test("a perched player's board click sends nothing, on a listed party member's t
 const PAIR: [string, string][] = [["a1", "Lera"], ["a2", "Bram"]];
 const dialed = (sock: FakeSocket) => new URL(sock.url).searchParams;
 
-// VTT-442
+// VTT-579
 test("a page loaded afresh in the tab dials naming the party member its last page watched, from after 0", async () => {
   const first = await dialAs("player");
   opensOn(first.sock, "a2", PAIR);
@@ -3175,7 +3175,7 @@ test("a page loaded afresh in the tab dials naming the party member its last pag
   again.s?.close();
 });
 
-// VTT-442, VTT-397, VTT-407
+// VTT-579, VTT-397, VTT-407
 test("a remembered party member the gateway refuses gives way to the one it names, and the next dial names that one", async () => {
   sessionStorage.setItem("vtt.viewpoint.tok", "a2");
   const { r, s, sock } = await dialAs("player");
@@ -3228,7 +3228,7 @@ test("a page in another tab names no log the first tab's page was told", async (
   other.s?.close();
 });
 
-// VTT-442, VTT-407
+// VTT-579, VTT-407
 test("until the gateway names a viewpoint the window shows nobody as watched, a failed dial included, and Reconnect still names the remembered log", async () => {
   sessionStorage.setItem("vtt.viewpoint.tok", "a2");
   localStorage.setItem("vtt.token", "tok");
@@ -3252,7 +3252,7 @@ test("until the gateway names a viewpoint the window shows nobody as watched, a 
   s?.close();
 });
 
-// VTT-442
+// VTT-579
 test("a spectator who left the shoulder reloads on nobody", async () => {
   const first = await dialAs("spectator");
   opensOn(first.sock, "a2", PAIR);
@@ -3265,7 +3265,7 @@ test("a spectator who left the shoulder reloads on nobody", async () => {
   again.s?.close();
 });
 
-// VTT-442
+// VTT-579
 test("a page sent the set but no viewpoint leaves the next page the party member the page before it watched", async () => {
   const first = await dialAs("player");
   opensOn(first.sock, "a2", PAIR);
@@ -3558,4 +3558,106 @@ test("a DM's and an agent's page holds one line box, the console's, and a player
       s?.close();
     }
   }
+});
+
+const GONE = { code: 1008, reason: "gateway: credential no longer valid" };
+
+function closeWith(sock: FakeSocket, ev: { code: number; reason: string }) {
+  sock.readyState = 3;
+  sock.onclose?.(ev);
+}
+
+test("a window closed for a dead credential says it was removed in place of Reconnect, and forgets its credential and its tab's viewpoint", async () => {
+  // VTT-572 VTT-574 VTT-575
+  const { r, s, sock } = await dialAs("player");
+  opensOn(sock, "a1");
+  seedTable(sock);
+  sock.deliver(envelope(6, { narrationAdded: { text: "The torch gutters." } }));
+  await settle();
+  expect(sessionStorage.getItem("vtt.viewpoint.tok")).toBe("a1");
+  closeWith(sock, GONE);
+  await settle();
+  expect(r.querySelector(".removed")?.textContent).toContain("removed");
+  expect(r.querySelector(".reconnect")).toBeNull();
+  expect(localStorage.getItem("vtt.token")).toBeNull();
+  expect(sessionStorage.getItem("vtt.viewpoint.tok")).toBeNull();
+  expect(r.querySelector(".feed")?.textContent).toContain("The torch gutters.");
+  s?.close();
+});
+
+test("a dead credential's window keeps another window's stored credential", async () => {
+  // VTT-574
+  const { r, s, sock } = await dialAs("player");
+  localStorage.setItem("vtt.token", "tok-other");
+  closeWith(sock, GONE);
+  await settle();
+  expect(r.querySelector(".removed")).not.toBeNull();
+  expect(localStorage.getItem("vtt.token")).toBe("tok-other");
+  s?.close();
+});
+
+test("a window closed any other way forgets nothing and offers Reconnect", async () => {
+  // VTT-576
+  for (const ev of [
+    { code: 1008, reason: "gateway: malformed frame" },
+    { code: 1006, reason: "" },
+    { code: 1000, reason: GONE.reason },
+  ]) {
+    sessionStorage.clear();
+    const { r, s, sock } = await dialAs("player");
+    opensOn(sock, "a1");
+    await settle();
+    closeWith(sock, ev);
+    await settle();
+    expect(r.querySelector(".removed")).toBeNull();
+    expect(r.querySelector(".reconnect")).not.toBeNull();
+    expect(localStorage.getItem("vtt.token")).toBe("tok");
+    expect(sessionStorage.getItem("vtt.viewpoint.tok")).toBe("a1");
+    s?.close();
+  }
+});
+
+test("a page whose /api/me answers 401 says it was removed and forgets its credential, and one answered 503 does neither", async () => {
+  // VTT-573 VTT-574 VTT-580
+  for (const [status, removed] of [[401, true], [503, false]] as const) {
+    localStorage.setItem("vtt.token", "tok");
+    globalThis.fetch = (async () => new Response("gateway: no", { status })) as unknown as typeof fetch;
+    useFakeSocket();
+    const r = root();
+    const s = boot(r);
+    await settle();
+    const sock = FakeSocket.instances[0]!;
+    sock.onerror?.();
+    closeWith(sock, { code: 1006, reason: "" });
+    await settle();
+    expect(r.querySelector(".removed") !== null).toBe(removed);
+    expect(r.querySelector(".reconnect") === null).toBe(removed);
+    expect(localStorage.getItem("vtt.token")).toBe(removed ? null : "tok");
+    s?.close();
+  }
+});
+
+test("after a removal the share link opens the join form, and a page under the dead token names no log", async () => {
+  // VTT-577 VTT-579
+  const { s, sock } = await dialAs("player");
+  opensOn(sock, "a1");
+  await settle();
+  closeWith(sock, GONE);
+  await settle();
+  s?.close();
+
+  setURL("http://localhost/?join=s3cret");
+  useFakeSocket();
+  const join = root();
+  boot(join);
+  await settle();
+  expect(join.querySelector('[data-field="join-name"]')).not.toBeNull();
+  expect(FakeSocket.instances).toHaveLength(0);
+
+  setURL("http://localhost/?token=tok");
+  stubMetadata({ "/api/me": { participantId: "p", name: "Watcher", role: "player" } });
+  useFakeSocket();
+  const again = boot(root());
+  expect(dialed(FakeSocket.instances[0]!).has("log")).toBe(false);
+  again?.close();
 });

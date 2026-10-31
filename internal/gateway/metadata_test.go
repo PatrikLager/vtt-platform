@@ -1,6 +1,7 @@
 package gateway_test
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -170,7 +171,7 @@ func TestMetadataAdventureGuideRoleTable(t *testing.T) {
 
 // --- auth ------------------------------------------------------------------
 
-// VTT-111
+// VTT-581
 func TestMetadataRejectsBadMissingAndRevokedTokens(t *testing.T) {
 	f := newMetaFixture(t, true)
 
@@ -453,7 +454,7 @@ func TestMetadataRulesetShapeMatchesTheContract(t *testing.T) {
 // participantId, and the role decides which panels exist at all. Inferring
 // either from the event stream would be guesswork — a spectator who has
 // caused no events looks exactly like a player who has not acted yet.
-// VTT-111 VTT-112
+// VTT-581 VTT-112
 func TestMetadataMeIdentifiesTheCaller(t *testing.T) {
 	f := newMetaFixture(t, true)
 
@@ -1355,7 +1356,7 @@ func TestArtIsSentWithCacheControlSoAnOverwriteReachesTheBrowser(t *testing.T) {
 // art is operator-trusted content, and that trust is about what an
 // AUTHENTICATED caller may read — never about skipping authentication the way
 // /join and the static bundle deliberately do.
-// VTT-111
+// VTT-581
 func TestArtFilesRequireAuth(t *testing.T) {
 	f := newGatewayWithArt(t)
 	for _, tc := range []struct{ name, token string }{
@@ -1684,5 +1685,54 @@ func TestACampaignsOwnCellPxReachesTheClient(t *testing.T) {
 	}
 	if raw["cellPx"] != float64(32) {
 		t.Fatalf("cellPx = %v, want 32 — the campaign's own declaration, not the default", raw["cellPx"])
+	}
+}
+
+// VTT-578 VTT-581
+func TestAnAPIRequestWhileIdentityCannotAnswerIs503(t *testing.T) {
+	f := newGWFixture(t)
+	get := func(token string) (int, string) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, f.srv.URL+"/api/me", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.StatusCode, string(body)
+	}
+	rename := func(from, to string) {
+		t.Helper()
+		raw, err := sql.Open("sqlite", campaign.LogPath(f.path)+"?_pragma=busy_timeout(5000)")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer raw.Close()
+		if _, err := raw.Exec(`ALTER TABLE ` + from + ` RENAME TO ` + to); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if code, body := get(f.dmToken); code != http.StatusOK {
+		t.Fatalf("a live token: %d %q, want 200", code, body)
+	}
+	if code, body := get("not-a-real-token"); code != http.StatusUnauthorized {
+		t.Fatalf("an unknown token: %d %q, want 401", code, body)
+	}
+	rename("participants", "participants_elsewhere")
+	if code, body := get(f.dmToken); code != http.StatusServiceUnavailable ||
+		!strings.Contains(body, "gateway: identity unavailable") {
+		t.Fatalf("a live token while identity cannot answer: %d %q, want 503", code, body)
+	}
+	rename("participants_elsewhere", "participants")
+	if code, body := get(f.dmToken); code != http.StatusOK {
+		t.Fatalf("a live token once identity answers again: %d %q, want 200", code, body)
 	}
 }

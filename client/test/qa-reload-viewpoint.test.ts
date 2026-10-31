@@ -1,6 +1,6 @@
 // Independent QA: what a browser page dials and what its window shows, given
 // what earlier pages in the same tab, or in other tabs, were told. Pins
-// VTT-442 to VTT-444 and their seams with VTT-397 and VTT-407.
+// VTT-579 to VTT-444 and their seams with VTT-397 and VTT-407.
 import "./support/dom";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { boot } from "../src/app";
@@ -344,7 +344,7 @@ afterEach(async () => {
 });
 
 describe("a reload in the same tab, under the same token", () => {
-  // VTT-442
+  // VTT-579
   test("qaRV: a reload names the actor the LAST switch named, not the first", async () => {
     const p1 = await openPage("http://localhost/?token=tokP");
     expect(dialOf(current(p1)).hasLog).toBe(false);
@@ -359,7 +359,7 @@ describe("a reload in the same tab, under the same token", () => {
     expect(d.after).toBe("0");
   });
 
-  // VTT-442
+  // VTT-579
   test("qaRV: a reload dials after 0 though the earlier page held a cursor in that log", async () => {
     const p1 = await playerToldBo("http://localhost/?token=tokP");
     const held = await dropAndReconnect(p1);
@@ -374,7 +374,7 @@ describe("a reload in the same tab, under the same token", () => {
     expect(d.after).toBe("0");
   });
 
-  // VTT-442
+  // VTT-579
   test("qaRV: a reload whose token comes from storage, not the URL, is under the same token", async () => {
     const p1 = await playerToldBo("http://localhost/?token=tokP");
     await closePage(p1);
@@ -386,7 +386,7 @@ describe("a reload in the same tab, under the same token", () => {
     expect(d.after).toBe("0");
   });
 
-  // VTT-442
+  // VTT-579
   test("qaRV: a reload names no log when the last switch the earlier page was told named nobody", async () => {
     const p1 = await spectatorToldBo("http://localhost/?token=tokS");
     expect(await userSwitches(p1, null)).toBe("");
@@ -396,7 +396,7 @@ describe("a reload in the same tab, under the same token", () => {
     expect(dialOf(current(p2)).hasLog).toBe(false);
   });
 
-  // VTT-442
+  // VTT-579
   test("qaRV: a page told nothing in between leaves the earlier page's switch remembered", async () => {
     const p1 = await playerToldBo("http://localhost/?token=tokP");
     await closePage(p1);
@@ -413,7 +413,7 @@ describe("a reload in the same tab, under the same token", () => {
     expect(d.after).toBe("0");
   });
 
-  // VTT-442
+  // VTT-579
   test("qaRV: a later page opened on another actor than it dialled replaces the remembered one", async () => {
     const p1 = await playerToldBo("http://localhost/?token=tokP");
     await closePage(p1);
@@ -427,7 +427,7 @@ describe("a reload in the same tab, under the same token", () => {
     expect(dialOf(current(p3)).log).toBe("a1");
   });
 
-  // VTT-442
+  // VTT-579
   test("qaRV: the remembered actor outlives a change of role between spectator and player", async () => {
     const p1 = await spectatorToldBo("http://localhost/?token=tokS");
     await closePage(p1);
@@ -439,7 +439,7 @@ describe("a reload in the same tab, under the same token", () => {
     expect(d.after).toBe("0");
   });
 
-  // VTT-442 VTT-407
+  // VTT-579 VTT-407
   test("qaRV: a refused switch is not remembered, the last switch is", async () => {
     const p1 = await playerToldBo("http://localhost/?token=tokP");
     expect(selected(chipNamed(p1, "Bo"))).toBe(true);
@@ -459,7 +459,7 @@ describe("a reload in the same tab, under the same token", () => {
     expect(dialOf(current(p2)).log).toBe("a2");
   });
 
-  // VTT-442
+  // VTT-579
   test("qaRV: a reload remembers the switch though the earlier page was never closed", async () => {
     const p1 = await playerToldBo("http://localhost/?token=tokP");
     p1.root.remove();
@@ -470,7 +470,7 @@ describe("a reload in the same tab, under the same token", () => {
     expect(d.after).toBe("0");
   });
 
-  // VTT-442
+  // VTT-579
   test("qaRV: a switch the earlier page was told on a later connection is the one remembered", async () => {
     const p1 = await openPage("http://localhost/?token=tokP");
     expect(await gatewayOpens(current(p1))).toBe("a1");
@@ -483,7 +483,7 @@ describe("a reload in the same tab, under the same token", () => {
     expect(dialOf(current(p2)).log).toBe("a2");
   });
 
-  // VTT-442
+  // VTT-579
   test("qaRV: a remembered actor id with URL-special characters reaches the dial unchanged", async () => {
     const p1 = await openPage("http://localhost/?token=tokP");
     expect(await gatewayOpens(current(p1), [ODD, ...WATCHABLE])).toBe("a1");
@@ -499,7 +499,7 @@ describe("a reload in the same tab, under the same token", () => {
 });
 
 describe("each dial before a switch arrives, and the first redial after one", () => {
-  // VTT-442
+  // VTT-579
   test("qaRV: a redial before any switch arrives names the remembered actor again, with after 0", async () => {
     const p1 = await playerToldBo("http://localhost/?token=tokP");
     await closePage(p1);
@@ -512,7 +512,7 @@ describe("each dial before a switch arrives, and the first redial after one", ()
     expect(d.after).toBe("0");
   });
 
-  // VTT-397 VTT-442 VTT-407
+  // VTT-397 VTT-579 VTT-407
   test("qaRV: once a switch arrives, the redial names its actor and the cursor, not the remembered one", async () => {
     const p1 = await playerToldBo("http://localhost/?token=tokP");
     await closePage(p1);
@@ -527,7 +527,7 @@ describe("each dial before a switch arrives, and the first redial after one", ()
     expect(d.after).toBe("3");
   });
 
-  // VTT-397 VTT-442
+  // VTT-397 VTT-579
   test("qaRV: once a switch to the remembered actor arrives, the redial dials after its cursor, not 0", async () => {
     const p1 = await playerToldBo("http://localhost/?token=tokP");
     await closePage(p1);
@@ -541,7 +541,7 @@ describe("each dial before a switch arrives, and the first redial after one", ()
     expect(d.after).toBe("5");
   });
 
-  // VTT-397 VTT-442
+  // VTT-397 VTT-579
   test("qaRV: once a switch to nobody arrives, the redial names no log though an actor was remembered", async () => {
     const p1 = await spectatorToldBo("http://localhost/?token=tokS");
     await closePage(p1);
@@ -578,7 +578,7 @@ describe("another token in the same tab", () => {
     expect(d.hasLog).toBe(false);
   });
 
-  // VTT-442 VTT-443
+  // VTT-579 VTT-443
   test("qaRV: two tokens in one tab each keep their own remembered actor", async () => {
     const pA = await playerToldBo("http://localhost/?token=tokP");
     await closePage(pA);
@@ -596,7 +596,7 @@ describe("another token in the same tab", () => {
     expect(dialOf(current(pB2)).log).toBe("a1");
   });
 
-  // VTT-443 VTT-442
+  // VTT-443 VTT-579
   test("qaRV: a DM's page and its redial name no log though this tab's player page was told one", async () => {
     const p1 = await playerToldBo("http://localhost/?token=tokP");
     await closePage(p1);
@@ -626,7 +626,7 @@ describe("another tab under the same token", () => {
     expect(d.hasLog).toBe(false);
   });
 
-  // VTT-442 VTT-444
+  // VTT-579 VTT-444
   test("qaRV: another tab's switch does not move what this tab remembers", async () => {
     const t1 = await playerToldBo("http://localhost/?token=tokP");
     await closePage(t1);
@@ -651,7 +651,7 @@ describe("another tab under the same token", () => {
 });
 
 describe("what the window shows as watched before a switch arrives", () => {
-  // VTT-407 VTT-442
+  // VTT-407 VTT-579
   test("qaRV: a spectator's perch shows nobody before the switch arrives, the remembered actor included", async () => {
     const p1 = await spectatorToldBo("http://localhost/?token=tokS");
     expect(perchedOn(p1)).toBe("Perched on: Bo");

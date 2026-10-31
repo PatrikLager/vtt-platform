@@ -24,7 +24,7 @@ class FakeSocket {
   readonly sent: string[] = [];
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((ev: { code: number; reason: string }) => void) | null = null;
   onmessage: ((ev: { data: string }) => void) | null = null;
 
   constructor(readonly url: string) {
@@ -43,7 +43,7 @@ class FakeSocket {
   close() {
     if (this.readyState === 3) return;
     this.readyState = 3;
-    this.onclose?.();
+    this.onclose?.({ code: 1000, reason: "" });
   }
   /** The network drops an open connection. */
   drop() {
@@ -53,7 +53,7 @@ class FakeSocket {
   fail() {
     this.readyState = 3;
     this.onerror?.();
-    this.onclose?.();
+    this.onclose?.({ code: 1006, reason: "" });
   }
 }
 

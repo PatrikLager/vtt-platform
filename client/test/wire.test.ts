@@ -5,7 +5,8 @@ import {
   SessionStartedSchema,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { ClientCommandSchema } from "../../contract/gen/ts/vtt/v1/commands_pb";
-import { Wire } from "../src/wire";
+import { Wire, CREDENTIAL_GONE } from "../src/wire";
+import credentialClose from "../../contract/testdata/credential_close.json";
 
 /**
  * Wait for a CONDITION rather than a fixed delay.
@@ -239,7 +240,7 @@ test("a redial while watching nobody names no log", async () => {
   }
 });
 
-// VTT-442
+// VTT-579
 test("a wire handed a remembered log names it, from after 0, on every dial until a ViewpointChanged arrives", async () => {
   const gw = fakeGateway(() => {});
   try {
@@ -258,7 +259,7 @@ test("a wire handed a remembered log names it, from after 0, on every dial until
   }
 });
 
-// VTT-442, VTT-397
+// VTT-579, VTT-397
 test("a ViewpointChanged naming another log replaces the remembered one on the next dial", async () => {
   const gw = fakeGateway(() => {});
   try {
@@ -278,7 +279,7 @@ test("a ViewpointChanged naming another log replaces the remembered one on the n
   }
 });
 
-// VTT-442, VTT-397
+// VTT-579, VTT-397
 test("a ViewpointChanged naming nobody leaves the next dial naming no log, though a log was remembered", async () => {
   const gw = fakeGateway(() => {});
   try {
@@ -314,7 +315,7 @@ test("a wire handed a remembered log shows no viewpoint until a ViewpointChanged
   }
 });
 
-// VTT-442
+// VTT-579
 test("each ViewpointChanged reaches onViewpoint, nobody's included", async () => {
   const gw = fakeGateway(() => {});
   try {
@@ -824,7 +825,7 @@ class ScriptedSocket {
   readyState = 0;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((ev: { code: number; reason: string }) => void) | null = null;
   onmessage: ((ev: { data: string }) => void) | null = null;
   constructor(readonly url: string) {
     ScriptedSocket.instances.push(this);
@@ -839,7 +840,7 @@ class ScriptedSocket {
   send() {}
   close() {
     this.readyState = 3;
-    this.onclose?.();
+    this.onclose?.({ code: 1000, reason: "" });
   }
 }
 
@@ -1040,4 +1041,39 @@ test("a reconnect whose dial fails leaves the cursor and the log", async () => {
   } finally {
     globalThis.WebSocket = nativeWS;
   }
+});
+
+test("a close says the credential is gone only with the credential's code and reason", async () => {
+  // VTT-572 VTT-576
+  const nativeWS = globalThis.WebSocket;
+  globalThis.WebSocket = ScriptedSocket as unknown as typeof WebSocket;
+  try {
+    const closes: [number, string, number][] = [
+      [credentialClose.code, credentialClose.reason, 1],
+      [1008, "gateway: malformed frame", 0],
+      [1006, "", 0],
+      [1000, credentialClose.reason, 0],
+    ];
+    for (const [code, reason, want] of closes) {
+      ScriptedSocket.instances = [];
+      const wire = new Wire("ws://scripted/ws", "tok-1");
+      let gone = 0;
+      wire.onCredentialGone(() => gone++);
+      const dial = wire.connect();
+      const sock = ScriptedSocket.instances[0]!;
+      sock.open();
+      await dial;
+      sock.readyState = 3;
+      sock.onclose?.({ code, reason });
+      expect(gone).toBe(want);
+    }
+  } finally {
+    globalThis.WebSocket = nativeWS;
+  }
+});
+
+test("the credential's close is the one in contract/testdata/credential_close.json", () => {
+  // VTT-572
+  const ours: { code: number; reason: string } = CREDENTIAL_GONE;
+  expect(ours).toEqual({ code: credentialClose.code, reason: credentialClose.reason });
 });

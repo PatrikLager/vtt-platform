@@ -73,7 +73,7 @@ export function boot(root: HTMLElement): Session | null {
     // into the Referer of every outbound link.
     auth.set(token);
     history.replaceState(null, "", location.pathname);
-    return startSession(root, token);
+    return startSession(root, token, auth);
   }
 
   // No credential — but perhaps a way to get one. THE STORED TOKEN ABOVE WINS
@@ -135,17 +135,27 @@ function runJoin(root: HTMLElement, auth: Auth, secret: string): void {
     // the secret in it admits ANYONE, not just the person holding it.
     auth.set(out.token);
     history.replaceState(null, "", location.pathname);
-    startSession(root, out.token);
+    startSession(root, out.token, auth);
   };
 
   paint();
 }
 
-function startSession(root: HTMLElement, token: string): Session {
+function startSession(root: HTMLElement, token: string, auth: Auth): Session {
   // The key carries the token: a logout (Auth.clear) must remove both (SPEC-022).
   const remembered = `vtt.viewpoint.${token}`;
   const session = new Session(gatewayURL(), token, sessionStorage.getItem(remembered));
   session.onViewpoint((id) => sessionStorage.setItem(remembered, id));
+  let removed = false;
+  // Clear the stored credential only while it is this window's: another window
+  // of the browser may have stored its own since (VTT-574).
+  const forget = () => {
+    if (auth.get() === token) auth.clear();
+    sessionStorage.removeItem(remembered);
+    removed = true;
+    paint();
+  };
+  session.onCredentialGone(forget);
   let status = "connecting";
   let me: Me | null = null;
 
@@ -427,6 +437,7 @@ function startSession(root: HTMLElement, token: string): Session {
       onReconnect: () => {
         void session.reconnect().catch(() => undefined);
       },
+      removed,
       images,
       dm: isDM,
       abilities,
@@ -557,9 +568,9 @@ function startSession(root: HTMLElement, token: string): Session {
       maps = fetched;
       paint();
     })
-    .catch(() => {
-      // Metadata being unavailable degrades the client to spectator-shaped:
-      // the board and story still work, which is better than a blank page.
+    .catch((e: unknown) => {
+      // Forget on a 401 alone (VTT-573, VTT-580).
+      if (/unauthorized/.test(String(e))) forget();
     });
 
   void session.start().catch(() => undefined);

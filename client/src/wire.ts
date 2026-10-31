@@ -3,7 +3,7 @@
 // Correlate a result by its request_id and never by arrival order: results and
 // events come from two producers on the gateway (ServerFrame in
 // contract/vtt/v1/commands.proto). A connection holds one log at a time, and
-// a redial names it, or until then the log handed in (SPEC-022, VTT-397, VTT-442).
+// a redial names it, or until then the log handed in (SPEC-022, VTT-397, VTT-579).
 
 import { create, fromJson, toJson } from "@bufbuild/protobuf";
 import {
@@ -18,6 +18,9 @@ import {
 import { EnvelopeSchema, type Envelope } from "../../contract/gen/ts/vtt/v1/events_pb";
 
 export type WireStatus = "connecting" | "open" | "closed" | "error";
+
+/** The close the gateway gives a credential it no longer accepts (contract/testdata/credential_close.json). */
+export const CREDENTIAL_GONE = { code: 1008, reason: "gateway: credential no longer valid" } as const;
 
 /**
  * One participant's presence, flattened out of the two wire frames that carry
@@ -45,6 +48,7 @@ export class Wire {
   private restartHandlers: (() => void)[] = [];
   private watchableHandlers: ((actors: WatchableActor[], controlsNoPartyMember: boolean) => void)[] = [];
   private viewpointHandlers: ((actorId: string) => void)[] = [];
+  private credentialGoneHandlers: (() => void)[] = [];
   // null until a ViewpointChanged names one: the DM's and the agent's world.
   private log: string | null = null;
   private lastSeq = 0n;
@@ -87,9 +91,14 @@ export class Wire {
     this.watchableHandlers.push(fn);
   }
 
-  /** Called with the actor each ViewpointChanged names, "" for nobody (VTT-442). */
+  /** Called with the actor each ViewpointChanged names, "" for nobody (VTT-579). */
   onViewpoint(fn: (actorId: string) => void): void {
     this.viewpointHandlers.push(fn);
+  }
+
+  /** Called when the gateway closes a socket for a credential it no longer accepts (VTT-572). */
+  onCredentialGone(fn: () => void): void {
+    this.credentialGoneHandlers.push(fn);
   }
 
   /**
@@ -146,7 +155,7 @@ export class Wire {
         this.status("error");
         reject(new Error("wire: connection failed"));
       };
-      ws.onclose = () => {
+      ws.onclose = (ev) => {
         this.status("closed");
         // Answer THIS socket's commands only: a later socket's are still
         // waiting on the wire's map, and a stale close must not end them.
@@ -158,6 +167,9 @@ export class Wire {
             ok: false,
             error: "wire: connection closed before a result arrived",
           }));
+        }
+        if (ev.code === CREDENTIAL_GONE.code && ev.reason === CREDENTIAL_GONE.reason) {
+          for (const fn of this.credentialGoneHandlers) fn();
         }
       };
       // Keep the identity guard: close() cancels no message already queued,

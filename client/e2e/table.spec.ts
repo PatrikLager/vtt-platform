@@ -147,7 +147,7 @@ test("a spectator chooses a shoulder and is shown that log", async ({ page }) =>
   await expect(page.locator(".feed .empty")).toBeVisible();
 });
 
-// VTT-442 VTT-444
+// VTT-579 VTT-444
 test("a spectator's reload keeps the shoulder, and another tab does not", async ({ page, context }) => {
   await openAs(page, "spectator");
   const perch = page.locator(".perch");

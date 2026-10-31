@@ -2,8 +2,11 @@ package gateway_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -35,15 +38,35 @@ func (f *gwFixture) invite(t *testing.T, name string, role identity.Role) (token
 	return token, id
 }
 
-func waitClosed(t *testing.T, conn *websocket.Conn) websocket.StatusCode {
+func waitClosed(t *testing.T, conn *websocket.Conn) websocket.CloseError {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	for {
 		if _, _, err := conn.Read(ctx); err != nil {
-			return websocket.CloseStatus(err)
+			var ce websocket.CloseError
+			if !errors.As(err, &ce) {
+				t.Fatalf("the connection ended with %v, not a websocket close", err)
+			}
+			return ce
 		}
 	}
+}
+
+func credentialClose(t *testing.T) websocket.CloseError {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "contract", "testdata", "credential_close.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want struct {
+		Code   int    `json:"code"`
+		Reason string `json:"reason"`
+	}
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatal(err)
+	}
+	return websocket.CloseError{Code: websocket.StatusCode(want.Code), Reason: want.Reason}
 }
 
 // VTT-557 VTT-034 VTT-074
@@ -84,9 +107,11 @@ func TestEveryConnectionOfARemovedParticipantClosesAtOnce(t *testing.T) {
 	if r := f.removeAs(t, f.dmToken, id); !r.GetOk() {
 		t.Fatalf("the removal was refused: %s", r.GetError())
 	}
+	want := credentialClose(t)
 	for name, conn := range map[string]*websocket.Conn{"first": one, "second": two} {
-		if code := waitClosed(t, conn); code != websocket.StatusPolicyViolation {
-			t.Fatalf("the %s connection ended with %v, want a policy-violation close", name, code)
+		if got := waitClosed(t, conn); got.Code != want.Code || got.Reason != want.Reason {
+			t.Fatalf("the %s connection closed with %d %q, want %d %q",
+				name, got.Code, got.Reason, want.Code, want.Reason)
 		}
 	}
 	expectPresenceChanged(t, watcher, id, vttv1.PresenceState_PRESENCE_STATE_DISCONNECTED)

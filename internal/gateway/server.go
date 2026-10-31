@@ -416,7 +416,7 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 		if errors.Is(err, identity.ErrInvalidToken) {
 			// Revoked or gone: close, there is nothing left this connection may do (VTT-032).
 			shutdown()
-			_ = conn.Close(websocket.StatusPolicyViolation, "gateway: credential no longer valid")
+			_ = conn.Close(websocket.StatusPolicyViolation, credentialGone)
 			return
 		}
 
@@ -505,7 +505,7 @@ func (ps *pumpState) revoked() bool {
 	}
 	// conn.Close, not shutdown: shutdown waits on this pump.
 	if !ps.closing.Load() {
-		_ = ps.conn.Close(websocket.StatusPolicyViolation, "gateway: credential no longer valid")
+		_ = ps.conn.Close(websocket.StatusPolicyViolation, credentialGone)
 	}
 	return true
 }
@@ -1034,6 +1034,10 @@ func (s *Server) handlePromotion(requestID string, req *vttv1.PromoteParticipant
 	s.announcePromotion(req.GetParticipantId())
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
 }
+
+// Keep credentialGone the reason contract/testdata/credential_close.json holds: a
+// browser window reads it as its participant's removal (VTT-572).
+const credentialGone = "gateway: credential no longer valid"
 
 // Keep these two apart: deliver closes with a reason for errEncodeFrame alone
 // (SPEC-011).

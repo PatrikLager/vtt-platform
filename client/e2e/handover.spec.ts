@@ -49,7 +49,7 @@ async function openAs(page: Page, role: keyof typeof tokens) {
 const FIRST = "act-hand-a";
 const SECOND = "act-hand-b";
 
-// VTT-442 VTT-458
+// VTT-579 VTT-458
 test("a DM hands a second character over, and the player keeps both across a reconnect",
   async ({ browser }) => {
     // Two CONTEXTS, not two pages: a page shares localStorage with its
@@ -248,7 +248,7 @@ test("the DM takes a player's only character back, and the player chooses anothe
     await expect(player.locator(".feed .mechanical")).not.toHaveCount(0, { timeout: 10_000 });
     await player.screenshot(shot("h12-player-on-bram"));
 
-    // VTT-442, for a player who controls no party member.
+    // VTT-579, for a player who controls no party member.
     await player.reload();
     await expect(player.locator(".conn")).toHaveText("connected", { timeout: 15_000 });
     await expect(player.locator(".perch .perched-on")).toHaveText("Perched on: Bram", { timeout: 10_000 });

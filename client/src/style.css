@@ -47,6 +47,7 @@ h3 { margin: 0 0 2px; font-size: 14px; }
 .conn { color: var(--accent); }
 .session { color: var(--dim); }
 .fatal { color: #ff8a8a; padding: 24px; }
+.removed { color: #ff8a8a; }
 
 /* The board: a fixed-size pane with a camera inside it (spec §7). Width and
    height are literal numbers, not derived from the scene -- that is the

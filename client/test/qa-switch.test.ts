@@ -27,7 +27,7 @@ class FakeSocket {
   readonly sent: string[] = [];
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((ev: { code: number; reason: string }) => void) | null = null;
   onmessage: ((ev: { data: string }) => void) | null = null;
   constructor(readonly url: string) {
     FakeSocket.instances.push(this);
@@ -44,7 +44,7 @@ class FakeSocket {
   }
   close() {
     this.readyState = 3;
-    this.onclose?.();
+    this.onclose?.({ code: 1000, reason: "" });
   }
 }
 

@@ -567,7 +567,10 @@ function renderStatus(st: State, status: string, extras: ViewExtras): HTMLElemen
   // link or rejoins a session the person has left. Offered ONLY when the
   // connection is actually closed — a button present on a healthy session
   // just drops it for no reason.
-  if (status === "closed" && extras.onReconnect) {
+  if (extras.removed) {
+    wrap.appendChild(el("span", "removed",
+      "You were removed from this table. To join again, open the link your DM sent you."));
+  } else if (status === "closed" && extras.onReconnect) {
     const btn = document.createElement("button");
     btn.className = "reconnect";
     btn.textContent = "Reconnect";
@@ -597,6 +600,8 @@ export interface ViewExtras {
   participants?: Participant[] | undefined;
   /** Redial, offered only while the connection is closed. */
   onReconnect?: (() => void) | undefined;
+  /** The participant was removed: say so in place of Reconnect (VTT-572, VTT-573). */
+  removed?: boolean | undefined;
   /** The perch, for a window that chooses a shoulder by it (SPEC-022, VTT-458). */
   perch?: PerchControl | undefined;
   /**

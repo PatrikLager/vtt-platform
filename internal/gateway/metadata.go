@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -48,10 +49,15 @@ func (s *Server) authed(w http.ResponseWriter, r *http.Request) *identity.Partic
 		return nil
 	}
 	p, err := s.ids.Verify(token)
-	if err != nil {
+	if errors.Is(err, identity.ErrInvalidToken) {
 		// Answer an unknown and a revoked token alike: telling them apart is a
 		// token-probing oracle (SPEC-009).
 		http.Error(w, "gateway: unauthorized", http.StatusUnauthorized)
+		return nil
+	}
+	if err != nil {
+		// VTT-578
+		http.Error(w, "gateway: identity unavailable", http.StatusServiceUnavailable)
 		return nil
 	}
 	return p

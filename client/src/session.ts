@@ -107,9 +107,14 @@ export class Session {
     this.changeHandlers.push(fn);
   }
 
-  /** Called with the actor each ViewpointChanged names, "" for nobody (VTT-442). */
+  /** Called with the actor each ViewpointChanged names, "" for nobody (VTT-579). */
   onViewpoint(fn: (actorId: string) => void): void {
     this.wire.onViewpoint(fn);
+  }
+
+  /** Called when the gateway closes the connection for a credential it no longer accepts (VTT-572). */
+  onCredentialGone(fn: () => void): void {
+    this.wire.onCredentialGone(fn);
   }
 
   /**
@@ -138,7 +143,7 @@ export class Session {
     return this.wire.connect();
   }
 
-  /** Redial, naming the log held, or before any ViewpointChanged the one handed in, and the cursor (VTT-397, VTT-398, VTT-442). */
+  /** Redial, naming the log held, or before any ViewpointChanged the one handed in, and the cursor (VTT-397, VTT-398, VTT-579). */
   reconnect(): Promise<void> {
     return this.wire.reconnect();
   }
