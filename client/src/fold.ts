@@ -445,6 +445,15 @@ function apply(st: State, env: Envelope): void {
       }
       return;
     }
+    case "whisperAdded": {
+      const v = p.value;
+      checkLen("whisper text", v.text, 1, 8192);
+      const named = v.fromActorId === "" ? v.toActorIds : [...v.toActorIds, v.fromActorId];
+      for (const id of named) {
+        if (!st.Actors[id]) throw new FoldError(`whisper names unknown actor "${id}"`);
+      }
+      return;
+    }
     case "adventureLoaded":
       checkLen("adventure id", p.value.adventureId, 1, 128);
       checkLen("adventure name", p.value.name, 0, 256);

@@ -122,6 +122,7 @@ h3 { margin: 0 0 2px; font-size: 14px; }
 .ooc { margin: 0 0 4px; color: var(--dim); }
 .speaker { color: var(--accent); font-weight: 600; }
 .mechanical { margin: 0; color: var(--dim); font-size: 12px; }
+.whisper { margin: 0 0 4px; font-style: italic; }
 
 .note { margin-bottom: 10px; }
 .note p { margin: 0; color: var(--dim); }

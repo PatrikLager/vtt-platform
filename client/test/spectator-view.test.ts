@@ -10,7 +10,7 @@ import {
   AttackRolledSchema, AdventureLoadedSchema, SceneSeenSchema,
   TokenRemovedSchema, ActorRemovedSchema, TokenHiddenSchema, TokenDescribedSchema,
   ActorControlGrantedSchema, ActorControlRevokedSchema, DoorOpenedSchema, DoorClosedSchema,
-  type Envelope,
+  WhisperAddedSchema, type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderSpectator, describe as describeEvent, CELL, boardCamera, paneSize,
   DEFAULT_PANE_W, DEFAULT_PANE_H, type ViewExtras } from "../src/view/spectator";
@@ -267,6 +267,10 @@ test("describe renders a real label for every event kind, not the fallback", () 
       "roll 17"],
     [env(29, { case: "adventureLoaded", value: create(AdventureLoadedSchema, { adventureId: "adv" }) }),
       "adventure adv loaded"],
+    [env(30, { case: "whisperAdded", value: create(WhisperAddedSchema, { text: "psst", toActorIds: ["act-ama"] }) }),
+      "The DM whispers to Ama: psst"],
+    [env(31, { case: "whisperAdded", value: create(WhisperAddedSchema, { text: "I saw it", fromActorId: "act-ama" }) }),
+      "Ama whispers to the DM: I saw it"],
   ];
 
   for (const [e, want] of cases) {
@@ -284,7 +288,7 @@ function sampleOf(desc: DescMessage): Envelope["payload"]["value"] {
   for (const f of desc.fields) {
     if (["actorId", "attackerId", "targetId"].includes(f.localName)) init[f.localName] = "act-gob";
     if (f.localName === "tokenId") init[f.localName] = "tok-gob";
-    if (f.localName === "targetIds") init[f.localName] = ["act-gob"];
+    if (f.localName === "targetIds" || f.localName === "toActorIds") init[f.localName] = ["act-gob"];
     if (f.localName === "actor") init[f.localName] = { actorId: "act-gob" };
     if (f.localName === "outcomes") init[f.localName] = [{ targetId: "act-gob", result: "hit", total: 3 }];
   }
@@ -1318,6 +1322,31 @@ test("a token WITH them renders both containers", () => {
 });
 
 // --- the story feed ---------------------------------------------------------
+
+const whisper = (seq: number, w: { text: string; toActorIds?: string[]; fromActorId?: string }) =>
+  env(seq, { case: "whisperAdded", value: create(WhisperAddedSchema, w) });
+
+test("the Story draws the DM's whisper naming whom it is to, with the class whisper", () => {
+  // VTT-597
+  const root = render(twoParty(), [
+    whisper(1, { text: "an arrow from the dark", toActorIds: ["a1"] }),
+    whisper(2, { text: "you both hear it", toActorIds: ["a2", "a1"] }),
+  ]);
+  const lines = Array.from(root.querySelectorAll(".feed .whisper")).map((n) => n.textContent);
+  expect(lines).toEqual([
+    "The DM whispers to Lera: an arrow from the dark",
+    "The DM whispers to Bram, Lera: you both hear it",
+  ]);
+  expect(root.querySelectorAll(".feed .mechanical")).toHaveLength(0);
+});
+
+test("the Story and the Events panel draw a party member's whisper to the DM by its name", () => {
+  // VTT-597
+  const root = render(world(), [whisper(1, { text: "I saw it", fromActorId: "a1" })], DM);
+  expect(root.querySelector(".feed .whisper")?.textContent).toBe("Lera whispers to the DM: I saw it");
+  expect(Array.from(root.querySelectorAll(".tick")).map((n) => n.textContent))
+    .toContain("Lera whispers to the DM: I saw it");
+});
 
 test("the story panel is headed and says so when empty", () => {
   const root = render(world(), []);

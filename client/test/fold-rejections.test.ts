@@ -355,6 +355,38 @@ test("a narration anchor pointing at the immediately preceding event is ACCEPTED
   expect(st.Sessions).toHaveLength(1);
 });
 
+// --- whispers ---------------------------------------------------------------
+
+const whisper = (seq: number, w: Record<string, unknown>) => env(seq, { whisperAdded: w });
+
+test("a whisper with no text is rejected", () => {
+  // VTT-585
+  rejects([started, actor(2, "tobbe"), whisper(3, { text: "", toActorIds: ["tobbe"] })],
+    "whisper text is shorter than 1 bytes");
+});
+
+test("a whisper longer than 8192 bytes is rejected", () => {
+  // VTT-585
+  rejects([started, actor(2, "tobbe"), whisper(3, { text: "x".repeat(8193), toActorIds: ["tobbe"] })],
+    "whisper text exceeds 8192 bytes");
+});
+
+test("a whisper of exactly 8192 bytes folds", () => {
+  // VTT-585
+  expect(() => fold([started, actor(2, "tobbe"),
+    whisper(3, { text: "x".repeat(8192), toActorIds: ["tobbe"] })])).not.toThrow();
+});
+
+test("a whisper naming an actor the fold does not hold is rejected", () => {
+  // VTT-586
+  rejects([started, actor(2, "tobbe"), whisper(3, { text: "t", toActorIds: ["tobbe", "ghost"] })],
+    'whisper names unknown actor "ghost"');
+  rejects([started, actor(2, "tobbe"), whisper(3, { text: "t", fromActorId: "ghost" })],
+    'whisper names unknown actor "ghost"');
+  expect(() => fold([started, actor(2, "tobbe"),
+    whisper(3, { text: "t", fromActorId: "tobbe" })])).not.toThrow();
+});
+
 // --- forward compatibility --------------------------------------------------
 
 test("an event kind the fold does not know is skipped, not fatal", () => {

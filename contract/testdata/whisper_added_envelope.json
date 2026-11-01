@@ -1,0 +1,11 @@
+{
+  "eventId": "01J9ZK7M2N3P4Q5R6S7T8U9W01",
+  "sequence": "46",
+  "occurredAt": "2026-11-01T09:12:00Z",
+  "sessionId": "sess-happy-dragon",
+  "actorRole": "dm",
+  "whisperAdded": {
+    "text": "An arrow came from the dark, from the east.",
+    "toActorIds": ["act-tobbe"]
+  }
+}

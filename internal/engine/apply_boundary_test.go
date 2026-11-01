@@ -41,6 +41,20 @@ func TestNarrationTextAtCapIsAccepted(t *testing.T) {
 	}
 }
 
+// VTT-585
+func TestAWhisperAtTheTextCapIsAccepted(t *testing.T) {
+	st := seedActor(t)
+	before := st.Snapshot()
+
+	must(t, engine.Apply(st, env(4, &vttv1.WhisperAdded{
+		Text: strings.Repeat("a", 8192), ToActorIds: []string{"a1"},
+	})))
+
+	if !reflect.DeepEqual(before, st.Snapshot()) {
+		t.Fatal("WhisperAdded must not mutate state")
+	}
+}
+
 // TestNarrationSingleEventAnchorIsAccepted pins from == to as valid. This is
 // not an exotic edge: it is the most ordinary anchoring case there is —
 // narration describing exactly one preceding event. The `>` in

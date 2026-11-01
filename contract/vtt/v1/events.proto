@@ -536,6 +536,14 @@ message NarrationAdded {
   // that never saw the creature (VTT-505).
   bool out_of_character = 5;
 }
+
+// Forward a whisper only to a log it names, and cut to_actor_ids there to that
+// log's own character (VTT-582, VTT-583, VTT-584).
+message WhisperAdded {
+  string text = 1;
+  repeated string to_actor_ids = 2;
+  string from_actor_id = 3;
+}
 // NoteVisibility says who may read a note. An enum rather than a bool:
 // protojson omits a false bool, so a secret note would travel as an absent
 // field, indistinguishable from a writer who said nothing. A note recorded
@@ -611,5 +619,6 @@ message Envelope {
     // Task 9 report).
     ActorRemoved actor_removed = 33;
     TokenDescribed token_described = 34;
+    WhisperAdded whisper_added = 35;
   }
 }

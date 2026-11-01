@@ -86,6 +86,9 @@ func TestUseAbilityCommandRoundTrip(t *testing.T) {
 func TestNarrationAddedEnvelopeRoundTrip(t *testing.T) {
 	roundTrip(t, "narration_added_envelope.json", &vttv1.Envelope{})
 }
+func TestWhisperAddedEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "whisper_added_envelope.json", &vttv1.Envelope{})
+}
 func TestUpsertNoteCommandRoundTrip(t *testing.T) {
 	roundTrip(t, "upsert_note_command.json", &vttv1.ClientCommand{})
 }

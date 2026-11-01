@@ -630,6 +630,8 @@ function everyCase(): Record<PayloadCase, Envelope> {
     actorRemoved: env({ payload: { case: "actorRemoved", value: { actorId: "act-c1" } } }),
     tokenDescribed: env({ payload: { case: "tokenDescribed", value: {
       tokenId: "tok-c1b", name: "a hunched figure" } } }),
+    whisperAdded: env({ payload: { case: "whisperAdded", value: {
+      text: "An arrow from the dark.", toActorIds: ["act-p1"] } } }),
   };
 }
 

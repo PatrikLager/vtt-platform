@@ -23,7 +23,7 @@ var ErrSceneExists = errors.New("already exists")
 const (
 	maxNoteKeyBytes   = 128
 	maxNoteTitleBytes = 256
-	maxTextBytes      = 8192 // 8 KiB; applies to both narration and note text
+	maxTextBytes      = 8192 // 8 KiB (SPEC-018)
 	// maxNarrationAsBytes caps the narration speaker label the same way
 	// NoteUpserted.Title is capped (256 B). Merge-gate MUST-FIX, overturning
 	// the task-level "deliberate" ruling: `as` was otherwise the one
@@ -530,6 +530,21 @@ func Apply(st *State, env *vttv1.Envelope) error {
 			}
 		}
 		return nil // deliberate no-op — the feed IS the log (spec §4)
+
+	case *vttv1.Envelope_WhisperAdded:
+		w := p.WhisperAdded
+		if len(w.Text) == 0 || len(w.Text) > maxTextBytes {
+			return fmt.Errorf("engine: whisper text must be 1-%d bytes, got %d", maxTextBytes, len(w.Text))
+		}
+		for _, id := range w.ToActorIds {
+			if _, ok := st.Actors[id]; !ok {
+				return fmt.Errorf("engine: whisper names unknown actor %q", id)
+			}
+		}
+		if _, ok := st.Actors[w.FromActorId]; w.FromActorId != "" && !ok {
+			return fmt.Errorf("engine: whisper names unknown actor %q", w.FromActorId)
+		}
+		return nil
 
 	case *vttv1.Envelope_NoteUpserted:
 		nu := p.NoteUpserted

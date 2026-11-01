@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -57,6 +58,8 @@ func env(seq int64, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_ActorControlGranted{ActorControlGranted: p}
 	case *vttv1.ActorControlRevoked:
 		e.Payload = &vttv1.Envelope_ActorControlRevoked{ActorControlRevoked: p}
+	case *vttv1.WhisperAdded:
+		e.Payload = &vttv1.Envelope_WhisperAdded{WhisperAdded: p}
 	}
 	return e
 }
@@ -1391,4 +1394,41 @@ func TestATokenDescribedReplacesAllFourTexts(t *testing.T) {
 func TestADescriptionOfNoTokenIsRefusedAndChangesNothing(t *testing.T) {
 	refusesUnchanged(t, seedToken(t), env(5, &vttv1.TokenDescribed{TokenId: "ghost", Name: "x"}),
 		`engine: described unknown token "ghost"`)
+}
+
+// VTT-585
+func TestAWhisperWhoseTextIsEmptyOrOverTheBoundIsRefused(t *testing.T) {
+	for _, n := range []int{0, 8193} {
+		refusesUnchanged(t, seedActor(t), env(4, &vttv1.WhisperAdded{
+			Text: strings.Repeat("a", n), ToActorIds: []string{"a1"},
+		}), fmt.Sprintf("engine: whisper text must be 1-8192 bytes, got %d", n))
+	}
+}
+
+// VTT-586
+func TestAWhisperNamingAnActorNotFoldedIsRefused(t *testing.T) {
+	for name, c := range map[string]struct {
+		w   *vttv1.WhisperAdded
+		bad string
+	}{
+		"an unknown recipient": {&vttv1.WhisperAdded{Text: "psst", ToActorIds: []string{"a1", "ghost"}}, "ghost"},
+		"an empty recipient":   {&vttv1.WhisperAdded{Text: "psst", ToActorIds: []string{""}}, ""},
+		"an unknown whisperer": {&vttv1.WhisperAdded{Text: "psst", FromActorId: "ghost"}, "ghost"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			refusesUnchanged(t, seedActor(t), env(4, c.w),
+				fmt.Sprintf("engine: whisper names unknown actor %q", c.bad))
+		})
+	}
+	for _, w := range []*vttv1.WhisperAdded{
+		{Text: "psst", ToActorIds: []string{"a1"}},
+		{Text: "psst", FromActorId: "a1"},
+	} {
+		st := seedActor(t)
+		before := st.Snapshot()
+		must(t, engine.Apply(st, env(4, w)))
+		if !reflect.DeepEqual(before, st.Snapshot()) {
+			t.Fatal("WhisperAdded must not mutate state")
+		}
+	}
 }

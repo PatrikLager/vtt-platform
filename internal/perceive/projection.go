@@ -4,6 +4,7 @@ package perceive
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -105,7 +106,12 @@ func (pr *Projection) Event(eyes Eyes, env *vttv1.Envelope, shown, st *engine.St
 	}
 	out := pr.transitions(env, env.GetSequence(), now, st)
 	if v == forwarded {
-		out = append(out, forwardable(env))
+		f := forwardable(env)
+		if w := f.GetWhisperAdded(); w != nil {
+			// Name no recipient but this viewer's own eyes (VTT-584).
+			w.ToActorIds = slices.DeleteFunc(w.ToActorIds, func(id string) bool { return !now.eyes[id] })
+		}
+		out = append(out, f)
 	}
 	return out
 }
@@ -226,6 +232,7 @@ type sightView struct {
 	actors  map[string]bool
 	sees    map[string]bool
 	party   map[string]bool
+	eyes    map[string]bool
 }
 
 // look is what this viewer sees and may know of st, recomputed on every call
@@ -238,11 +245,13 @@ func (pr *Projection) look(st *engine.State) sightView {
 		actors:  map[string]bool{},
 		sees:    map[string]bool{},
 		party:   map[string]bool{},
+		eyes:    map[string]bool{},
 	}
 	if st == nil {
 		return v
 	}
 	for _, eye := range pr.eyes(st) {
+		v.eyes[eye] = true
 		v.actors[eye] = true
 		v.sees[eye] = true
 		// Walk this map unordered only because the loop unions a set; sort every
@@ -510,15 +519,14 @@ func (pr *Projection) classify(env *vttv1.Envelope, now sightView) verdict {
 		// Forward narration to every viewer: it is addressed to the table.
 		return forwarded
 
-	case *vttv1.Envelope_SceneCreated:
+	case *vttv1.Envelope_WhisperAdded:
+		w := p.WhisperAdded
+		return passIf(now.eyes[w.GetFromActorId()] || slices.ContainsFunc(w.GetToActorIds(),
+			func(id string) bool { return now.eyes[id] }))
+
+	case *vttv1.Envelope_SceneCreated, *vttv1.Envelope_ActorAdded, *vttv1.Envelope_TokenPlaced:
 		// Withhold what transitions introduces: a second path to one introduction
 		// sends a duplicate that both folds refuse (SPEC-016).
-		return withheld
-
-	case *vttv1.Envelope_ActorAdded:
-		return withheld
-
-	case *vttv1.Envelope_TokenPlaced:
 		return withheld
 
 	case *vttv1.Envelope_TokenDescribed:

@@ -153,6 +153,11 @@ export function describe(e: Envelope, names: Namer): string {
       const text = p.value.outOfCharacter ? `(( ${p.value.text} ))` : p.value.text;
       return p.value.as === "" ? text : `${p.value.as}: ${text}`;
     }
+    case "whisperAdded": {
+      const w = p.value;
+      if (w.fromActorId !== "") return `${names.actor(w.fromActorId)} whispers to the DM: ${w.text}`;
+      return `The DM whispers to ${w.toActorIds.map((id) => names.actor(id)).join(", ")}: ${w.text}`;
+    }
     case "noteUpserted":
       return `note "${p.value.key}" updated`;
     case "noteDeleted":
@@ -441,7 +446,8 @@ function renderFeed(entries: FeedEntry[], names: Namer): HTMLElement {
       item.appendChild(line);
     }
     for (const e of entry.events) {
-      item.appendChild(el("p", "mechanical", describe(e, names)));
+      const cls = e.payload.case === "whisperAdded" ? "whisper" : "mechanical";
+      item.appendChild(el("p", cls, describe(e, names)));
     }
     wrap.appendChild(item);
   }
