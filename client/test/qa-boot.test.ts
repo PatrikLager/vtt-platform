@@ -6,7 +6,7 @@ import { renderDMConsole, type DMDeps } from "../src/view/dm";
 import { removeParticipant } from "../src/commands";
 import { newState } from "../src/state";
 import type { Roster } from "../src/metadata";
-import tools from "../../cmd/vtt/tools.json";
+import tools from "../../contract/gen/tools/tools.json";
 
 const ROSTER: Roster[] = [
   { participantId: "id-dm-1", name: "Dana", role: "dm" },
