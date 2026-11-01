@@ -3,8 +3,8 @@
 ## Status
 
 Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
-`Authorize`, `mayVoice`, `authorizePlayer`, `playerRules`, `errUndecided`,
-`unrestricted`, `mayWorkDoor`, `authorizeTokenOwnership`,
+`Authorize`, `mayVoice`, `mayWhisper`, `authorizePlayer`, `playerRules`,
+`errUndecided`, `unrestricted`, `mayWorkDoor`, `authorizeTokenOwnership`,
 `authorizeActorOwnership`, `controls`, `authorizeSelfRevoke`,
 `authorizePromotionTarget`, `commandName`, `ErrUnauthorized`),
 `internal/gateway/viewpoint.go` (`ownPartyMember`),
@@ -22,8 +22,8 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `seat_internal_test.go`, `viewpoint_test.go`, `qa_seat_test.go`,
 `qa_move_gate_test.go`, `qa_describe_token_test.go`,
 `qa_ability_sight_test.go`, `narration_test.go`, `qa_speaking_test.go`,
-`remove_participant_test.go`, `qa_removal_test.go` and
-`qa_remove_roles_test.go`, and by
+`remove_participant_test.go`, `qa_removal_test.go`,
+`qa_remove_roles_test.go`, `whisper_test.go` and `qa_whisper_test.go`, and by
 `cmd/vtt/scenario_goldens_test.go`.
 
 ## Principles served
@@ -57,6 +57,7 @@ may issue it:
 | `use_ability` | yes | yes | `authorizeActorOwnership` | no |
 | `remove_condition` | yes | yes | `authorizeActorOwnership` | no |
 | `add_narration` | yes | yes | `unrestricted` | no |
+| `add_whisper` | yes | yes | `unrestricted` | no |
 | `upsert_note` | yes | yes | no | no |
 | `delete_note` | yes | yes | no | no |
 | `load_adventure` | yes | yes | no | no |
@@ -98,7 +99,7 @@ for the name or the row holds no cell for the participant's role
 A command added to the oneof and not to the table, and an unset command, are
 refused for every role the same way.
 
-**Three checks for every role.** After the table and before the player half,
+**Four checks for every role.** After the table and before the player half,
 `Authorize` runs `authorizePromotionTarget` for `promote_participant`, which
 accepts a target role of player or spectator and refuses every other, for
 the DM's promotions as for anyone's; SPEC-009 states that bound and
@@ -114,12 +115,24 @@ decides whom a line may speak as:
   id is absent, not theirs, or not a party member (VTT-506), then refused if
   that party member has no name (VTT-495).
 
-All three run for every role, so the DM is bound by promotion's bound and by
-`mayVoice`, and a spectator, whom the player half never reaches, is bound by
-`MayWatch`.
+For `add_whisper` it runs `mayWhisper` against the snapshot's actors, which
+decides whom a whisper is to and from, by the owner's ruling B-2 of
+2026-10-22:
+- the DM's and the agent's names party members in `to_actor_ids`, at least
+  one, and no `from_actor_id`; one that names no actor, an actor that is not
+  a party member, or a whisperer is refused (VTT-587);
+- a player's names no `to_actor_ids`, and names in `from_actor_id` a party
+  member the player controls (`ownPartyMember`), refused with one text
+  whether the id is empty, absent, not theirs, or not a party member
+  (VTT-589), then refused if that party member has no name (VTT-588).
+
+All four run for every role, so the DM is bound by promotion's bound, by
+`mayVoice` and by `mayWhisper`, and a spectator, whom the player half never
+reaches, is bound by `MayWatch`; a spectator has no `add_whisper` cell
+(VTT-590).
 
 **The player half.** For every role but player, `Authorize` returns after
-those three checks. For a player it calls `authorizePlayer` with the name it
+those four checks. For a player it calls `authorizePlayer` with the name it
 derived and the command together, and a mismatched pair would judge a command
 by another's rule; `Authorize` is its one production caller (`grep -rn
 'authorizePlayer(' internal`). `authorizePlayer` looks the name up in
@@ -127,7 +140,8 @@ by another's rule; `Authorize` is its one production caller (`grep -rn
 `playerRule` functions run against the participant, the command and the
 snapshot. A player cell with no entry is refused by `errUndecided`, whose
 message names the command. `unrestricted` is the entry for `add_narration`,
-whose rule `mayVoice` has already applied, and for `set_viewpoint`, whose rule
+whose rule `mayVoice` has already applied, for `add_whisper`, whose rule
+`mayWhisper` has, and for `set_viewpoint`, whose rule
 `MayWatch` has, so a command that needs no rule here says so in the table
 rather than by its absence. `TestEveryPlayerCommandHasARule` holds that every
 player cell has an entry and every entry a player cell; while the two agree no
@@ -157,6 +171,7 @@ network or the identity database.
   asks where a controlled token stands and nothing about reach, movement cost
   or a ruleset.
 - `add_narration`: `unrestricted` accepts what `mayVoice` accepted.
+- `add_whisper`: `unrestricted` accepts what `mayWhisper` accepted.
 
 **Control is membership.** `controls` answers whether the participant id is
 among the actor's `controller_ids`, through `GetControllerIds()`, and never
@@ -177,7 +192,7 @@ controls, and acting on it leaves its `controller_ids` as they were; they
 work a door from anywhere; they move a token onto any square, a wall and a
 square no player can see included (VTT-158, VTT-379); they aim an ability at
 an actor no character sees (VTT-482). The table's cells
-and the three checks for every role bind them.
+and the four checks for every role bind them.
 
 **The command path.** `serve`'s read loop decodes each frame, re-resolves the
 participant through `identity.Lookup` (SPEC-009) and hands the command to
@@ -349,12 +364,20 @@ A client or tool author is bound by these:
   `use_ability` at a target that character does not see is answered with the
   text an absent id gets (VTT-472), and a player's line in character naming an
   actor that is absent, not theirs, or not a party member is answered with
-  one text (VTT-506); no other refusal's text is bounded by this record.
+  one text (VTT-506), as is a player's whisper from an actor that is absent,
+  not theirs, or not a party member (VTT-589); no other refusal's text is
+  bounded by this record.
 - A `grant_actor_control` and an `add_actor` state what the actor is; an
   `add_actor` never confers control, and control is granted afterwards.
 - An `upsert_note` states who may read the note.
-- The DM and the agent are bound by the table's cells, by promotion's bound
-  and by `mayVoice`, and by no player rule.
+- A player whispers to the DM alone, from a named party member they
+  control; the DM and the agent whisper to party members alone, never from
+  an actor. No command whispers to a participant: a whisper to a player
+  names that player's party members, which the DM's console finds from a
+  name (SPEC-022) and the agent names itself, as `add_whisper`'s tool tells
+  it (SPEC-007).
+- The DM and the agent are bound by the table's cells, by promotion's bound,
+  by `mayVoice` and by `mayWhisper`, and by no player rule.
 - What a reconnect opens on is SPEC-015's.
 
 And whoever changes the code:
@@ -370,4 +393,5 @@ VTT-138, VTT-139, VTT-140, VTT-142, VTT-143, VTT-144, VTT-145, VTT-146,
 VTT-147, VTT-148, VTT-149, VTT-150, VTT-151, VTT-152, VTT-153, VTT-154,
 VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161, VTT-162, VTT-231,
 VTT-261, VTT-344, VTT-379, VTT-463, VTT-472, VTT-482, VTT-487, VTT-495,
-VTT-496, VTT-497, VTT-498, VTT-499, VTT-503, VTT-506, VTT-565.
+VTT-496, VTT-497, VTT-498, VTT-499, VTT-503, VTT-506, VTT-565, VTT-587,
+VTT-588, VTT-589, VTT-590.

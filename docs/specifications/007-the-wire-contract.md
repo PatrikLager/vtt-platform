@@ -38,7 +38,10 @@ and its tool by `TestAddNarrationRequiredOverrideReplacesDerivedList` and
 `TestRemoveParticipantSaysItIsPermanentAndTakesTheirActors` (VTT-567), and
 its batch by `TestARemovalRevokesEveryControlTheParticipantHolds` and
 `TestARemovalOfSomebodyWhoControlsNothingAppendsNothing` in
-`internal/gateway/remove_participant_test.go`.
+`internal/gateway/remove_participant_test.go`; whom a whisper is to and from,
+by `TestAddWhisperCommandRoundTrip` and `TestWhisperAddedEnvelopeRoundTrip` in
+`contract/roundtrip_test.go`, and its tool by
+`TestAddWhisperSaysWhomItReachesAndHowToAnswer` (VTT-591).
 Gated by `task check:drift` and `task check:breaking`, both inside `task
 check`.
 
@@ -125,6 +128,20 @@ character keeps the `as` it gave (SPEC-013). The event carries no actor id
 proto3 `optional`, so a false mark is omitted, and a `NarrationAdded` without
 field 5 reads as not out of character. `add_narration`'s tool
 keeps every field but `text` optional, and its docs say what each seat sends.
+
+### Whom a whisper is addressed to
+
+`AddWhisper` and `WhisperAdded`, arm 36 of `ClientCommand.command` and arm 35
+of `Envelope.payload`, carry a `text` (field 1), `to_actor_ids` (field 2) and
+`from_actor_id` (field 3), and no `as` and no anchor. Which is set says the
+direction: the DM's and the agent's whisper names the party members it is
+for, a player's names the party member who whispers to the DM, and never both
+(SPEC-013). Both name actors by id alone, so a whisper to a player is sent as
+that player's party members (SPEC-022). The event carries the command's three
+fields as they came; a character log's copy names only its own character
+among `to_actor_ids` (SPEC-016). `add_whisper`'s tool requires `text` and
+`toActorIds`, and says whom a whisper reaches and that a party member's
+whisper to the DM is answered with `add_whisper`, never `add_narration`.
 
 ### The ordering contract
 
@@ -348,4 +365,4 @@ Those readers are not reading this record.
 ## Requirements
 
 VTT-184, VTT-232, VTT-473, VTT-479, VTT-480, VTT-505, VTT-559, VTT-560,
-VTT-561, VTT-562, VTT-563, VTT-567.
+VTT-561, VTT-562, VTT-563, VTT-567, VTT-591.

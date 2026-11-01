@@ -93,7 +93,8 @@ speaker in `(( ))`, by `client/test/dm-view.test.ts`,
 `client/test/feed.test.ts`, `client/test/qa-speaking.test.ts`,
 `client/test/qa-console-say.test.ts`, `client/test/qa-panel-say.test.ts`,
 `client/e2e/refusals.spec.ts` and `client/e2e/speaking.spec.ts` (VTT-500 to
-VTT-502, VTT-527 to VTT-532, VTT-540); and that a window the gateway closes
+VTT-502, VTT-527, VTT-528, VTT-530 to VTT-532, VTT-540, VTT-600); and that a
+window the gateway closes
 for a dead credential, or whose first read of `/api/me` is answered 401,
 says it was removed in place of Reconnect, forgets its own stored credential
 and its tab's viewpoint and keeps another window's credential, that any
@@ -101,8 +102,17 @@ other close, and a first read of `/api/me` that fails other than with 401,
 forget nothing, and that the share link then opens the join form, by
 `client/test/wire.test.ts`, `client/test/app.test.ts`,
 `client/test/qa-removed-window.test.ts` and `client/e2e/booting.spec.ts`
-(VTT-572 to VTT-577, VTT-580). Every `client/e2e/` file runs outside
-`task check`.
+(VTT-572 to VTT-577, VTT-580); and that `readLine` reads a whisper after
+`/w`, `/whisper`, `/dm`, `/gm` or `/togm`, that the console whispers to a
+party member or to a participant's party members and tells what it cannot,
+that a player's panel whispers to the DM and says no `/w` line aloud, and
+that the Story and the Events panel draw a whisper, by
+`client/test/player.test.ts`, `client/test/dm-view.test.ts`,
+`client/test/spectator-view.test.ts`, `client/test/app.test.ts`,
+`client/test/commands.test.ts`, `client/test/qa-whisper.test.ts`,
+`client/test/qa-whisper-say.test.ts` and `client/e2e/whispering.spec.ts`
+(VTT-592 to VTT-597, VTT-599, VTT-600). Every `client/e2e/` file runs
+outside `task check`.
 
 That `internal/harness`'s client hands its reader every entry and each switch
 and that a dial names a log is held by
@@ -303,25 +313,33 @@ konsolen, alltid" and "Först, över Session" of 2026-10-30). The group,
 headed "Say something", holds a speaker box `say-as`, in which the DM and
 the agent name any speaker (the owner's rulings of 2026-10-26, "Ja för DM"
 and "Ja, som DM"), a line box `say-text` whose placeholder reads "say or
-narrate, or /ooc to step out of character", and Send (`add-narration`);
+narrate, /ooc to step out of character, /w Name to whisper", and Send
+(`add-narration`);
 the three keep the panel's names by the owner's ruling "Ja, båda" of
 2026-10-30. The player panel draws a Say for a player alone: one line box,
-`say-text`, whose placeholder reads "say something, or /ooc to step out of
-character", Send (`add-narration`), and no box for a speaker (VTT-500,
+`say-text`, whose placeholder reads "say something, /ooc to step out of
+character, /dm to whisper to the DM", Send (`add-narration`), and no box for
+a speaker (VTT-500,
 VTT-528, VTT-532). `renderPlayerPanel` returns before its Say for any role but
 `player`, so a DM's or an agent's panel draws no Say heading, no line box, no
 speaker box, no Send, and no line pointing to the console's Say (VTT-540; the
 owner's ruling "Inget" of 2026-10-30).
 
 Send, and Enter in `say-text`, read the line with `readLine` in
-`client/src/player.ts`, in the console and in a player's panel alike: a line
-whose first word is exactly `/ooc` goes out of character, with the rest of
-the line, trimmed, as its text, and nothing is sent when the rest is empty,
-nor for an empty line in character (VTT-501, VTT-530, VTT-531). Any other
-line goes in character: a player's by `speakAs`, as the party member the
-panel acts as, the viewpoint (VTT-500); the console's by `addNarration`,
-naming no actor, with what `say-as` holds, trimmed, as `as`, and no `as`
-when it is blank (VTT-529). A line out of character goes by
+`client/src/player.ts`, in the console and in a player's panel alike, as one
+of four kinds. A line whose first word is exactly `/ooc` goes out of
+character, with the rest of the line, trimmed, as its text, and nothing is
+sent when the rest is empty, nor for an empty line in character (VTT-501,
+VTT-530, VTT-531). A line whose first word is `/w` or `/whisper`, in any
+case, is a whisper to the next word, or to the words between a pair of
+double quotes after it, with the rest of the line, trimmed, as its text; one
+whose first word is `/dm`, `/gm` or `/togm`, in any case, is a whisper to the
+DM (VTT-592, VTT-599; the owner's rulings "/w och /dm i Say-rutan" and "Ja,
+som alias" of 2026-11-01). Any other line goes in character: a player's by
+`speakAs`, as the party member the panel acts as, the viewpoint (VTT-500);
+the console's by `addNarration`, naming no actor, with what `say-as` holds,
+trimmed, as `as`, and no `as` when it is blank (VTT-600). A line out of
+character goes by
 `speakOutOfCharacter`, carrying `say-as` the same way from the console, and
 no `as` from a player's panel. Send, or Enter in the console's `say-text`,
 leaves `say-as` holding what it held, refused or accepted, so the next line
@@ -332,6 +350,24 @@ line in character and every line out of character is shown under, over any
 `as` (SPEC-013). The Story draws a line out of character as its `as`, `: `
 and its text between `(( ` and ` ))`, with the class `ooc`, and `describe`
 writes the same for the Events panel (VTT-502).
+
+**Whispering.** The console's Say sends a whisper with `addWhisper`, and never
+reads `say-as` for it, so a whisper always comes from the DM (the owner's
+answer (a) to the plan's Q1, at its sign-off of 2026-11-01). `whisperTargets`
+in `client/src/view/dm.ts` resolves the name: to the party member whose name
+equals it without regard to case; else to every party member controlled by the
+participant whose name equals it so, as the console knows the participants for
+the grant select, the roster and presence together, in actor-id order
+(VTT-593). An unknown name, a name two party members share, a participant who
+controls no party member, a whisper with no name or no text, and a whisper to
+the DM are told through `DMDeps.notify`, send nothing and leave `say-text` as
+typed (VTT-594). A player's panel sends a `/dm` line with text after it as a
+whisper to the DM from the party member the panel acts as (VTT-595), and tells
+the player of a `/w` line or an empty `/dm` line through `renderPlayerPanel`'s
+optional `notify`, to which `paint` passes the same `notify` it hands the
+console, which sets the toast and repaints, sending nothing and leaving
+`say-text` as typed (VTT-596). A whisper takes the Say's lock, and is kept and
+cleared as a line is.
 
 **What a command's answer leaves typed** (the owner's rulings "Ja, Say och
 alla formulär" and "Töm ändå", 2026-10-29). The console's controls that
@@ -450,9 +486,12 @@ and its reason when it has one. An ability's line is "<actor> used
 <result>, rolled <total>", joined by ";", and with no outcomes " on " and its
 targets joined by ", ". It never reads `outcome_summary` or `rolls`, so it
 shows what was rolled and never the total that roll was compared with (VTT-477,
-by the owner's ruling of 2026-10-24 on the ability's line). A condition, a
-resource, a note's key and an adventure's id are shown as the entry names
-them.
+by the owner's ruling of 2026-10-24 on the ability's line). A whisper reads
+"The DM whispers to ", its `to_actor_ids` named as the window names actors
+and joined by ", ", then ": " and its text, or its `from_actor_id` so named,
+" whispers to the DM: " and its text, and the Story draws it with the class
+`whisper` (VTT-597). A condition, a resource, a note's key and an
+adventure's id are shown as the entry names them.
 
 **The console's rewrite.** `renderDMConsole` in `client/src/view/dm.ts` draws,
 when the world holds a token, a "Describe tokens" group with one row per token
@@ -643,6 +682,7 @@ VTT-445, VTT-446, VTT-447, VTT-448, VTT-449, VTT-457, VTT-458, VTT-459,
 VTT-460, VTT-461, VTT-464, VTT-474, VTT-475, VTT-476, VTT-477, VTT-483,
 VTT-484, VTT-489, VTT-490, VTT-491, VTT-492, VTT-494, VTT-500, VTT-501,
 VTT-502, VTT-517, VTT-518, VTT-520, VTT-521, VTT-522, VTT-523, VTT-524,
-VTT-526, VTT-527, VTT-528, VTT-529, VTT-530, VTT-531, VTT-532, VTT-533,
-VTT-534, VTT-535, VTT-536, VTT-537, VTT-538, VTT-540, VTT-541, VTT-572,
-VTT-573, VTT-574, VTT-575, VTT-576, VTT-577, VTT-579, VTT-580.
+VTT-526, VTT-527, VTT-528, VTT-530, VTT-531, VTT-532, VTT-533, VTT-534,
+VTT-535, VTT-536, VTT-537, VTT-538, VTT-540, VTT-541, VTT-572, VTT-573,
+VTT-574, VTT-575, VTT-576, VTT-577, VTT-579, VTT-580, VTT-592, VTT-593,
+VTT-594, VTT-595, VTT-596, VTT-597, VTT-599, VTT-600.

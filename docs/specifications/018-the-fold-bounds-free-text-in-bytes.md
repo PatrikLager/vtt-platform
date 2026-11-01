@@ -6,11 +6,12 @@ Accepted. Implemented by `internal/engine/apply.go` (the const block with
 `maxNoteKeyBytes`, `maxNoteTitleBytes`, `maxTextBytes`, `maxNarrationAsBytes`,
 `maxMoveReasonBytes`, `maxNameBytes` and `maxIDBytes`, and `Apply`'s
 `SessionStarted`, `SceneCreated`, `ActorAdded`, `TokenPlaced`, `TokenMoved`,
-`NarrationAdded`, `NoteUpserted`, `AdventureLoaded`, `AbilityUsed`,
-`ConditionApplied`, `ActorControlGranted` and `ActorControlRevoked` arms, the
-last two through `controlTarget`, and `keyLength` for an actor's keys) and its
-TypeScript mirror `client/src/fold.ts` (`checkLen`, `checkKeys` for an actor's
-keys, and the same twelve arms, the control arms through
+`NarrationAdded`, `WhisperAdded`, `NoteUpserted`, `AdventureLoaded`,
+`AbilityUsed`, `ConditionApplied`, `ActorControlGranted` and
+`ActorControlRevoked` arms, the last two through `controlTarget`, and
+`keyLength` for an actor's keys) and its TypeScript mirror
+`client/src/fold.ts` (`checkLen`, `checkKeys` for an actor's keys, and the
+same thirteen arms, the control arms through
 `requireControlTarget`); mirrored for an adventure's notes, opening narration,
 names and ids by `internal/adventure/load.go`'s constants and for a map's name
 and ids by `internal/mapdef/load.go`'s `maxNameBytes` and `maxIDBytes`, for a
@@ -21,7 +22,8 @@ condition ids, attribute, defense and resource names and branch labels by
 `internal/rules/schema/` state; stated to an agent by
 `tools/toolgen/main.go`'s `manifest` for `move_token`'s `reason`,
 `add_actor`'s actor `name`, `actorId`, `moduleId`, `attributes` and
-`resources`, `start_session`'s `name` and `place_token`'s `tokenId`. Pinned by
+`resources`, `start_session`'s `name`, `place_token`'s `tokenId` and
+`add_whisper`'s `text`. Pinned by
 `internal/engine/apply_test.go`, `apply_boundary_test.go`,
 `move_reason_internal_test.go`, `name_bound_internal_test.go`,
 `id_bound_internal_test.go`, `internal/campaign/qa_id_bound_test.go`,
@@ -42,7 +44,9 @@ condition ids, attribute, defense and resource names and branch labels by
 `internal/mapdef/qa_cmd_id_bound_test.go`,
 `internal/adventure/qa_cmd_id_bound_test.go`,
 `internal/campaign/qa_cmd_id_bound_test.go`,
-`client/test/qa-cmd-id-bound.test.ts` and `tools/toolgen/main_test.go`.
+`client/test/qa-cmd-id-bound.test.ts`, `internal/campaign/qa_whisper_test.go`,
+`internal/gateway/qa_whisper_test.go`, `client/test/qa-whisper.test.ts` and
+`tools/toolgen/main_test.go`.
 
 ## Principles served
 
@@ -53,7 +57,7 @@ forever.
 
 ## How it works
 
-**Twenty-four fields are bounded, each in UTF-8 bytes, inclusive.**
+**Twenty-five fields are bounded, each in UTF-8 bytes, inclusive.**
 
 | Field | Bound | May be empty |
 |---|---|---|
@@ -62,6 +66,7 @@ forever.
 | `NoteUpserted.text` | 8192 (`maxTextBytes`) | no |
 | `NarrationAdded.text` | 8192 (`maxTextBytes`) | no |
 | `NarrationAdded.as` | 256 (`maxNarrationAsBytes`) | yes |
+| `WhisperAdded.text` | 8192 (`maxTextBytes`) | no |
 | `TokenMoved.reason` | 256 (`maxMoveReasonBytes`) | yes |
 | `SessionStarted.name` | 256 (`maxNameBytes`) | yes |
 | `SceneCreated.name` | 256 (`maxNameBytes`) | yes |
@@ -102,9 +107,12 @@ resource names and its attribute names; a `TokenPlaced` for its id, then a
 duplicate, a known scene, a known actor and a position; an `AdventureLoaded`
 for its id, then its name; a `ConditionApplied` for its condition id, then a
 known actor, then a duplicate; an `AbilityUsed` for its ability id alone; a
+`WhisperAdded` for its text, then each of its `to_actor_ids` and then its
+`from_actor_id`, when it has one, for a known actor, refused as `engine:
+whisper names unknown actor "<id>"`; a
 `SessionStarted` for an open session, then its name, then its session id; a
 control event for a participant id, then its length, then a known actor. These
-twenty-four are the only texts `apply.go` bounds above; beyond them it
+twenty-five are the only texts `apply.go` bounds above; beyond them it
 requires a scene's object ids to be distinct. Every other text has no bound
 of its own in the fold, and what holds each is below.
 
@@ -120,13 +128,14 @@ writer is whoever installs it. The DM, the agent and whoever installs a file
 are trusted with a text's length as they are with its content. No field
 outside the table meets the first: each of SPEC-013's player cells puts text
 it chose into the log only as a field of the table or as an id that
-`engine.Apply` or `Resolve` looks up, also where `Resolve` copies that id
+`engine.Apply` or `Resolve` looks up, `add_whisper`'s text as a field of the
+table and its whisperer as such an id, also where `Resolve` copies that id
 into `AbilityUsed.outcome_summary` or a reason, and the spectator's one cell,
 `set_viewpoint`, appends nothing. What holds each text instead:
 
 | Field | What holds it |
 |---|---|
-| `TokenMoved.token_id`, `TokenPlaced.scene_id`, `TokenPlaced.actor_id`, `TokenRemoved.token_id`, `ActorRemoved.actor_id`, `DoorOpened.scene_id`, `DoorClosed.scene_id`, `ResourceChanged.actor_id`, `ResourceChanged.resource`, `ConditionApplied.actor_id`, `ConditionRemoved.actor_id`, `ConditionRemoved.condition_id`, `NoteDeleted.key`, `ActorControlGranted.actor_id`, `ActorControlRevoked.actor_id`, `TokenDescribed.token_id` | `engine.Apply` refuses a value that names nothing it has folded, so each equals an id or a name the table bounds |
+| `TokenMoved.token_id`, `TokenPlaced.scene_id`, `TokenPlaced.actor_id`, `TokenRemoved.token_id`, `ActorRemoved.actor_id`, `DoorOpened.scene_id`, `DoorClosed.scene_id`, `ResourceChanged.actor_id`, `ResourceChanged.resource`, `ConditionApplied.actor_id`, `ConditionRemoved.actor_id`, `ConditionRemoved.condition_id`, `NoteDeleted.key`, `ActorControlGranted.actor_id`, `ActorControlRevoked.actor_id`, `TokenDescribed.token_id`, `WhisperAdded.to_actor_ids`, `WhisperAdded.from_actor_id` | `engine.Apply` refuses a value that names nothing it has folded, so each equals an id or a name the table bounds |
 | `Actor.controller_id`, `Actor.controller_ids` | `engine.Apply` refuses an `ActorAdded` that declares either, and fills them from `ActorControlGranted.participant_id` |
 | `AbilityUsed.actor_id`, `AbilityUsed.target_ids`, `AbilityUsed.Outcome.target_id` | `Resolve` refuses a value that names no folded actor |
 | `AbilityUsed.Outcome.result` | `Resolve` writes a branch label, which `internal/rules/load.go` bounds at `maxIDBytes` |
@@ -176,7 +185,7 @@ event exceeds a bound is answered ok=false with that text and appends nothing
 event does not fold, so `campaign.Open` refuses it.
 
 **The client's fold mirrors every bound.** `fold.ts` calls `checkLen(what, s,
-min, max)` for each of the twenty-four fields, an actor's resource and
+min, max)` for each of the twenty-five fields, an actor's resource and
 attribute names one by one, with the same numbers as literals, in the same
 order within each arm; `checkLen` counts UTF-8 bytes with `TextEncoder`, as
 Go's `len` does, and throws `FoldError` reading `<field> exceeds <max> bytes`
@@ -212,7 +221,8 @@ and `start_session` tools describe their name the same way, and
 way, and `TestTheToolsStateTheFoldsIDBound` requires them to state
 `maxIDBytes`; `add_actor` describes its module id, attributes and resources
 the same way, and `TestTheToolsStateTheFoldsBoundOnAnActorsModuleAndKeys`
-requires them to state it too.
+requires them to state it too. The `add_whisper` tool describes its `text` as
+1 to 8192 bytes, and no test requires it.
 
 ## Consequences
 
@@ -224,7 +234,8 @@ requires them to state it too.
   a move's reason the tool's description, for a name the `add_actor` and
   `start_session` descriptions, and for an id the `add_actor` and
   `place_token` descriptions and `add_actor`'s module id, attribute and
-  resource descriptions.
+  resource descriptions, and for a whisper's text the `add_whisper`
+  description.
 - A field added to an event without a bound here is bounded by no fold: by the
   WebSocket frame when a command carries it, by nothing when a map, adventure
   or ruleset file does. It goes into the second table above, with what holds
@@ -241,4 +252,5 @@ requires them to state it too.
 
 VTT-264, VTT-265, VTT-266, VTT-274, VTT-275, VTT-276, VTT-277, VTT-278,
 VTT-279, VTT-281, VTT-282, VTT-283, VTT-284, VTT-285, VTT-286, VTT-287,
-VTT-289, VTT-290, VTT-291, VTT-292, VTT-293, VTT-294, VTT-296, VTT-297.
+VTT-289, VTT-290, VTT-291, VTT-292, VTT-293, VTT-294, VTT-296, VTT-297,
+VTT-585, VTT-586.

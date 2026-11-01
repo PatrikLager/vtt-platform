@@ -18,9 +18,10 @@ Accepted. Implemented by `internal/perceive/projection.go` (`Eyes`,
 pinned by `internal/perceive/board_test.go`, `roster_test.go`,
 `status_test.go`, `history_test.go`, `unseen_test.go`,
 `resume_from_fold_test.go`, `deps_test.go`, `projection_internal_test.go`,
-`qa_testimony_eyes_test.go`, `qa_creature_shown_test.go` and
-`qa_sees_actor_test.go`, through the harness in `viewer_test.go`, by
-`internal/campaign/character_log_oracle_test.go`, `every_log_told_test.go`,
+`whisper_internal_test.go`, `qa_testimony_eyes_test.go`,
+`qa_creature_shown_test.go` and `qa_sees_actor_test.go`, through the harness
+in `viewer_test.go`, by `internal/campaign/character_log_oracle_test.go`,
+`every_log_told_test.go`, `whisper_test.go`, `qa_whisper_test.go`,
 `qa_append_watch_test.go` and `qa_creature_shown_test.go`, and by
 `internal/gateway/server_visibility_test.go`, `qa_move_reason_test.go`,
 `qa_issuer_test.go`, `token_text_test.go` and `qa_creature_shown_test.go`.
@@ -47,7 +48,10 @@ cleared, a `TokenMoved`'s or a `ResourceChanged`'s `reason`, a
 `ConditionApplied`'s `source`, a `ConditionRemoved`'s `reason`, and a
 `TokenDescribed`'s `gm_name` and `gm_notes` cleared, and every other field as
 the event has it, an `AbilityUsed`'s `outcome_summary` included (VTT-488, by
-the owner's ruling "utfallsraden står" of 2026-10-24). No envelope `Event`
+the owner's ruling "utfallsraden står" of 2026-10-24). Of a `WhisperAdded`'s
+copy, `Event` then keeps only the `to_actor_ids` the look's `eyes` hold, in
+the event's order, so no log is written who else heard the same whisper
+(VTT-584). No envelope `Event`
 returns carries its own `participant_id` or `actor_role`, which name who
 issued the event; a control event's `participant_id` is its subject and is
 sent. Presence names every connected participant (SPEC-011). `Event` writes to
@@ -80,7 +84,8 @@ actor `engine.IsPartyMember` accepts, seen or not, so a log is introduced to
 its own character and to every party member, with a token in sight or none.
 Its `sees` are the viewer's eyes and those tokens' actors, the party members
 no eye sees left out, and its `party` the actors `engine.IsPartyMember`
-accepts. `look` runs on every call, keeps no memo, and writes nothing to `st`.
+accepts. Its `eyes` field holds the actors `eyes` gave. `look` runs on
+every call, keeps no memo, and writes nothing to `st`.
 `canSeeSquare` answers whether one square of one scene is in a look, and false
 for a missing position. `CanSee` asks it of a fresh `Projection`'s look, and
 `SeesActor` asks whether an actor is in such a look's `sees`, so neither
@@ -228,7 +233,11 @@ out of character names its sender in `as`, by display name and never by
 participant id, so every active character log is sent who said it, by the
 owner's ruling "Namn: (( text ))" of 2026-10-26; a player's line in character
 names the party member it speaks as, and the DM's and the agent's carries the
-`as` they gave, empty for plain narration. It
+`as` they gave, empty for plain narration. It forwards a `WhisperAdded` when
+the look's `eyes` hold its `from_actor_id` or one of its `to_actor_ids`, and
+withholds it otherwise, so a whisper is written into the character logs it
+names and no other character log (VTT-582, VTT-583), by the owner's ruling
+B-2 of 2026-10-22; who may append one is SPEC-013's. It
 withholds `SceneCreated`, `ActorAdded` and `TokenPlaced`, which `transitions`
 introduces; `TokenRemoved`, since `transitions` sends a viewer that held the
 token a `TokenHidden` once `st` no longer has it; `TokenHidden` and
@@ -395,6 +404,11 @@ A client author, and whoever changes the code, are bound by these:
 - A projection can be started at any prefix of the log from the world and the
   fold of what its viewer was sent, and sends what one fed from the first
   event sends.
+- A whisper is written only into the character logs it names, and the world
+  log, and each copy names its own character alone among the recipients.
+  Whoever watches through that character, its player or anyone perched on it,
+  reads it, an earlier one included, by the owner's ruling "Alla som ser genom
+  Tobbe" of 2026-11-01.
 - No file of `internal/perceive`, test files included, imports a package of
   this module but its own, `contract`, `engine` and `sight`;
   `.go-arch-lint.yml`'s `perceive` component allows the same.
@@ -416,4 +430,5 @@ VTT-224, VTT-227, VTT-233, VTT-235, VTT-236, VTT-237, VTT-238, VTT-239,
 VTT-242, VTT-243, VTT-244, VTT-245, VTT-249, VTT-250, VTT-251, VTT-252,
 VTT-262, VTT-272, VTT-273, VTT-311, VTT-312, VTT-361, VTT-362, VTT-363,
 VTT-364, VTT-365, VTT-462, VTT-465, VTT-466, VTT-467, VTT-468, VTT-469,
-VTT-470, VTT-471, VTT-478, VTT-481, VTT-485, VTT-486, VTT-488.
+VTT-470, VTT-471, VTT-478, VTT-481, VTT-485, VTT-486, VTT-488, VTT-582,
+VTT-583, VTT-584.
