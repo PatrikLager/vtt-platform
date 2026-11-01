@@ -26,7 +26,7 @@ a page in its tab under its token named, and no `log` when none was, whatever
 another token's or another tab's pages were sent, by
 `client/test/wire.test.ts`, `client/test/app.test.ts`,
 `client/test/qa-remembered-log.test.ts` and
-`client/test/qa-reload-viewpoint.test.ts` (VTT-442 to VTT-444); that only a
+`client/test/qa-reload-viewpoint.test.ts` (VTT-443, VTT-444, VTT-579); that only a
 DM's and an agent's window shows the Events panel, the newest entries of the
 log it holds, newest first and bounded, while every role's window shows in the
 Story each entry of the log it holds, both outside the reason it gives for a
@@ -42,8 +42,8 @@ shoulder" sends nobody, and that their board click sends nothing, by
 `client/test/app.test.ts` and `client/test/qa-perched-player.test.ts` (VTT-458,
 VTT-459, VTT-461); that a spectator chooses a shoulder and a player switches in
 the browser, and that a reload keeps either, by `client/e2e/table.spec.ts`
-(VTT-394, VTT-403, VTT-405, VTT-442, VTT-444) and `client/e2e/handover.spec.ts`
-(VTT-442); that a player whose last party member the DM takes back keeps
+(VTT-394, VTT-403, VTT-405, VTT-444, VTT-579) and `client/e2e/handover.spec.ts`
+(VTT-579); that a player whose last party member the DM takes back keeps
 watching it with the perch, chooses nobody by "No shoulder" and then another
 shoulder, by `client/e2e/handover.spec.ts` (VTT-458, VTT-459); and that a
 player's and a spectator's page shows no Events panel and a DM's does, by
@@ -93,7 +93,15 @@ speaker in `(( ))`, by `client/test/dm-view.test.ts`,
 `client/test/feed.test.ts`, `client/test/qa-speaking.test.ts`,
 `client/test/qa-console-say.test.ts`, `client/test/qa-panel-say.test.ts`,
 `client/e2e/refusals.spec.ts` and `client/e2e/speaking.spec.ts` (VTT-500 to
-VTT-502, VTT-527 to VTT-532, VTT-540). Every `client/e2e/` file runs outside
+VTT-502, VTT-527 to VTT-532, VTT-540); and that a window the gateway closes
+for a dead credential, or whose first read of `/api/me` is answered 401,
+says it was removed in place of Reconnect, forgets its own stored credential
+and its tab's viewpoint and keeps another window's credential, that any
+other close, and a first read of `/api/me` that fails other than with 401,
+forget nothing, and that the share link then opens the join form, by
+`client/test/wire.test.ts`, `client/test/app.test.ts`,
+`client/test/qa-removed-window.test.ts` and `client/e2e/booting.spec.ts`
+(VTT-572 to VTT-577, VTT-580). Every `client/e2e/` file runs outside
 `task check`.
 
 That `internal/harness`'s client hands its reader every entry and each switch
@@ -187,8 +195,9 @@ actor each `ViewpointChanged` names, `""` for nobody, to its tab's
 `sessionStorage` under `vtt.viewpoint.` followed by its token
 (`Session.onViewpoint`), and hands what it finds there to the page's `Session`.
 Until the page's first `ViewpointChanged`, every dial, a reconnect included,
-names that actor in `log` with `after` 0, and no `log` when it is nobody
-(VTT-442). The 0 is the cursor's: a player's or a spectator's connection is
+names that actor in `log` with `after` 0, and no `log` when it is nobody or
+the tab has forgotten it (VTT-579). The 0 is the cursor's: a player's or a
+spectator's connection is
 sent its `ViewpointChanged` before any entry (SPEC-015). Until its first
 `ViewpointChanged`, a page none of whose earlier pages in its tab under its
 token was sent one names no `log`, whatever a page under another token in its
@@ -196,6 +205,26 @@ tab (VTT-443) or a page under its token in another tab (VTT-444) was sent.
 Until its first `ViewpointChanged` a page shows nobody as watched, not the
 remembered actor either (VTT-407). Whether the named log is opened is the
 gateway's (SPEC-015).
+
+A window learns two ways that its participant was removed. `Wire` compares
+each close with `CREDENTIAL_GONE` in `client/src/wire.ts`, the code 1008 and
+the reason `gateway: credential no longer valid` both, and on a match calls
+what `Session.onCredentialGone` was handed; that pair is the one
+`contract/testdata/credential_close.json` holds, and tests on both sides of
+the wire hold their constants to it (SPEC-011). And the chain `startSession`
+runs at load, `/api/me` and then the ruleset, the adventures and the maps,
+ends in a catch that acts on a 401 from any of them and on nothing else.
+Either way `forget` in `startSession` runs: it clears the stored credential
+(`Auth.clear`) only while it is still the window's own token, since another
+window of the browser may have stored its own since (VTT-574); removes the
+tab's `vtt.viewpoint.` key under that token (VTT-575); and sets `removed`,
+which makes `renderStatus` in `client/src/view/spectator.ts` draw "You were
+removed from this table. To join again, open the link your DM sent you." in
+place of Reconnect (VTT-572, VTT-573). The board, the Story and the panels
+stay as last drawn. A close with any other code or reason, and a failure of
+the chain other than a 401, forget nothing and draw no removal (VTT-576,
+VTT-580). With no credential stored, the share link opens the join form
+(VTT-577).
 
 A window perches when the role the page last read is `spectator`, or `player`
 with a last `WatchableChanged` that says they control no party member, by the
@@ -560,7 +589,12 @@ each entry it is sent, and no switch.
   is SPEC-015's.
 - A page whose first read of `/api/me` fails is not read again until it is
   loaded again, so a DM's or an agent's page whose first read fails shows no
-  Events panel until it is loaded again.
+  Events panel until it is loaded again. A 401 from that read, or from a
+  later step of the chain, says the window's participant was removed, though
+  a token stored for another campaign served on the same address is answered
+  401 too (the owner's ruling of 2026-10-31); any other failure forgets
+  nothing, since the read surface answers an identity store that cannot
+  answer with 503 (SPEC-012).
 - A client that holds a character's log names it on a redial: the gateway
   ignores the cursor of a dial that names no `log` and opens on the default,
   from its first entry (SPEC-015).
@@ -570,12 +604,12 @@ each entry it is sent, and no switch.
   (SPEC-015). Nothing promises it outlives the tab (VTT-444), and a
   duplicated or restored tab, which a browser may give a copy of the tab's
   storage, is neither promised it nor refused it.
-- The browser client has no logout: nothing calls `Auth.clear`
-  (`git grep -n 'Auth.clear\|auth.clear' client/src` finds only the warning
-  in `startSession`). The key carries the token, so a logout must remove the
-  key with the token; a page under that token in that tab then names no
-  `log`, which VTT-442 forbids, so a logout withdraws VTT-442 and brings a new
-  id.
+- The browser client's one logout is `forget`, the only call of `Auth.clear`
+  (`git grep -n 'Auth.clear\|auth.clear' client/src` finds it and the warning
+  above the key in `startSession`), and it runs only when the gateway has
+  declared the credential dead; nothing in the window logs out by choice.
+  The key carries the token, so `forget` removes the key with the token, and
+  a page under that token in that tab then names no `log` (VTT-579).
 - Whom a connection may watch is the gateway's to decide. The browser client
   offers a switch only to a party member the last `WatchableChanged` names, or
   to nobody on the perch: every `set_viewpoint` it sends goes through
@@ -604,10 +638,11 @@ VTT-393, VTT-394, VTT-395, VTT-396, VTT-397, VTT-398, VTT-403, VTT-404,
 VTT-405, VTT-407, VTT-408, VTT-409, VTT-410, VTT-411, VTT-412, VTT-413,
 VTT-414, VTT-415, VTT-416, VTT-418, VTT-419, VTT-420, VTT-421, VTT-422,
 VTT-423, VTT-424, VTT-425, VTT-426, VTT-427, VTT-428, VTT-429, VTT-430,
-VTT-431, VTT-432, VTT-433, VTT-434, VTT-435, VTT-442, VTT-443, VTT-444,
+VTT-431, VTT-432, VTT-433, VTT-434, VTT-435, VTT-443, VTT-444,
 VTT-445, VTT-446, VTT-447, VTT-448, VTT-449, VTT-457, VTT-458, VTT-459,
 VTT-460, VTT-461, VTT-464, VTT-474, VTT-475, VTT-476, VTT-477, VTT-483,
 VTT-484, VTT-489, VTT-490, VTT-491, VTT-492, VTT-494, VTT-500, VTT-501,
 VTT-502, VTT-517, VTT-518, VTT-520, VTT-521, VTT-522, VTT-523, VTT-524,
 VTT-526, VTT-527, VTT-528, VTT-529, VTT-530, VTT-531, VTT-532, VTT-533,
-VTT-534, VTT-535, VTT-536, VTT-537, VTT-538, VTT-540, VTT-541.
+VTT-534, VTT-535, VTT-536, VTT-537, VTT-538, VTT-540, VTT-541, VTT-572,
+VTT-573, VTT-574, VTT-575, VTT-576, VTT-577, VTT-579, VTT-580.

@@ -32,7 +32,13 @@ reads as in character without field 5 by `TestQANarrEventHasNoActorId`,
 `TestQANarrOldMessagesDecodeAsNotOutOfCharacter` there and "qaNarr: the
 event has no actor id" in `contract/qa-narration-fields.test.ts` (VTT-505);
 and its tool by `TestAddNarrationRequiredOverrideReplacesDerivedList` and
-`TestAddNarrationFieldDocsNameOptionalFieldsAgainstFabrication`.
+`TestAddNarrationFieldDocsNameOptionalFieldsAgainstFabrication`;
+`remove_participant`, by `TestRemoveParticipantCommandRoundTrip` in
+`contract/roundtrip_test.go`, its tool by
+`TestRemoveParticipantSaysItIsPermanentAndTakesTheirActors` (VTT-567), and
+its batch by `TestARemovalRevokesEveryControlTheParticipantHolds` and
+`TestARemovalOfSomebodyWhoControlsNothingAppendsNothing` in
+`internal/gateway/remove_participant_test.go`.
 Gated by `task check:drift` and `task check:breaking`, both inside `task
 check`.
 
@@ -254,14 +260,20 @@ the limit; a shut door admits nobody whatever it says.
 mints spectators, and letting promotion reach "dm" or "agent" would make that
 link a path to full authority in two steps.
 
-`set_join_door`, `grant_actor_control` and `promote_participant` are DM and
-agent only. `revoke_actor_control` is open to a player as well, who may revoke
-only control they themselves hold (`authorizeSelfRevoke`).
+`remove_participant` refuses a target who is a dm, an agent, unknown or
+already revoked, and a removal refused for its target revokes nobody and
+appends nothing (VTT-564, SPEC-009).
+
+`set_join_door`, `grant_actor_control`, `promote_participant` and
+`remove_participant` are DM and agent only. `revoke_actor_control` is open to a
+player as well, who may revoke only control they themselves hold
+(`authorizeSelfRevoke`).
 
 ### The commands that yield a batch
 
-`remove_actor` and `load_map` each produce an ordered batch accepted or
-rejected atomically, never a single event.
+`remove_actor`, `load_map` and `remove_participant` each produce an ordered
+batch, accepted or rejected atomically through `campaign.AppendBatch`; so do
+`use_ability` and `load_adventure`, whose batches are SPEC-012's.
 
 `remove_actor` emits one `TokenRemoved` per token of that actor, in token-id
 order, then the `ActorRemoved`. This is a correctness requirement rather than a
@@ -273,6 +285,15 @@ own introductions no longer fold.
 one `TokenPlaced` per declared placement. A map never creates actors; a
 placement's `actor_id` must already exist in campaign state or the whole batch
 is rejected.
+
+`remove_participant` emits one `ActorControlRevoked` naming the removed
+participant for each actor whose controllers include them, in actor-id
+order, and no other event (VTT-559); every other controller of those actors
+stays (VTT-560). Each carries the participant id and the role of whoever
+issued the removal (VTT-562), and the result carries the batch's first
+sequence (VTT-563). A removal of a participant who controls no actor appends
+nothing (VTT-561), and its ok result carries no sequence. The participant's
+own revocation is a write to identity, not an event (SPEC-009).
 
 ### Evolution
 
@@ -326,4 +347,5 @@ Those readers are not reading this record.
 
 ## Requirements
 
-VTT-184, VTT-232, VTT-473, VTT-479, VTT-480, VTT-505.
+VTT-184, VTT-232, VTT-473, VTT-479, VTT-480, VTT-505, VTT-559, VTT-560,
+VTT-561, VTT-562, VTT-563, VTT-567.

@@ -21,8 +21,10 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `server_visibility_test.go`, `server_internal_test.go`, `watch_test.go`,
 `seat_internal_test.go`, `viewpoint_test.go`, `qa_seat_test.go`,
 `qa_move_gate_test.go`, `qa_describe_token_test.go`,
-`qa_ability_sight_test.go`, `narration_test.go` and `qa_speaking_test.go`,
-and by `cmd/vtt/scenario_goldens_test.go`.
+`qa_ability_sight_test.go`, `narration_test.go`, `qa_speaking_test.go`,
+`remove_participant_test.go`, `qa_removal_test.go` and
+`qa_remove_roles_test.go`, and by
+`cmd/vtt/scenario_goldens_test.go`.
 
 ## Principles served
 
@@ -62,6 +64,7 @@ may issue it:
 | `grant_actor_control` | yes | yes | no | no |
 | `revoke_actor_control` | yes | yes | `authorizeSelfRevoke` | no |
 | `promote_participant` | yes | yes | no | no |
+| `remove_participant` | yes | yes | no | no |
 | `set_join_door` | yes | yes | no | no |
 | `rotate_join_link` | yes | yes | no | no |
 | `open_door` | yes | yes | `mayWorkDoor` | no |
@@ -78,11 +81,11 @@ one of the player's. Removal authors the board and the cast, so
 `describe_token` holds `place_token`'s cells too: what a token is called and
 what its notes say are the DM's and the agent's to write (VTT-463; "Ja, ett
 eget kommando", the owner's ruling of 2026-10-24).
-Granting control, promotion and the join door are the DM's and the agent's
-alone, since each confers standing at a table whose shared link admits
-spectators (SPEC-009, VTT-028). Every refusal `Authorize` returns wraps
-`ErrUnauthorized`: every `fmt.Errorf` in `authz.go` and `viewpoint.go` wraps
-it with `%w`.
+Granting control, promotion, removing a participant and the join door are
+the DM's and the agent's alone, since each confers or takes away standing at
+a table whose shared link admits spectators (SPEC-009, VTT-028, VTT-565).
+Every refusal `Authorize` returns wraps `ErrUnauthorized`: every `fmt.Errorf`
+in `authz.go` and `viewpoint.go` wraps it with `%w`.
 `TestEveryClientCommandHasRoleCells` walks the oneof and requires every arm
 to resolve through `commandName` to a name with a row, and
 `TestAuthorizeTableAllCommandsAllRoles` asserts every cell of the table
@@ -196,8 +199,8 @@ runs, in this order, and stops at the first refusal:
 4. `validateAddActor`, for an `add_actor`;
 5. `validateUpsertNote`, for an `upsert_note`;
 6. the dispatch of `use_ability`, `load_adventure`, `load_map`,
-   `remove_actor`, `promote_participant`, `set_join_door` and
-   `rotate_join_link` to their handlers;
+   `remove_actor`, `remove_participant`, `promote_participant`,
+   `set_join_door` and `rotate_join_link` to their handlers;
 7. `ToEvent`, which makes every other command one envelope stamped with the
    participant's id and role;
 8. for a `TokenMoved`, the backfill of `SceneId` and `From` from the
@@ -286,9 +289,12 @@ exists at the command boundary alone.
 **What is dispatched, and what becomes one envelope.** `use_ability`
 (`handleUseAbility`) and `load_adventure` (`handleLoadAdventure`) are
 SPEC-012's; `load_map` (`handleLoadMap`) is SPEC-014's; `remove_actor`
-(`handleRemoveActor`) is SPEC-017's; and SPEC-007 states what the
-`load_map` and `remove_actor` batches carry. All four append a whole batch
-through `campaign.AppendBatch`. `promote_participant` (`handlePromotion`),
+(`handleRemoveActor`) is SPEC-017's; `remove_participant` (`handleRemoval`)
+is SPEC-009's; and SPEC-007 states what the `load_map`, `remove_actor` and
+`remove_participant` batches carry. All five append a whole batch through
+`campaign.AppendBatch`, but a removal of a participant who controls no actor
+appends nothing, and its ok=true result carries no sequence.
+`promote_participant` (`handlePromotion`),
 `set_join_door` (`handleJoinDoor`) and `rotate_join_link`
 (`handleRotateJoinLink`) are SPEC-009's and append nothing (SPEC-007), so
 their ok=true result carries no sequence. Every other command reaches
@@ -364,4 +370,4 @@ VTT-138, VTT-139, VTT-140, VTT-142, VTT-143, VTT-144, VTT-145, VTT-146,
 VTT-147, VTT-148, VTT-149, VTT-150, VTT-151, VTT-152, VTT-153, VTT-154,
 VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161, VTT-162, VTT-231,
 VTT-261, VTT-344, VTT-379, VTT-463, VTT-472, VTT-482, VTT-487, VTT-495,
-VTT-496, VTT-497, VTT-498, VTT-499, VTT-503, VTT-506.
+VTT-496, VTT-497, VTT-498, VTT-499, VTT-503, VTT-506, VTT-565.

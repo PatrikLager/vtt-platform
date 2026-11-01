@@ -12,7 +12,8 @@ Accepted. Implemented by `internal/gateway/metadata.go` (`authed`,
 `adventureGuides` fields of `Server`, `WithRuleset`, `WithAdventures`;
 `Handler` registers the routes, SPEC-011), fed by `cmd/vtt/serve_compose.go`'s
 `composeServer`; pinned by `internal/gateway/metadata_test.go`,
-`adventure_test.go`, `ruleset_test.go`, `artfile_internal_test.go` and, for
+`qa_me_503_test.go`, `adventure_test.go`, `ruleset_test.go`,
+`artfile_internal_test.go` and, for
 the default cell size, `cmd/vtt/art_test.go`.
 
 ## Principles served
@@ -24,12 +25,17 @@ never by a client hiding what it was sent.
 
 ## How it works
 
-**The bearer, and its one 401.** Every `/api/*` handler calls `authed` first.
+**The bearer, its one 401 and its one 503.** Every `/api/*` handler calls
+`authed` first.
 `authed` reads the `Authorization` header, requires the `Bearer ` prefix with
 `strings.CutPrefix`, and hands the rest to `identity.Verify`; a missing
 header, a header without the prefix, an unknown token and a revoked token are
 all answered with status 401 and the one body `gateway: unauthorized`, so the
-route tells a caller nothing about which token it tried. The token travels in
+route tells a caller nothing about which token it tried. Any other error
+`identity.Verify` returns, an identity store that cannot answer, is answered
+with status 503 and the body `gateway: identity unavailable`, so a 401 means
+the token is unknown or revoked and never that the store could not say
+(VTT-578, VTT-581). The token travels in
 a header and never in the URL; the WebSocket handshake's `?token=` is the one
 exception, because a browser sets no header on that handshake (SPEC-011). What
 `identity.Verify` promises, and that an unknown and a revoked credential are
@@ -194,8 +200,11 @@ replaced.
 
 A client author is bound by these:
 
-- The token goes in `Authorization: Bearer`, never in a URL; a 401 says only
-  that the token did not verify.
+- The token goes in `Authorization: Bearer`, never in a URL. A 401 says the
+  token is unknown or revoked, and not which; a 503 says the identity store
+  could not answer, and the token may still be good. Of this surface's
+  answers, the browser client forgets its credential only on a 401 to the
+  reads it makes at load (SPEC-022).
 - `[]` is an empty table and a 404 on a guide is "no guide"; neither is an
   error the UI should raise.
 - Who the caller is comes from `/api/me`; what they control comes from the
@@ -212,7 +221,7 @@ A client author is bound by these:
 
 ## Requirements
 
-VTT-111, VTT-112, VTT-113, VTT-114, VTT-115, VTT-116, VTT-117, VTT-118,
+VTT-112, VTT-113, VTT-114, VTT-115, VTT-116, VTT-117, VTT-118,
 VTT-119, VTT-120, VTT-121, VTT-122, VTT-123, VTT-124, VTT-125, VTT-126,
 VTT-127, VTT-128, VTT-129, VTT-130, VTT-131, VTT-132, VTT-133, VTT-134,
-VTT-135, VTT-136, VTT-137.
+VTT-135, VTT-136, VTT-137, VTT-578, VTT-581.

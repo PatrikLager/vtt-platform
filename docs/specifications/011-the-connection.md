@@ -13,8 +13,8 @@ Accepted. Implemented by `internal/gateway/server.go` (`handleWS`, `Handler`,
 `watch_test.go`, `seat_internal_test.go`, `qa_seat_test.go`,
 `server_visibility_test.go`,
 `presence_internal_test.go`, `keepalive_internal_test.go`,
-`keepalive_conn_internal_test.go`, `static_test.go` and
-`cmd/vtt/serve_e2e_test.go`.
+`keepalive_conn_internal_test.go`, `static_test.go`,
+`remove_participant_test.go` and `cmd/vtt/serve_e2e_test.go`.
 
 ## Principles served
 
@@ -99,8 +99,10 @@ goroutine is the only producer of this connection's events, `WatchableChanged`
 and `ViewpointChanged` frames. It re-resolves the participant through
 `pumpState.revoked` on the schedule SPEC-009 states; a lookup that answers
 `ErrInvalidToken` closes the connection with `StatusPolicyViolation` and the
-reason `gateway: credential no longer valid`, and any other lookup failure
-delivers anyway. The rule that a revoked participant is refused on delivery is
+reason `gateway: credential no longer valid` (`credentialGone`; with the
+status, the pair `contract/testdata/credential_close.json` holds and the
+browser client reads, SPEC-022), and any other lookup failure delivers
+anyway. The rule that a revoked participant is refused on delivery is
 SPEC-009's (VTT-032, VTT-033); this is where it runs. A log seat's pump also
 queues the `WatchableChanged` and `ViewpointChanged` frames SPEC-015 describes,
 a set before any entry of the append that changed it and a `ViewpointChanged`
@@ -172,7 +174,8 @@ joiner, who takes `mu` alone, never waits for a fan-out in progress.
 `rejudge` takes `mu` alone and puts a signal on the `rejudge` channel,
 capacity one, of each connection of the participant it names without
 blocking on it, dropping it when one already waits; the pump re-judges the
-seat on it (SPEC-015), and its caller is SPEC-009's. A connection that has
+seat on it (SPEC-015), and its callers, a promotion and a removal, are
+SPEC-009's. A connection that has
 left is not in the registry, so no signal reaches it. `send`
 hands a frame to a connection and waits at most `presenceSendBudget`, 3
 seconds, or until that connection's `done`, then drops the frame for that

@@ -6,7 +6,7 @@ Accepted. Implemented by `internal/identity/identity.go`,
 `internal/gateway/join.go`, `internal/gateway/authz.go`,
 `internal/gateway/server.go`, `internal/gateway/presence.go`,
 `internal/gateway/metadata.go`, `cmd/vtt/invite.go`, `client/src/join.ts`,
-`client/src/app.ts` and `client/src/view/join.ts`;
+`client/src/app.ts`, `client/src/view/join.ts` and `client/src/view/dm.ts`;
 pinned by the checks the rows under Requirements name, in
 `internal/identity/identity_test.go`, `internal/identity/qa_names_test.go`,
 `internal/identity/qa_joining_internal_test.go`,
@@ -22,6 +22,10 @@ pinned by the checks the rows under Requirements name, in
 `internal/gateway/qa_promotion_rejudge_test.go`,
 `internal/gateway/qa_promotion_opening_test.go`,
 `internal/gateway/qa_promotion_queued_test.go`,
+`internal/gateway/remove_participant_test.go`,
+`internal/gateway/qa_removal_test.go`,
+`internal/gateway/qa_remove_roles_test.go`, `client/test/dm-view.test.ts`,
+`client/test/qa-boot.test.ts`, `client/e2e/booting.spec.ts`,
 `internal/engine/role_test.go` and `internal/engine/qa_role_test.go`.
 
 ## Principles served
@@ -56,12 +60,12 @@ campaign can neither reopen a door nor bring a revoked participant back.
 connection is never upgraded. From then on the participant is re-resolved
 through `identity.Lookup`: in the read loop before every command; on the pump,
 through `pumpState.revoked`, when it starts, on every append wake and every
-perch and every promotion signal it takes, before and after `admit` decides
+perch and every `rejudge` signal it takes, before and after `admit` decides
 each envelope it takes, and after every switch (SPEC-015); and through
 `revoked` before every presence announcement: an arrival or a departure in
 `announcePresence` and `announceDeparture`, and a promotion in
 `announcePromotion`. An announcement skips a revoked participant's connections
-and leaves them open; their next command, or the pump's next wake, promotion
+and leaves them open; their next command, or the pump's next wake, `rejudge`
 signal, perch or envelope, closes them, so a log seat's connection is closed
 at the next append whether or not it sends that connection an entry (VTT-352).
 A lookup that answers `identity.ErrInvalidToken` ends the connection with a
@@ -161,6 +165,30 @@ is not revoked, theirs included (VTT-309); when they are not, nothing is sent
 (VTT-310). It appends nothing; SPEC-007 names the commands that append nothing
 and this is one of them.
 
+**Removal is a command.** `remove_participant` is ruled dm-and-agent in
+`commandRoles`, so a player and a spectator are refused it, and since a dm
+or an agent cannot be its target, nobody can remove themselves. The role it
+may act upon is bounded in `handleRemoval`, which looks the target up and
+refuses one `identity.Lookup` does not answer, a revoked participant among
+them, and one whose current role is dm or agent, for the reason
+`handlePromotion` does (VTT-564). It then builds one `ActorControlRevoked`
+for each actor whose controllers include the target, in actor-id order
+(SPEC-007), and only then writes: `identity.Revoke`, then a signal to each
+of the target's connections through `presenceRegistry.rejudge`, then the
+batch through `campaign.AppendBatch`, or nothing when the target controls
+no actor. Each signalled pump re-resolves through `pumpState.revoked`, whose
+lookup answers `identity.ErrInvalidToken`, and closes its connection with
+the policy-violation status and the reason `gateway: credential no longer
+valid` (SPEC-011), so the connections close without waiting for a command
+of theirs or an append (VTT-558), and no frame the batch causes reaches them
+(VTT-566). A participant who is not connected is removed the same way
+(VTT-557). Afterwards they are not listed, a dial with their credential is
+answered 401, and their display name is free, as any revoked holder's is.
+The DM's console offers the removal as Boot on a player's and a spectator's
+row in `renderDMConsole`, asks first in a message holding their display
+name, sends nothing on a no, and reads the roster again once the removal is
+answered (VTT-568 to VTT-571).
+
 **Revoked participants are not listed.** `identity.List` reads `WHERE revoked =
 0`, ordered by display name and then id, and `GET /api/participants`, open to
 the roles in `participantRoles`, is built on it.
@@ -216,7 +244,12 @@ refuses, a held name and a free one get the same answer. `vtt invite` naming a
 held name exits non-zero and prints no token.
 
 A promotion to dm or agent is refused, and so is a promotion of a dm or an
-agent. A `set_join_door` that says neither open nor closed is refused.
+agent. A removal of a dm or an agent is refused, and a removal cannot be
+undone: no statement sets `revoked` back to 0 (`grep -n 'SET revoked'
+internal/identity/identity.go` finds `Revoke`'s `revoked = 1` alone), so the
+person comes back only as a new participant, through the share link or a
+new `vtt invite`. A
+`set_join_door` that says neither open nor closed is refused.
 
 A join refused on the read takes no write lock on the campaign file, which is
 what lets `POST /join` run with no rate limiting: a stranger without the
@@ -230,9 +263,9 @@ A role never travels in a presence frame: `PresenceChanged` in
 
 Control of a character is not identity's: it is an `ActorControlGranted` in the
 log, decided by `internal/gateway/authz.go` against the fold. `set_join_door`,
-`rotate_join_link` and `promote_participant` are ruled dm-and-agent in
-`commandRoles`. Which commands append nothing is SPEC-007's. A campaign's DM is
-minted out of band, by `vtt invite`.
+`rotate_join_link`, `promote_participant` and `remove_participant` are ruled
+dm-and-agent in `commandRoles`. Which commands append nothing is SPEC-007's.
+A campaign's DM is minted out of band, by `vtt invite`.
 
 ## Requirements
 
@@ -245,4 +278,5 @@ VTT-062, VTT-063, VTT-064, VTT-065, VTT-066, VTT-067, VTT-068, VTT-069,
 VTT-070, VTT-071, VTT-072, VTT-073, VTT-074, VTT-075, VTT-076, VTT-077,
 VTT-256, VTT-309, VTT-310, VTT-352, VTT-376, VTT-542, VTT-543, VTT-544,
 VTT-545, VTT-546, VTT-548, VTT-549, VTT-550, VTT-551, VTT-552, VTT-553,
-VTT-554, VTT-555, VTT-556.
+VTT-554, VTT-555, VTT-556, VTT-557, VTT-558, VTT-564, VTT-566, VTT-568,
+VTT-569, VTT-570, VTT-571.
