@@ -83,6 +83,12 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 			AnchorToSeq:    c.AddNarration.GetAnchorToSeq(),
 			OutOfCharacter: c.AddNarration.GetOutOfCharacter(),
 		}}
+	case *vttv1.ClientCommand_AddWhisper:
+		env.Payload = &vttv1.Envelope_WhisperAdded{WhisperAdded: &vttv1.WhisperAdded{
+			Text:        c.AddWhisper.GetText(),
+			ToActorIds:  c.AddWhisper.GetToActorIds(),
+			FromActorId: c.AddWhisper.GetFromActorId(),
+		}}
 	case *vttv1.ClientCommand_UpsertNote:
 		env.Payload = &vttv1.Envelope_NoteUpserted{NoteUpserted: &vttv1.NoteUpserted{
 			Key:        c.UpsertNote.GetKey(),

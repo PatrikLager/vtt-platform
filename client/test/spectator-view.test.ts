@@ -1738,7 +1738,7 @@ test("Send narrates the trimmed text, and an accepted line clears the box and re
   expect(p.repaints()).toBe(1);
 });
 
-// VTT-529
+// VTT-600
 test("an in-character speaker is carried, and a blank one is omitted", async () => {
   for (const who of [dmMe, agentMe]) {
     const named = sayTable(who);
@@ -2246,3 +2246,60 @@ test("the board draws through the size it was measured at, not through the fallb
   expect(canvas.style.width).toBe("800px");
   expect(canvas.style.height).toBe("200px");
 });
+
+// --- a player's whisper to the DM -------------------------------------------
+
+/** The panel of a player holding Lera and Bram, acting as Bram, with notify wired. */
+function whisperPanel(answer: CommandResult | "held" = ok()) {
+  const ui: PlayerUIState = { selectedActorId: "a2", selectedAbilityId: "", doorsArmed: false };
+  const sent: ClientCommand[] = [];
+  const notices: string[] = [];
+  const waiting = held();
+  const node = renderPlayerPanel(twoParty(), me, [], ui, async (c) => {
+    sent.push(c);
+    return answer === "held" ? waiting.send(c) : answer;
+  }, () => {}, undefined, (m) => notices.push(m));
+  const text = node.querySelector<HTMLInputElement>('[data-field="say-text"]')!;
+  const say = (line: string) => {
+    text.value = line;
+    text.dispatchEvent(new Event("input"));
+    node.querySelector<HTMLButtonElement>('[data-action="add-narration"]')!.click();
+  };
+  return { sent, notices, text, say, ui, release: waiting.release };
+}
+
+// VTT-595 VTT-520
+test("a player's /dm whispers to the DM from the party member the panel acts as, and keeps the line until accepted", async () => {
+  const p = whisperPanel("held");
+  p.say("/dm I pocket the ring");
+  expect([p.text.value, p.ui.sayText]).toEqual(["/dm I pocket the ring", "/dm I pocket the ring"]);
+  p.say("/dm again");
+  expect(p.sent.map((c) => [c.command.case, c.command.value])).toEqual([
+    ["addWhisper", expect.objectContaining({ text: "I pocket the ring", fromActorId: "a2", toActorIds: [] })],
+  ]);
+  p.release(ok());
+  await settle();
+  expect([p.text.value, p.ui.sayText]).toEqual(["", ""]);
+});
+
+// VTT-596
+test("a player's /w line, or a /dm line with nothing after it, sends nothing, tells them why and keeps the line", () => {
+  for (const line of ["/w Lera psst", "/W lera psst", "/dm", "/DM   "]) {
+    const p = whisperPanel();
+    p.say(line);
+    expect([line, p.sent.length, p.notices.length, p.text.value]).toEqual([line, 0, 1, line]);
+  }
+});
+
+// VTT-599 VTT-595 VTT-596
+test("a player's /gm and /togm whisper to the DM, and a /whisper line is refused", () => {
+  for (const line of ["/gm the ring", "/TOGM the ring"]) {
+    const p = whisperPanel();
+    p.say(line);
+    expect([line, p.sent.map((c) => c.command.case), p.notices.length]).toEqual([line, ["addWhisper"], 0]);
+  }
+  const w = whisperPanel();
+  w.say("/whisper Lera psst");
+  expect([w.sent.length, w.notices.length, w.text.value]).toEqual([0, 1, "/whisper Lera psst"]);
+});
+

@@ -2351,7 +2351,7 @@ test("the console's line box names /ooc, and its speaker box says something else
   expect(h.field("say-as").placeholder).not.toBe(h.field("say-text").placeholder);
 });
 
-// VTT-529
+// VTT-600
 test("the console's Send speaks in character as say-as holds it, trimmed, or as nobody when it is blank", async () => {
   const named = harness();
   type(named, { "say-as": "  Grimble ", "say-text": "Hello" });
@@ -2402,7 +2402,7 @@ test("a blank console line, or /ooc with nothing after it, sends nothing and hol
   }
 });
 
-// VTT-529
+// VTT-600
 test("Enter in the console's say-text sends the line, and another key does not", async () => {
   const h = harness();
   type(h, { "say-text": "Hello" });
@@ -2612,3 +2612,114 @@ test("a confirmed Boot removes its row's participant and reads the roster again 
   await settle();
   expect(c.refreshes()).toBe(1);
 });
+
+// --- whispers ---------------------------------------------------------------
+
+/** A table where Kim plays Tobbe and Brann, Ann plays nobody, and Mira, a party member, shares a person's name. */
+function whisperTable(): State {
+  const st = newState();
+  const pm = (id: string, name: string, who: string[]) => {
+    st.Actors[id] = {
+      actorId: id, name, moduleId: "", attributes: {}, resources: {},
+      controllerId: who[0] ?? "", controllerIds: who, kind: ActorKind.PARTY_MEMBER,
+    };
+  };
+  pm("t2", "Tobbe", ["p-kim"]);
+  pm("t1", "Brann", ["p-kim"]);
+  pm("m1", "Mira", []);
+  pm("x1", "Xan", ["p-mira"]);
+  st.Actors["g1"] = { ...st.Actors["x1"]!, actorId: "g1", name: "Goblin", controllerIds: ["p-ann"], kind: ActorKind.NON_PARTY };
+  return st;
+}
+const PEOPLE = [
+  { participantId: "p-kim", displayName: "Kim" },
+  { participantId: "p-ann", displayName: "Ann" },
+  { participantId: "p-mira", displayName: "Mira" },
+];
+
+/** Each whisper the console sent, as the wire carries it. */
+function whispers(h: Harness) {
+  return h.sent.filter((c) => c.command.case === "addWhisper").map((c) => {
+    const v = c.command.value as { text: string; toActorIds: string[]; fromActorId: string };
+    return { text: v.text, to: v.toActorIds, from: v.fromActorId };
+  });
+}
+
+// VTT-593 VTT-600
+test("the console whispers /w Name to the party member of that name, whatever its case, and says /wx aloud", async () => {
+  const h = harness(whisperTable(), { participants: PEOPLE });
+  for (const line of ["/w tobbe an arrow from the dark", "/W BRANN  run ", "/wx hi"]) {
+    type(h, { "say-text": line });
+    sendLine(h);
+    await h.settle();
+  }
+  expect(whispers(h)).toEqual([
+    { text: "an arrow from the dark", to: ["t2"], from: "" },
+    { text: "run", to: ["t1"], from: "" },
+  ]);
+  expect(lines(h).filter((l) => l.case === "addNarration").map((l) => l.text)).toEqual(["/wx hi"]);
+});
+
+// VTT-593
+test("a participant's name, whatever its case, whispers to every party member they control, by id, and a party member's name wins over a participant's", async () => {
+  const h = harness(whisperTable(), { participants: PEOPLE });
+  for (const line of ["/w kim you both hear it", "/w Mira only the party member"]) {
+    type(h, { "say-text": line });
+    sendLine(h);
+    await h.settle();
+  }
+  expect(whispers(h)).toEqual([
+    { text: "you both hear it", to: ["t1", "t2"], from: "" },
+    { text: "only the party member", to: ["m1"], from: "" },
+  ]);
+});
+
+// VTT-594
+test("an unknown name, a shared name, a player with no party member, no name, no text and /dm each send nothing, tell the DM and keep say-text", () => {
+  const st = whisperTable();
+  st.Actors["t3"] = { ...st.Actors["t2"]!, actorId: "t3" };
+  for (const line of ["/w Nobody hi", "/w Tobbe hi", "/w Ann hi", "/w", "/w Brann", "/dm hi"]) {
+    const h = harness(st, { participants: PEOPLE });
+    type(h, { "say-text": line });
+    sendLine(h);
+    expect([line, h.sent.length, h.notices.length, harness(st).field("say-text").value])
+      .toEqual([line, 0, 1, line]);
+  }
+});
+
+// VTT-535 VTT-517 VTT-533
+test("a whisper takes the Say's lock, keeps its line when refused and clears it when accepted", async () => {
+  const h = harness(whisperTable(), { participants: PEOPLE, answer: "held" });
+  try {
+    type(h, { "say-text": "/w Tobbe psst" });
+    sendLine(h);
+    pressKey(h);
+    expect(h.sent).toHaveLength(1);
+    h.release(refused("not authorized"));
+    await h.settle();
+    expect(harness(whisperTable()).field("say-text").value).toBe("/w Tobbe psst");
+  } finally {
+    h.release(refused("not authorized"));
+    await h.settle();
+  }
+  const ok2 = harness(whisperTable(), { participants: PEOPLE });
+  sendLine(ok2);
+  await ok2.settle();
+  expect([whispers(ok2).length, ok2.repaints(), harness(whisperTable()).field("say-text").value]).toEqual([1, 1, ""]);
+});
+
+// VTT-599 VTT-593 VTT-594
+test("the console whispers /whisper Name as /w Name, and refuses /gm and /togm as /dm", async () => {
+  const h = harness(whisperTable(), { participants: PEOPLE });
+  type(h, { "say-text": "/Whisper tobbe psst" });
+  sendLine(h);
+  await h.settle();
+  expect(whispers(h)).toEqual([{ text: "psst", to: ["t2"], from: "" }]);
+  for (const line of ["/gm hi", "/togm hi"]) {
+    const r = harness(whisperTable(), { participants: PEOPLE });
+    type(r, { "say-text": line });
+    sendLine(r);
+    expect([line, r.sent.length, r.notices.length]).toEqual([line, 0, 1]);
+  }
+});
+

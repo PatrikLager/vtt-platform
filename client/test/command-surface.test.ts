@@ -92,6 +92,9 @@ export const COMMAND_SURFACE: Record<
   upsertNote: { surface: "dm-console", action: "upsert-note" },
   deleteNote: { surface: "dm-console", action: "delete-note" },
   addNarration: { surface: "dm-console", action: "add-narration" },
+  // The Say's one Send carries a line and a whisper alike (/w in the console,
+  // /dm in the panel).
+  addWhisper: { surface: "dm-console", action: "add-narration" },
   removeCondition: { surface: "dm-console", action: "remove-condition" },
   grantActorControl: { surface: "dm-console", action: "grant-actor-control" },
   revokeActorControl: { surface: "dm-console", action: "revoke-actor-control" },

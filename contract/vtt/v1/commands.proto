@@ -127,6 +127,13 @@ message AddNarration {
   // See VTT-497.
   bool out_of_character = 6;
 }
+// The DM and the agent name to_actor_ids, a player from_actor_id, never both;
+// see VTT-587, VTT-588 and VTT-589.
+message AddWhisper {
+  string text = 1;
+  repeated string to_actor_ids = 2;
+  string from_actor_id = 3;
+}
 message UpsertNote {
   string key = 1;
   string title = 2;
@@ -194,6 +201,7 @@ message ClientCommand {
     RemoveActor remove_actor = 33;
     DescribeToken describe_token = 34;
     RemoveParticipant remove_participant = 35;
+    AddWhisper add_whisper = 36;
   }
 }
 

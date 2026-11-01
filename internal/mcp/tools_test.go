@@ -43,7 +43,7 @@ var wantCommandToolNames = []string{
 	"move_token", "add_actor", "place_token", "describe_token", "remove_token", "remove_actor",
 	"start_session", "end_session",
 	"use_ability", "remove_condition",
-	"add_narration", "upsert_note", "delete_note",
+	"add_narration", "add_whisper", "upsert_note", "delete_note",
 	"load_adventure",
 	"grant_actor_control", "revoke_actor_control",
 	"promote_participant", "remove_participant",

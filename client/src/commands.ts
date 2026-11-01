@@ -84,6 +84,14 @@ export function speakAs(text: string, actorId: string): ClientCommand {
   });
 }
 
+/** addWhisper builds the DM's whisper to party members, or a player's to the DM from one (VTT-587). */
+export function addWhisper(text: string, toActorIds: readonly string[], fromActorId?: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "addWhisper", value: { text, toActorIds: [...toActorIds], ...(fromActorId ? { fromActorId } : {}) } },
+  });
+}
+
 /** speakOutOfCharacter builds a line out of character, carrying `as` when given (VTT-501). */
 export function speakOutOfCharacter(text: string, as?: string): ClientCommand {
   return create(ClientCommandSchema, {

@@ -58,7 +58,7 @@ test("a refused Place leaves its five boxes as typed, beside the refusal",
   });
 
 // Run before the next test: its grant outlives the session it starts.
-// VTT-521 VTT-529 VTT-533
+// VTT-521 VTT-600 VTT-533
 test("a DM's accepted line empties say-text and keeps say-as for the next line",
   async ({ page }) => {
     await openAsDM(page);

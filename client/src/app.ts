@@ -360,6 +360,10 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
       paint();
     });
 
+  const notify = (m: string) => {
+    toast = m;
+    paint();
+  };
   const paint = () => {
     const failure = session.failure;
     if (failure !== "") {
@@ -387,7 +391,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     renderSpectator(root, session.state, [...session.events], status, {
       panel: canAct
         ? renderPlayerPanel(session.state, me!, abilities, ui, act, paint,
-          isPlayer ? { actors: watchable, onSwitch: (id) => void switchTo(id) } : undefined)
+          isPlayer ? { actors: watchable, onSwitch: (id) => void switchTo(id) } : undefined, notify)
         : undefined,
       console: isDM
         ? renderDMConsole({
@@ -402,10 +406,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
             refreshSharing,
             send: act,
             rerender: paint,
-            notify: (m) => {
-              toast = m;
-              paint();
-            },
+            notify,
             // window.confirm is deliberate for a destructive action: it is
             // modal and unmissable, which a custom banner is not.
             confirm: (m) => window.confirm(m),

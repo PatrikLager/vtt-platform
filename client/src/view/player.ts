@@ -12,7 +12,7 @@
 import type { State } from "../state";
 import type { Ability, Me } from "../metadata";
 import { affordable, controlledActors, readLine, targetableTokens } from "../player";
-import { moveToken, useAbility, setViewpoint, speakAs, speakOutOfCharacter } from "../commands";
+import { moveToken, useAbility, setViewpoint, speakAs, speakOutOfCharacter, addWhisper } from "../commands";
 import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import { currentSceneId, mayWorkDoor } from "./doors";
 import { namer } from "./naming";
@@ -73,6 +73,7 @@ export function renderPlayerPanel(
   send: (c: ClientCommand) => Promise<CommandResult>,
   rerender: () => void,
   switcher?: Switcher,
+  notify?: (msg: string) => void,
 ): HTMLElement {
   const wrap = el("section", "player");
   wrap.appendChild(el("h2", undefined, "Your turn"));
@@ -190,7 +191,7 @@ export function renderPlayerPanel(
   wrap.appendChild(el("h3", undefined, "Say something"));
   const form = el("div", "say");
   const text = document.createElement("input");
-  text.placeholder = "say something, or /ooc to step out of character";
+  text.placeholder = "say something, /ooc to step out of character, /dm to whisper to the DM";
   text.className = "text";
   text.dataset["field"] = "say-text";
   text.value = ui.sayText ?? "";
@@ -199,13 +200,18 @@ export function renderPlayerPanel(
   });
   const send3 = el("button", "chip", "Send");
   send3.dataset["action"] = "add-narration";
-  // VTT-524
+  // VTT-524 VTT-595 VTT-596
   const submit = () => {
     if (ui.saying) return;
     const line = readLine(text.value);
+    if (line.kind === "whisper") return void notify?.("Whisper to the DM with /dm text.");
+    if (line.kind === "toDM" && line.text === "") return void notify?.("Say what to whisper: /dm text.");
     if (line.text === "") return;
     ui.saying = true;
-    const said = send(line.ooc ? speakOutOfCharacter(line.text) : speakAs(line.text, actorId));
+    const command = line.kind === "toDM" ? addWhisper(line.text, [], actorId)
+      : line.kind === "ooc" ? speakOutOfCharacter(line.text)
+      : speakAs(line.text, actorId);
+    const said = send(command);
     void said
       .then((res) => {
         if (!res.ok) return;

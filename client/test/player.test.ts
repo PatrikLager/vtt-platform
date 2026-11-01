@@ -568,17 +568,43 @@ test("a prototype-injected empty-string scene defeats the `?? \"\"` equivalence 
 
 // VTT-501
 test("a Say line whose first word is /ooc is out of character, with the rest as its text", () => {
-  expect(readLine("/ooc where is the pizza")).toEqual({ text: "where is the pizza", ooc: true });
-  expect(readLine("  /ooc   brb  ")).toEqual({ text: "brb", ooc: true });
-  expect(readLine("/ooc\tbrb")).toEqual({ text: "brb", ooc: true });
-  expect(readLine("/ooc")).toEqual({ text: "", ooc: true });
+  expect(readLine("/ooc where is the pizza")).toEqual({ kind: "ooc", text: "where is the pizza" });
+  expect(readLine("  /ooc   brb  ")).toEqual({ kind: "ooc", text: "brb" });
+  expect(readLine("/ooc\tbrb")).toEqual({ kind: "ooc", text: "brb" });
+  expect(readLine("/ooc")).toEqual({ kind: "ooc", text: "" });
 });
 
 // VTT-501
-test("any other Say line is in character, trimmed, its slashes kept", () => {
-  expect(readLine("  I draw my sword. ")).toEqual({ text: "I draw my sword.", ooc: false });
-  expect(readLine("/oocx hi")).toEqual({ text: "/oocx hi", ooc: false });
-  expect(readLine("/OOC hi")).toEqual({ text: "/OOC hi", ooc: false });
-  expect(readLine("say /ooc hi")).toEqual({ text: "say /ooc hi", ooc: false });
-  expect(readLine("   ")).toEqual({ text: "", ooc: false });
+test("a Say line whose first word is not /ooc, /w or /dm is in character, trimmed, its slashes kept", () => {
+  expect(readLine("  I draw my sword. ")).toEqual({ kind: "say", text: "I draw my sword." });
+  expect(readLine("/oocx hi")).toEqual({ kind: "say", text: "/oocx hi" });
+  expect(readLine("/OOC hi")).toEqual({ kind: "say", text: "/OOC hi" });
+  expect(readLine("say /ooc hi")).toEqual({ kind: "say", text: "say /ooc hi" });
+  expect(readLine("   ")).toEqual({ kind: "say", text: "" });
+});
+
+// VTT-592
+test("a Say line whose first word is /w or /dm, in any case, is a whisper", () => {
+  expect(readLine("/w Tobbe hi there")).toEqual({ kind: "whisper", name: "Tobbe", text: "hi there" });
+  expect(readLine("  /W tobbe   hi ")).toEqual({ kind: "whisper", name: "tobbe", text: "hi" });
+  expect(readLine('/w "Two Words" hi')).toEqual({ kind: "whisper", name: "Two Words", text: "hi" });
+  expect(readLine('/w "Unclosed hi')).toEqual({ kind: "whisper", name: "Unclosed hi", text: "" });
+  expect(readLine("/w")).toEqual({ kind: "whisper", name: "", text: "" });
+  expect(readLine("/w Tobbe")).toEqual({ kind: "whisper", name: "Tobbe", text: "" });
+  expect(readLine("/dm help")).toEqual({ kind: "toDM", text: "help" });
+  expect(readLine("/DM  help ")).toEqual({ kind: "toDM", text: "help" });
+  expect(readLine("/dm")).toEqual({ kind: "toDM", text: "" });
+  expect(readLine("/wx hi")).toEqual({ kind: "say", text: "/wx hi" });
+  expect(readLine("/dmx hi")).toEqual({ kind: "say", text: "/dmx hi" });
+  expect(readLine("say /w hi")).toEqual({ kind: "say", text: "say /w hi" });
+});
+
+// VTT-599
+test("a Say line whose first word is /whisper reads as /w, and /gm or /togm as /dm, in any case", () => {
+  expect(readLine('/whisper "Two Words" hi')).toEqual({ kind: "whisper", name: "Two Words", text: "hi" });
+  expect(readLine("/WHISPER tobbe hi")).toEqual({ kind: "whisper", name: "tobbe", text: "hi" });
+  expect(readLine("/gm help")).toEqual({ kind: "toDM", text: "help" });
+  expect(readLine("/ToGM  help ")).toEqual({ kind: "toDM", text: "help" });
+  expect(readLine("/gmx hi")).toEqual({ kind: "say", text: "/gmx hi" });
+  expect(readLine("/whisperer hi")).toEqual({ kind: "say", text: "/whisperer hi" });
 });

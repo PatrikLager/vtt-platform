@@ -3518,7 +3518,7 @@ test("a DM's accepted line keeps the speaker's name in say-as and empties say-te
   }
 });
 
-// VTT-527 VTT-529 VTT-533
+// VTT-527 VTT-600 VTT-533
 test("a DM who controls no actor speaks from the console, and an accepted line empties its box", async () => {
   const { r, s, sock } = await dmPage();
   const boxes = () => Array.from(r.querySelectorAll<HTMLInputElement>('[data-field="say-text"]'));
@@ -3537,6 +3537,23 @@ test("a DM who controls no actor speaks from the console, and an accepted line e
     expect(boxes().map((b) => [b.closest(".dm") !== null, b.value])).toEqual([[true, ""]]);
   } finally {
     forgetTheSay();
+    s?.close();
+  }
+});
+
+// VTT-596
+test("a player's /w line is told in the toast", async () => {
+  const { r, s, sock } = await tableAs("player");
+  try {
+    const box = r.querySelector<HTMLInputElement>('.player [data-field="say-text"]')!;
+    box.value = "/w Lera psst";
+    box.dispatchEvent(new Event("input"));
+    box.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await settle();
+    expect(sock.sent.map((f) => JSON.parse(f)).filter((c) => c.addWhisper || c.addNarration)).toEqual([]);
+    expect(r.querySelector(".toast")?.textContent).toContain("/dm");
+    expect(r.querySelector<HTMLInputElement>('.player [data-field="say-text"]')!.value).toBe("/w Lera psst");
+  } finally {
     s?.close();
   }
 });

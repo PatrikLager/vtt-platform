@@ -214,6 +214,24 @@ var manifest = []toolSpec{
 		},
 	},
 	{
+		message:     "vtt.v1.AddWhisper",
+		name:        "add_whisper",
+		description: "Whisper to one or more party members, or, as a player, to the DM. A whisper is written into the world log and into the log of each party member it names and no other, so only the DM and whoever watches through those characters read it. The DM and the agent name the party members in `toActorIds`; to whisper to a player, name every party member they control. A player whispers to the DM from a party member they control, named by `fromActorId`. Answer a party member's whisper to the DM with add_whisper, never add_narration, which every character hears.",
+		descriptor:  (&vttv1.AddWhisper{}).ProtoReflect().Descriptor(),
+		// Keep fromActorId out of required: the derived list would force it
+		// on the DM, whose whisper is refused with one (VTT-587).
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.AddWhisper": {
+				requiredOverride: []string{"text", "toActorIds"},
+				fieldDocs: map[string]string{
+					"text":        "What is whispered, 1 to 8192 bytes.",
+					"toActorIds":  "The DM's and the agent's: the ids of the party members who hear it, each a party member. Empty for a player's whisper to the DM.",
+					"fromActorId": "A player's whisper to the DM: the id of a named party member they control, who whispers it. Refused from the DM and the agent, and beside toActorIds.",
+				},
+			},
+		},
+	},
+	{
 		message:     "vtt.v1.UpsertNote",
 		name:        "upsert_note",
 		description: "Create or replace a keyed world note (locations, NPCs, quest state) — the campaign's durable memory.",

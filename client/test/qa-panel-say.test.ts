@@ -251,7 +251,7 @@ describe("what a player's line sends", () => {
   });
 
   // VTT-501
-  test("a first word that is not exactly /ooc stays in character", async () => {
+  test("a first word that is not /ooc, /w or /dm stays in character", async () => {
     const r = recorder();
     const t = table("player", r.send, "a-1");
     const el = paint(t);

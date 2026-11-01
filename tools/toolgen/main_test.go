@@ -300,6 +300,24 @@ func TestRemoveParticipantSaysItIsPermanentAndTakesTheirActors(t *testing.T) {
 	}
 }
 
+// VTT-591
+func TestAddWhisperSaysWhomItReachesAndHowToAnswer(t *testing.T) {
+	tool := findTool(t, "add_whisper")
+	desc, _ := tool["description"].(string)
+	for _, want := range []string{
+		"into the world log and into the log of each party member it names and no other",
+		"to whisper to a player, name every party member they control",
+		"Answer a party member's whisper to the DM with add_whisper, never add_narration",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("add_whisper description = %q, want it to contain %q", desc, want)
+		}
+	}
+	if got, want := tool["inputSchema"].(map[string]any)["required"], []any{"text", "toActorIds"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("add_whisper required = %v, want %v", got, want)
+	}
+}
+
 // VTT-390
 func TestAddActorSaysAnIDIsNeverReused(t *testing.T) {
 	tool := findTool(t, "add_actor")

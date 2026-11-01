@@ -245,6 +245,25 @@ func TestToEventRemoveConditionProducesConditionRemoved(t *testing.T) {
 	}
 }
 
+// VTT-503
+func TestToEventAddWhisperProducesWhisperAdded(t *testing.T) {
+	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
+	for _, w := range []*vttv1.AddWhisper{
+		{Text: "an arrow from the dark", ToActorIds: []string{"a2", "a1"}},
+		{Text: "I saw it", FromActorId: "a1"},
+	} {
+		env, err := gateway.ToEvent(&vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddWhisper{AddWhisper: w}}, p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := env.GetWhisperAdded()
+		want := &vttv1.WhisperAdded{Text: w.Text, ToActorIds: w.ToActorIds, FromActorId: w.FromActorId}
+		if !proto.Equal(got, want) {
+			t.Fatalf("WhisperAdded = %v, want %v, every field verbatim from the command", got, want)
+		}
+	}
+}
+
 // TestToEventAddNarrationProducesNarrationAdded covers the first of the
 // three world-layer (Task 3) commands that flow through the SAME plain
 // ToEvent -> campaign.Append path as every pre-Task-6 command — no batch,

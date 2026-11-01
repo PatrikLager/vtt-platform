@@ -12,13 +12,27 @@ import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/
 import {
   startSession, endSession, placeToken, describeToken, removeToken, loadAdventure, loadMap,
   upsertNote, deleteNote, removeCondition, parseActorJSON, addActor, removeActor,
-  grantActorControl, revokeActorControl, addNarration, speakOutOfCharacter,
+  grantActorControl, revokeActorControl, addNarration, speakOutOfCharacter, addWhisper,
   setJoinDoor,
   rotateJoinLink,
   promoteParticipant,
   removeParticipant,
 } from "../commands";
 import { readLine } from "../player";
+
+/** whisperTargets resolves /w's name to party member ids, or says why it cannot (VTT-593, VTT-594). */
+export function whisperTargets(name: string, st: State, people: ReadonlyMap<string, { name: string }>): string[] | string {
+  if (name === "") return "Say whom to whisper to: /w Name text.";
+  const same = (n: string) => n.toLowerCase() === name.toLowerCase();
+  const party = Object.values(st.Actors).filter((a) => a.kind === ActorKind.PARTY_MEMBER);
+  const named = party.filter((a) => same(a.name));
+  if (named.length > 1) return `Two party members are named ${name}; rename one to whisper to it.`;
+  if (named.length === 1) return [named[0]!.actorId];
+  const who = [...people].find(([, p]) => same(p.name));
+  if (who === undefined) return `Nobody at the table is named ${name}.`;
+  const theirs = party.filter((a) => a.controllerIds.includes(who[0])).map((a) => a.actorId);
+  return theirs.length > 0 ? theirs.sort() : `${who[1].name} controls no party member to whisper to.`;
+}
 
 function el(tag: string, cls?: string, text?: string): HTMLElement {
   const n = document.createElement(tag);
@@ -285,15 +299,22 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
   const wrap = el("section", "dm");
   wrap.appendChild(el("h2", undefined, "DM console"));
 
-  // VTT-527 VTT-528 VTT-529 VTT-530 VTT-531 VTT-533 VTT-535
+  // VTT-527 VTT-528 VTT-600 VTT-530 VTT-531 VTT-533 VTT-535 VTT-593 VTT-594
   const sayAs = input("in character as… (optional)", "say-as");
-  const sayText = input("say or narrate, or /ooc to step out of character", "say-text");
+  const sayText = input("say or narrate, /ooc to step out of character, /w Name to whisper", "say-text");
   const say = sending(d, "add-narration", () => {
     const line = readLine(sayText.value);
+    if (line.kind === "toDM") return void d.notify("Whisper to a party member with /w Name text.");
+    if (line.kind === "whisper") {
+      const to = whisperTargets(line.name, d.st, known);
+      if (typeof to === "string") return void d.notify(to);
+      if (line.text === "") return void d.notify("Say what to whisper: /w Name text.");
+      return { command: addWhisper(line.text, to), clears: ["say-text"] };
+    }
     if (line.text === "") return;
     const as = sayAs.value.trim() || undefined;
     return {
-      command: line.ooc ? speakOutOfCharacter(line.text, as) : addNarration(line.text, as),
+      command: line.kind === "ooc" ? speakOutOfCharacter(line.text, as) : addNarration(line.text, as),
       clears: ["say-text"],
     };
   });

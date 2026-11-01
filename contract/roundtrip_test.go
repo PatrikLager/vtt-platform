@@ -64,6 +64,9 @@ func TestRemoveActorCommandRoundTrip(t *testing.T) {
 func TestRemoveParticipantCommandRoundTrip(t *testing.T) {
 	roundTrip(t, "remove_participant_command.json", &vttv1.ClientCommand{})
 }
+func TestAddWhisperCommandRoundTrip(t *testing.T) {
+	roundTrip(t, "add_whisper_command.json", &vttv1.ClientCommand{})
+}
 func TestAttackRolledRoundTrip(t *testing.T) {
 	roundTrip(t, "attack_rolled.json", &vttv1.AttackRolled{})
 }

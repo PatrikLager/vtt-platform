@@ -40,6 +40,7 @@ var theCommandTools = []string{
 	"use_ability",
 	"remove_condition",
 	"add_narration",
+	"add_whisper",
 	"upsert_note",
 	"delete_note",
 	"load_adventure",

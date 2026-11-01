@@ -271,7 +271,7 @@ describe("DM and agent", () => {
       r.type("say-text", "Grr");
       r.send();
       const n = narr(r.sent[0]!);
-      // VTT-529 "with what say-as holds, trimmed, as as"
+      // VTT-600 "with what say-as holds, trimmed, as as"
       expect(n.as).toBe("Goblin chief");
       expect(n.text).toBe("Grr");
       expect(n.outOfCharacter).toBe(false);
@@ -282,7 +282,7 @@ describe("DM and agent", () => {
       r.type("say-text", "The door creaks");
       r.send();
       const n = narr(r.sent[0]!);
-      // VTT-529 "and no as when it is blank"
+      // VTT-600 "and no as when it is blank"
       expect(n.as).toBe("");
       expect(n.text).toBe("The door creaks");
     });

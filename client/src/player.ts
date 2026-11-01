@@ -85,8 +85,30 @@ export function actableActors(st: State, me: Me): Actor[] {
   }
 }
 
-/** readLine reads a Say line: out of character after a first word of /ooc (VTT-501). */
-export function readLine(raw: string): { text: string; ooc: boolean } {
+/** Line is a Say line as readLine reads it. */
+export type Line =
+  | { kind: "say"; text: string }
+  | { kind: "ooc"; text: string }
+  | { kind: "whisper"; name: string; text: string }
+  | { kind: "toDM"; text: string };
+
+/**
+ * readLine reads a Say line: /ooc out of character (VTT-501); /w or /whisper,
+ * /dm, /gm or /togm in any case a whisper (VTT-592, VTT-599).
+ */
+export function readLine(raw: string): Line {
   const t = raw.trim();
-  return /^\/ooc(\s|$)/.test(t) ? { text: t.slice(4).trim(), ooc: true } : { text: t, ooc: false };
+  if (/^\/ooc(\s|$)/.test(t)) return { kind: "ooc", text: t.slice(4).trim() };
+  const dm = /^\/(?:dm|gm|togm)(?:\s+|$)(.*)$/is.exec(t);
+  if (dm) return { kind: "toDM", text: dm[1]!.trim() };
+  const w = /^\/(?:w|whisper)(?:\s+|$)(.*)$/is.exec(t);
+  if (!w) return { kind: "say", text: t };
+  const rest = w[1]!;
+  if (rest.startsWith('"')) {
+    const close = rest.indexOf('"', 1);
+    if (close < 0) return { kind: "whisper", name: rest.slice(1).trim(), text: "" };
+    return { kind: "whisper", name: rest.slice(1, close).trim(), text: rest.slice(close + 1).trim() };
+  }
+  const [, name, text] = /^(\S*)\s*(.*)$/s.exec(rest)!;
+  return { kind: "whisper", name: name!, text: text!.trim() };
 }

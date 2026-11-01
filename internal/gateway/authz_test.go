@@ -94,6 +94,8 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return removeConditionCmd("a1")
 	case "add_narration":
 		return addNarrationCmd()
+	case "add_whisper":
+		return addWhisperCmd("a1")
 	case "upsert_note":
 		return upsertNoteCmd()
 	case "delete_note":
@@ -155,6 +157,13 @@ func loadMapCmd() *vttv1.ClientCommand {
 func addNarrationCmd() *vttv1.ClientCommand {
 	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddNarration{
 		AddNarration: &vttv1.AddNarration{Text: "the door creaks open", OutOfCharacter: true},
+	}}
+}
+
+// addWhisperCmd builds the DM's whisper to the party member to (VTT-587).
+func addWhisperCmd(to string) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_AddWhisper{
+		AddWhisper: &vttv1.AddWhisper{Text: "an arrow from the dark", ToActorIds: []string{to}},
 	}}
 }
 
@@ -380,6 +389,14 @@ var authzCases = []authzCase{
 	{"add_narration", identity.RolePlayer, true},
 	{"add_narration", identity.RoleSpectator, false},
 
+	// The player cell is false for this command's shape alone: a player's
+	// whisper names no actor to whisper to (VTT-588), and
+	// TestAPlayerWhispersToTheDMFromTheirOwnPartyMemberAlone holds its own.
+	{"add_whisper", identity.RoleDM, true},
+	{"add_whisper", identity.RoleAgent, true},
+	{"add_whisper", identity.RolePlayer, false},
+	{"add_whisper", identity.RoleSpectator, false},
+
 	{"upsert_note", identity.RoleDM, true},
 	{"upsert_note", identity.RoleAgent, true},
 	{"upsert_note", identity.RolePlayer, false},
@@ -519,10 +536,10 @@ func ownershipFixture() *engine.State {
 	return st
 }
 
-// VTT-028 VTT-139 VTT-140 VTT-450 VTT-344 VTT-565
+// VTT-028 VTT-139 VTT-140 VTT-450 VTT-344 VTT-565 VTT-590
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 96 {
-		t.Fatalf("authzCases has %d entries, want 96 (24 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 100 {
+		t.Fatalf("authzCases has %d entries, want 100 (25 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {

@@ -340,6 +340,34 @@
     "name": "add_narration"
   },
   {
+    "description": "Whisper to one or more party members, or, as a player, to the DM. A whisper is written into the world log and into the log of each party member it names and no other, so only the DM and whoever watches through those characters read it. The DM and the agent name the party members in `toActorIds`; to whisper to a player, name every party member they control. A player whispers to the DM from a party member they control, named by `fromActorId`. Answer a party member's whisper to the DM with add_whisper, never add_narration, which every character hears.",
+    "inputSchema": {
+      "properties": {
+        "fromActorId": {
+          "description": "A player's whisper to the DM: the id of a named party member they control, who whispers it. Refused from the DM and the agent, and beside toActorIds.",
+          "type": "string"
+        },
+        "text": {
+          "description": "What is whispered, 1 to 8192 bytes.",
+          "type": "string"
+        },
+        "toActorIds": {
+          "description": "The DM's and the agent's: the ids of the party members who hear it, each a party member. Empty for a player's whisper to the DM.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "text",
+        "toActorIds"
+      ],
+      "type": "object"
+    },
+    "name": "add_whisper"
+  },
+  {
     "description": "Create or replace a keyed world note (locations, NPCs, quest state) — the campaign's durable memory.",
     "inputSchema": {
       "properties": {

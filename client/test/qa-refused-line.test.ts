@@ -1,6 +1,6 @@
 // Independent QA of the Say forms: a player's panel's (VTT-518, VTT-520,
 // VTT-522 to VTT-524, VTT-526) and the DM console's, which a DM's or an
-// agent's table draws (VTT-517, VTT-521, VTT-522, VTT-529, VTT-530, VTT-533
+// agent's table draws (VTT-517, VTT-521, VTT-522, VTT-600, VTT-530, VTT-533
 // to VTT-537).
 
 import { afterEach, expect, test } from "bun:test";
@@ -194,7 +194,7 @@ test("after a refusal, Send sends the same line again", async () => {
   expect(line(t.sent[1]).actorId).toBe("a1");
 });
 
-// VTT-529, VTT-533, VTT-521, VTT-522
+// VTT-600, VTT-533, VTT-521, VTT-522
 test("a DM's accepted line keeps say-as and the next line carries it", async () => {
   const t = table("dm", answering(ok()));
   type(t.view, "say-as", "Grimble");
@@ -278,7 +278,7 @@ test("a speaker changed while waiting is kept after the answer", async () => {
   expect(field(t.paint(), "say-as").value).toBe("Mog");
 });
 
-// VTT-529, VTT-533, VTT-521
+// VTT-600, VTT-533, VTT-521
 test("an agent's accepted line keeps say-as, empties say-text", async () => {
   const t = table("agent", answering(ok()));
   type(t.view, "say-as", "Grimble");

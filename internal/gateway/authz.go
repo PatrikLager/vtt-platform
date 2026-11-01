@@ -27,6 +27,7 @@ var commandRoles = map[string]map[identity.Role]bool{
 	"use_ability":          {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"remove_condition":     {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"add_narration":        {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
+	"add_whisper":          {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"upsert_note":          {identity.RoleDM: true, identity.RoleAgent: true},
 	"delete_note":          {identity.RoleDM: true, identity.RoleAgent: true},
 	"load_adventure":       {identity.RoleDM: true, identity.RoleAgent: true},
@@ -70,6 +71,12 @@ func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.Sta
 	// Check this for every role: the DM and the agent may name no actor (VTT-499).
 	if name == "add_narration" {
 		if err := mayVoice(p, cmd.GetAddNarration(), st.Actors); err != nil {
+			return err
+		}
+	}
+	// Check this for every role: which field is set says the direction (VTT-587).
+	if name == "add_whisper" {
+		if err := mayWhisper(p, cmd.GetAddWhisper(), st.Actors); err != nil {
 			return err
 		}
 	}
@@ -117,6 +124,7 @@ var playerRules = map[string]playerRule{
 		return mayWorkDoor(p, st, cd.GetSceneId(), cd.GetAt())
 	},
 	"add_narration": unrestricted,
+	"add_whisper":   unrestricted,
 	"set_viewpoint": unrestricted,
 }
 
@@ -144,6 +152,38 @@ func mayVoice(p *identity.Participant, na *vttv1.AddNarration, actors map[string
 	if a.GetName() == "" {
 		return fmt.Errorf("%w: this party member has no name; ask the DM for one, or speak out of character",
 			ErrUnauthorized)
+	}
+	return nil
+}
+
+// Answer a player's whisper from an actor that is absent, not theirs or not a
+// party member with one string: a varying refusal tells which ids exist (VTT-589).
+func mayWhisper(p *identity.Participant, w *vttv1.AddWhisper, actors map[string]*vttv1.Actor) error {
+	if p.Role != identity.RolePlayer {
+		if w.GetFromActorId() != "" {
+			return fmt.Errorf("%w: role %q whispers to party members, never from an actor",
+				ErrUnauthorized, p.Role)
+		}
+		if len(w.GetToActorIds()) == 0 {
+			return fmt.Errorf("%w: a whisper names the party members who hear it", ErrUnauthorized)
+		}
+		for _, id := range w.GetToActorIds() {
+			if !engine.IsPartyMember(actors[id]) {
+				return fmt.Errorf("%w: a whisper is heard by party members alone", ErrUnauthorized)
+			}
+		}
+		return nil
+	}
+	if len(w.GetToActorIds()) != 0 {
+		return fmt.Errorf("%w: a player whispers to the DM alone, never to a character", ErrUnauthorized)
+	}
+	a := actors[w.GetFromActorId()]
+	if !ownPartyMember(a, p.ID) {
+		return fmt.Errorf("%w: a player whispers to the DM from a party member of theirs",
+			ErrUnauthorized)
+	}
+	if a.GetName() == "" {
+		return fmt.Errorf("%w: this party member has no name; ask the DM for one", ErrUnauthorized)
 	}
 	return nil
 }
@@ -273,6 +313,8 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "remove_condition"
 	case *vttv1.ClientCommand_AddNarration:
 		return "add_narration"
+	case *vttv1.ClientCommand_AddWhisper:
+		return "add_whisper"
 	case *vttv1.ClientCommand_UpsertNote:
 		return "upsert_note"
 	case *vttv1.ClientCommand_DeleteNote:

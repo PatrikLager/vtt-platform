@@ -193,7 +193,7 @@ describe("the console draws a Say", () => {
 });
 
 describe("what a line sends", () => {
-  // VTT-529
+  // VTT-600
   test("Send says Hello in character as Grimble", async () => {
     const t = table();
     const root = draw(t);
@@ -207,7 +207,7 @@ describe("what a line sends", () => {
     expect(line?.outOfCharacter).toBe(false);
   });
 
-  // VTT-529
+  // VTT-600
   test("Enter in say-text says Hello in character as Grimble", async () => {
     const t = table();
     const root = draw(t);
@@ -221,7 +221,7 @@ describe("what a line sends", () => {
     expect(line?.outOfCharacter).toBe(false);
   });
 
-  // VTT-529
+  // VTT-600
   test("a blank say-as sends the line in character with no as", async () => {
     const t = table();
     const root = draw(t);
@@ -235,7 +235,7 @@ describe("what a line sends", () => {
     expect(line?.outOfCharacter).toBe(false);
   });
 
-  // VTT-529
+  // VTT-600
   test("say-as is sent trimmed", async () => {
     const t = table();
     const root = draw(t);
@@ -245,7 +245,7 @@ describe("what a line sends", () => {
     expect(lines(t)[0]?.as).toBe("Grimble");
   });
 
-  // VTT-529
+  // VTT-600
   test("a first word that only begins with /ooc stays in character", async () => {
     const t = table();
     const root = draw(t);
