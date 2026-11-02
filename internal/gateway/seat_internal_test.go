@@ -451,7 +451,7 @@ func TestAMoveRightAfterAGrantIsJudgedByTheNewCharacter(t *testing.T) {
 }
 
 // Start no pump here: the seat must still show ana when the move is judged.
-// VTT-453
+// VTT-453 VTT-601
 func TestAMoveRightAfterARevocationIsNotJudgedByTheLostCharacter(t *testing.T) {
 	s, c, p := seatServer(t)
 	seatRooms(t, c)
@@ -467,7 +467,7 @@ func TestAMoveRightAfterARevocationIsNotJudgedByTheLostCharacter(t *testing.T) {
 	if sub.shown != "ana" {
 		t.Fatalf("fixture: the seat shows %q, want ana", sub.shown)
 	}
-	const unseen = "gateway: cannot move there — you cannot see that square"
+	const unseen = "You cannot move there: you cannot see that square."
 	if r := s.handleCommand(p, seatMove("tok-bo", 2), sub); r.GetOk() || r.GetError() != unseen {
 		t.Fatalf("bo's move onto a square only ana sees: ok=%v %q, want %q", r.GetOk(), r.GetError(), unseen)
 	}

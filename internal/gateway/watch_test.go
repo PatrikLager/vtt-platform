@@ -187,7 +187,7 @@ func moveTo(tokenID string, x, y int32) *vttv1.ClientCommand {
 		TokenId: tokenID, To: &vttv1.GridPosition{X: x, Y: y}}}}
 }
 
-const unseenSquare = "gateway: cannot move there — you cannot see that square"
+const unseenSquare = "You cannot move there: you cannot see that square."
 
 // appendTwoRooms appends twoRoomsTiles as scene "rooms".
 func appendTwoRooms(t *testing.T, f *gwFixture) {

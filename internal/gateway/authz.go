@@ -46,6 +46,12 @@ var commandRoles = map[string]map[identity.Role]bool{
 // ErrUnauthorized is wrapped by every denial Authorize returns.
 var ErrUnauthorized = errors.New("gateway: not authorized")
 
+type plainRefusal string
+
+func (r plainRefusal) Error() string { return string(r) }
+
+func (r plainRefusal) Unwrap() error { return ErrUnauthorized }
+
 // Authorize decides whether p may issue cmd against st: the role table, the
 // checks for every role, then the player rules (SPEC-013).
 func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.State) error {
@@ -150,8 +156,8 @@ func mayVoice(p *identity.Participant, na *vttv1.AddNarration, actors map[string
 			ErrUnauthorized)
 	}
 	if a.GetName() == "" {
-		return fmt.Errorf("%w: this party member has no name; ask the DM for one, or speak out of character",
-			ErrUnauthorized)
+		return plainRefusal("This character has no name. " +
+			"Ask the DM for one, or speak out of character with /ooc.")
 	}
 	return nil
 }
@@ -183,7 +189,7 @@ func mayWhisper(p *identity.Participant, w *vttv1.AddWhisper, actors map[string]
 			ErrUnauthorized)
 	}
 	if a.GetName() == "" {
-		return fmt.Errorf("%w: this party member has no name; ask the DM for one", ErrUnauthorized)
+		return plainRefusal("This character has no name. Ask the DM for one with /ooc, then whisper.")
 	}
 	return nil
 }

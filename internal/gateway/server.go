@@ -703,7 +703,7 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 				if !canSee(sub.judgedBy(p, st.Actors), st, tok.SceneID, to) {
 					return &vttv1.CommandResult{
 						RequestId: requestID, Ok: false,
-						Error: "gateway: cannot move there — you cannot see that square",
+						Error: "You cannot move there: you cannot see that square.",
 					}
 				}
 				// Name the obstruction only here, after sight: this player has been sent
@@ -711,7 +711,7 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 				if blocked, why := st.Blocked(tok.SceneID, to.GetX(), to.GetY()); blocked {
 					return &vttv1.CommandResult{
 						RequestId: requestID, Ok: false,
-						Error: "gateway: cannot move there — " + describeBlockage(why),
+						Error: "You cannot move there: " + describeBlockage(why) + ".",
 					}
 				}
 			}

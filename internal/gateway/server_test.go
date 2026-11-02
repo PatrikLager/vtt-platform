@@ -791,7 +791,7 @@ func TestAPlayerCannotWalkOntoBlockingSceneryAndTheRefusalNamesIt(t *testing.T) 
 	if res.Ok {
 		t.Fatal("a player walked onto blocking scenery — the map does not constrain anyone")
 	}
-	const want = "gateway: cannot move there — something (a boulder) is in the way"
+	const want = "You cannot move there: something (a boulder) is in the way."
 	if res.Error != want {
 		t.Fatalf("refusal = %q, want %q (exact — a loose substring check would survive the "+
 			"scenery rewrite regressing back to the raw \"scenery: boulder\" debug tag)", res.Error, want)

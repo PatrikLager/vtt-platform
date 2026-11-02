@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	qaMGUnseen  = "gateway: cannot move there — you cannot see that square"
-	qaMGBlocked = "gateway: cannot move there — "
+	qaMGUnseen  = "You cannot move there: you cannot see that square."
+	qaMGBlocked = "You cannot move there: "
 	qaMGWait    = 10 * time.Second
 )
 
@@ -694,7 +694,7 @@ func TestQAMGARefusedSetViewpointLeavesTheMoveJudgedByTheCharacterShown(t *testi
 	qaMGWantOK(t, "after the refused switches, pc-a's token onto (0,0)", pat.move("tok-a", 0, 0))
 }
 
-// VTT-156 VTT-350
+// VTT-156 VTT-350 VTT-601
 func TestQAMGAnUnseenSquareIsRefusedWithOneStringWhateverStandsOnIt(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("pat", identity.RolePlayer)
@@ -726,7 +726,7 @@ func TestQAMGASeenBlockedSquareIsRefusedWithTheObstructionNamed(t *testing.T) {
 	tb := qaMGNewTable(t)
 	tok, pid := tb.invite("pat", identity.RolePlayer)
 	tb.party(pid)
-	crate := qaMGBlocked + "something (a crate) is in the way"
+	crate := qaMGBlocked + "something (a crate) is in the way."
 
 	pat := tb.dial("pat", tok, "")
 	pat.expectViewpoint("pc-a")
