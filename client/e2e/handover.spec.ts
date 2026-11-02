@@ -210,7 +210,7 @@ test("a DM hands a second character over, and the player keeps both across a rec
 // "a DM hands a second character over, and the player keeps both across a
 // reconnect" leaves Lera holding Ash and Bram. Revoking both leaves her on Ash,
 // her last (the owner's ruling "Stay on Tobbe"), with the perch.
-// VTT-458 VTT-456 VTT-452 VTT-459
+// VTT-458 VTT-456 VTT-452 VTT-459 VTT-605 VTT-606 VTT-607
 test("the DM takes a player's only character back, and the player chooses another shoulder",
   async ({ browser }) => {
     const dmCtx = await browser.newContext();
@@ -222,17 +222,19 @@ test("the DM takes a player's only character back, and the player chooses anothe
     const panel = player.locator(".player");
     await expect(panel.getByRole("button", { name: "Ash" })).toHaveClass("chip sel", { timeout: 15_000 });
 
-    for (const actorId of [SECOND, FIRST]) {
+    for (const [actorId, name] of [[SECOND, "Bram"], [FIRST, "Ash"]] as const) {
       const row = dm.locator(`.control-actor[data-actor="${actorId}"]`);
       await row.locator('[data-action="revoke-actor-control"]').click();
       await dm.waitForTimeout(400);
       await expectNoRefusal(dm, `revoke ${actorId}`);
       await expect(row.locator(".held-who")).toHaveCount(0, { timeout: 10_000 });
+      await expect(player.locator(".toast")).toHaveText(`You no longer play ${name}.`, { timeout: 10_000 });
     }
 
     const perch = player.locator(".perch");
     await expect(perch).toBeVisible({ timeout: 10_000 });
     await expect(perch.locator(".perched-on")).toHaveText("Perched on: Ash");
+    await expect(perch.locator(".plays-none")).toHaveText("You play no character; the DM can give you one.");
     await expect(panel).toHaveCount(0);
     await player.screenshot(shot("h11-player-perched-after-the-revoke"));
 
@@ -248,10 +250,12 @@ test("the DM takes a player's only character back, and the player chooses anothe
     await expect(player.locator(".feed .mechanical")).not.toHaveCount(0, { timeout: 10_000 });
     await player.screenshot(shot("h12-player-on-bram"));
 
-    // VTT-579, for a player who controls no party member.
+    // VTT-579, VTT-607 and VTT-606, for a player who controls no party member.
     await player.reload();
     await expect(player.locator(".conn")).toHaveText("connected", { timeout: 15_000 });
     await expect(player.locator(".perch .perched-on")).toHaveText("Perched on: Bram", { timeout: 10_000 });
+    await expect(player.locator(".perch .plays-none")).toHaveText("You play no character; the DM can give you one.");
+    await expect(player.locator(".toast")).toHaveCount(0);
 
     await playerCtx.close();
     await dmCtx.close();
