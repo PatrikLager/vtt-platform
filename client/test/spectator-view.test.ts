@@ -1458,10 +1458,10 @@ test("panel, console and toast appear only when supplied", () => {
   const full = document.createElement("div");
   const panel = document.createElement("div"); panel.className = "my-panel";
   const console_ = document.createElement("div"); console_.className = "my-console";
-  renderSpectator(full, world(), [], "connected", { panel, console: console_, toast: "refused: nope" });
+  renderSpectator(full, world(), [], "connected", { panel, console: console_, toast: "nope" });
   expect(full.querySelector(".my-panel")).not.toBeNull();
   expect(full.querySelector(".my-console")).not.toBeNull();
-  expect(full.querySelector(".toast")?.textContent).toBe("refused: nope");
+  expect(full.querySelector(".toast")?.textContent).toBe("nope");
 });
 
 // --- the board's own armed indication (Task 4) ------------------------------
@@ -2000,6 +2000,16 @@ function perched(
   renderSpectator(root, st, [], "connected", { perch: { actors, current, onPerch } });
   return root;
 }
+
+// VTT-607
+test("the perch says you play no character when told to, and nothing when not", () => {
+  const told = document.createElement("div");
+  renderSpectator(told, party(), [], "connected", {
+    perch: { actors: asmeAndArmak, current: "", onPerch: () => {}, playsNone: true },
+  });
+  expect(told.querySelector(".perch .plays-none")?.textContent).toBe("You play no character; the DM can give you one.");
+  expect(perched(party(), "", asmeAndArmak).querySelector(".plays-none")).toBeNull();
+});
 
 test("the perch control says what choosing a name from it does", () => {
   // The heading is the only thing on the control that says these names are

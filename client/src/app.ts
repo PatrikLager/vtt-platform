@@ -347,7 +347,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
       // UI", wearing two different causes. `warnings` is empty on an
       // ordinary ok=true result, so `[].join(...)` reproduces the prior ""
       // exactly and the toast stays hidden (`toast || undefined` below).
-      toast = res.ok ? res.warnings.join("; ") : `refused: ${res.error}`;
+      toast = res.ok ? res.warnings.join("; ") : res.error;
       paint();
       return res;
     });
@@ -356,7 +356,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
   // ViewpointChanged the gateway sends, never the click (VTT-407).
   const switchTo = (actorId: string): Promise<void> =>
     session.send(setViewpoint(actorId)).then((res) => {
-      toast = res.ok ? "" : `refused: ${res.error}`;
+      toast = res.ok ? "" : res.error;
       paint();
     });
 
@@ -433,7 +433,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
       toast: toast || undefined,
       participants: session.participants,
       perch: perches
-        ? { actors: watchable, current: session.viewpoint, onPerch: (id) => void switchTo(id) }
+        ? { actors: watchable, current: session.viewpoint, onPerch: (id) => void switchTo(id), playsNone: isPlayer }
         : undefined,
       onReconnect: () => {
         void session.reconnect().catch(() => undefined);
@@ -524,6 +524,12 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
   // NOT DISCONNECTED ANYWHERE, deliberately: root lives as long as the page, and
   // an observer on a live element is not a leak. boot() is called once.
   new ResizeObserver(() => paint()).observe(root);
+
+  // VTT-605 VTT-606
+  session.onPartyMembersLeft((left) => {
+    if (me?.role !== "player") return;
+    toast = `You no longer play ${left.map((a) => a.name || "an unnamed character").join(" and ")}.`;
+  });
 
   session.onChange(() => {
     // ART BEFORE PAINT, so a scene that has just arrived starts fetching in the

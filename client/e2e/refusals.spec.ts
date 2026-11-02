@@ -47,8 +47,9 @@ test("a refused Place leaves its five boxes as typed, beside the refusal",
     for (const [field, value] of typed) await expect(box(field)).toHaveValue(value);
 
     await page.locator('[data-action="place-token"]').click();
-    // Match `refused: ` and nothing looser: the console's own guard toasts too.
-    await expect(page.locator(".toast")).toHaveText(/^refused: /, {
+    // Match the server's own words and nothing looser: the console's own guard
+    // toasts too.
+    await expect(page.locator(".toast")).toHaveText(/^engine: token placed in unknown scene /, {
       timeout: 10_000,
     });
     for (const [field, value] of typed) await expect(box(field)).toHaveValue(value);

@@ -22,6 +22,7 @@ export class Session {
   private log: Envelope[] = [];
   private derived: State = newState();
   private changeHandlers: (() => void)[] = [];
+  private leftHandlers: ((left: readonly WatchableActor[]) => void)[] = [];
   // Keyed by participant id, NOT a list: a client that reconnects receives a
   // fresh snapshot on top of whatever it already had, and the server announces
   // an arrival only on a participant's FIRST connection. Appending would list
@@ -39,6 +40,9 @@ export class Session {
     this.wire.onPresence((batch, replace) => this.presence(batch, replace));
     this.wire.onRestart(() => this.empty());
     this.wire.onWatchable((actors, none) => {
+      const kept = new Set(none ? [] : actors.map((a) => a.actorId));
+      const left = (this.none ? [] : this.set).filter((a) => !kept.has(a.actorId));
+      if (left.length > 0) for (const fn of this.leftHandlers) fn(left);
       this.set = actors;
       this.none = none;
       for (const fn of this.changeHandlers) fn();
@@ -105,6 +109,11 @@ export class Session {
 
   onChange(fn: () => void): void {
     this.changeHandlers.push(fn);
+  }
+
+  /** Called with the party members a set stops naming as controlled, in the previous set's order (VTT-605). */
+  onPartyMembersLeft(fn: (left: readonly WatchableActor[]) => void): void {
+    this.leftHandlers.push(fn);
   }
 
   /** Called with the actor each ViewpointChanged names, "" for nobody (VTT-579). */

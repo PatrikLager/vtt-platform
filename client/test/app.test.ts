@@ -247,6 +247,7 @@ test("a DM identity gets the console, and its actions reach the socket", async (
   session?.close();
 });
 
+// VTT-604
 test("a refused command is reported verbatim rather than silently doing nothing", async () => {
   localStorage.setItem("vtt.token", "tok-dm");
   stubMetadata({
@@ -270,7 +271,7 @@ test("a refused command is reported verbatim rather than silently doing nothing"
   sock.deliver({ result: { requestId: reqID, ok: false, error: "not authorized" } });
   await settle();
 
-  expect(r.textContent).toContain("refused: not authorized");
+  expect(r.querySelector(".toast")?.textContent).toBe("not authorized");
   session?.close();
 });
 
@@ -361,7 +362,7 @@ test("before anything connects the page says connecting, with no toast", async (
   const r = root();
   const s = boot(r);
   expect(r.textContent).toContain("connecting");
-  expect(r.textContent).not.toContain("refused");
+  expect(r.querySelector(".toast")).toBeNull();
   s?.close();
 });
 
@@ -1550,18 +1551,24 @@ test("a declined confirmation sends nothing at all", async () => {
 });
 
 test("a command that succeeds clears the toast rather than leaving one up", async () => {
-  // The ok arm is an empty string on purpose. A stale "refused:" left over
-  // from an earlier failure would misreport the command that just worked.
+  // A stale refusal left over from an earlier failure would misreport the
+  // command that just worked.
   const realConfirm = window.confirm;
   try {
     window.confirm = (() => true) as typeof window.confirm;
     const { r, s, sock } = await dmTable({});
     byText(r, "End session")!.click();
     await settle();
-    const reqID = JSON.parse(sock.sent[0]!).requestId as string;
+    const refused = JSON.parse(sock.sent[0]!).requestId as string;
+    sock.deliver({ result: { requestId: refused, ok: false, error: "not authorized" } });
+    await settle();
+    expect(r.querySelector(".toast")?.textContent).toBe("not authorized");
+
+    byText(r, "End session")!.click();
+    await settle();
+    const reqID = JSON.parse(sock.sent[1]!).requestId as string;
     sock.deliver({ result: { requestId: reqID, ok: true } });
     await settle();
-    expect(r.textContent).not.toContain("refused");
     expect(r.querySelector(".toast")).toBeNull();
     s?.close();
   } finally {
@@ -1570,15 +1577,6 @@ test("a command that succeeds clears the toast rather than leaving one up", asyn
 });
 
 test("a warning on an ok=true result reaches the DM's toast", async () => {
-  // 2026-09-02-art-is-a-flat-library Task 2 review, finding I1. wire.test.ts's
-  // own "a result's warnings reach whoever awaited send()" already pins that
-  // CommandResult.warnings decodes correctly off the wire -- but decoding a
-  // field and SHOWING it to anybody are different claims, and this is the
-  // one that was missing. Before this test, app.ts's `act` read only
-  // `res.ok`/`res.error` (`toast = res.ok ? "" : \`refused: ${res.error}\`),
-  // so a warning on an ok=true result decoded correctly and was then thrown
-  // away one line later -- one frame short of the DM's screen, the exact
-  // silence spec §4 exists to prevent, moved one layer out.
   const { r, s, sock } = await dmTable({
     "/api/maps": { cellPx: 64, maps: [{ id: "shrine", name: "Shrine", gridWidth: 1, gridHeight: 1, cellPx: 64 }] },
   });
@@ -1610,9 +1608,6 @@ test("a warning on an ok=true result reaches the DM's toast", async () => {
     `square 0,0 names art "absent-art", which is not installed; ` +
       `square 1,0 names art "also-absent", which is not installed`,
   );
-  // Not the refusal shape: a warning is not an error, and showing it as one
-  // would tell a DM their command failed when it succeeded.
-  expect(r.textContent).not.toContain("refused");
   s?.close();
 });
 
@@ -2617,6 +2612,7 @@ test("choosing a shoulder sends set_viewpoint over the wire", async () => {
   s?.close();
 });
 
+// VTT-604
 test("the indicator follows the SERVER's answer, never the click", async () => {
   // The indicator names what the last ViewpointChanged named; a refused perch
   // brings none, so it still says nobody, and the refusal is shown (VTT-407).
@@ -2630,7 +2626,7 @@ test("the indicator follows the SERVER's answer, never the click", async () => {
   await settle();
 
   expect(r.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: nobody");
-  expect(r.textContent).toContain("refused: not a party member");
+  expect(r.querySelector(".toast")?.textContent).toBe("not a party member");
   s?.close();
 });
 
@@ -2655,7 +2651,7 @@ test("an accepted perch CLEARS the refusal the last one left up", async () => {
   // The success arm of switchTo's toast, which the refusal tests above cannot
   // see: they only ever assert that a refusal APPEARS, and a success that
   // wrote some other string — or left the old refusal standing — would satisfy
-  // every one of them. A watcher who is told "refused: not a party member"
+  // every one of them. A watcher who is told "not a party member"
   // while sitting on the shoulder the server just granted them has been handed
   // the same contradiction the indicator exists to prevent, and would have no
   // reason to trust either line again.
@@ -2673,7 +2669,7 @@ test("an accepted perch CLEARS the refusal the last one left up", async () => {
     result: { requestId: JSON.parse(sock.sent[0]!).requestId as string, ok: false, error: "not a party member" },
   });
   await settle();
-  expect(r.querySelector(".toast")?.textContent).toContain("refused: not a party member");
+  expect(r.querySelector(".toast")?.textContent).toBe("not a party member");
 
   shoulder().click();
   await settle();
@@ -2681,7 +2677,6 @@ test("an accepted perch CLEARS the refusal the last one left up", async () => {
   await settle();
 
   expect(r.querySelector(".toast")).toBeNull();
-  expect(r.textContent).not.toContain("refused");
   s?.close();
 });
 
@@ -3114,6 +3109,90 @@ test("the set's flag moves a player between the perch and the player panel", asy
   s?.close();
 });
 
+// VTT-605
+test("a player is told You no longer play and the names of the party members that left, and an unnamed one as an unnamed character", async () => {
+  const { r, s, sock } = await playerWithSets();
+  await settle();
+  opensOn(sock, "a1", [["a1", "Ama"], ["a2", "Bo"]]);
+  await settle();
+  expect(r.querySelector(".toast")).toBeNull();
+
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a2", name: "Bo" }] } });
+  await settle();
+  expect(r.querySelector(".toast")?.textContent).toBe("You no longer play Ama.");
+
+  sock.deliver(watchableNone([["a1", "Ama"], ["a2", "Bo"]]));
+  await settle();
+  expect(r.querySelector(".toast")?.textContent).toBe("You no longer play Bo.");
+  expect(r.querySelectorAll(".perch").length).toBe(1);
+
+  sock.deliver({ watchableChanged: { actors: [
+    { actorId: "a3", name: "Cy" }, { actorId: "a4", name: "" }, { actorId: "a5", name: "Di" },
+  ] } });
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a5", name: "Di" }] } });
+  await settle();
+  expect(r.querySelector(".toast")?.textContent).toBe("You no longer play Cy and an unnamed character.");
+  s?.close();
+});
+
+// VTT-606
+test("a spectator's window is told nothing when a party member leaves the set", async () => {
+  const watcher = await tableAs("spectator");
+  watcher.sock.deliver({ watchableChanged: { actors: [] } });
+  await settle();
+  expect(watcher.r.querySelector(".perch")).not.toBeNull();
+  expect(watcher.r.querySelector(".toast")).toBeNull();
+  watcher.s?.close();
+
+  const player = await playerWithSets();
+  await settle();
+  opensOn(player.sock, "a1");
+  player.sock.deliver({ watchableChanged: { actors: [] } });
+  await settle();
+  expect(player.r.querySelector(".toast")?.textContent).toBe("You no longer play Lera.");
+  player.s?.close();
+});
+
+// VTT-606
+test("a fresh page and a redial sent the same set show no toast", async () => {
+  const { r, s, sock } = await playerWithSets();
+  await settle();
+  opensOn(sock, "a1", [["a1", "Ama"], ["a2", "Bo"]]);
+  seedTable(sock);
+  await settle();
+  expect(r.querySelector(".toast")).toBeNull();
+
+  sock.close();
+  await settle();
+  (r.querySelector(".reconnect") as HTMLButtonElement).click();
+  await settle();
+  const redial = FakeSocket.instances[1]!;
+  redial.open();
+  opensOn(redial, "a1", [["a1", "Ama"], ["a2", "Bo"]]);
+  await settle();
+  expect(r.querySelector(".toast")).toBeNull();
+
+  redial.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Ama" }] } });
+  await settle();
+  expect(r.querySelector(".toast")?.textContent).toBe("You no longer play Bo.");
+  s?.close();
+});
+
+// VTT-607
+test("a player who controls no party member is told so on the perch, and a spectator is not", async () => {
+  const { r, s, sock } = await playerWithSets();
+  sock.deliver(watchableNone([["a1", "Lera"]]));
+  sock.deliver({ viewpointChanged: {} });
+  await settle();
+  expect(r.querySelector(".perch .plays-none")?.textContent).toBe("You play no character; the DM can give you one.");
+  s?.close();
+
+  const watcher = await tableAs("spectator");
+  expect(watcher.r.querySelector(".perch")).not.toBeNull();
+  expect(watcher.r.querySelector(".plays-none")).toBeNull();
+  watcher.s?.close();
+});
+
 test("a player who perches while doors are armed is shown no armed board", async () => {
   const { r, s, sock } = await playerTableWithDoor();
   arm(r);
@@ -3476,7 +3555,7 @@ test("a refused Start session leaves the name typed beside the refusal", async (
   const { r, s } = await startSessionAnswered({ ok: false, error: "a session is already open" });
   try {
     expect(r.querySelector<HTMLInputElement>('[data-field="session-name"]')!.value).toBe("Night One");
-    expect(r.querySelector(".toast")!.textContent).toBe("refused: a session is already open");
+    expect(r.querySelector(".toast")!.textContent).toBe("a session is already open");
   } finally {
     forgetTheName(r, s);
   }

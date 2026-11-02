@@ -441,6 +441,34 @@ test("the set survives a switch", async () => {
   }
 });
 
+const setOf = (none: boolean, ...pairs: [string, string][]) =>
+  ({ watchableChanged: { actors: pairs.map(([actorId, name]) => ({ actorId, name })), controlsNoPartyMember: none } });
+
+// VTT-605 VTT-606
+test("a set that stops naming a party member as controlled tells who left, and a first, an equal or a renamed set tells nothing", async () => {
+  const gw = gatewayServing([
+    setOf(false, ["a1", "Ama"], ["a2", "Bo"]),
+    setOf(false, ["a1", "Ama"], ["a2", "Bo"]),
+    setOf(false, ["a1", "Ama Stone"], ["a2", "Bo"]),
+    setOf(false, ["a2", "Bo"]),
+    setOf(true, ["a1", "Ama Stone"], ["a2", "Bo"]),
+    setOf(false, ["a3", "Cy"]),
+    setOf(false, ["a3", "Cy"], ["a4", ""], ["a5", "Di"]),
+    setOf(false, ["a5", "Di"]),
+  ]);
+  try {
+    const s = new Session(gw.url, "tok");
+    const told: string[][] = [];
+    s.onPartyMembersLeft((left) => told.push(left.map((a) => `${a.actorId}:${a.name}`)));
+    await s.start();
+    await until(() => s.watchable.length === 1 && s.watchable[0]!.actorId === "a5", "the last set");
+    expect(told).toEqual([["a1:Ama Stone"], ["a2:Bo"], ["a3:Cy", "a4:"]]);
+    s.close();
+  } finally {
+    gw.stop();
+  }
+});
+
 test("a new set replaces the last", async () => {
   const gw = gatewayServing([watchable("a1", "a2"), viewpoint("a1"), ...world, watchable("a1")]);
   try {

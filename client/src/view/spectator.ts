@@ -495,11 +495,14 @@ export interface PerchControl {
   actors: readonly { actorId: string; name: string }[];
   current: string;
   onPerch: (actorId: string) => void;
+  /** Whether to tell the window it plays no character (VTT-607). */
+  playsNone?: boolean;
 }
 
 function renderPerch(perch: PerchControl): HTMLElement {
   const wrap = el("section", "perch");
   wrap.appendChild(el("h2", undefined, "Whose eyes"));
+  if (perch.playsNone) wrap.appendChild(el("p", "plays-none", "You play no character; the DM can give you one."));
 
   // Sort by label, ties on the id: two arms, since the gateway's set holds one
   // entry per actor id (tools/ts-mutation-equivalents.txt).
