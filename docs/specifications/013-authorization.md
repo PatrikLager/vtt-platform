@@ -6,7 +6,8 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `Authorize`, `mayVoice`, `mayWhisper`, `authorizePlayer`, `playerRules`,
 `errUndecided`, `unrestricted`, `mayWorkDoor`, `authorizeTokenOwnership`,
 `authorizeActorOwnership`, `controls`, `authorizeSelfRevoke`,
-`authorizePromotionTarget`, `commandName`, `ErrUnauthorized`),
+`authorizePromotionTarget`, `commandName`, `ErrUnauthorized`,
+`plainRefusal`),
 `internal/gateway/viewpoint.go` (`ownPartyMember`),
 `internal/gateway/grant_validate.go`
 (`validateGrantActorControl`), `internal/gateway/add_actor_validate.go`
@@ -23,7 +24,8 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `qa_move_gate_test.go`, `qa_describe_token_test.go`,
 `qa_ability_sight_test.go`, `narration_test.go`, `qa_speaking_test.go`,
 `remove_participant_test.go`, `qa_removal_test.go`,
-`qa_remove_roles_test.go`, `whisper_test.go` and `qa_whisper_test.go`, and by
+`qa_remove_roles_test.go`, `whisper_test.go`, `qa_whisper_test.go`,
+`plain_refusal_test.go` and `qa_plain_refusal_test.go`, and by
 `cmd/vtt/scenario_goldens_test.go`.
 
 ## Principles served
@@ -86,7 +88,8 @@ Granting control, promotion, removing a participant and the join door are
 the DM's and the agent's alone, since each confers or takes away standing at
 a table whose shared link admits spectators (SPEC-009, VTT-028, VTT-565).
 Every refusal `Authorize` returns wraps `ErrUnauthorized`: every `fmt.Errorf`
-in `authz.go` and `viewpoint.go` wraps it with `%w`.
+in `authz.go` and `viewpoint.go` wraps it with `%w`, and `plainRefusal`, a
+refusal whose text names no package, returns it from `Unwrap`.
 `TestEveryClientCommandHasRoleCells` walks the oneof and requires every arm
 to resolve through `commandName` to a name with a row, and
 `TestAuthorizeTableAllCommandsAllRoles` asserts every cell of the table
@@ -113,7 +116,9 @@ decides whom a line may speak as:
 - a player's line in character must name, in `actor_id`, a party member the
   player controls (`ownPartyMember`), and is refused with one text whether the
   id is absent, not theirs, or not a party member (VTT-506), then refused if
-  that party member has no name (VTT-495).
+  that party member has no name (VTT-495), with a `plainRefusal` whose text
+  is `This character has no name. Ask the DM for one, or speak out of
+  character with /ooc.` (VTT-603).
 
 For `add_whisper` it runs `mayWhisper` against the snapshot's actors, which
 decides whom a whisper is to and from, by the owner's ruling B-2 of
@@ -124,7 +129,9 @@ decides whom a whisper is to and from, by the owner's ruling B-2 of
 - a player's names no `to_actor_ids`, and names in `from_actor_id` a party
   member the player controls (`ownPartyMember`), refused with one text
   whether the id is empty, absent, not theirs, or not a party member
-  (VTT-589), then refused if that party member has no name (VTT-588).
+  (VTT-589), then refused if that party member has no name (VTT-588), with
+  a `plainRefusal` whose text is `This character has no name. Ask the DM for
+  one with /ooc, then whisper.` (VTT-603).
 
 All four run for every role, so the DM is bound by promotion's bound, by
 `mayVoice` and by `mayWhisper`, and a spectator, whom the player half never
@@ -239,13 +246,17 @@ handed the connection.
 `st.Tokens` holds, `handleCommand` first asks `canSee(sub.judgedBy(p,
 st.Actors), st, tok.SceneID, to)`, through the eyes of the character
 SPEC-015 says the move is judged by, and when it answers false, it refuses
-with `gateway: cannot move there — you cannot see that square`, whatever
-stands on the square. Only then does it ask `st.Blocked(tok.SceneID, x, y)`,
-and refuses a blocked
-square with `gateway: cannot move there — ` followed by
-`describeBlockage(why)`. `engine.State.Blocked` answers for every square of a
-scene, seen or not, so the order is what keeps an unseen square's refusal one
-string that names no wall, door or scenery. A square out of the player's sight
+with `You cannot move there: you cannot see that square.`, whatever stands on
+the square (VTT-601). Only then does it ask `st.Blocked(tok.SceneID, x, y)`,
+and refuses a blocked square with `You cannot move there: `, then
+`describeBlockage(why)`, then `.` (VTT-602). A square off the grid is one
+`canSee` answers false for, since `sight.VisibleFrom` walks the grid's
+squares alone, and the move gate is `Blocked`'s one caller outside the tests,
+so a player's move refusal never reads `outside the grid`
+(`TestQAPRPlainASquareOffTheGridIsRefusedInPlainWords`).
+`engine.State.Blocked` answers for every square of a scene, seen or not, so
+the order is what keeps an unseen square's refusal one string that names no
+wall, door or scenery. A square out of the player's sight
 is refused even when they remember its terrain. A token the snapshot does not
 hold never reaches the gate, since
 `authorizeTokenOwnership` has refused it. `canSee` and `judgedBy` are
@@ -365,8 +376,10 @@ A client or tool author is bound by these:
   text an absent id gets (VTT-472), and a player's line in character naming an
   actor that is absent, not theirs, or not a party member is answered with
   one text (VTT-506), as is a player's whisper from an actor that is absent,
-  not theirs, or not a party member (VTT-589); no other refusal's text is
-  bounded by this record.
+  not theirs, or not a party member (VTT-589). The move gate's two texts name
+  no package and no id (VTT-601, VTT-602), and the two a party member with no
+  name is refused with begin `This character has no name.` and name no
+  package (VTT-603); no other refusal's text is bounded by this record.
 - A `grant_actor_control` and an `add_actor` state what the actor is; an
   `add_actor` never confers control, and control is granted afterwards.
 - An `upsert_note` states who may read the note.
@@ -394,4 +407,4 @@ VTT-147, VTT-148, VTT-149, VTT-150, VTT-151, VTT-152, VTT-153, VTT-154,
 VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161, VTT-162, VTT-231,
 VTT-261, VTT-344, VTT-379, VTT-463, VTT-472, VTT-482, VTT-487, VTT-495,
 VTT-496, VTT-497, VTT-498, VTT-499, VTT-503, VTT-506, VTT-565, VTT-587,
-VTT-588, VTT-589, VTT-590.
+VTT-588, VTT-589, VTT-590, VTT-601, VTT-602, VTT-603.

@@ -111,8 +111,14 @@ that the Story and the Events panel draw a whisper, by
 `client/test/spectator-view.test.ts`, `client/test/app.test.ts`,
 `client/test/commands.test.ts`, `client/test/qa-whisper.test.ts`,
 `client/test/qa-whisper-say.test.ts` and `client/e2e/whispering.spec.ts`
-(VTT-592 to VTT-597, VTT-599, VTT-600). Every `client/e2e/` file runs
-outside `task check`.
+(VTT-592 to VTT-597, VTT-599, VTT-600); and that a window shows a refusal
+as the server words it, tells a player each party member a set stops naming
+as controlled, and nothing at any other set or in any other window, and
+tells a perching player that they play no character, by
+`client/test/app.test.ts`, `client/test/session.test.ts`,
+`client/test/spectator-view.test.ts`, `client/test/qa-refusal-words.test.ts`
+and `client/e2e/handover.spec.ts` (VTT-604 to VTT-607). Every `client/e2e/`
+file runs outside `task check`.
 
 That `internal/harness`'s client hands its reader every entry and each switch
 and that a dial names a log is held by
@@ -248,16 +254,32 @@ marks the one they watch (VTT-457). While it offers none it reads "You do not
 control an actor yet.": before the client is sent a set, since a set the
 gateway sends naming none says the participant controls no party member
 (SPEC-007), which perches the window. The perch offers a button for each party
-member the set names, and "No shoulder" for nobody (VTT-403, VTT-458). Its
-buttons are ordered by label and then by id, each compared by `<`, which is
-UTF-16 code unit order rather than a locale's. It reads "No party members
-yet." for a set naming none, and "Perched on: " with the watched one's name
-from the set, its id when the set gives no name or does not name it, and
-"nobody" for nobody. A chip or a button is labelled by the name the set gives
-it, or by its id when that name is empty (VTT-404). A click sends
-`set_viewpoint` naming its party member, the watched one included, or nobody
-for "No shoulder" (VTT-405, VTT-459); the gateway applies nothing for the one
-already shown (SPEC-015).
+member the set names, and "No shoulder" for nobody (VTT-403, VTT-458).
+Under its heading, a player's perch reads "You play no character; the DM can
+give you one." and a spectator's does not: `app.ts` sets
+`PerchControl.playsNone` from the role, so a reload draws it again
+(VTT-607). Its buttons are ordered by label and then by id, each compared by
+`<`, which is UTF-16 code unit order rather than a locale's. It reads "No
+party members yet." for a set naming none, and "Perched on: " with the
+watched one's name from the set, its id when the set gives no name or does
+not name it, and "nobody" for nobody. A chip or a button is labelled by the
+name the set gives it, or by its id when that name is empty (VTT-404). A
+click sends `set_viewpoint` naming its party member, the watched one
+included, or nobody for "No shoulder" (VTT-405, VTT-459); the gateway
+applies nothing for the one already shown (SPEC-015). `switchTo` shows a
+refusal of it as the toast of its error, with nothing before it (VTT-604).
+
+When a `WatchableChanged` stops naming as controlled some party members the
+previous set named so, the `Session` in `client/src/session.ts`, comparing by
+id, hands them as the previous set names them, in its order, to each handler
+`onPartyMembersLeft` registered, before the set is replaced. A set names party
+members as controlled only when it does not say the participant controls none,
+so a page's first set, an equal set and a renamed one hand over nobody, and,
+since a discard keeps the last set, so does a redial sent the same one. A
+window whose role the page last read is `player` then shows the toast "You no
+longer play " and their names joined by " and ", each "an unnamed character"
+when its name is empty, and "." (VTT-605, VTT-606; the owner's ruling "Toast +
+rad i perch-vyn" of 2026-11-02). Any other window is told nothing.
 
 A perching window's board click sends nothing (VTT-461; for a spectator, the
 owner's ruling "Bara knappar", 2026-10-20), and its board shows no door tool
@@ -377,11 +399,11 @@ Say's Send and Enter in its `say-text`, each send through `sending` in
 `client/src/view/dm.ts`. A player's panel's Send, and Enter in its
 `say-text`, send through `submit` in `renderPlayerPanel`. Both are handed
 `act` from `client/src/app.ts` as `send`: it resolves to the command's
-`CommandResult`, shows a refusal as the toast `refused: ` and its error, and
-paints at every answer before the console's or the panel's own handling of
-that answer runs. Until the answer, what was typed for the command stays in
-its field and in `draft` or `PlayerUIState`. When the server accepts it
-(`ok`):
+`CommandResult`, shows a refusal as the toast of its error, with nothing
+before it (VTT-604), and paints at every answer before the console's or the
+panel's own handling of that answer runs. Until the answer, what was typed
+for the command stays in its field and in `draft` or `PlayerUIState`. When
+the server accepts it (`ok`):
 - the console clears the drafts of the fields that fed the command, Save
   note's key, title and text and the Say's `say-as` excepted, and asks for a
   repaint through `DMDeps.rerender`, which `app.ts` sets to `paint`. It
@@ -685,4 +707,5 @@ VTT-502, VTT-517, VTT-518, VTT-520, VTT-521, VTT-522, VTT-523, VTT-524,
 VTT-526, VTT-527, VTT-528, VTT-530, VTT-531, VTT-532, VTT-533, VTT-534,
 VTT-535, VTT-536, VTT-537, VTT-538, VTT-540, VTT-541, VTT-572, VTT-573,
 VTT-574, VTT-575, VTT-576, VTT-577, VTT-579, VTT-580, VTT-592, VTT-593,
-VTT-594, VTT-595, VTT-596, VTT-597, VTT-599, VTT-600.
+VTT-594, VTT-595, VTT-596, VTT-597, VTT-599, VTT-600, VTT-604, VTT-605,
+VTT-606, VTT-607.
