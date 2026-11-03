@@ -1,9 +1,9 @@
 # vtt-platform — Agent Way of Working
 
 LLM-native VTT platform. Event-sourced Go core, thin TS client (future),
-protobuf contract. Start here: `docs/superpowers/specs/` (tickets),
-`docs/specifications/` (decisions, present tense), `docs/adr/` (frozen
-evidence), `README.md`.
+protobuf contract. Start here: `docs/blueprint.md` (what must be true),
+`docs/superpowers/specs/` (tickets), `docs/specifications/` (decisions,
+present tense), `docs/adr/` (frozen evidence), `README.md`.
 ## The process this project runs
 
 This project runs the `dev-cycle` package at project scope. How work is planned,
@@ -82,10 +82,11 @@ guesses at these runs gates that do not run.
   chosen by hand. How an id is allocated, cited and checked is SPEC-008 in
   `docs/specifications/`. `check:requirements-chain`, a step of `task check`,
   holds the chain that record describes.
-- **Where the blueprint is.** Nowhere. This project has none, so no
-  specification can honestly name the principles it serves. Writing one from a
-  single record would invent the principles, which is what a blueprint exists
-  to prevent.
+- **Where the blueprint is.** `docs/blueprint.md`: what must be true of the
+  product whatever it is built from. A specification names the principles it
+  serves, by number, under "Principles served". The blueprint covers the
+  product alone; how the project is built and checked is not in it (the
+  owner's ruling, 2026-11-03).
 - **What `docs/adr/` is now.** Frozen evidence. Each ADR holds the road to a
   decision — its context, the alternatives weighed, the scorecard. The present
   tense moves out to a specification as each one is read; the file itself is
