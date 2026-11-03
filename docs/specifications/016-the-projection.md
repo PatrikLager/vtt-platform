@@ -28,11 +28,17 @@ in `viewer_test.go`, by `internal/campaign/character_log_oracle_test.go`,
 
 ## Principles served
 
-This project has no blueprint, so no principle can be named as served. The one
-this record would cite is absent from the record rather than from the system:
-a character's log is written of each event only what its eyes see, or the
-table is told, decided on the server, and when the projection cannot tell, it
-writes nothing.
+Principles 16, 17 and 19 of `docs/blueprint.md`:
+
+- **16.** A character's log is written of each event only what its eyes see,
+  its party members seen or not, and what the table is told, decided on the
+  server.
+- **17.** An ability reaches a character's log only when the character saw
+  every actor it names; a change to a party member's resource reaches it on
+  the same test, without its reason.
+- **19.** An event `classify` answers `unrecognised` sends nothing at all, and
+  `TestEveryEnvelopePayloadArmHasAnExplicitRuling` fails on a payload it
+  answers so.
 
 ## How it works
 

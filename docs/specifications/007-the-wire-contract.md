@@ -60,9 +60,19 @@ scorecard, and why protobuf was chosen.
 
 ## Principles served
 
-vtt-platform has no blueprint. This section is owed and cannot be written
-honestly until one exists — naming principles here would invent them from a
-single record, which is the failure a blueprint is written to prevent.
+Principles 2, 5, 14 and 33 of `docs/blueprint.md`:
+
+- **2.** The contract offers no command that retracts or rewrites what the log
+  already holds.
+- **5.** Evolution is by addition only, held by `check:breaking` from the day
+  `contract/RELEASED` exists; until then a removal is reported and allowed
+  (Evolution, below).
+- **14.** Choosing whose eyes to look through, `set_viewpoint`, appends
+  nothing.
+- **33.** The WebSocket's commands, events and frames, and the MCP tools
+  generated from them, come from the one set of schemas; the HTTP read surface
+  (SPEC-012) and the tools `GoRegisteredToolNames` lists are described apart
+  from it.
 
 ## How it works
 

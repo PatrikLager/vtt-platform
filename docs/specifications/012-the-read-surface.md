@@ -18,10 +18,15 @@ the default cell size, `cmd/vtt/art_test.go`.
 
 ## Principles served
 
-This project has no blueprint, so no principle can be named as served. The
-one this record would cite is absent from the record rather than from the
-system: what a seat may read is decided on the server, on every request, and
-never by a client hiding what it was sent.
+Principles 6, 15 and 35 of `docs/blueprint.md`:
+
+- **6.** What a seat may read over HTTP is decided on the server, on every
+  request, and never by a client hiding what it was sent.
+- **15.** A piece of art is opened from the art directory on every request,
+  and nothing is cached.
+- **35.** Every participant, whatever the role, is served the ruleset's guide
+  and a summary of its abilities, conditions and resources; how an ability
+  resolves is not served.
 
 ## How it works
 

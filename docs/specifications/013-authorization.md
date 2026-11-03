@@ -32,11 +32,20 @@ and `qa_door_square_test.go`, and by `internal/engine/terrain_test.go` and
 
 ## Principles served
 
-This project has no blueprint, so no principle can be named as served. The
-one this record would cite is absent from the record rather than from the
-system: who may do what is decided on the server, per command, against the
-fold as it stands when the command arrives, never by a client and never once
-at connection time.
+Principles 6, 7, 10, 13, 20 and 34 of `docs/blueprint.md`:
+
+- **6.** A command is judged on the server, never by the window that sent it.
+- **7.** It is judged per command, against the fold as it stands when the
+  command arrives.
+- **10.** A player speaks only as a party member they control, or out of
+  character.
+- **13.** The move gate's and the door gate's refusals name no package and
+  no id, and the two that refuse a party member with no name name no package
+  (VTT-601 to VTT-603, VTT-608); this record bounds no other refusal's text.
+- **20.** A player's move onto a square their party member cannot see is
+  refused, and so is an ability aimed at an actor it does not see.
+- **34.** The door tools say a door command is refused unless the square's
+  tile is a door, and the door gate refuses it so, for every role.
 
 ## How it works
 

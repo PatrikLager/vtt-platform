@@ -23,10 +23,15 @@ called from `internal/gateway/server.go` (`serve`, `pump`, `pumpState` with
 
 ## Principles served
 
-This project has no blueprint, so no principle can be named as served. The
-one this record would cite: what a person is sent is decided on the server,
-per connection, and a player or a spectator is sent what one party member
-experienced, never the world.
+Principles 6, 7, 16 and 22 of `docs/blueprint.md`:
+
+- **6.** What a connection is sent is decided on the server, per connection.
+- **7.** The pump re-judges the seat, so a change of control changes what a
+  connection is sent without a reconnect.
+- **16.** A player's or a spectator's connection streams the one character
+  log it watches, never the world.
+- **22.** A reconnect names the log its cursor was read from, and continues in
+  it while the participant may still watch it.
 
 ## How it works
 

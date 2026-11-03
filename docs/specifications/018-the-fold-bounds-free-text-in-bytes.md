@@ -50,10 +50,9 @@ condition ids, attribute, defense and resource names and branch labels by
 
 ## Principles served
 
-This project has no blueprint, so no principle can be named as served. The
-one this record would cite is absent from the record rather than from the
-system: a log is append-only, so what the fold accepts once it must accept
-forever.
+Principle 5 of `docs/blueprint.md`: a bound may be raised and never lowered,
+and a field gains one only on one of the two tests in How it works, since a
+bound added later refuses every log that already holds a longer value.
 
 ## How it works
 

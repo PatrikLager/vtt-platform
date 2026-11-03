@@ -9,10 +9,9 @@ derived from this record alone, `tools/check_comments_qa_test.py`.
 
 ## Principles served
 
-This project has no blueprint (`CLAUDE.md`, "Where the blueprint is"). The
-principle this record would serve, that a fact has one home, is missing from
-the record rather than absent from the system; the blueprint is owed a ticket
-of its own.
+The blueprint covers the product alone (`CLAUDE.md`, "Where the blueprint
+is"), so no principle of it is named here. The one this record would serve is
+not the product's: a fact has one home.
 
 ## How it works
 

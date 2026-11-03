@@ -18,10 +18,9 @@ and `qa_id_bound_test.go`; a placement's texts by
 
 ## Principles served
 
-This project has no blueprint, so no principle can be named as served. The
-one this record would cite is absent from the record rather than from the
-system: a place enters play when the DM asks for it, and a map or a piece of
-art installed while the server runs is used without a restart.
+Principle 15 of `docs/blueprint.md`: a map installed under an id the set does
+not yet hold enters play by `load_map` with no restart, and art is read from
+its directory at each load.
 
 ## How it works
 

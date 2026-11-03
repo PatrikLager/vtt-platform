@@ -11,10 +11,8 @@ Pinned by `internal/campaign/writer_hold_test.go`,
 
 ## Principles served
 
-This project has no blueprint, so no principle can be named as served. The
-one this record would cite is absent from the record rather than from the
-system: every event is judged against the whole log before it, so only one
-judge may append at a time.
+Principle 4 of `docs/blueprint.md`: every event is judged against the whole
+log before it, so only one judge may append at a time.
 
 ## How it works
 

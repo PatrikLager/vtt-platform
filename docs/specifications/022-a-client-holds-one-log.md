@@ -143,9 +143,16 @@ VTT-435). That `vtt events tail` prints no switch is held by no row.
 
 ## Principles served
 
-vtt-platform has no blueprint. This section is owed and cannot be written
-honestly until one exists — naming principles here would invent them from a
-single record, which is the failure a blueprint is written to prevent.
+Principles 11, 12, 13, 14 and 22 of `docs/blueprint.md`:
+
+- **11.** A reader folds one log, from its first entry, and never splices two.
+- **12.** A player is told when a party member stops being theirs, and a
+  perching player that they play no character.
+- **13.** `namer` never shows a token or an actor by its id, and `describe`
+  words every payload (VTT-474 to VTT-477).
+- **14.** A player's click on a cell holding the watched one's token and no
+  other listed member's sends nothing.
+- **22.** A reload keeps the viewpoint.
 
 ## How it works
 

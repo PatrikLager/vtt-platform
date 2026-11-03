@@ -8,9 +8,12 @@ dispatched from `handleCommand`), over `internal/campaign`'s `AppendBatch` and
 
 ## Principles served
 
-This project has no blueprint, so no principle can be named as served. The
-one this record would cite is absent from the record rather than from the
-system: a fact about the world is checked once, by the fold.
+Principles 4 and 9 of `docs/blueprint.md`:
+
+- **4.** A fact about the world is checked once, by the fold, against the
+  state as it stands.
+- **9.** The tokens' removals and the actor's are appended in one batch,
+  whole or not at all.
 
 ## How it works
 

@@ -14,8 +14,9 @@ decisions.
 
 ## Principles served
 
-This project has no blueprint, so no principle can be named as served. The
-one this record serves would read: a gate that did not measure says so.
+The blueprint covers the product alone (`CLAUDE.md`, "Where the blueprint
+is"), so no principle of it is named here. The one this record would serve is
+not the product's: a gate that did not measure says so.
 
 ## How it works
 

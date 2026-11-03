@@ -30,10 +30,17 @@ pinned by the checks the rows under Requirements name, in
 
 ## Principles served
 
-This project has no blueprint (`CLAUDE.md`, "Where the blueprint is"). The
-principle this record would serve, that what a person may do is a fact about
-now and not about when they connected, is missing from the record rather than
-absent from the system; the blueprint is its own ticket.
+Principles 7, 8, 9, 10 and 22 of `docs/blueprint.md`:
+
+- **7.** Authentication happens once and authorization continuously: the role
+  is looked up again before every command.
+- **8.** The door and revocation live in the identity store, so replaying a
+  campaign can neither reopen a door nor bring a revoked participant back.
+- **9.** A join refused at the door, or for a name, writes nothing.
+- **10.** A name another participant who is not revoked holds is refused at
+  the door.
+- **22.** A participant who reconnects with their credential resolves to the
+  same id, and keeps their name, their role and their characters.
 
 ## How it works
 

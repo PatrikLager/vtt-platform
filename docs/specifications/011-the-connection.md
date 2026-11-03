@@ -18,9 +18,13 @@ Accepted. Implemented by `internal/gateway/server.go` (`handleWS`, `Handler`,
 
 ## Principles served
 
-vtt-platform has no blueprint. The principle this record would serve, that a
-connection is a seat and not a person, is missing from the record rather than
-absent from the system; the blueprint is owed a ticket of its own.
+Principles 7 and 22 of `docs/blueprint.md`:
+
+- **7.** Delivery re-resolves the credential, so a participant revoked while
+  connected is refused on delivery, without a reconnect.
+- **22.** A client that reconnects names its `after`, a player's or a
+  spectator's also its `log`, and continues from there; which log it may
+  continue in is SPEC-015's.
 
 ## How it works
 

@@ -10,9 +10,9 @@ record alone, `tools/check_requirements_chain_qa_test.py`.
 
 ## Principles served
 
-This project has no blueprint (`CLAUDE.md`, "Where the blueprint is"). The
-principle this record would serve, that a citation resolves to exactly one
-thing, is missing rather than absent; the blueprint is its own ticket.
+The blueprint covers the product alone (`CLAUDE.md`, "Where the blueprint
+is"), so no principle of it is named here. The one this record would serve is
+not the product's: a citation resolves to exactly one thing.
 
 ## How it works
 

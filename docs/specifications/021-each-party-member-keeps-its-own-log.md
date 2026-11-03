@@ -37,9 +37,10 @@ runs, by `internal/gateway/creature_test.go` and `qa_creature_test.go`,
 
 ## Principles served
 
-This project has no blueprint, so no principle can be named as served. The one
-this record would cite: what a character perceived is recorded once, when it
-happened, and nothing the world does afterwards reaches back into it.
+Principle 18 of `docs/blueprint.md`: a character's entries are written at the
+event's append, the event's frames from the world after it and an opening's
+or a resume's from the world before it, and no entry is changed or removed
+once written.
 
 ## How it works
 

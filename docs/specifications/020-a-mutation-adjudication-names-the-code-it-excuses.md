@@ -15,9 +15,9 @@ derived from the ticket, the requirement rows and the plan's decisions.
 
 ## Principles served
 
-This project has no blueprint, so no principle can be named as served. The
-one this record would cite is absent from the record rather than from the
-system: a gate excuses only what somebody has judged.
+The blueprint covers the product alone (`CLAUDE.md`, "Where the blueprint
+is"), so no principle of it is named here. The one this record would serve is
+not the product's: a gate excuses only what somebody has judged.
 
 ## How it works
 
