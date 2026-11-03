@@ -4,7 +4,7 @@
 # `python3 tools/check-comments.py --write-ledger`, never by hand and
 # never raised. SPEC-010.
 
-client/src/app.ts  47.7
+client/src/app.ts  47.3
 client/src/auth.ts  44.5
 client/src/commands.ts  40.2
 client/src/fold.ts  32.3
@@ -12,7 +12,7 @@ client/src/join.ts  36.5
 client/src/main.ts  83.4
 client/src/metadata.ts  50.0
 client/src/player.ts  41.0
-client/src/session.ts  35.0
+client/src/session.ts  34.1
 client/src/state.ts  61.3
 client/src/view/art-assets.ts  68.9
 client/src/view/camera.ts  50.0
@@ -27,7 +27,7 @@ client/src/view/naming.ts  8.6
 client/src/view/pack-assets.ts  62.7
 client/src/view/player.ts  20.6
 client/src/view/scene-plan.ts  52.9
-client/src/view/spectator.ts  39.9
+client/src/view/spectator.ts  39.8
 client/src/wire.ts  29.6
 cmd/vtt/adventures.go  57.9
 cmd/vtt/adventures_test.go  25.2
@@ -149,8 +149,8 @@ internal/engine/qa_ruleset_bound_test.go  0.0
 internal/engine/qa_token_texts_test.go  0.9
 internal/engine/role_test.go  7.4
 internal/engine/state.go  42.1
-internal/engine/terrain.go  52.3
-internal/engine/terrain_test.go  29.4
+internal/engine/terrain.go  50.8
+internal/engine/terrain_test.go  27.5
 internal/engine/visibility_fold_test.go  27.1
 internal/eventgen/model.go  23.2
 internal/eventgen/model_test.go  14.2
@@ -159,13 +159,14 @@ internal/gateway/add_actor_validate_test.go  48.0
 internal/gateway/adventure.go  15.3
 internal/gateway/adventure_test.go  26.1
 internal/gateway/artfile_internal_test.go  28.8
-internal/gateway/authz.go  11.9
+internal/gateway/authz.go  11.7
 internal/gateway/authz_test.go  34.4
 internal/gateway/codec.go  16.7
 internal/gateway/codec_test.go  8.2
 internal/gateway/convert.go  7.4
 internal/gateway/convert_test.go  12.7
 internal/gateway/creature_test.go  0.0
+internal/gateway/door_square_test.go  0.0
 internal/gateway/export_test.go  45.9
 internal/gateway/grant_validate.go  26.4
 internal/gateway/grant_validate_test.go  38.0
@@ -182,6 +183,7 @@ internal/gateway/metadata_test.go  23.6
 internal/gateway/narration_test.go  0.0
 internal/gateway/note_validate.go  12.5
 internal/gateway/note_validate_test.go  0.0
+internal/gateway/plain_refusal_test.go  0.0
 internal/gateway/presence.go  15.6
 internal/gateway/presence_internal_test.go  29.3
 internal/gateway/qa_ability_sight_test.go  0.0
@@ -190,6 +192,7 @@ internal/gateway/qa_controls_none_test.go  0.0
 internal/gateway/qa_creature_shown_test.go  0.0
 internal/gateway/qa_creature_test.go  0.0
 internal/gateway/qa_describe_token_test.go  1.9
+internal/gateway/qa_door_square_test.go  0.0
 internal/gateway/qa_id_bound_test.go  0.0
 internal/gateway/qa_issuer_test.go  0.9
 internal/gateway/qa_joining_test.go  4.8
@@ -200,6 +203,7 @@ internal/gateway/qa_move_reason_test.go  0.6
 internal/gateway/qa_name_bound_test.go  1.9
 internal/gateway/qa_names_test.go  0.0
 internal/gateway/qa_note_refusal_test.go  0.4
+internal/gateway/qa_plain_refusal_test.go  0.7
 internal/gateway/qa_player_perch_test.go  0.0
 internal/gateway/qa_promotion_opening_test.go  0.0
 internal/gateway/qa_promotion_queued_test.go  0.0
@@ -220,7 +224,7 @@ internal/gateway/ruleset_test.go  20.4
 internal/gateway/scenario_test.go  31.2
 internal/gateway/seat.go  16.0
 internal/gateway/seat_internal_test.go  2.8
-internal/gateway/server.go  21.4
+internal/gateway/server.go  21.3
 internal/gateway/server_internal_test.go  33.5
 internal/gateway/server_test.go  23.9
 internal/gateway/server_visibility_test.go  13.4

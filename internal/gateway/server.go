@@ -728,6 +728,12 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		}
 	}
 
+	// Keep this after authorize: before it, a player asks of any square of any
+	// scene whether it is a door (SPEC-013).
+	if sceneID, at, ok := doorSquare(cmd); ok && !st.IsDoor(sceneID, at.GetX(), at.GetY()) {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: "There is no door there."}
+	}
+
 	// Keep the validators here, for every role, before anything is written: not
 	// in Authorize, since they refuse a form and not an issuer; not in ToEvent
 	// (TestEveryClientCommandConverts); not in the fold (SPEC-013).
@@ -798,6 +804,16 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: seq}
+}
+
+func doorSquare(cmd *vttv1.ClientCommand) (string, *vttv1.GridPosition, bool) {
+	switch c := cmd.GetCommand().(type) {
+	case *vttv1.ClientCommand_OpenDoor:
+		return c.OpenDoor.GetSceneId(), c.OpenDoor.GetAt(), true
+	case *vttv1.ClientCommand_CloseDoor:
+		return c.CloseDoor.GetSceneId(), c.CloseDoor.GetAt(), true
+	}
+	return "", nil, false
 }
 
 // announcePresence tells every other connection that pc's participant arrived

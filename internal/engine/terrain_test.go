@@ -210,6 +210,30 @@ func TestBlockedOnUnknownSceneBlocks(t *testing.T) {
 	}
 }
 
+func TestIsDoorIsTrueForADoorTileAlone(t *testing.T) {
+	st := stateWithCellar(t)
+	if !st.IsDoor("cellar", 0, 1) {
+		t.Fatal("the closed door at (0,1) is not a door")
+	}
+	must(t, engine.Apply(st, &vttv1.Envelope{Payload: &vttv1.Envelope_DoorOpened{
+		DoorOpened: &vttv1.DoorOpened{SceneId: "cellar", At: pos(0, 1)},
+	}}))
+	if !st.IsDoor("cellar", 0, 1) {
+		t.Fatal("the door at (0,1) stopped being a door once opened")
+	}
+	for _, c := range []struct {
+		scene string
+		x, y  int32
+	}{{"cellar", 0, 0}, {"cellar", 1, 1}, {"cellar", 5, 5}, {"nowhere", 0, 1}} {
+		if st.IsDoor(c.scene, c.x, c.y) {
+			t.Fatalf("(%d,%d) in %q is a door", c.x, c.y, c.scene)
+		}
+	}
+	if seedScene(t).IsDoor("scn", 5, 5) {
+		t.Fatal("a square of a scene with no tiles is a door")
+	}
+}
+
 // TestBlockedOnSceneWithoutTerrainNeverBlocks locks in Patrik's 2026-08-13
 // ruling: an empty Tiles map is legal. A scene created before this branch
 // existed — or one deliberately made without terrain — has to keep behaving

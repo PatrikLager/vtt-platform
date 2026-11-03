@@ -47,6 +47,11 @@ func (st *State) Blocked(sceneID string, x, y int32) (bool, string) {
 	return false, ""
 }
 
+// IsDoor reports whether the square's tile, in a scene the state holds, is a door.
+func (st *State) IsDoor(sceneID string, x, y int32) bool {
+	return st.Scenes[sceneID].Tiles[gridKey(x, y)].Kind == "door"
+}
+
 // gridKey formats a grid square the way the wire format does: column then
 // row, comma-separated (maps-as-geometry spec §4.1) — SceneCreated's Tiles
 // map and OpenDoors are both keyed this way, so every lookup and mutation
