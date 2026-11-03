@@ -14,9 +14,10 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 (`validateAddActor`), `internal/gateway/note_validate.go`
 (`validateUpsertNote`), `internal/gateway/convert.go` (`ToEvent`, `voice`) and
 `internal/gateway/server.go` (`answerCommand`, `authorize`,
-`handleSetViewpoint`, `handleCommand`, `describeBlockage`), with
-`perceive.SeesActor` and `rules.UnknownTarget` for the sight gate, against
-`internal/engine`'s `State`; pinned by `internal/gateway/authz_test.go`,
+`handleSetViewpoint`, `handleCommand`, `describeBlockage`, `doorSquare`),
+with `perceive.SeesActor` and `rules.UnknownTarget` for the sight gate and
+`engine.State.IsDoor` for the door gate, against `internal/engine`'s
+`State`; pinned by `internal/gateway/authz_test.go`,
 `grant_validate_test.go`, `add_actor_validate_test.go`,
 `note_validate_test.go`, `convert_test.go`, `server_test.go`,
 `server_visibility_test.go`, `server_internal_test.go`, `watch_test.go`,
@@ -25,7 +26,8 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `qa_ability_sight_test.go`, `narration_test.go`, `qa_speaking_test.go`,
 `remove_participant_test.go`, `qa_removal_test.go`,
 `qa_remove_roles_test.go`, `whisper_test.go`, `qa_whisper_test.go`,
-`plain_refusal_test.go` and `qa_plain_refusal_test.go`, and by
+`plain_refusal_test.go`, `qa_plain_refusal_test.go`, `door_square_test.go`
+and `qa_door_square_test.go`, and by `internal/engine/terrain_test.go` and
 `cmd/vtt/scenario_goldens_test.go`.
 
 ## Principles served
@@ -196,10 +198,11 @@ comparison of two empty ids passes, that guard is the refusal. Control is an
 every role but player, and `handleCommand`'s move gate and sight gate run for
 a player only. They act on, and grant and revoke control of, an actor a player
 controls, and acting on it leaves its `controller_ids` as they were; they
-work a door from anywhere; they move a token onto any square, a wall and a
-square no player can see included (VTT-158, VTT-379); they aim an ability at
-an actor no character sees (VTT-482). The table's cells
-and the four checks for every role bind them.
+work a door from anywhere, though only a door; they move a token onto any
+square, a wall and a square no player can see included (VTT-158, VTT-379);
+they aim an ability at an actor no character sees (VTT-482). The table's
+cells, the four checks for every role, the door gate and the three
+validators bind them.
 
 **The command path.** `serve`'s read loop decodes each frame, re-resolves the
 participant through `identity.Lookup` (SPEC-009) and hands the command to
@@ -217,23 +220,24 @@ runs, in this order, and stops at the first refusal:
 1. for a player's `move_token` whose token the snapshot holds, the move gate
    below;
 2. for a player's `use_ability`, the sight gate below;
-3. `validateGrantActorControl`, for a `grant_actor_control`;
-4. `validateAddActor`, for an `add_actor`;
-5. `validateUpsertNote`, for an `upsert_note`;
-6. the dispatch of `use_ability`, `load_adventure`, `load_map`,
+3. for an `open_door` or a `close_door`, from any role, the door gate below;
+4. `validateGrantActorControl`, for a `grant_actor_control`;
+5. `validateAddActor`, for an `add_actor`;
+6. `validateUpsertNote`, for an `upsert_note`;
+7. the dispatch of `use_ability`, `load_adventure`, `load_map`,
    `remove_actor`, `remove_participant`, `promote_participant`,
    `set_join_door` and `rotate_join_link` to their handlers;
-7. `ToEvent`, which makes every other command one envelope stamped with the
+8. `ToEvent`, which makes every other command one envelope stamped with the
    participant's id and role;
-8. for a `TokenMoved`, the backfill of `SceneId` and `From` from the
+9. for a `TokenMoved`, the backfill of `SceneId` and `From` from the
    snapshot's token; for a `NarrationAdded`, `voice`, which writes `as`: the
    named actor's name from the same snapshot for a player's line in character
    (VTT-496), and the sender's display name for any line out of character
    (VTT-497); otherwise it leaves the `as` the DM or the agent gave
    (VTT-498);
-9. `campaign.Append`, which folds a clone of the envelope and returns the
+10. `campaign.Append`, which folds a clone of the envelope and returns the
    fold's refusal before anything is persisted;
-10. an ok=true result carrying the sequence `campaign.Append` assigned.
+11. an ok=true result carrying the sequence `campaign.Append` assigned.
 
 Every refusal is an ok=false `CommandResult` whose `Error` is the refusal's
 text. The read loop queues it on the issuing connection and reads the next
@@ -277,6 +281,21 @@ are the ones the move gate judges by, so a party member of the player's out of
 that character's sight cannot be aimed at, not even by itself as caster, and a
 player who controls only a creature has no eyes and names no target that is
 not refused.
+
+**The door gate.** For an `open_door` or a `close_door` that `Authorize`
+accepts, from any role, `handleCommand` takes the command's scene id and
+square from `doorSquare` and asks `engine.State.IsDoor` of them, against the
+snapshot `authorize` took. `IsDoor` answers whether the tile at that square,
+in a scene the state holds, has the kind `door`; it reads the tile and never
+`OpenDoors`, so a door open or closed is a door. Where it answers false (a
+wall, a floor, a square with no tile, a square off the grid, a scene the
+state does not hold) the gate refuses with `There is no door there.`, for
+every role, and appends nothing (VTT-608). It runs after `Authorize`, so a
+player's command that `mayWorkDoor` refuses never reaches it and is answered
+with `mayWorkDoor`'s text, one text whatever the square is (VTT-609). It
+asks nothing about sight. `engine.Apply`'s door arms refuse
+only a scene the state does not hold and a missing position, so the gate is
+what holds a door command to a door.
 
 **`describeBlockage`.** It rewrites the reason `engine.State.Blocked` gives.
 `scenery: <kind>` becomes `something (a <kind>) is in the way`, the kind
@@ -359,9 +378,12 @@ A client or tool author is bound by these:
   owner's ruling B-4 of 2026-10-22). The DM and the agent may not issue it.
 - A player acts only through an actor that counts them among its
   controllers; an actor nobody controls is the DM's and the agent's.
-- A player works a door from a controlled token beside it, and moves only
-  onto a square the party member SPEC-015 judges the move by can see now; a
-  square they remember and cannot see is refused.
+- A door command names a door: an `open_door` or a `close_door` at a square
+  whose tile is not a door, or in a scene the table has not created, is
+  refused for every role, the DM's and the agent's included.
+- A player works a door from a controlled token on it or beside it, and moves
+  only onto a square the party member SPEC-015 judges the move by can see now;
+  a square they remember and cannot see is refused.
 - A player aims an ability only at actors that party member sees; a target it
   does not see is answered as a target that names no actor.
 - A token's texts are written by the DM and the agent alone.
@@ -376,10 +398,13 @@ A client or tool author is bound by these:
   text an absent id gets (VTT-472), and a player's line in character naming an
   actor that is absent, not theirs, or not a party member is answered with
   one text (VTT-506), as is a player's whisper from an actor that is absent,
-  not theirs, or not a party member (VTT-589). The move gate's two texts name
-  no package and no id (VTT-601, VTT-602), and the two a party member with no
-  name is refused with begin `This character has no name.` and name no
-  package (VTT-603); no other refusal's text is bounded by this record.
+  not theirs, or not a party member (VTT-589), and a player's door command
+  that `mayWorkDoor` refuses, whatever its square (VTT-609). The move gate's
+  two texts name no package and no id (VTT-601, VTT-602), and the two a party
+  member with no name is refused with begin `This character has no name.` and
+  name no package (VTT-603). The door gate's text, `There is no door there.`,
+  names no package and no id (VTT-608); no other refusal's text is bounded by
+  this record.
 - A `grant_actor_control` and an `add_actor` state what the actor is; an
   `add_actor` never confers control, and control is granted afterwards.
 - An `upsert_note` states who may read the note.
@@ -390,7 +415,8 @@ A client or tool author is bound by these:
   name (SPEC-022) and the agent names itself, as `add_whisper`'s tool tells
   it (SPEC-007).
 - The DM and the agent are bound by the table's cells, by promotion's bound,
-  by `mayVoice` and by `mayWhisper`, and by no player rule.
+  by `mayVoice`, by `mayWhisper`, by the door gate and by the three
+  validators, and by no player rule.
 - What a reconnect opens on is SPEC-015's.
 
 And whoever changes the code:
@@ -407,4 +433,4 @@ VTT-147, VTT-148, VTT-149, VTT-150, VTT-151, VTT-152, VTT-153, VTT-154,
 VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161, VTT-162, VTT-231,
 VTT-261, VTT-344, VTT-379, VTT-463, VTT-472, VTT-482, VTT-487, VTT-495,
 VTT-496, VTT-497, VTT-498, VTT-499, VTT-503, VTT-506, VTT-565, VTT-587,
-VTT-588, VTT-589, VTT-590, VTT-601, VTT-602, VTT-603.
+VTT-588, VTT-589, VTT-590, VTT-601, VTT-602, VTT-603, VTT-608, VTT-609.
