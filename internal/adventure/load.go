@@ -31,15 +31,9 @@ const (
 	maxIDBytes = 128
 )
 
-// supportedFormatVersions is the set of format_version values Load accepts
-// for an adventure manifest (spec §4: "format_version \"1\""). Mirrors
-// internal/rules/load.go's own supportedFormatVersions — the ruleset
-// format's load-bearing version switch — so this sibling loader rejects an
-// absent, empty, or arbitrary value (fix-wave F1) instead of silently
-// loading under whatever semantics happen to be current, the same
-// discipline that let the ruleset format retire v1 cleanly when v2 arrived
-// (docs/superpowers/plans/2026-07-25-format-v2-composition.md). Only "1"
-// exists today; a future adventure format v2 adds its value here.
+// supportedFormatVersions holds the format_version values Load accepts; add a
+// new adventure format's value here. TestLoadRejectsMissingFormatVersion and
+// TestLoadInvalidFixtures hold the refusal of any other.
 var supportedFormatVersions = map[string]bool{"1": true}
 
 // Load reads and fully validates the adventure directory at dir against rs
