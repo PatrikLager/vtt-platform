@@ -126,9 +126,9 @@ bearer credentials for live-mode runs — `chmod 600` it and never commit it
 
 `vtt mcp --server <ws-url> [--token <token>]` serves an MCP server over
 stdio: every campaign command in the contract, plus read tools for state,
-event history, the ruleset and adventure guides, and the join door. An MCP
-host can play at the table as the agent participant, judged by the exact same
-authz table any other client is (see
+event history, the ruleset and its guide, the adventure guides, and the join
+door. An MCP host can play at the table as the agent participant, judged by
+the exact same authz table any other client is (see
 `docs/superpowers/specs/2026-07-24-mcp-gateway-design.md`). `--token` and
 the `VTT_TOKEN` environment variable are both honored; `--token` wins if
 both are given.

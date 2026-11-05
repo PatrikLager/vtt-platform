@@ -119,6 +119,7 @@ var GoRegisteredToolNames = []string{
 	"get_adventure_guide", // adventure_guide_tool.go
 	"get_join_link",       // door_tools.go (#45)
 	"get_participants",    // door_tools.go (#45)
+	"get_ruleset",         // ruleset_tool.go (VTT-621)
 }
 
 // registerReadTools adds get_state and get_events_since to the same tool

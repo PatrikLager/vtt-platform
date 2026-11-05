@@ -116,6 +116,15 @@ type rulesetJSON struct {
 	Abilities  []abilityJSON   `json:"abilities"`
 	Conditions []conditionJSON `json:"conditions"`
 	Resources  []string        `json:"resources"`
+	Properties []propertyJSON  `json:"properties"`
+}
+
+// VTT-619
+type propertyJSON struct {
+	Key         string `json:"key"`
+	Type        string `json:"type"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
@@ -128,6 +137,7 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 		Abilities:  []abilityJSON{},
 		Conditions: []conditionJSON{},
 		Resources:  []string{},
+		Properties: []propertyJSON{},
 	}
 	if s.ruleset != nil {
 		rs := s.ruleset
@@ -167,6 +177,9 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 			if p.Type == rules.PropertyResource {
 				out.Resources = append(out.Resources, p.Key)
 			}
+			out.Properties = append(out.Properties, propertyJSON{
+				Key: p.Key, Type: p.Type, Name: p.Name, Description: p.Description,
+			})
 		}
 	}
 	writeJSON(w, out)

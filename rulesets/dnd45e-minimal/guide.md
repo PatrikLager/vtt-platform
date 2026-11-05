@@ -9,69 +9,25 @@ at half hp. Proficiency and any enhancement bonus are already baked into
 each ability's roll expression — there is no separate equipment layer in
 this slice (future work).
 
-Format v2 (atoms + compositions): every ability below is built from this
-ruleset's OWN atomic statements under `atoms/` — no borrowed vocabulary, no
-shared atom with any other ruleset. See "Atoms" below for what each one
-does; see "Abilities" for how they're composed.
+Every ability below is built from this ruleset's OWN atomic statements under
+`atoms/` — no borrowed vocabulary, no shared atom with any other ruleset.
+See "Atoms" below for what each one does; see "Abilities" for how they're
+composed.
 
-## Attributes
+## Properties
 
-- **str** — melee attack/damage stat (longsword, staggering blow).
-- **dex** — ranged and finesse attack/damage stat (goblin weapons, crossbow,
-  hunter's flurry).
-- **con** — drives `rally`'s recovery amount.
-- **max_hp** — this creature's maximum hit points, duplicated as an
-  attribute (see "The max_hp duplication rule" below). int/wis/cha are
-  omitted from this slice: nothing here reads them.
-
-## Defenses
-
-- **ac** — Armor Class. Every weapon attack in this slice rolls against it.
-- **fort** — Fortitude. `staggering-blow` attacks Fortitude instead of AC.
-- **ref**, **will** — declared for future powers; nothing in this slice
-  attacks them yet.
-
-Format v2 convention: a defense's runtime value lives in the SAME
-`attributes` map an actor's attributes do (there is no separate `defenses`
-object anywhere in the wire format or in `add_actor`) — a resolution's
-`vs` expression reads it as `@target.ac`, exactly like an attribute ref.
-The split into "Attributes" / "Defenses" sections above is purely for this
-guide's readability; when you call `add_actor`, put `ac`/`fort`/`ref`/`will`
-directly alongside `str`/`dex`/`con`/`max_hp` in one `attributes` object —
-see the reference statblocks below.
-
-## Resources
-
-- **hp** — current hit points. No `default_max_expr`: every statblock sets
-  both `current` and `max` explicitly when the DM calls `add_actor` (there
-  is no formula to derive max hp from attributes in this slice — it's a
-  fixed statblock number). Two thresholds fire automatically as hp changes:
-  - **bloodied** — fires once `hp * 2 <= max_hp`. The grammar has no
-    comparison operators (a threshold's `when` is "true" exactly when it
-    evaluates non-zero), so this is written as the clamped idiom
-    `max(0, @max_hp - #hp * 2 + 1)`: strictly positive while at or below
-    half hp, exactly `0` the instant hp rises above half. `remove_when_false:
-    true`, so healing back above half removes `bloodied` again — it's not a
-    one-way trip.
-  - **dying** — fires once `hp` hits exactly `0` (hp is floor-clamped at 0 by
-    the platform, so "hp == 0" and "hp <= 0" are the same event here):
-    `max(0, 1 - #hp)`. Also `remove_when_false: true` — any healing off of 0
-    hp clears `dying` automatically.
-- **flurry_uses** — fuel for `hunters-flurry`, the one encounter power in
-  this slice. Only actors who actually have `hunters-flurry` on their sheet
-  need this resource at all (see the human fighter statblock below); a
-  goblin never needs it. Set `current: 1, max: 1` for a fresh encounter;
-  once spent it does not refill in this slice (no rest/encounter engine —
-  see the platform's non-goals). No thresholds.
+Every property this ruleset declares is in `ruleset.json` with its key, its
+type, what the table calls it and what it means. Read them with
+`get_ruleset`, which answers what `GET /api/ruleset` answers: the
+descriptions there are this ruleset's own account of each property, and this
+guide does not repeat them. In `add_actor` and in a statblock, a number
+property goes in `attributes` and a resource property in `resources`, with
+its current value and maximum.
 
 ### The max_hp duplication rule
 
-An expression can read an attribute (`@x`) or a resource's CURRENT value
-(`#x`) — there is no way to read a resource's MAX from inside an
-expression (format v2 carries this v1 constraint forward unchanged). Since
-the `bloodied` threshold needs to compare current hp against max hp, every
-statblock in this ruleset carries a `max_hp` **attribute** whose value must
-be kept equal to the `hp` resource's `max`. When you `add_actor`, set both:
+`max_hp`'s description says why it exists. When you `add_actor`, set
+both:
 
 ```
 attributes: { ..., "max_hp": 28 }
@@ -79,7 +35,7 @@ resources:  { "hp": { "current": 28, "max": 28 }, ... }
 ```
 
 If you ever change a creature's max hp mid-campaign (level up, a buff),
-update BOTH the `max_hp` attribute and the `hp` resource's `max` together —
+update BOTH the `max_hp` number and the `hp` resource's `max` together —
 they are two copies of the same number by construction, not two
 independent facts.
 
@@ -87,9 +43,9 @@ independent facts.
 
 - **bloodied** — at or below half hp; a pure marker (some 4.5e powers key
   off it, none in this slice do yet). Applied/removed automatically by the
-  `hp` threshold above.
+  `hp` resource's threshold.
 - **dying** — at 0 hp, unconscious and failing; needs stabilizing or
-  healing. Applied/removed automatically by the `hp` threshold above.
+  healing. Applied/removed automatically by the `hp` resource's threshold.
 - **dazed** — can act only once per turn, grants combat advantage, no
   opportunity actions. Applied directly by `staggering-blow` on a hit (not
   threshold-driven — it's a mechanical result of the attack, not a hp
@@ -100,7 +56,7 @@ independent facts.
 
 **Conditions are narration, not enforcement.** The engine tracks which
 conditions are on which actor, and fires `bloodied`/`dying` automatically
-off the `hp` thresholds above — but it never READS a condition anywhere
+off the `hp` resource's thresholds — but it never READS a condition anywhere
 inside `use_ability`'s resolution. A `dying` (0 hp) or `dazed` actor can
 still be the caster OR the target of any ability, with no rejection, no
 penalty, nothing: the platform will happily let a creature at 0 hp swing a
@@ -127,8 +83,8 @@ own words.
   targeting for a ranged ability: range `distance`, up to `targets`
   simultaneous targets. `hunters-flurry` is the one ability in this slice
   that binds `targets` above 1 — everything else binds it to 1.
-- **weapon-attack-roll** (`attack_stat`: attribute, `prof`: int, `defense`:
-  defense) — the universal attack roll: `1d20 + attack_stat + prof` against
+- **weapon-attack-roll** (`attack_stat`: number, `prof`: int, `defense`:
+  number) — the universal attack roll: `1d20 + attack_stat + prof` against
   the target's named `defense`, labeled `hit`/`miss`. Every attack in this
   slice — all six of goblin-scimitar, goblin-shortbow, longsword-strike,
   crossbow-shot, hunters-flurry, and staggering-blow — composes this SAME
@@ -172,7 +128,7 @@ whether you rally yourself or shout encouragement to an ally standing next
 to you (target and caster happen to be the same actor for a self-cast, but
 the expression is written from the recipient's point of view either way).
 Thresholds (`bloodied`/`dying`) stay bare, unscoped refs — they're a
-single-actor position (the resource's own owner), unchanged from v1.
+single-actor position (the resource's own owner).
 
 ## Abilities
 
@@ -219,7 +175,7 @@ The fighter (`str: 4`) swings `longsword-strike` at a goblin (`ac: 15`,
 `weapon-damage`'s `0 - (1d8 + @caster.str)` damage roll — the parentheses
 around `(3)` and around `(1d8 + @caster.str)` are the composition splice:
 an `int`- or `expr`-kind param binding always splices in as a parenthesized
-subtree, format v2's hygiene guarantee — see the compiled-form goldens
+subtree, the format's hygiene guarantee — see the compiled-form goldens
 under `goldens/compiled/` for exactly what each ability flattens to), a
 `ResourceChanged` lowering the goblin's `hp`, and — if that hit brought the
 goblin to or below half hp — a `ConditionApplied` for `bloodied`, fired
@@ -277,9 +233,9 @@ written (`298f677`), until 2026-09-02. `kind` became mandatory at `8f130c8`
 on 2026-08-24, so every `add_actor` in this runbook was refused for the nine
 days between those two dates.)
 
-Remember the max_hp duplication rule above — `max_hp` (attribute) always
-equals `hp`'s `max` (resource). Per format v2 convention, `ac`/`fort`/
-`ref`/`will` live directly IN the `attributes` map, alongside `str`/`dex`/
+Remember the max_hp duplication rule above — `max_hp` (a number) always
+equals `hp`'s `max` (a resource). `ac`/`fort`/`ref`/`will` are numbers too,
+so they live directly IN the `attributes` map, alongside `str`/`dex`/
 `con`/`max_hp` — there is no separate defenses object.
 
 ### Goblin cutter

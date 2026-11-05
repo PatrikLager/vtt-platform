@@ -202,6 +202,9 @@ func New(cfg Config) (*Server, error) {
 	// to go stale, which is the ripple #30 spent a task on.
 	s.registerDoorTools()
 
+	// get_ruleset (ruleset_tool.go, VTT-621).
+	s.registerRulesetTool()
+
 	return s, nil
 }
 

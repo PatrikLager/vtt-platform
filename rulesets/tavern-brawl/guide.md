@@ -6,33 +6,20 @@ across game systems) — not to be a serious combat system. Run it exactly
 like any other ruleset: load it, add actors with the stats it declares, and
 resolve `use_ability` commands against it.
 
-Format v2 (atoms + compositions): every ability below is built from this
-ruleset's OWN atomic statements under `atoms/` — no borrowed vocabulary,
-no shared atom with any other ruleset. See "Atoms" below for what each one
-does; see "Abilities" for how they're composed.
+Every ability below is built from this ruleset's OWN atomic statements under
+`atoms/` — no borrowed vocabulary, no shared atom with any other ruleset.
+See "Atoms" below for what each one does; see "Abilities" for how they're
+composed.
 
-## Attributes
+## Properties
 
-- **brawn** — raw physical force. Drives every attack roll here.
-- **grit** — how much punishment a patron can shrug off before the room
-  starts spinning. Drives `drink`'s default capacity (see below).
-
-## Defenses
-
-- **footing** — how hard a patron is to knock off balance. Every attack in
-  this ruleset rolls `1d20 + brawn` against the target's `footing`.
-
-## Resources
-
-- **drink** — how much ale has ended up on or in a patron. Defaults to
-  `3 + grit`. While non-zero, the patron is `dazed-by-ale`; `sober-up`
-  drains it back to exactly zero, which removes the condition again (this
-  resource's threshold sets `remove_when_false: true` for exactly that
-  reason — accumulation is reversible, not a one-way trip).
-- **stamina** — how many big, showy moves a patron has left in them this
-  scene. Defaults to `2`. `chair-swing` spends 1 per swing; there's no way
-  to recover it in this slice (no turn/rest engine — see the platform's
-  non-goals).
+Every property this ruleset declares is in `ruleset.json` with its key, its
+type, what the table calls it and what it means. Read them with
+`get_ruleset`, which answers what `GET /api/ruleset` answers: the
+descriptions there are this ruleset's own account of each property, and this
+guide does not repeat them. In `add_actor` and in a statblock, a number
+property goes in `attributes` and a resource property in `resources`, with
+its current value and maximum.
 
 ## Conditions
 
@@ -53,7 +40,7 @@ its own words.
 - **brawl-reach** (`reach`: int) — contributes targeting: how far a swing,
   a splash, or a moment of self-control reaches. Every ability composes
   this, bound to whatever range fits it.
-- **footing-contest** (`attack_stat`: attribute) — the swing-vs-balance
+- **footing-contest** (`attack_stat`: number) — the swing-vs-balance
   roll: `1d20 + attack_stat` against the target's `footing`, labeled
   `hit`/`miss`.
 - **drink-soak** (`amount`: expr) — on a `footing-contest` hit, splashes
@@ -96,7 +83,7 @@ A patron with `brawn: 3` swings a chair (`chair-swing`) at a target with
 `(1 + 1d4)` damage roll recorded — the parentheses are the composition
 splice: `chair-swing` binds `drink-soak`'s `amount` param to the
 expression `1 + 1d4`, and an `expr`-kind binding always splices in as a
-parenthesized subtree, spec §2's hygiene guarantee), a `ResourceChanged`
+parenthesized subtree, the format's hygiene guarantee), a `ResourceChanged`
 spending 1 `stamina` from the caster, a `ResourceChanged` raising the
 target's `drink`, and a `ConditionApplied` for `dazed-by-ale` (from
 `stagger-from-drink` — since the target wasn't already dazed, the `drink`

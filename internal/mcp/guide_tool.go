@@ -16,9 +16,10 @@ import (
 const noRulesetLoadedGuideMessage = "mcp: no ruleset loaded"
 
 const getRulesetGuideDescription = `Return the loaded ruleset's guide.md ` +
-	`verbatim — LLM-facing documentation for the abilities/conditions/ ` +
-	`resources this table's ruleset defines, written by the ruleset's own ` +
-	`author (not this server). Takes no arguments. If this server was ` +
+	`verbatim — LLM-facing documentation for running this table's ruleset, ` +
+	`written by the ruleset's own author (not this server). What each ` +
+	`property the ruleset declares means is not here: get_ruleset answers it. ` +
+	`Takes no arguments. If this server was ` +
 	`started with no --ruleset flag, returns a tool-level error explaining ` +
 	`that no ruleset is loaded — use_ability/remove_condition will also ` +
 	`fail cleanly in that case.`
