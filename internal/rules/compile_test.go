@@ -10,39 +10,12 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
-// mustParse (shared with expr_test.go) parses src and fails the test
-// immediately on error — used throughout this file to hand-build the
-// *Expr values a compiled power is expected to contain, from the exact
-// fully-substituted source text a reader can independently derive by
-// tracing an atom's template through its composition's param bindings
-// (spec §6's "hand-derived" requirement).
-
-// TestLoadValidV2Fixture is the primary behavioral pin (task brief: "Load
-// of a valid v2 fixture returns compiled powers whose flattened content
-// you HAND-DERIVE in the test"). testdata/valid-v2 composes:
-//
-//	quick-jab = reach-delivery(reach=1) + clash-roll(clash_stat=vim, edge=2) + clash-damage(power=3)
-//	rally     = reach-delivery(reach=0) + rally-effect(gain=5)
-//	tag-team  = reach-delivery(reach=1) + clash-roll(clash_stat=vim, edge=0) + tag-q + tag-p
-//	            (tag-q, tag-p are independent non-dependents — an
-//	            in-degree-0 TIE once clash-roll is placed — P10 task-2
-//	            review fix: pins the topo tie-break AND the outcome-merge
-//	            order, see CompiledPower.BranchOutcomes' doc comment)
-//	ward-shift = wide-delivery(max=2) + guard-check(guard_stat=brace) + ward-mark(mark=winded) + ward-clear
-//	            (review fix: exercises a defense-kind param, a
-//	            condition-kind param, a targeting max_targets placeholder,
-//	            an apply_condition + remove_condition outcome pair (via
-//	            ward-mark) plus a standalone remove_condition (via
-//	            ward-clear, needed because the schema walker only probes
-//	            an array's INDEX 0 — ward-mark's effects[0] is
-//	            apply_condition, so remove_condition needed its own
-//	            effects[0] demonstration) — and is the first fixture to
-//	            populate BranchOutcomes[1] and Effects together)
-//
-// Tracing each atom's raw contribution template through its composition's
-// bindings by hand (see testdata/valid-v2/atoms/*.json) gives the exact
-// expected CompiledPower below — this test asserts the compiler produces
-// precisely that, not merely "compiles without error".
+// TestLoadValidV2Fixture loads testdata/valid-v2 and asserts that each
+// compiled power equals one derived by hand from its atoms' templates and its
+// composition's bindings (testdata/valid-v2/atoms/*.json, abilities/*.json),
+// not merely that it compiles. tag-team pins the topological tie-break and
+// the outcome-merge order; ward-shift is the only power that fills
+// BranchOutcomes[1], so deleting it deletes that assertion.
 func TestLoadValidV2Fixture(t *testing.T) {
 	rs, err := rules.Load(fixture(t, "valid-v2"))
 	if err != nil {
@@ -74,7 +47,7 @@ func TestLoadValidV2Fixture(t *testing.T) {
 			Targeting: rules.Targeting{Range: 1, MaxTargets: 1},
 			Resolution: &rules.CompiledResolution{
 				// clash-roll's "1d20 + @caster.{clash_stat} + {edge}" with
-				// clash_stat (attribute-kind, bare substitution) = "vim"
+				// clash_stat (number-kind, bare substitution) = "vim"
 				// and edge (int-kind, parenthesized substitution) = 2.
 				Roll: mustParse(t, "1d20 + @caster.vim + (2)"),
 				// vs is written directly in the atom (no placeholder).
@@ -206,17 +179,10 @@ func TestLoadValidV2Fixture(t *testing.T) {
 		}
 	})
 
-	// t.Run("ward-shift", ...) is the review fix wave's coverage pin (P10
-	// task-2 review, item 4): exercises a defense-kind param binding
-	// (guard_stat="brace", substituted bare into "@target.{guard_stat}"),
-	// a condition-kind param binding (mark="winded", substituted bare
-	// into an apply_condition.id), a hardcoded (non-placeholder)
-	// remove_condition, and a targeting max_targets "{param}" placeholder
-	// (wide-delivery's "range" is a literal 2, "max_targets" is
-	// "{max}"=2 — closing the gap where only "range" had ever been
-	// placeholder-bound). Also the first fixture where the resolution's
-	// SECOND branch ("fail") is populated, so BranchOutcomes[1] finally
-	// gets asserted non-nil somewhere in this suite.
+	// ward-shift binds a number-kind param (guard_stat="brace", bare into
+	// "@target.{guard_stat}") and a condition-kind one (mark="winded", into an
+	// apply_condition.id), with a hardcoded remove_condition, a max_targets
+	// "{param}" placeholder and the only populated second ("fail") branch.
 	t.Run("ward-shift", func(t *testing.T) {
 		got, ok := rs.Compiled["ward-shift"]
 		if !ok {
@@ -400,11 +366,11 @@ func TestCompileHygienicSpliceNameKindPrecedence(t *testing.T) {
 	}
 }
 
-// writeSpliceFixture writes a minimal v2 ruleset at dir with one atom
-// ("probe") declaring an int-kind targeting param, an attribute-kind
-// "stat" param used bare in a ref position ("@target.{stat} * 2"), and an
-// expr-kind "p" param used at a value position ("2 * {p}") — and one
-// ability ("probe-ability") composing it with stat="vim" and p=pExprSrc.
+// writeSpliceFixture writes a minimal ruleset at dir: one atom, "probe", with
+// an int-kind targeting param, a number-kind "stat" param used bare in a ref
+// position ("@target.{stat} * 2") and an expr-kind "p" param at a value
+// position ("2 * {p}"); and one ability, id "probe" in probe-ability.json,
+// composing it with stat="vim" and p=pExprSrc.
 func writeSpliceFixture(t *testing.T, dir, pExprSrc string) {
 	t.Helper()
 	mkdirs(t, dir, "atoms", "abilities", "conditions")

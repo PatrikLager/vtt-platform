@@ -10,7 +10,7 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
-// baseProperties is testdata/valid's property list, built fresh per call.
+// baseProperties is a fresh copy of a property list testdata/valid loads with.
 func baseProperties() []map[string]any {
 	return []map[string]any{
 		{"key": "brawn", "type": "number", "name": "Brawn", "description": "Force behind a strike."},

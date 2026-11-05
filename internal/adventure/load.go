@@ -213,17 +213,12 @@ type resourceValJSON struct {
 	Max     int32 `json:"max"`
 }
 
-// loadActors decodes every actors/*.json file (file-name order — spec §5's
-// Compile order binding), validating each actor's declared KIND against the
-// two-name vocabulary above, each statblock's attribute/resource vocabulary
-// against the ruleset's declared names, and each resource's current<=max
-// (when max>0). Returns the loaded actors in file-name order plus the set of
-// actor ids declared, so loadScenes can validate placement actor references
-// without a second directory read.
-//
-// "kind" is REQUIRED and has no default — the one field in this format whose
-// absence is refused rather than interpreted. The reasoning is at the check
-// itself, where the next person to wonder about it will be standing.
+// loadActors decodes every actors/*.json file in file-name order, which
+// Compile keeps, checking each actor's required KIND against the two-name
+// vocabulary above (no default; the check says why), each statblock key
+// against rs's properties by type (checkStatblockKey) and each resource's
+// current<=max when max>0. It also returns the set of actor ids, so
+// loadScenes checks a placement's actor without a second directory read.
 func loadActors(dir string, rs *rules.Ruleset) ([]AdventureActor, map[string]bool, error) {
 	paths, err := jsonFilesIn(dir)
 	if err != nil {

@@ -281,16 +281,10 @@ func (e *Expr) String() string {
 	return e.src
 }
 
-// Refs returns the distinct attribute ('@') and resource ('#') identifiers
-// referenced anywhere in the expression — including inside a dice node's
-// count/sides sub-expressions (spec §5, expression-sized dice; v1's
-// always-literal dice never had anything to walk into here) — in
-// first-occurrence order. Used by the loader to cross-check every
-// expression's identifiers against the ruleset manifest's declared
-// attribute/resource names (spec §5) — Parse itself does not know about
-// declared names. Scope (see Scopes) is not reflected here: a scoped and a
-// bare ref to the same name collapse to one entry, exactly like two bare
-// refs to the same name always have.
+// Refs returns the distinct '@' and '#' identifiers anywhere in e, a dice
+// node's count and sides included, in first-occurrence order; a scoped and a
+// bare ref to one name are one entry. The loader checks each against the
+// ruleset's properties (checkExprRefs); Parse knows no declared key.
 func (e *Expr) Refs() (attrs []string, resources []string) {
 	if e == nil || e.root == nil {
 		return nil, nil
@@ -732,16 +726,10 @@ func isDigit(c byte) bool {
 	return c >= '0' && c <= '9'
 }
 
-// isValidIdentName reports whether s matches the expression grammar's
-// IDENT production ([A-Za-z_][A-Za-z0-9_]*) — reused by load.go to reject
-// manifest attribute/defense/resource names that could never actually be
-// referenced via '@'/'#' in an expression (e.g. a hyphenated name would
-// lex as subtraction, not one identifier — see expr.go's grammar doc and
-// the resource-naming note in the task-4 report). Built on the lexer's own
-// isIdentStart/isIdentCont so this check can never drift from what Parse
-// actually accepts after a sigil — a second, hand-written regex duplicating
-// the same charset would be exactly the kind of parallel-truth this
-// package's schema/loader cross-checks exist to prevent.
+// isValidIdentName reports whether s matches the grammar's IDENT production.
+// It is built on isIdentStart and isIdentCont so that it cannot drift from
+// what Parse accepts after a sigil. load.go refuses a property key or an
+// atom param name that fails it, and bindName a name-kind binding.
 func isValidIdentName(s string) bool {
 	if s == "" || !isIdentStart(s[0]) {
 		return false

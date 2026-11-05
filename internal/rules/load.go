@@ -571,15 +571,12 @@ type paramJSON struct {
 	Kind string `json:"kind"`
 }
 
-// loadAtoms decodes and statically validates every atoms/*.json file:
-// strict JSON shape, the six closed param kinds (unknown param kind — spec
-// §4 / validation catalogue), and every "{name}" placeholder appearing in
-// any contribution template naming a param the atom actually declares
-// (unknown param placeholder). It does NOT validate bindings, the
-// provides/consumes graph, or produce any parsed *Expr — those need a
-// specific composition's concrete bindings and are compile.go's job
-// (compileCompositions), since the SAME atom is reused, differently bound,
-// by many abilities.
+// loadAtoms decodes and statically validates every atoms/*.json file: its
+// strict JSON shape, each param's kind against validParamKinds, and every
+// "{name}" placeholder against the params the atom declares. Bindings, the
+// provides/consumes graph and an atom's parsed *Expr wait for a composition's
+// concrete bindings, in compile.go (compileCompositions), since one atom is
+// bound differently by many abilities.
 func loadAtoms(dir string) (map[string]*AtomDef, error) {
 	out := map[string]*AtomDef{}
 	paths, err := jsonFilesIn(dir)

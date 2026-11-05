@@ -606,48 +606,12 @@ func compileEffects(path string, atomIdx, contribIdx int, templates []EffectTemp
 	return out, nil
 }
 
-// substTemplate replaces every "{name}" placeholder in raw with
-// bindings[name] — the hygienic splice itself. For a value-kind param
-// (int/expr), bindings[name] is ALREADY parenthesized ("(" + text + ")"),
-// so the substitution result is textual, but the parens guarantee the
-// eventual Parse() below produces the same AST as splicing a pre-parsed
-// subtree directly would: a binding of "1 + 1" spliced into "2 * {p}"
-// yields "2 * (1 + 1)", which parses to BinOp(*, 2, BinOp(+, 1, 1)) —
-// evaluates to 4, never 3, regardless of what operator surrounds the
-// placeholder (TestCompileHygienicSplice pins this exact case). For a
-// name-kind param, bindings[name] is a bare identifier — substituting it
-// unparenthesized into a ref position ("@caster.{attack_stat}") or a name
-// field ("resource": "{pool}") is correct precisely because it is NEVER
-// itself a sub-expression.
-//
-// Injection is impossible given the load-time preconditions THIS PACKAGE
-// enforces before substitution ever runs — not by construction alone
-// (finding F2 corrected the earlier over-claim). Two hazards, two enforced
-// preconditions:
-//
-//   - VALUE-kind escape: every value-kind binding was independently
-//     validated to Parse() as a complete standalone expression BEFORE this
-//     substitution (bindAtom's "expr" case; "int" bindings decode straight
-//     from a JSON number, never free text) — a string with unbalanced
-//     parens or trailing garbage fails that check and never reaches here,
-//     so wrapping it in "(" ")" can never let it "escape" into the
-//     surrounding template text.
-//   - NAME-kind SCOPE-position hijack: a name-kind binding matches the
-//     IDENT charset (bindName), so it carries no delimiter characters — but
-//     a bound value of "caster"/"target" spliced into a ref's SCOPE
-//     position ("@{who}.vim") would still change the parse SHAPE (scope vs
-//     name) rather than substitute as a name. That is prevented by TWO
-//     load-time rules, WITHOUT which this function's output is NOT
-//     injection-safe: loadAtoms rejects a placeholder occupying scope
-//     position (checkNoScopePositionPlaceholder), and loadManifest/
-//     loadConditions reserve the words "caster"/"target" against
-//     attribute/defense/resource/condition names (reservedScopeWords), so
-//     no name-kind binding can ever equal a scope word in the first place.
-//
-// With both preconditions enforced, a placeholder only ever occupies a
-// ref's NAME segment or a plain name field, and its bound value is always a
-// non-scope IDENT — so a crafted param value cannot change the shape of the
-// surrounding expression beyond substituting its own value.
+// substTemplate replaces each "{name}" in raw with bindings[name]. Its output
+// is injection-safe only while these load rules hold: an expr binding parses
+// whole and is spliced parenthesized (bindAtom); a name binding is one IDENT
+// (bindName); no placeholder sits directly between a sigil and its '.'
+// (checkNoScopePositionPlaceholder); no property key or condition id is a
+// scope word (reservedScopeWords). TestCompileHygienicSplice pins the splice.
 func substTemplate(raw string, bindings map[string]string) string {
 	return placeholderRe.ReplaceAllStringFunc(raw, func(m string) string {
 		name := m[1 : len(m)-1]

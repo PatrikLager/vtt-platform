@@ -451,7 +451,7 @@ func TestSchemaRequiredFieldsMatchLoaderEnforcementV2(t *testing.T) {
 			"atoms/ward-mark.json",      // outcome effects[0]: apply_condition (review fix wave, item 4 — closes the prior apply_condition SKIP)
 			"atoms/ward-clear.json",     // outcome effects[0]: remove_condition (walker only probes array index 0, so this needed its own file — closes the prior remove_condition SKIP)
 			"atoms/wide-delivery.json",  // targeting max_targets as a "{param}" placeholder
-			"atoms/guard-check.json",    // defense-kind param used in "vs"
+			"atoms/guard-check.json",    // number-kind param used in "vs"
 		}},
 		{"ability.schema.json", []string{
 			"abilities/quick-jab.json",
