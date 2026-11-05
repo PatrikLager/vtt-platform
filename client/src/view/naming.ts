@@ -12,6 +12,7 @@ export interface Namer {
   shown(id: string): string;
   actor(id: string | undefined): string;
   ability(id: string): string;
+  resource(key: string): string;
 }
 
 interface Known {
@@ -20,12 +21,13 @@ interface Known {
   gmName: string;
 }
 
-/** namer builds a window's Namer from its fold, log, role and abilities. */
+/** namer builds a window's Namer from its fold, log, role, abilities and properties. */
 export function namer(
   st: State,
   log: readonly Envelope[],
   dm: boolean,
   abilities: readonly { id: string; name: string }[] | undefined,
+  properties?: readonly { key: string; type: string; name: string }[],
 ): Namer {
   // Keep the newest entry: what the fold has lost is named as the log last named it.
   const pastTokens = new Map<string, Known>();
@@ -67,6 +69,7 @@ export function namer(
     shown: (id) => tokenBy(id, false),
     actor: (id) => firstNamed.get(id!) ?? actorName(id, dm),
     ability: (id) => abilities?.find((a) => a.id === id)?.name || id,
+    resource: (key) => properties?.find((p) => p.key === key && p.type === "resource")?.name || key,
   };
 }
 

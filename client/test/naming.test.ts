@@ -132,6 +132,15 @@ test("an ability is named by the ruleset's display name, else its id", () => {
   expect(n.ability("rally")).toBe("rally");
 });
 
+// VTT-622 VTT-623
+test("a resource is named by the ruleset's display name, else its key", () => {
+  const props = [{ key: "vigor", type: "resource" as const, name: "Vigor Points", description: "How much fight is left." }];
+  const n = namer(newState(), [], false, [], props);
+  expect(n.resource("vigor")).toBe("Vigor Points");
+  expect(n.resource("focus")).toBe("focus");
+  expect(namer(newState(), [], false, undefined).resource("vigor")).toBe("vigor");
+});
+
 // VTT-475
 test("a disc's initial is the name's first letter in upper case, and ? for a creature", () => {
   expect(initialOf("a hunched goblin")).toBe("A");

@@ -18,7 +18,7 @@ import { doorCommandFor } from "./view/doors";
 import {
   fetchMe, fetchRuleset, fetchAdventures, fetchAdventureGuide, fetchMaps,
   fetchJoinLink, fetchParticipants,
-  type Ability, type AdventureMeta, type Me, type JoinLink, type Roster, type MapMeta,
+  type Ability, type AdventureMeta, type Me, type JoinLink, type Roster, type MapMeta, type Property,
 } from "./metadata";
 import { renderDMConsole } from "./view/dm";
 import { setViewpoint } from "./commands";
@@ -160,6 +160,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
   let me: Me | null = null;
 
   let abilities: Ability[] = [];
+  let properties: Property[] | undefined;
   let adventures: AdventureMeta[] = [];
   let maps: MapMeta[] = [];
   let joinLink: JoinLink | null = null;
@@ -391,7 +392,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     renderSpectator(root, session.state, [...session.events], status, {
       panel: canAct
         ? renderPlayerPanel(session.state, me!, abilities, ui, act, paint,
-          isPlayer ? { actors: watchable, onSwitch: (id) => void switchTo(id) } : undefined, notify)
+          isPlayer ? { actors: watchable, onSwitch: (id) => void switchTo(id) } : undefined, notify, properties)
         : undefined,
       console: isDM
         ? renderDMConsole({
@@ -442,6 +443,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
       images,
       dm: isDM,
       abilities,
+      properties,
       pinnedCard,
       onCardPin: (id) => {
         pinnedCard = pinnedCard === id ? undefined : id;
@@ -563,6 +565,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     })
     .then((rs) => {
       abilities = rs.abilities;
+      properties = rs.properties;
       paint();
       return fetchAdventures(location.origin, token);
     })

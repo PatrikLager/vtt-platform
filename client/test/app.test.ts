@@ -3757,3 +3757,35 @@ test("after a removal the share link opens the join form, and a page under the d
   expect(dialed(FakeSocket.instances[0]!).has("log")).toBe(false);
   again?.close();
 });
+
+// VTT-622
+test("the ruleset's properties reach the chip, the Story and the cost", async () => {
+  localStorage.setItem("vtt.token", "tok");
+  stubMetadata({
+    "/api/me": { participantId: "p", name: "Lera", role: "player" },
+    "/api/ruleset": {
+      id: "r", name: "R", conditions: [], resources: ["vigor"],
+      abilities: [{ id: "jab", name: "Jab", range: 1, maxTargets: 1, usage: { kind: "resource", resource: "vigor", cost: 1 } }],
+      properties: [{ key: "vigor", type: "resource", name: "Vigor Points", description: "How much fight is left." }],
+    },
+    "/api/adventures": { adventures: [] },
+  });
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  opensOn(sock, "a1");
+  sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+  sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 8, gridHeight: 8 } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera", resources: { vigor: { current: 3, max: 10 } } } } }));
+  sock.deliver(envelope(4, { actorControlGranted: { actorId: "a1", participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
+  sock.deliver(envelope(5, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }));
+  sock.deliver(envelope(6, { resourceChanged: { actorId: "a1", resource: "vigor", delta: -1, newValue: 2 } }));
+  await settle();
+  expect((r.querySelector(".token .chip") as HTMLElement).title).toBe("Vigor Points");
+  expect(Array.from(r.querySelectorAll(".feed .mechanical"), (n) => n.textContent)).toContain("Lera Vigor Points → 2");
+  const jab = Array.from(r.querySelectorAll(".player button")).find((b) => b.textContent === "Jab") as HTMLElement;
+  expect(jab.title).toBe("Vigor Points 1");
+  s?.close();
+});

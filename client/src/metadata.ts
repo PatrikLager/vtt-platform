@@ -19,12 +19,21 @@ export interface ConditionDef {
   description: string;
 }
 
+/** Property is one property in the ruleset's words (VTT-619). */
+export interface Property {
+  key: string;
+  type: "number" | "resource";
+  name: string;
+  description: string;
+}
+
 export interface RulesetMeta {
   id: string;
   name: string;
   abilities: Ability[];
   conditions: ConditionDef[];
   resources: string[];
+  properties: Property[];
 }
 
 /** Who this token makes you: the participant id every control check is a

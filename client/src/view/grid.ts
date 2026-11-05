@@ -22,6 +22,8 @@ export interface Cell {
 
 export interface ResourceChip {
   name: string;
+  /** label is what the chip's hover names it (VTT-622, VTT-623). */
+  label: string;
   current: number;
   max: number;
 }
@@ -111,13 +113,14 @@ export function tokensOnScene(
     if (visible !== undefined && !visible[`${tok.X},${tok.Y}`]) continue;
     const actor = st.Actors[tok.ActorID];
 
-    // Resources are sorted by name: st.Actors[].resources is a dictionary
+    // Resources are sorted by key: st.Actors[].resources is a dictionary
     // and its key order is not something to render a stable UI from.
     const resources: ResourceChip[] = actor
       ? Object.keys(actor.resources)
           .sort()
           .map((name) => ({
             name,
+            label: names.resource(name),
             current: actor.resources[name]!.current,
             max: actor.resources[name]!.max,
           }))

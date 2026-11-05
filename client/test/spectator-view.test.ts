@@ -17,7 +17,7 @@ import { renderSpectator, describe as describeEvent, CELL, boardCamera, paneSize
 import { newState, type State } from "../src/state";
 import { ActorKind, NoteVisibility } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderPlayerPanel, type PlayerUIState } from "../src/view/player";
-import type { Ability, Me } from "../src/metadata";
+import type { Ability, Me, Property } from "../src/metadata";
 import type { ClientCommand, CommandResult } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { paint, missingTileColors, type ImageMap } from "../src/view/canvas";
 import { worldFromScreen } from "../src/view/camera";
@@ -67,6 +67,7 @@ test("the board draws a disc per token, with its initial", () => {
   expect(root.querySelector(".initial")?.textContent).toBe("L");
 });
 
+// VTT-623
 test("every resource shows as a current/max chip, named on hover", () => {
   const chip = render(world()).querySelector(".chip") as HTMLElement;
   expect(chip.textContent).toBe("3/10");
@@ -199,7 +200,7 @@ function storyWorld(): State {
 }
 const STORY = namer(storyWorld(), [], false, [{ id: "cleave", name: "Cleave" }]);
 
-// VTT-476 VTT-475 VTT-477
+// VTT-476 VTT-475 VTT-477 VTT-623
 test("describe renders a real label for every event kind, not the fallback", () => {
   const gob = { actorId: "act-gob" };
   const cases: [Envelope, string][] = [
@@ -1643,6 +1644,36 @@ test("an affordable resource ability names its cost without the shortfall note",
   const p = panel(world(), [cheap]);
   expect(p.button("Jab").disabled).toBe(false);
   expect(p.button("Jab").title).toBe("vigor 1");
+});
+
+// VTT-622
+test("a resource chip, its Story line and an ability's cost name the resource by its display name", () => {
+  const props: Property[] = [{ key: "vigor", type: "resource", name: "Vigor Points", description: "How much fight is left." }];
+  const chip = render(world(), [], { properties: props }).querySelector(".chip") as HTMLElement;
+  expect(chip.title).toBe("Vigor Points");
+  const changed = env(1, { case: "resourceChanged", value: create(ResourceChangedSchema, { actorId: "a1", resource: "vigor", newValue: 3 }) });
+  expect(describeEvent(changed, namer(world(), [], false, [], props))).toContain("Vigor Points → 3");
+  const cheap: Ability = {
+    id: "jab", name: "Jab", range: 1, maxTargets: 1,
+    usage: { kind: "resource", resource: "vigor", cost: 1 },
+  };
+  const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "", doorsArmed: false };
+  const node = renderPlayerPanel(world(), me, [cheap], ui, async () => ok(), () => {}, undefined, undefined, props);
+  const jab = Array.from(node.querySelectorAll("button")).find((b) => b.textContent === "Jab")!;
+  expect(jab.title).toBe("Vigor Points 1");
+});
+
+// VTT-622
+test("the Events panel names a declared resource by its display name", () => {
+  const props: Property[] = [{ key: "vigor", type: "resource", name: "Vigor Points", description: "How much fight is left." }];
+  const changed = env(1, { case: "resourceChanged", value: create(ResourceChangedSchema, { actorId: "a1", resource: "vigor", newValue: 3 }) });
+  const ticker = render(world(), [changed], { ticker: true, dm: true, properties: props });
+  expect(Array.from(ticker.querySelectorAll(".ticker .tick"), (n) => n.textContent)).toEqual(["Lera Vigor Points → 3"]);
+});
+
+test("a resource ability naming no resource names no resource in its cost", () => {
+  const malformed: Ability = { id: "m", name: "Malformed", range: 1, maxTargets: 1, usage: { kind: "resource", cost: 2 } };
+  expect(panel(world(), [malformed]).button("Malformed").title).toBe(" 2 — not enough");
 });
 
 // --- no token on the board --------------------------------------------------

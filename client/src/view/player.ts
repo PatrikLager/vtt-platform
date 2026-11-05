@@ -10,7 +10,7 @@
 // range is offered, including your own, and the server rejects illegal uses.
 
 import type { State } from "../state";
-import type { Ability, Me } from "../metadata";
+import type { Ability, Me, Property } from "../metadata";
 import { affordable, controlledActors, readLine, targetableTokens } from "../player";
 import { moveToken, useAbility, setViewpoint, speakAs, speakOutOfCharacter, addWhisper } from "../commands";
 import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
@@ -74,7 +74,9 @@ export function renderPlayerPanel(
   rerender: () => void,
   switcher?: Switcher,
   notify?: (msg: string) => void,
+  properties?: Property[],
 ): HTMLElement {
+  const names = namer(st, [], me.role === "dm" || me.role === "agent", abilities, properties);
   const wrap = el("section", "player");
   wrap.appendChild(el("h2", undefined, "Your turn"));
 
@@ -122,7 +124,7 @@ export function renderPlayerPanel(
       (b as HTMLButtonElement).disabled = !can || tokenId === "";
       b.title =
         ab.usage.kind === "resource"
-          ? `${ab.usage.resource} ${ab.usage.cost}${can ? "" : " — not enough"}`
+          ? `${names.resource(ab.usage.resource ?? "")} ${ab.usage.cost}${can ? "" : " — not enough"}`
           : "at will";
       b.addEventListener("click", () => {
         ui.selectedAbilityId = ui.selectedAbilityId === ab.id ? "" : ab.id;
@@ -137,7 +139,6 @@ export function renderPlayerPanel(
   const armed = abilities.find((a) => a.id === ui.selectedAbilityId);
   if (armed && tokenId !== "") {
     const targets = targetableTokens(st, tokenId, armed);
-    const names = namer(st, [], me.role === "dm" || me.role === "agent", abilities);
     wrap.appendChild(el("h3", undefined, `Targets (range ${armed.range})`));
     const list = el("div", "row");
     for (const t of targets) {

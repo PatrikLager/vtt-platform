@@ -7,7 +7,7 @@
 import type { State } from "../state";
 import type { Participant } from "../session";
 import { ActorKind, NoteVisibility, type AbilityUsed, type Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
-import type { Ability } from "../metadata";
+import type { Ability, Property } from "../metadata";
 import { buildFeed, type FeedEntry } from "./feed";
 import { cellFromPoint, tokensOnScene, type Geometry, type TokenDisc } from "./grid";
 import { namer, type Namer } from "./naming";
@@ -136,7 +136,7 @@ export function describe(e: Envelope, names: Namer): string {
     case "conditionRemoved":
       return `${names.actor(p.value.actorId)} lost ${p.value.conditionId}`;
     case "resourceChanged":
-      return `${names.actor(p.value.actorId)} ${p.value.resource} → ${p.value.newValue}`;
+      return `${names.actor(p.value.actorId)} ${names.resource(p.value.resource)} → ${p.value.newValue}`;
     case "abilityUsed":
       return abilityLine(p.value, names);
     case "actorControlGranted":
@@ -397,7 +397,7 @@ function renderDisc(
     const chips = el("div", "chips");
     for (const r of d.resources) {
       const chip = el("span", "chip", `${r.current}/${r.max}`);
-      chip.title = r.name; // the NAME on hover, never abbreviated on the face
+      chip.title = r.label; // the NAME on hover, never abbreviated on the face
       chip.style.fontSize = `${8 * scale}px`;
       chips.appendChild(chip);
     }
@@ -633,6 +633,7 @@ export interface ViewExtras {
   dm?: boolean | undefined;
   /** The ruleset's abilities, which name an ability in the Story (VTT-477). */
   abilities?: Ability[] | undefined;
+  properties?: Property[] | undefined;
   /** The token whose card a right-click pinned (VTT-474). */
   pinnedCard?: string | undefined;
   /** Pin or unpin a token's card, on a right-click on its disc (VTT-474). */
@@ -661,7 +662,7 @@ export function renderSpectator(
   // element to the NEW size — the measurement is current, and the first frame of
   // all falls back to the documented default.
   const pane = paneSize(root.querySelector<HTMLElement>(".grid"));
-  const names = namer(st, log, extras.dm ?? false, extras.abilities);
+  const names = namer(st, log, extras.dm ?? false, extras.abilities, extras.properties);
 
   const nodes: HTMLElement[] = [
     renderStatus(st, status, extras),

@@ -73,7 +73,7 @@ test("EVERY resource is shown, in a stable order, with current and max", () => {
   // refuses to make.
   const chips = discsOf(worldWith(), "s1")[0]!.resources;
   expect(chips.map((c) => c.name)).toEqual(["focus", "vigor"]); // sorted, not map order
-  expect(chips.find((c) => c.name === "vigor")).toEqual({ name: "vigor", current: 3, max: 10 });
+  expect(chips.find((c) => c.name === "vigor")).toEqual({ name: "vigor", label: "vigor", current: 3, max: 10 });
 });
 
 test("EVERY condition is shown, in applied order", () => {
