@@ -153,7 +153,7 @@ func TestLoadValidFixture(t *testing.T) {
 // rules — empty-adventure and unknown-field's strict-decode message — the
 // distinguishing substrings decodeStrict/the empty-adventure check actually
 // produce).
-// VTT-275 VTT-279 VTT-282 VTT-294 VTT-295
+// VTT-275 VTT-279 VTT-282 VTT-294 VTT-295 VTT-617
 func TestLoadInvalidFixtures(t *testing.T) {
 	cases := []struct {
 		dir  string

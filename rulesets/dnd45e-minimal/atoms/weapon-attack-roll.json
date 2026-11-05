@@ -1,9 +1,9 @@
 {
   "id": "weapon-attack-roll",
   "params": [
-    { "name": "attack_stat", "kind": "attribute" },
+    { "name": "attack_stat", "kind": "number" },
     { "name": "prof", "kind": "int" },
-    { "name": "defense", "kind": "defense" }
+    { "name": "defense", "kind": "number" }
   ],
   "provides": ["strike"],
   "consumes": ["engagement"],

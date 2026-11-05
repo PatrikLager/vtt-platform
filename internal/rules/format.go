@@ -1,9 +1,9 @@
 // Package rules is the ONE generic interpreter for ruleset data (spec
-// pillar P2: rules as declarative data). It knows resources, abilities,
-// conditions, defenses, and attributes only as generic named concepts — no
-// game-system word (a specific stat name, a specific condition name)
-// appears anywhere in this package; those live exclusively in
-// rulesets/*/*.json content, loaded at runtime by Load.
+// pillar P2: rules as declarative data). It knows properties, abilities and
+// conditions only as generic named concepts — no game-system word (a
+// specific stat name, a specific condition name) appears anywhere in this
+// package; those live exclusively in rulesets/*/*.json content, loaded at
+// runtime by Load.
 //
 // A Ruleset is a directory (rulesets/<id>/) of JSON files plus a guide.md;
 // Load reads, strictly decodes, and fully validates one (schemas,
@@ -18,9 +18,9 @@ type Ruleset struct {
 	Name          string
 	FormatVersion string
 
-	Resources  []ResourceDef
-	Defenses   []string
-	Attributes []string
+	// Properties is every property the ruleset declares, in its order;
+	// Load refuses a key declared twice (VTT-612).
+	Properties []Property
 
 	// Conditions is keyed by its declared id. Load rejects duplicate ids
 	// (within and across files) before the map is populated, so every
@@ -71,25 +71,11 @@ type AtomDef struct {
 	sourcePath string
 }
 
-// ParamDef declares one parameter an atom's Contributes templates may
-// reference via a "{name}" placeholder. Kind is one of the six closed
-// param kinds (spec §4):
-//
-//   - "int", "expr" — VALUE kinds. A binding splices into a contribution
-//     expression as a parenthesized parsed subtree (hygienic: the binding
-//     can never change the surrounding expression's precedence — spec §2
-//     guarantee 4, spec §4). Legal at expression VALUE positions, e.g.
-//     "1d20 + {prof}".
-//   - "attribute", "resource", "defense", "condition" — NAME kinds. A
-//     binding substitutes as a bare identifier into a ref or name
-//     position — never parenthesized, since the result is never itself a
-//     sub-expression. Legal inside a ref's name segment, e.g.
-//     "@caster.{attack_stat}", or a plain name field, e.g. a
-//     resource_change's "resource": "{pool}".
-//
-// Bindings are validated against the manifest's declared vocabulary at
-// compile time (attribute/resource/defense against the ruleset's declared
-// names; condition against declared condition ids).
+// ParamDef declares one parameter an atom's templates reference as
+// "{name}". Kind int or expr is a value, spliced in parenthesized; kind
+// number, resource or condition is a name, substituted bare into a ref's
+// name segment or a name field and checked against the properties of that
+// type or the declared condition ids (VTT-614).
 type ParamDef struct {
 	Name string
 	Kind string
@@ -229,11 +215,36 @@ type CompiledResolution struct {
 	Branches       [2]string
 }
 
-// ResourceDef declares one named resource pool a ruleset's actors may
-// have (e.g. a limited-use pool that abilities spend from). DefaultMaxExpr
-// is nil when the manifest omits default_max_expr.
+// The property types the engine runs (VTT-611).
+const (
+	PropertyNumber   = "number"
+	PropertyResource = "resource"
+)
+
+// Property is one value a ruleset's actors carry, named in the table's words.
+type Property struct {
+	Key         string
+	Type        string
+	Name        string
+	Description string
+
+	// Resource is set exactly when Type is PropertyResource.
+	Resource *ResourceDef
+}
+
+// Property returns the property rs declares under key, or nil.
+func (rs *Ruleset) Property(key string) *Property {
+	for i := range rs.Properties {
+		if rs.Properties[i].Key == key {
+			return &rs.Properties[i]
+		}
+	}
+	return nil
+}
+
+// ResourceDef is what a resource property carries beyond its words.
+// DefaultMaxExpr is nil when the manifest omits default_max_expr.
 type ResourceDef struct {
-	Name              string
 	DefaultMaxExpr    *Expr
 	DefaultMaxExprSrc string
 	Thresholds        []Threshold

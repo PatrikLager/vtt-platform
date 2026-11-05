@@ -327,9 +327,7 @@ func drainCasterCtxRuleset(t *testing.T) *rules.Ruleset {
 	}
 	return &rules.Ruleset{
 		ID: "drain-fixture", Name: "Drain Fixture",
-		Attributes: []string{"might"},
-		Defenses:   []string{"guard"},
-		Resources:  []rules.ResourceDef{{Name: "pool"}},
+		Properties: append(numberProps("might", "guard"), resourceProp("pool")),
 		Conditions: map[string]*rules.Condition{},
 		Compiled:   map[string]*rules.CompiledPower{"drain": drain},
 	}
@@ -398,9 +396,7 @@ func vsDiceFixtureRuleset(t *testing.T) *rules.Ruleset {
 	}
 	return &rules.Ruleset{
 		ID: "vsdice-fixture", Name: "Vs-Dice Fixture",
-		Attributes: []string{"vim"},
-		Defenses:   []string{"brace"},
-		Resources:  []rules.ResourceDef{{Name: "focus"}},
+		Properties: append(numberProps("vim", "brace"), resourceProp("focus")),
 		Conditions: map[string]*rules.Condition{},
 		Compiled:   map[string]*rules.CompiledPower{"feint": feint},
 	}

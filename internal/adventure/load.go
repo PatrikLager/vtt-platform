@@ -81,24 +81,7 @@ func Load(dir string, rs *rules.Ruleset) (*Adventure, error) {
 			fmt.Sprintf("must be at most %d bytes, got %d", maxTextBytes, len(manifest.OpeningNarration)))
 	}
 
-	// attrOrDefSet: a defense's value is exposed through the same
-	// attribute-shaped vocabulary a statblock declares (v2 convention,
-	// mirroring internal/rules/compile.go's attrOrDefSet) — a statblock's
-	// "attributes" map may therefore legally name either an attribute or a
-	// defense.
-	attrOrDefSet := make(map[string]bool, len(rs.Attributes)+len(rs.Defenses))
-	for _, a := range rs.Attributes {
-		attrOrDefSet[a] = true
-	}
-	for _, d := range rs.Defenses {
-		attrOrDefSet[d] = true
-	}
-	resSet := make(map[string]bool, len(rs.Resources))
-	for _, r := range rs.Resources {
-		resSet[r.Name] = true
-	}
-
-	actors, actorIDs, err := loadActors(filepath.Join(dir, "actors"), attrOrDefSet, resSet)
+	actors, actorIDs, err := loadActors(filepath.Join(dir, "actors"), rs)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +224,7 @@ type resourceValJSON struct {
 // "kind" is REQUIRED and has no default — the one field in this format whose
 // absence is refused rather than interpreted. The reasoning is at the check
 // itself, where the next person to wonder about it will be standing.
-func loadActors(dir string, attrOrDefSet, resSet map[string]bool) ([]AdventureActor, map[string]bool, error) {
+func loadActors(dir string, rs *rules.Ruleset) ([]AdventureActor, map[string]bool, error) {
 	paths, err := jsonFilesIn(dir)
 	if err != nil {
 		return nil, nil, err
@@ -309,14 +292,14 @@ func loadActors(dir string, attrOrDefSet, resSet map[string]bool) ([]AdventureAc
 		}
 
 		for name := range raw.Attributes {
-			if !attrOrDefSet[name] {
-				return nil, nil, fieldErr(path, "attributes", fmt.Sprintf("references undeclared attribute %q (not declared as an attribute or defense by the ruleset)", name))
+			if err := checkStatblockKey(path, "attributes", name, rules.PropertyNumber, rs); err != nil {
+				return nil, nil, err
 			}
 		}
 		resources := make(map[string]ResourceVal, len(raw.Resources))
 		for name, rv := range raw.Resources {
-			if !resSet[name] {
-				return nil, nil, fieldErr(path, "resources", fmt.Sprintf("references undeclared resource %q", name))
+			if err := checkStatblockKey(path, "resources", name, rules.PropertyResource, rs); err != nil {
+				return nil, nil, err
 			}
 			if rv.Max > 0 && rv.Current > rv.Max {
 				return nil, nil, fieldErr(path, fmt.Sprintf("resources.%s.current", name), fmt.Sprintf("must not exceed max (%d > %d)", rv.Current, rv.Max))
@@ -332,6 +315,19 @@ func loadActors(dir string, attrOrDefSet, resSet map[string]bool) ([]AdventureAc
 		})
 	}
 	return out, actorIDs, nil
+}
+
+// checkStatblockKey refuses a statblock key the ruleset does not declare as
+// a property of type want (VTT-617, VTT-618).
+func checkStatblockKey(path, field, key, want string, rs *rules.Ruleset) error {
+	p := rs.Property(key)
+	if p == nil {
+		return fieldErr(path, field, fmt.Sprintf("references undeclared property %q", key))
+	}
+	if p.Type != want {
+		return fieldErr(path, field, fmt.Sprintf("gives %s property %q a %s's value", p.Type, key, want))
+	}
+	return nil
 }
 
 // --- scenes/*.json (one scene per file, placements declared inline) ---

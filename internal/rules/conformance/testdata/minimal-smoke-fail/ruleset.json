@@ -1,10 +1,15 @@
 {
   "id": "smoke-fail",
   "name": "Smoke Fail",
-  "format_version": "2",
-  "attributes": [],
-  "defenses": [],
-  "resources": [
-    { "name": "focus", "default_max_expr": "1", "thresholds": [] }
+  "format_version": "3",
+  "properties": [
+    {
+      "key": "focus",
+      "type": "resource",
+      "name": "Focus",
+      "description": "The fixture's focus.",
+      "default_max_expr": "1",
+      "thresholds": []
+    }
   ]
 }

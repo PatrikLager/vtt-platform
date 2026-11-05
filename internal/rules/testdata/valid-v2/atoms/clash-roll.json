@@ -1,7 +1,7 @@
 {
   "id": "clash-roll",
   "params": [
-    { "name": "clash_stat", "kind": "attribute" },
+    { "name": "clash_stat", "kind": "number" },
     { "name": "edge", "kind": "int" }
   ],
   "provides": ["clash"],

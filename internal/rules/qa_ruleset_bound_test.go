@@ -30,9 +30,9 @@ const (
 const (
 	qaRuleFieldAbility   = "ability id"
 	qaRuleFieldCondition = "condition id"
-	qaRuleFieldAttribute = "attribute name"
-	qaRuleFieldDefense   = "defense name"
-	qaRuleFieldResource  = "resource name"
+	qaRuleFieldAttribute = "number key"
+	qaRuleFieldDefense   = "number key a vs reads"
+	qaRuleFieldResource  = "resource key"
 	qaRuleFieldBranch    = "branch label"
 )
 
@@ -108,6 +108,21 @@ func qaRuleComposition(id, usageRes string) map[string]any {
 	}
 }
 
+func qaRuleManifest(nums []string, res []map[string]any) map[string]any {
+	props := []map[string]any{}
+	for _, k := range nums {
+		props = append(props, map[string]any{"key": k, "type": "number", "name": "QA Number", "description": "A QA number."})
+	}
+	for _, r := range res {
+		e := map[string]any{"type": "resource", "name": "QA Resource", "description": "A QA resource."}
+		for f, v := range r {
+			e[f] = v
+		}
+		props = append(props, e)
+	}
+	return map[string]any{"id": "qa-rules", "name": "QA Rules", "format_version": "3", "properties": props}
+}
+
 func (s qaRuleSet) write(t *testing.T) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "ruleset")
@@ -123,14 +138,11 @@ func (s qaRuleSet) write(t *testing.T) string {
 	if thresholds == nil {
 		thresholds = []map[string]any{{"when": "#" + s.n.res, "apply_condition": s.n.cond, "remove_when_false": true}}
 	}
-	resources := []map[string]any{{"name": s.n.res, "thresholds": thresholds}}
+	resources := []map[string]any{{"key": s.n.res, "thresholds": thresholds}}
 	if s.extraRes != "" {
-		resources = append(resources, map[string]any{"name": s.extraRes})
+		resources = append(resources, map[string]any{"key": s.extraRes})
 	}
-	qaRuleWrite(t, filepath.Join(dir, qaRuleManifestFile), map[string]any{
-		"id": "qa-rules", "name": "QA Rules", "format_version": "2",
-		"attributes": attrs, "defenses": defs, "resources": resources,
-	})
+	qaRuleWrite(t, filepath.Join(dir, qaRuleManifestFile), qaRuleManifest(append(attrs, defs...), resources))
 	qaRuleWrite(t, filepath.Join(dir, "conditions", qaRuleConditionFile), map[string]any{
 		"id": s.n.cond, "name": "QA Condition",
 	})
@@ -205,9 +217,9 @@ func qaRuleOverFor(field string) []qaRuleOver {
 var qaRuleFieldName = map[string][]*regexp.Regexp{
 	qaRuleFieldAbility:   {regexp.MustCompile(`(?i)\bid\b`)},
 	qaRuleFieldCondition: {regexp.MustCompile(`(?i)\bid\b`)},
-	qaRuleFieldAttribute: {regexp.MustCompile(`(?i)attributes?\b`)},
-	qaRuleFieldDefense:   {regexp.MustCompile(`(?i)defenses?\b`)},
-	qaRuleFieldResource:  {regexp.MustCompile(`(?i)resources?\b`), regexp.MustCompile(`(?i)\bname\b`)},
+	qaRuleFieldAttribute: {regexp.MustCompile(`properties\[\d+\]\.key`)},
+	qaRuleFieldDefense:   {regexp.MustCompile(`properties\[\d+\]\.key`)},
+	qaRuleFieldResource:  {regexp.MustCompile(`properties\[\d+\]\.key`)},
 	qaRuleFieldBranch:    {regexp.MustCompile(`(?i)branch`)},
 }
 
@@ -262,7 +274,7 @@ func qaRuleLoadRefusal(t *testing.T, dir, value string) string {
 	return strings.ReplaceAll(msg, value, "<s>")
 }
 
-// VTT-283 VTT-284
+// VTT-624 VTT-284
 func TestQARuleLoadRefusesANameOverTheBoundNamingTheFileAndTheField(t *testing.T) {
 	builds := map[string]func(string, string) (qaRuleSet, string){"used": qaRuleUsed, "alone": qaRuleAlone}
 	for _, field := range qaRuleFields {
@@ -289,15 +301,6 @@ func TestQARuleLoadRefusesANameOverTheBoundNamingTheFileAndTheField(t *testing.T
 	}
 }
 
-func qaRuleContains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
-}
-
 func qaRuleLoaded(t *testing.T, n qaRuleNames, dir string) *rules.Ruleset {
 	t.Helper()
 	rs, err := rules.Load(dir)
@@ -311,11 +314,11 @@ func qaRuleLoaded(t *testing.T, n qaRuleNames, dir string) *rules.Ruleset {
 	if c := rs.Conditions[n.cond]; c == nil || c.ID != n.cond {
 		t.Fatalf("the loaded ruleset does not hold the %d-byte condition id whole", len(n.cond))
 	}
-	if !qaRuleContains(rs.Attributes, n.attr) || !qaRuleContains(rs.Defenses, n.def) {
-		t.Fatalf("the loaded ruleset does not hold the attribute and defense names whole")
+	if rs.Property(n.attr) == nil || rs.Property(n.def) == nil {
+		t.Fatalf("the loaded ruleset does not hold the number keys whole")
 	}
-	if len(rs.Resources) != 1 || rs.Resources[0].Name != n.res {
-		t.Fatalf("the loaded ruleset does not hold the %d-byte resource name whole", len(n.res))
+	if r := rs.Property(n.res); r == nil || r.Resource == nil {
+		t.Fatalf("the loaded ruleset does not hold the %d-byte resource key whole", len(n.res))
 	}
 	if p.Resolution == nil || p.Resolution.Branches != [2]string{n.ge, n.lt} {
 		t.Fatalf("the loaded ability does not carry its branch labels whole")
@@ -323,7 +326,7 @@ func qaRuleLoaded(t *testing.T, n qaRuleNames, dir string) *rules.Ruleset {
 	return rs
 }
 
-// VTT-283 VTT-284 VTT-287
+// VTT-624 VTT-284 VTT-625
 func TestQARuleARulesetWhoseNamesAreAllAtTheBoundLoads(t *testing.T) {
 	n := qaRuleAtBound()
 	for _, s := range []string{n.ability, n.cond, n.attr, n.def, n.res, n.ge, n.lt} {
@@ -379,7 +382,7 @@ func qaRuleActor(id string, attrs map[string]int32, res string, current int32) *
 	}
 }
 
-// VTT-283 VTT-285
+// VTT-624 VTT-285
 func TestQARuleWhatTheLoaderAcceptsAtTheBoundTheFoldAccepts(t *testing.T) {
 	n := qaRuleAtBound()
 	rs := qaRuleLoaded(t, n, qaRuleSet{n: n}.write(t))
@@ -466,7 +469,7 @@ func qaRuleAtBytes(field string, n int) string {
 	return strings.Repeat("é", n/2) + strings.Repeat("a", n%2)
 }
 
-// VTT-287
+// VTT-625
 func TestQARuleTheSchemasStateTheBoundLoadEnforces(t *testing.T) {
 	cases := []struct {
 		field, schema string
@@ -474,9 +477,8 @@ func TestQARuleTheSchemasStateTheBoundLoadEnforces(t *testing.T) {
 	}{
 		{qaRuleFieldAbility, "ability.schema.json", []string{"properties", "id"}},
 		{qaRuleFieldCondition, "condition.schema.json", []string{"properties", "id"}},
-		{qaRuleFieldAttribute, "ruleset.schema.json", []string{"properties", "attributes"}},
-		{qaRuleFieldDefense, "ruleset.schema.json", []string{"properties", "defenses"}},
-		{qaRuleFieldResource, "ruleset.schema.json", []string{"properties", "resources", "items", "properties", "name"}},
+		{qaRuleFieldAttribute, "ruleset.schema.json", []string{"properties", "properties", "items", "properties", "key"}},
+		{qaRuleFieldResource, "ruleset.schema.json", []string{"properties", "properties", "items", "properties", "key"}},
 		{qaRuleFieldBranch, "atom.schema.json", []string{"$defs", "resolutionContribution", "properties", "branches"}},
 	}
 	for _, c := range cases {
@@ -528,11 +530,8 @@ func qaRuleThresholdSet(t *testing.T, failing string, position int) string {
 		}
 	}
 	thresholds[position]["when"] = failing
-	qaRuleWrite(t, filepath.Join(dir, qaRuleManifestFile), map[string]any{
-		"id": "qa-rules", "name": "QA Rules", "format_version": "2",
-		"attributes": []string{"qa_attr"}, "defenses": []string{},
-		"resources": []map[string]any{{"name": qaRulePool, "thresholds": thresholds}},
-	})
+	qaRuleWrite(t, filepath.Join(dir, qaRuleManifestFile),
+		qaRuleManifest([]string{"qa_attr"}, []map[string]any{{"key": qaRulePool, "thresholds": thresholds}}))
 	qaRuleWrite(t, filepath.Join(dir, "conditions", "qa-mark.json"), map[string]any{"id": "qa-mark", "name": "QA Mark"})
 	qaRuleWrite(t, filepath.Join(dir, "atoms", "qa-self.json"), map[string]any{
 		"id": "qa-self", "params": []any{}, "provides": []string{}, "consumes": []string{},

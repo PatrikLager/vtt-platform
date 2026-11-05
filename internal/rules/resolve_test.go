@@ -38,25 +38,13 @@ import (
 func fixtureRuleset(t *testing.T) *rules.Ruleset {
 	t.Helper()
 	return &rules.Ruleset{
-		ID:         "resolve-fixture",
-		Name:       "Resolve Fixture",
-		Attributes: []string{"brawn"},
-		Defenses:   []string{"guard"},
-		Resources: []rules.ResourceDef{
-			{
-				Name: "vigor",
-				Thresholds: []rules.Threshold{
-					{When: mustParse(t, "#vigor"), WhenSrc: "#vigor", ApplyCondition: "winded", RemoveWhenFalse: true},
-				},
-			},
-			{Name: "focus"},
-			{
-				Name: "steam",
-				Thresholds: []rules.Threshold{
-					{When: mustParse(t, "#steam"), WhenSrc: "#steam", ApplyCondition: "heated", RemoveWhenFalse: false},
-				},
-			},
-		},
+		ID:   "resolve-fixture",
+		Name: "Resolve Fixture",
+		Properties: append(numberProps("brawn", "guard"),
+			resourceProp("vigor", rules.Threshold{When: mustParse(t, "#vigor"), WhenSrc: "#vigor", ApplyCondition: "winded", RemoveWhenFalse: true}),
+			resourceProp("focus"),
+			resourceProp("steam", rules.Threshold{When: mustParse(t, "#steam"), WhenSrc: "#steam", ApplyCondition: "heated", RemoveWhenFalse: false}),
+		),
 		Conditions: map[string]*rules.Condition{
 			"winded": {ID: "winded", Name: "Winded"},
 			"braced": {ID: "braced", Name: "Braced"},

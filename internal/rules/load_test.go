@@ -3,7 +3,6 @@ package rules_test
 import (
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -22,15 +21,9 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
-// TestLoadValidFixture pins the full happy path: every declared attribute,
-// resource, defense, condition from testdata/valid ends up on the returned
-// Ruleset, every composition ability flattens into Ruleset.Compiled with
-// the expected shape, and every expression in it parsed cleanly (Load
-// returns no error). testdata/valid is format_version "2" (Task 4's v1
-// sunset — migrated the same way rulesets/tavern-brawl was): Abilities is
-// always an empty, non-nil map for a v2-loaded Ruleset (spec §3 — v2's
-// abilities/*.json are compositions, not v1 Ability-shaped), so this test
-// asserts against Compiled, not Abilities.
+// TestLoadValidFixture pins the happy path: every property, condition and
+// composition of testdata/valid ends up on the returned Ruleset, and every
+// expression in it parsed.
 func TestLoadValidFixture(t *testing.T) {
 	rs, err := rules.Load(fixture(t, "valid"))
 	if err != nil {
@@ -46,26 +39,29 @@ func TestLoadValidFixture(t *testing.T) {
 	if rs.Name != "Test Ruleset" {
 		t.Errorf("Name = %q, want %q", rs.Name, "Test Ruleset")
 	}
-	if rs.FormatVersion != "2" {
-		t.Errorf("FormatVersion = %q, want %q", rs.FormatVersion, "2")
+	if rs.FormatVersion != "3" {
+		t.Errorf("FormatVersion = %q, want %q", rs.FormatVersion, "3")
 	}
 
-	if !equalStrings(rs.Attributes, []string{"brawn", "grit"}) {
-		t.Errorf("Attributes = %v, want [brawn grit]", rs.Attributes)
+	var keys, types []string
+	for _, p := range rs.Properties {
+		keys = append(keys, p.Key)
+		types = append(types, p.Type)
 	}
-	if !equalStrings(rs.Defenses, []string{"guard"}) {
-		t.Errorf("Defenses = %v, want [guard]", rs.Defenses)
+	if !equalStrings(keys, []string{"pool_a", "brawn", "grit", "guard"}) {
+		t.Errorf("property keys = %v, want [pool_a brawn grit guard]", keys)
+	}
+	if !equalStrings(types, []string{"resource", "number", "number", "number"}) {
+		t.Errorf("property types = %v, want [resource number number number]", types)
 	}
 
-	if len(rs.Resources) != 1 {
-		t.Fatalf("len(Resources) = %d, want 1", len(rs.Resources))
+	pool := rs.Property("pool_a")
+	if pool == nil || pool.Resource == nil {
+		t.Fatal(`Property("pool_a"): want a resource property`)
 	}
-	res := rs.Resources[0]
-	if res.Name != "pool_a" {
-		t.Errorf("Resources[0].Name = %q, want %q", res.Name, "pool_a")
-	}
+	res := pool.Resource
 	if res.DefaultMaxExpr == nil {
-		t.Fatal("Resources[0].DefaultMaxExpr: want non-nil")
+		t.Fatal("pool_a's DefaultMaxExpr: want non-nil")
 	}
 	if got, err := rules.Eval(res.DefaultMaxExpr, map[string]int{"brawn": 3}, nil, nil); err != nil || got != 13 {
 		t.Errorf("Eval(default_max_expr) = (%d, %v), want (13, nil)", got, err)
@@ -156,57 +152,25 @@ func TestLoadMissingDirectory(t *testing.T) {
 	}
 }
 
-// TestLoadRejectsFormatVersion1 is Task 4's v1-sunset pin (spec §3/§9,
-// task brief: "keep one explicit format_version-\"1\"-rejected fixture +
-// test asserting the new error"): a format_version "1" ruleset — a full
-// directory, testdata/invalid/format-version-1, shaped exactly like the
-// v1 ruleset directories this repo used to load before this task (v1-
-// shaped abilities/conditions/guide.md, preserved verbatim as a visible
-// "this is what got rejected" artifact) — is rejected by loadManifest
-// BEFORE Load ever reads conditions/atoms/abilities: the error names
-// ruleset.json, format_version, and points at the v2 spec document a
-// ruleset author needs to migrate. This supersedes
-// TestLoadV1DispatchUnaffectedByV2 (removed): that test pinned "a v1
-// ruleset loads and adapts into Compiled", a code path this task retired
-// entirely — there is no longer any format_version "1" ruleset that CAN
-// load, so the premise itself is gone, not just the assertion.
+// TestLoadRejectsFormatVersion1 loads a whole format v1 directory, which is
+// refused on its format_version before anything else is read.
+// VTT-616
 func TestLoadRejectsFormatVersion1(t *testing.T) {
 	_, err := rules.Load(fixture(t, "invalid", "format-version-1"))
 	if err == nil {
 		t.Fatal("Load(invalid/format-version-1): want error, got nil")
 	}
-	for _, sub := range []string{"ruleset.json", "format_version", "\"1\"", "format v1 is retired", "format-v2-composition-design"} {
+	for _, sub := range []string{"ruleset.json", `field "format_version": unsupported value "1": this loader reads format_version "3"`, "docs/adr/012-the-rules-contract.md"} {
 		if !strings.Contains(err.Error(), sub) {
 			t.Errorf("Load(invalid/format-version-1) error = %q, want it to contain %q", err.Error(), sub)
 		}
 	}
 }
 
-// TestLoadInvalidFixtures is the exhaustive cross-reference / strict-decode
-// validation table: one fixture directory per validation rule (task brief:
-// "one per validation rule"), each asserting the returned error names both
-// the offending file and field. Task 4 (v1 sunset): every fixture below is
-// now format_version "2" (migrated the same way rulesets/tavern-brawl and
-// testdata/valid were — see the task-4 report for the atom-by-atom
-// derivation of where each fault now lives). Two content changes from the
-// v1 table: "attack-undeclared-defense" (the bad name moved from a bare
-// v1 defense-name string into a two-actor-position expression ref, which
-// must satisfy the expression grammar's IDENT charset — "no-such-defense"
-// would be a parse error, not a cross-reference one; "no_such_defense"
-// exercises the SAME validation rule the v1 fixture did) and
-// "malformed-expression" (the bad text moved from abilityJSON's top-level
-// "attack.roll" field into an atom's resolution contribution, spliced and
-// parsed at compile.go's compileResolution — the field name in the error
-// is "resolution.roll" now, not "attack.roll"; same parse-failure rule
-// either way). "usage-undeclared-resource" is REMOVED, not migrated: see
-// the task-4 report for why — compile.go's compileCompositions never
-// cross-validates a composition's usage.limited.resource against the
-// ruleset's declared resources (verified empirically: a v2 ability
-// declaring usage.limited.resource of an UNDECLARED name loads
-// successfully), a real validation-coverage gap between v1 and v2 that is
-// out of this task's file scope to fix (compile.go is untouched platform
-// behavior) — the fixture is excised because its premise can no longer be
-// demonstrated, not because the rule stopped mattering.
+// TestLoadInvalidFixtures loads one fixture directory per validation rule,
+// each refusal naming the offending file and the key or field that fails.
+// "attack-undeclared-defense" keeps its name for a number property that a
+// resolution's vs reads.
 func TestLoadInvalidFixtures(t *testing.T) {
 	cases := []struct {
 		dir         string
@@ -329,15 +293,37 @@ func TestLoadRejectsThresholdMissingRemoveWhenFalse(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "2",
-  "attributes": ["brawn", "grit"],
-  "defenses": ["guard"],
-  "resources": [
+  "format_version": "3",
+  "properties": [
     {
-      "name": "pool_a",
+      "key": "brawn",
+      "type": "number",
+      "name": "Brawn",
+      "description": "The fixture's brawn."
+    },
+    {
+      "key": "grit",
+      "type": "number",
+      "name": "Grit",
+      "description": "The fixture's grit."
+    },
+    {
+      "key": "guard",
+      "type": "number",
+      "name": "Guard",
+      "description": "The fixture's guard."
+    },
+    {
+      "key": "pool_a",
+      "type": "resource",
+      "name": "Pool a",
+      "description": "The fixture's pool a.",
       "default_max_expr": "10 + @brawn",
       "thresholds": [
-        { "when": "#pool_a", "apply_condition": "guarded" }
+        {
+          "when": "#pool_a",
+          "apply_condition": "guarded"
+        }
       ]
     }
   ]
@@ -360,15 +346,38 @@ func TestLoadAcceptsThresholdExplicitFalse(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "2",
-  "attributes": ["brawn", "grit"],
-  "defenses": ["guard"],
-  "resources": [
+  "format_version": "3",
+  "properties": [
     {
-      "name": "pool_a",
+      "key": "brawn",
+      "type": "number",
+      "name": "Brawn",
+      "description": "The fixture's brawn."
+    },
+    {
+      "key": "grit",
+      "type": "number",
+      "name": "Grit",
+      "description": "The fixture's grit."
+    },
+    {
+      "key": "guard",
+      "type": "number",
+      "name": "Guard",
+      "description": "The fixture's guard."
+    },
+    {
+      "key": "pool_a",
+      "type": "resource",
+      "name": "Pool a",
+      "description": "The fixture's pool a.",
       "default_max_expr": "10 + @brawn",
       "thresholds": [
-        { "when": "#pool_a", "apply_condition": "guarded", "remove_when_false": false }
+        {
+          "when": "#pool_a",
+          "apply_condition": "guarded",
+          "remove_when_false": false
+        }
       ]
     }
   ]
@@ -377,7 +386,7 @@ func TestLoadAcceptsThresholdExplicitFalse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load with explicit remove_when_false=false: unexpected error: %v", err)
 	}
-	if rs.Resources[0].Thresholds[0].RemoveWhenFalse {
+	if rs.Property("pool_a").Resource.Thresholds[0].RemoveWhenFalse {
 		t.Error("RemoveWhenFalse = true, want false (explicit value must round-trip)")
 	}
 }
@@ -487,11 +496,34 @@ func TestLoadRejectsInvalidAttributeIdentifier(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "2",
-  "attributes": ["brawn", "grit-bonus"],
-  "defenses": ["guard"],
-  "resources": [
-    { "name": "pool_a", "default_max_expr": "10 + @brawn", "thresholds": [] }
+  "format_version": "3",
+  "properties": [
+    {
+      "key": "brawn",
+      "type": "number",
+      "name": "Brawn",
+      "description": "The fixture's brawn."
+    },
+    {
+      "key": "grit-bonus",
+      "type": "number",
+      "name": "Grit-bonus",
+      "description": "The fixture's grit-bonus."
+    },
+    {
+      "key": "guard",
+      "type": "number",
+      "name": "Guard",
+      "description": "The fixture's guard."
+    },
+    {
+      "key": "pool_a",
+      "type": "resource",
+      "name": "Pool a",
+      "description": "The fixture's pool a.",
+      "default_max_expr": "10 + @brawn",
+      "thresholds": []
+    }
   ]
 }`)
 	_, err := rules.Load(dir)
@@ -510,11 +542,33 @@ func TestLoadRejectsInvalidResourceIdentifier(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "2",
-  "attributes": ["brawn", "grit"],
-  "defenses": ["guard"],
-  "resources": [
-    { "name": "pool-a", "thresholds": [] }
+  "format_version": "3",
+  "properties": [
+    {
+      "key": "brawn",
+      "type": "number",
+      "name": "Brawn",
+      "description": "The fixture's brawn."
+    },
+    {
+      "key": "grit",
+      "type": "number",
+      "name": "Grit",
+      "description": "The fixture's grit."
+    },
+    {
+      "key": "guard",
+      "type": "number",
+      "name": "Guard",
+      "description": "The fixture's guard."
+    },
+    {
+      "key": "pool-a",
+      "type": "resource",
+      "name": "Pool-a",
+      "description": "The fixture's pool-a.",
+      "thresholds": []
+    }
   ]
 }`)
 	_, err := rules.Load(dir)
@@ -537,11 +591,33 @@ func TestLoadRejectsInvalidDefenseIdentifier(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "2",
-  "attributes": ["brawn", "grit"],
-  "defenses": ["will-power"],
-  "resources": [
-    { "name": "pool_a", "thresholds": [] }
+  "format_version": "3",
+  "properties": [
+    {
+      "key": "brawn",
+      "type": "number",
+      "name": "Brawn",
+      "description": "The fixture's brawn."
+    },
+    {
+      "key": "grit",
+      "type": "number",
+      "name": "Grit",
+      "description": "The fixture's grit."
+    },
+    {
+      "key": "will-power",
+      "type": "number",
+      "name": "Will-power",
+      "description": "The fixture's will-power."
+    },
+    {
+      "key": "pool_a",
+      "type": "resource",
+      "name": "Pool a",
+      "description": "The fixture's pool a.",
+      "thresholds": []
+    }
   ]
 }`)
 	_, err := rules.Load(dir)
@@ -564,7 +640,15 @@ func TestLoadAcceptsValidIdentifierNames(t *testing.T) {
 }
 
 type rulesetBound struct {
-	ability, condition, attribute, defense, resource, branch string
+	ability, condition, number, resource, branch string
+}
+
+// numberAt adds a number property under key at the front of dir's
+// properties.
+func numberAt(t *testing.T, dir, key string) {
+	t.Helper()
+	rulesetEdit(t, dir, "ruleset.json", `"properties": [`, `"properties": [
+    { "key": "`+key+`", "type": "number", "name": "At the bound", "description": "A key at the bound." },`)
 }
 
 func rulesetEdit(t *testing.T, dir, file, old, replacement string) {
@@ -592,8 +676,7 @@ func rulesetAtTheBound(t *testing.T) (string, rulesetBound) {
 	b := rulesetBound{
 		ability:   strings.Repeat("b", 128),
 		condition: strings.Repeat("é", 64),
-		attribute: strings.Repeat("x", 128),
-		defense:   strings.Repeat("d", 128),
+		number:    strings.Repeat("x", 128),
 		resource:  "p" + strings.Repeat("a", 127),
 		branch:    strings.Repeat("m", 128),
 	}
@@ -604,8 +687,7 @@ func rulesetAtTheBound(t *testing.T) (string, rulesetBound) {
 	for _, f := range []string{"ruleset.json", "atoms/strike-damage.json", "abilities/guard-stance.json"} {
 		rulesetEdit(t, dir, f, "pool_a", b.resource)
 	}
-	rulesetEdit(t, dir, "ruleset.json", `"grit"]`, `"grit", "`+b.attribute+`"]`)
-	rulesetEdit(t, dir, "ruleset.json", `["guard"]`, `["guard", "`+b.defense+`"]`)
+	numberAt(t, dir, b.number)
 	rulesetEdit(t, dir, "atoms/strike-roll.json", `"miss"`, `"`+b.branch+`"`)
 	writeFile(t, filepath.Join(dir, "abilities", "at-the-bound.json"), `{
   "id": "`+b.ability+`",
@@ -619,7 +701,7 @@ func rulesetAtTheBound(t *testing.T) (string, rulesetBound) {
 	return dir, b
 }
 
-// VTT-283 VTT-284
+// VTT-624 VTT-284
 func TestARulesetWhoseIDOrNameExceedsTheBoundIsRefused(t *testing.T) {
 	over := strings.Repeat("o", 129)
 	for _, c := range []struct {
@@ -636,15 +718,11 @@ func TestARulesetWhoseIDOrNameExceedsTheBoundIsRefused(t *testing.T) {
 				rulesetEdit(t, dir, f, `"guarded"`, `"`+strings.Repeat("é", 64)+`i"`)
 			}
 		}},
-		{"attribute", "ruleset.json", "attributes[2]", func(t *testing.T, dir string) {
+		{"number key", "ruleset.json", "properties[0].key", func(t *testing.T, dir string) {
 			t.Helper()
-			rulesetEdit(t, dir, "ruleset.json", `"grit"]`, `"grit", "`+over+`"]`)
+			numberAt(t, dir, over)
 		}},
-		{"defense", "ruleset.json", "defenses[1]", func(t *testing.T, dir string) {
-			t.Helper()
-			rulesetEdit(t, dir, "ruleset.json", `["guard"]`, `["guard", "`+over+`"]`)
-		}},
-		{"resource name", "ruleset.json", "resources[0].name", func(t *testing.T, dir string) {
+		{"resource key", "ruleset.json", "properties[0].key", func(t *testing.T, dir string) {
 			t.Helper()
 			for _, f := range []string{"ruleset.json", "atoms/strike-damage.json", "abilities/guard-stance.json"} {
 				rulesetEdit(t, dir, f, "pool_a", over)
@@ -667,7 +745,7 @@ func TestARulesetWhoseIDOrNameExceedsTheBoundIsRefused(t *testing.T) {
 	}
 }
 
-// VTT-283 VTT-284
+// VTT-624 VTT-284
 func TestARulesetWhoseIDsAndNamesAreExactlyTheBoundLoads(t *testing.T) {
 	dir, b := rulesetAtTheBound(t)
 	rs, err := rules.Load(dir)
@@ -680,18 +758,18 @@ func TestARulesetWhoseIDsAndNamesAreExactlyTheBoundLoads(t *testing.T) {
 	if rs.Conditions[b.condition] == nil {
 		t.Errorf("no condition under the 128-byte id")
 	}
-	if !slices.Contains(rs.Attributes, b.attribute) || !slices.Contains(rs.Defenses, b.defense) {
-		t.Errorf("attributes %d, defenses %d: the 128-byte names are missing", len(rs.Attributes), len(rs.Defenses))
+	if p := rs.Property(b.number); p == nil || p.Type != rules.PropertyNumber {
+		t.Errorf("no number property under the 128-byte key")
 	}
-	if len(rs.Resources) != 1 || rs.Resources[0].Name != b.resource {
-		t.Errorf("resources do not hold the 128-byte name")
+	if p := rs.Property(b.resource); p == nil || p.Resource == nil {
+		t.Errorf("no resource property under the 128-byte key")
 	}
 	if strike := rs.Compiled["strike"]; strike == nil || strike.Resolution == nil || strike.Resolution.Branches[1] != b.branch {
 		t.Errorf("strike's resolution does not hold the 128-byte branch label")
 	}
 }
 
-// VTT-283
+// VTT-624
 func TestARulesetNameOfSeventyThousandBytesIsRefusedAtLoad(t *testing.T) {
 	dir := rulesetCopy(t, filepath.Join("conformance", "testdata", "minimal-smoke-fail"))
 	long := strings.Repeat("f", 70000)
@@ -699,7 +777,7 @@ func TestARulesetNameOfSeventyThousandBytesIsRefusedAtLoad(t *testing.T) {
 		rulesetEdit(t, dir, f, `"focus"`, `"`+long+`"`)
 	}
 	_, err := rules.Load(dir)
-	want := `ruleset.json: field "resources[0].name": must be at most 128 bytes, got 70000`
+	want := `ruleset.json: field "properties[0].key": must be at most 128 bytes, got 70000`
 	if err == nil || !strings.HasSuffix(err.Error(), want) {
 		t.Fatalf("Load = %.200v, want an error ending %q", err, want)
 	}

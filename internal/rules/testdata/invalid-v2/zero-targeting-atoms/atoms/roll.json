@@ -1,7 +1,7 @@
 {
   "id": "roll",
   "params": [
-    { "name": "stat", "kind": "attribute" }
+    { "name": "stat", "kind": "number" }
   ],
   "provides": ["clash"],
   "consumes": [],

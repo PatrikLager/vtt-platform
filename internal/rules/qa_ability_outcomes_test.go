@@ -37,9 +37,31 @@ func (r *qaasRoller) Roll(n, _ int) ([]int, int) {
 
 var qaasRulesetFiles = map[string]string{
 	"ruleset.json": `{
-  "id": "qa-sight", "name": "QA Sight", "format_version": "2",
-  "attributes": ["knack"], "defenses": ["guard"],
-  "resources": [{ "name": "pool", "default_max_expr": "5", "thresholds": [] }]
+  "id": "qa-sight",
+  "name": "QA Sight",
+  "format_version": "3",
+  "properties": [
+    {
+      "key": "knack",
+      "type": "number",
+      "name": "Knack",
+      "description": "The fixture's knack."
+    },
+    {
+      "key": "guard",
+      "type": "number",
+      "name": "Guard",
+      "description": "The fixture's guard."
+    },
+    {
+      "key": "pool",
+      "type": "resource",
+      "name": "Pool",
+      "description": "The fixture's pool.",
+      "default_max_expr": "5",
+      "thresholds": []
+    }
+  ]
 }`,
 	"guide.md": "# QA Sight\n",
 	"atoms/aim.json": `{

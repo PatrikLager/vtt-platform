@@ -113,29 +113,11 @@ type Placement struct {
 	Name, Notes, GMName, GMNotes string
 }
 
-// AdventureActor is one actors/*.json file: a complete statblock instance,
-// validated at Load against the ruleset's declared vocabulary (attribute
-// names against the union of declared attributes+defenses — a defense's
-// value is carried the same way an attribute's is, per the ruleset
-// v2 convention; resource names against the ruleset's declared resources).
-// Controller is deliberately absent from this shape (and left unset on the
-// compiled Actor): the DM drives every adventure-placed actor at load time;
-// a player can be given control later via the existing actor-control
-// mechanism (spec §4).
-//
-// KIND IS NOT ABSENT, and the contrast with Controller is the point. Who
-// drives a character is a fact about the table, and the table does not exist
-// yet when the file is written. What a creature IS is a fact about the
-// content, decided by the author at the moment they wrote it — so the file is
-// exactly the right place to say it, and Load REFUSES an actor that does not
-// (load.go's actorKinds, and loadActors' own comment for why absence is not
-// given a default here the way an absent tiles map is).
-//
-// The JSON field is "kind" and its two values are "party_member" and
-// "non_party" (load.go's actorKinds). This field carries the resolved wire
-// enum rather than the authored string: the mapping is checked once, at load,
-// so nothing downstream has to re-parse a name or invent a fallback for one
-// it does not recognise.
+// AdventureActor is one actors/*.json file, its statblock checked at Load
+// against the ruleset's properties by type (VTT-617, VTT-618). It has no
+// controller: who drives a character is the table's to decide, later. Its
+// Kind is the author's, required at load (actorKinds in load.go), and is
+// carried as the wire enum so nothing downstream re-parses the name.
 type AdventureActor struct {
 	ID, Name   string
 	Kind       vttv1.ActorKind

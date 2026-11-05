@@ -40,28 +40,7 @@ import (
 // loadAtoms) and rs's declared vocabulary, returning one CompiledPower per
 // ability id.
 func compileCompositions(rs *Ruleset, atoms map[string]*AtomDef, compositions map[string]*compositionAbility) (map[string]*CompiledPower, error) {
-	attrSet := toSet(rs.Attributes)
-	defSet := toSet(rs.Defenses)
-	resSet := map[string]bool{}
-	for _, r := range rs.Resources {
-		resSet[r.Name] = true
-	}
-	// A defense's runtime value is exposed through the SAME '@' attribute
-	// namespace as attributes (Task 1's EvalContext carries only
-	// Attrs/Resources — no separate defense map), so an '@'-ref inside a
-	// fully-substituted two-actor expression is valid against the union.
-	// Individual param BINDINGS are still checked against their precise
-	// declared kind (attribute vs defense) in bindAtom — this union only
-	// covers the permissive final-expression check, which also has to
-	// accept refs an atom author wrote directly (e.g. "@target.guard"),
-	// never having gone through a param placeholder at all.
-	attrOrDefSet := make(map[string]bool, len(attrSet)+len(defSet))
-	for k := range attrSet {
-		attrOrDefSet[k] = true
-	}
-	for k := range defSet {
-		attrOrDefSet[k] = true
-	}
+	types := propertyTypes(rs)
 
 	// Stable iteration order — determinism of which composition fails first
 	// on an invalid ruleset, and (mostly for
@@ -75,7 +54,7 @@ func compileCompositions(rs *Ruleset, atoms map[string]*AtomDef, compositions ma
 
 	out := make(map[string]*CompiledPower, len(compositions))
 	for _, id := range ids {
-		cp, err := compilePower(rs, atoms, compositions[id], attrSet, defSet, resSet, attrOrDefSet)
+		cp, err := compilePower(rs, atoms, compositions[id], types)
 		if err != nil {
 			return nil, err
 		}
@@ -85,18 +64,14 @@ func compileCompositions(rs *Ruleset, atoms map[string]*AtomDef, compositions ma
 }
 
 // compilePower flattens one composition ability into a CompiledPower.
-func compilePower(rs *Ruleset, atoms map[string]*AtomDef, ca *compositionAbility, attrSet, defSet, resSet, attrOrDefSet map[string]bool) (*CompiledPower, error) {
+func compilePower(rs *Ruleset, atoms map[string]*AtomDef, ca *compositionAbility, types map[string]string) (*CompiledPower, error) {
 	path := ca.sourcePath
 	n := len(ca.Compose)
 
-	// usage.limited.resource cross-reference (pre-authorized item 1): a
-	// limited-use ability's named resource must be one the manifest
-	// declares — Resolve never creates resource entries, so an undeclared
-	// resource here would only surface as a runtime rejection. v1's loader
-	// checked this; the v2 compile path must too. Named a load error on the
-	// ability file/field.
-	if ca.Usage.Limited != nil && !resSet[ca.Usage.Limited.Resource] {
-		return nil, fieldErr(path, "usage.limited.resource", fmt.Sprintf("references undeclared resource %q", ca.Usage.Limited.Resource))
+	if ca.Usage.Limited != nil {
+		if err := checkPropertyRef(path, "usage.limited.resource", ca.Usage.Limited.Resource, PropertyResource, types); err != nil {
+			return nil, err
+		}
 	}
 
 	atomInstances := make([]*AtomDef, n)
@@ -112,7 +87,7 @@ func compilePower(rs *Ruleset, atoms map[string]*AtomDef, ca *compositionAbility
 		atomInstances[i] = atom
 		names[i] = entry.Atom
 
-		tb, ib, err := bindAtom(rs, path, i, atom, entry.Bind, attrSet, resSet, defSet)
+		tb, ib, err := bindAtom(rs, path, i, atom, entry.Bind, types)
 		if err != nil {
 			return nil, err
 		}
@@ -130,7 +105,7 @@ func compilePower(rs *Ruleset, atoms map[string]*AtomDef, ca *compositionAbility
 		return nil, err
 	}
 
-	resolution, resolutionKey, err := compileResolution(path, atomInstances, textBindings, attrOrDefSet, resSet)
+	resolution, resolutionKey, err := compileResolution(path, atomInstances, textBindings, types)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +117,7 @@ func compilePower(rs *Ruleset, atoms map[string]*AtomDef, ca *compositionAbility
 			if c.Kind != "outcome" {
 				continue
 			}
-			outcomes, err := compileEffects(path, i, ci, c.Effects, textBindings[i], rs, attrOrDefSet, resSet)
+			outcomes, err := compileEffects(path, i, ci, c.Effects, textBindings[i], rs, types)
 			if err != nil {
 				return nil, err
 			}
@@ -182,7 +157,7 @@ func compilePower(rs *Ruleset, atoms map[string]*AtomDef, ca *compositionAbility
 // integer values, for "int"-kind params only, used by targeting's
 // range/max_targets which are compile-time constants rather than parsed
 // expressions).
-func bindAtom(rs *Ruleset, path string, idx int, atom *AtomDef, bind map[string]json.RawMessage, attrSet, resSet, defSet map[string]bool) (textBindings map[string]string, intBindings map[string]int, err error) {
+func bindAtom(rs *Ruleset, path string, idx int, atom *AtomDef, bind map[string]json.RawMessage, types map[string]string) (textBindings map[string]string, intBindings map[string]int, err error) {
 	textBindings = make(map[string]string, len(atom.Params))
 	intBindings = make(map[string]int, len(atom.Params))
 
@@ -239,33 +214,13 @@ func bindAtom(rs *Ruleset, path string, idx int, atom *AtomDef, bind map[string]
 			}
 			textBindings[p.Name] = "(" + s + ")"
 
-		case "attribute":
+		case PropertyNumber, PropertyResource:
 			name, berr := bindName(path, field, raw)
 			if berr != nil {
 				return nil, nil, berr
 			}
-			if !attrSet[name] {
-				return nil, nil, fieldErr(path, field, fmt.Sprintf("references undeclared attribute %q", name))
-			}
-			textBindings[p.Name] = name
-
-		case "resource":
-			name, berr := bindName(path, field, raw)
-			if berr != nil {
-				return nil, nil, berr
-			}
-			if !resSet[name] {
-				return nil, nil, fieldErr(path, field, fmt.Sprintf("references undeclared resource %q", name))
-			}
-			textBindings[p.Name] = name
-
-		case "defense":
-			name, berr := bindName(path, field, raw)
-			if berr != nil {
-				return nil, nil, berr
-			}
-			if !defSet[name] {
-				return nil, nil, fieldErr(path, field, fmt.Sprintf("references undeclared defense %q", name))
+			if err := checkPropertyRef(path, field, name, p.Kind, types); err != nil {
+				return nil, nil, err
 			}
 			textBindings[p.Name] = name
 
@@ -571,7 +526,7 @@ func resolveIntField(src string, intBindings map[string]int) (int, error) {
 // set to the same fully-substituted text (rollSub/vsSub) Roll/Vs are
 // parsed from — v2's testimony text is its post-splice source, unlike a
 // v1-adapted ability's (see CompiledResolution's doc comment).
-func compileResolution(path string, atomInstances []*AtomDef, textBindings []map[string]string, attrOrDefSet, resSet map[string]bool) (resolution *CompiledResolution, key string, err error) {
+func compileResolution(path string, atomInstances []*AtomDef, textBindings []map[string]string, types map[string]string) (resolution *CompiledResolution, key string, err error) {
 	found := -1
 	var contrib Contribution
 	for i, a := range atomInstances {
@@ -593,11 +548,11 @@ func compileResolution(path string, atomInstances []*AtomDef, textBindings []map
 	rollSub := substTemplate(contrib.RollSrc, textBindings[found])
 	vsSub := substTemplate(contrib.VsSrc, textBindings[found])
 
-	rollExpr, rerr := compileTwoActorExpr(path, fmt.Sprintf("compose[%d].resolution.roll", found), rollSub, attrOrDefSet, resSet)
+	rollExpr, rerr := compileTwoActorExpr(path, fmt.Sprintf("compose[%d].resolution.roll", found), rollSub, types)
 	if rerr != nil {
 		return nil, "", rerr
 	}
-	vsExpr, verr := compileTwoActorExpr(path, fmt.Sprintf("compose[%d].resolution.vs", found), vsSub, attrOrDefSet, resSet)
+	vsExpr, verr := compileTwoActorExpr(path, fmt.Sprintf("compose[%d].resolution.vs", found), vsSub, types)
 	if verr != nil {
 		return nil, "", verr
 	}
@@ -611,18 +566,18 @@ func compileResolution(path string, atomInstances []*AtomDef, textBindings []map
 
 // compileEffects splices bindings into and validates one outcome
 // contribution's effect templates, producing v1-shaped Outcomes.
-func compileEffects(path string, atomIdx, contribIdx int, templates []EffectTemplate, bindings map[string]string, rs *Ruleset, attrOrDefSet, resSet map[string]bool) ([]Outcome, error) {
+func compileEffects(path string, atomIdx, contribIdx int, templates []EffectTemplate, bindings map[string]string, rs *Ruleset, types map[string]string) ([]Outcome, error) {
 	out := make([]Outcome, 0, len(templates))
 	for ei, t := range templates {
 		field := fmt.Sprintf("compose[%d].contributes[%d].effects[%d]", atomIdx, contribIdx, ei)
 		switch t.Kind {
 		case OutcomeResourceChange:
 			resourceName := substTemplate(t.ResourceSrc, bindings)
-			if !resSet[resourceName] {
-				return nil, fieldErr(path, field+".resource_change.resource", fmt.Sprintf("references undeclared resource %q", resourceName))
+			if err := checkPropertyRef(path, field+".resource_change.resource", resourceName, PropertyResource, types); err != nil {
+				return nil, err
 			}
 			deltaSub := substTemplate(t.DeltaExprSrc, bindings)
-			deltaExpr, err := compileTwoActorExpr(path, field+".resource_change.delta_expr", deltaSub, attrOrDefSet, resSet)
+			deltaExpr, err := compileTwoActorExpr(path, field+".resource_change.delta_expr", deltaSub, types)
 			if err != nil {
 				return nil, err
 			}
@@ -710,16 +665,10 @@ func substTemplate(raw string, bindings map[string]string) string {
 }
 
 // compileTwoActorExpr parses a fully-substituted resolution roll/vs or
-// outcome delta_expr template and validates it for a two-actor position
-// (spec v2 §5): every ref must carry an explicit scope (bare ref in a
-// two-actor position — validation catalogue), and every ref's name must
-// be declared. Attribute refs ('@') are checked against attrOrDef (the
-// union of the ruleset's attributes and defenses: Task 1's EvalContext has
-// only Attrs/Resources, no separate defense map, so a defense's runtime
-// value is exposed through the same '@' namespace attributes use — see
-// compileCompositions' attrOrDefSet comment); resource refs ('#') against
-// resSet.
-func compileTwoActorExpr(path, field, substituted string, attrOrDef, resSet map[string]bool) (*Expr, error) {
+// outcome delta_expr and checks it for a two-actor position: every ref
+// carries a scope, an '@' ref names a number property and a '#' ref a
+// resource property.
+func compileTwoActorExpr(path, field, substituted string, types map[string]string) (*Expr, error) {
 	e, err := Parse(substituted)
 	if err != nil {
 		return nil, fieldErr(path, field, err.Error())
@@ -728,15 +677,12 @@ func compileTwoActorExpr(path, field, substituted string, attrOrDef, resSet map[
 		if r.Scope == ScopeNone {
 			return nil, fieldErr(path, field, fmt.Sprintf("bare reference %c%s not allowed here: this is a two-actor position, write %c%s.%s or %c%s.%s", r.Sigil, r.Name, r.Sigil, scopeName(ScopeCaster), r.Name, r.Sigil, scopeName(ScopeTarget), r.Name))
 		}
-		switch r.Sigil {
-		case '@':
-			if !attrOrDef[r.Name] {
-				return nil, fieldErr(path, field, fmt.Sprintf("references undeclared attribute %q", r.Name))
-			}
-		case '#':
-			if !resSet[r.Name] {
-				return nil, fieldErr(path, field, fmt.Sprintf("references undeclared resource %q", r.Name))
-			}
+		want := PropertyNumber
+		if r.Sigil == '#' {
+			want = PropertyResource
+		}
+		if err := checkPropertyRef(path, field, r.Name, want, types); err != nil {
+			return nil, err
 		}
 	}
 	return e, nil

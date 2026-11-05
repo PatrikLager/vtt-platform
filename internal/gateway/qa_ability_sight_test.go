@@ -25,8 +25,23 @@ const qaasWait = 10 * time.Second
 
 var qaasRulesetFiles = map[string]string{
 	"ruleset.json": `{
-  "id": "qa-sight", "name": "QA Sight", "format_version": "2",
-  "attributes": ["knack"], "defenses": ["guard"], "resources": []
+  "id": "qa-sight",
+  "name": "QA Sight",
+  "format_version": "3",
+  "properties": [
+    {
+      "key": "knack",
+      "type": "number",
+      "name": "Knack",
+      "description": "The fixture's knack."
+    },
+    {
+      "key": "guard",
+      "type": "number",
+      "name": "Guard",
+      "description": "The fixture's guard."
+    }
+  ]
 }`,
 	"guide.md": "# QA Sight\n",
 	"atoms/aim.json": `{

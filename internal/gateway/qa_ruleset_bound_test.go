@@ -80,9 +80,11 @@ func qaRuleRulesetOnDisk(t *testing.T, res string, thresholds []map[string]any) 
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "ruleset")
 	qaRuleWriteJSON(t, filepath.Join(dir, "ruleset.json"), map[string]any{
-		"id": "qa-rules", "name": "QA Rules", "format_version": "2",
-		"attributes": []string{"qa_attr"}, "defenses": []string{},
-		"resources": []map[string]any{{"name": res, "thresholds": thresholds}},
+		"id": "qa-rules", "name": "QA Rules", "format_version": "3",
+		"properties": []map[string]any{
+			{"key": "qa_attr", "type": "number", "name": "QA Number", "description": "A QA number."},
+			{"key": res, "type": "resource", "name": "QA Resource", "description": "A QA resource.", "thresholds": thresholds},
+		},
 	})
 	qaRuleWriteJSON(t, filepath.Join(dir, "conditions", "qa-mark.json"), map[string]any{"id": qaRuleMark, "name": "QA Mark"})
 	atoms := map[string][]map[string]any{
@@ -458,7 +460,7 @@ func TestQARuleAThresholdRefusalOnTheWireNamesTheResourceNotTheExpression(t *tes
 	qaRuleStillOpenNothingAppended(t, tb, issuer, observer, 3)
 }
 
-// VTT-132 VTT-162 VTT-283
+// VTT-132 VTT-162 VTT-624
 func TestQARuleAUseRefusedForAResourceNameAtTheBoundIsAnsweredOnAnOpenConnection(t *testing.T) {
 	name := "res_" + strings.Repeat("r", qaRuleBound-4)
 	rs := qaRuleRulesetOnDisk(t, name, []map[string]any{})

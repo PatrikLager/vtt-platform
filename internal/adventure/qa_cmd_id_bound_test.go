@@ -37,8 +37,8 @@ func qaCmdAdvRuleset(t *testing.T) *rules.Ruleset {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "ruleset")
 	qaCmdAdvWriteJSON(t, filepath.Join(dir, "ruleset.json"), map[string]any{
-		"id": "qa-rules", "name": "QA Rules", "format_version": "2",
-		"attributes": []string{"vim"}, "defenses": []string{}, "resources": []any{},
+		"id": "qa-rules", "name": "QA Rules", "format_version": "3",
+		"properties": []map[string]any{{"key": "vim", "type": "number", "name": "Vim", "description": "A QA number."}},
 	})
 	if err := os.WriteFile(filepath.Join(dir, "guide.md"), []byte("qa\n"), 0o600); err != nil {
 		t.Fatal(err)

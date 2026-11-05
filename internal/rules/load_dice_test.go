@@ -20,15 +20,38 @@ func TestLoadRejectsDiceInThresholdWhen(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "2",
-  "attributes": ["brawn", "grit"],
-  "defenses": ["guard"],
-  "resources": [
+  "format_version": "3",
+  "properties": [
     {
-      "name": "pool_a",
+      "key": "brawn",
+      "type": "number",
+      "name": "Brawn",
+      "description": "The fixture's brawn."
+    },
+    {
+      "key": "grit",
+      "type": "number",
+      "name": "Grit",
+      "description": "The fixture's grit."
+    },
+    {
+      "key": "guard",
+      "type": "number",
+      "name": "Guard",
+      "description": "The fixture's guard."
+    },
+    {
+      "key": "pool_a",
+      "type": "resource",
+      "name": "Pool a",
+      "description": "The fixture's pool a.",
       "default_max_expr": "10 + @brawn",
       "thresholds": [
-        { "when": "#pool_a + 1d6", "apply_condition": "guarded", "remove_when_false": true }
+        {
+          "when": "#pool_a + 1d6",
+          "apply_condition": "guarded",
+          "remove_when_false": true
+        }
       ]
     }
   ]
@@ -51,15 +74,38 @@ func TestLoadRejectsDiceInDefaultMaxExpr(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "2",
-  "attributes": ["brawn", "grit"],
-  "defenses": ["guard"],
-  "resources": [
+  "format_version": "3",
+  "properties": [
     {
-      "name": "pool_a",
+      "key": "brawn",
+      "type": "number",
+      "name": "Brawn",
+      "description": "The fixture's brawn."
+    },
+    {
+      "key": "grit",
+      "type": "number",
+      "name": "Grit",
+      "description": "The fixture's grit."
+    },
+    {
+      "key": "guard",
+      "type": "number",
+      "name": "Guard",
+      "description": "The fixture's guard."
+    },
+    {
+      "key": "pool_a",
+      "type": "resource",
+      "name": "Pool a",
+      "description": "The fixture's pool a.",
       "default_max_expr": "10 + 1d6",
       "thresholds": [
-        { "when": "#pool_a", "apply_condition": "guarded", "remove_when_false": true }
+        {
+          "when": "#pool_a",
+          "apply_condition": "guarded",
+          "remove_when_false": true
+        }
       ]
     }
   ]
@@ -141,15 +187,38 @@ func TestLoadRejectsExpressionSizedDiceInThresholdWhen(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "2",
-  "attributes": ["brawn", "grit"],
-  "defenses": ["guard"],
-  "resources": [
+  "format_version": "3",
+  "properties": [
     {
-      "name": "pool_a",
+      "key": "brawn",
+      "type": "number",
+      "name": "Brawn",
+      "description": "The fixture's brawn."
+    },
+    {
+      "key": "grit",
+      "type": "number",
+      "name": "Grit",
+      "description": "The fixture's grit."
+    },
+    {
+      "key": "guard",
+      "type": "number",
+      "name": "Guard",
+      "description": "The fixture's guard."
+    },
+    {
+      "key": "pool_a",
+      "type": "resource",
+      "name": "Pool a",
+      "description": "The fixture's pool a.",
       "default_max_expr": "10 + @brawn",
       "thresholds": [
-        { "when": "#pool_a + 1d(@brawn)", "apply_condition": "guarded", "remove_when_false": true }
+        {
+          "when": "#pool_a + 1d(@brawn)",
+          "apply_condition": "guarded",
+          "remove_when_false": true
+        }
       ]
     }
   ]
@@ -171,15 +240,38 @@ func TestLoadRejectsExpressionSizedDiceInDefaultMaxExpr(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",
-  "format_version": "2",
-  "attributes": ["brawn", "grit"],
-  "defenses": ["guard"],
-  "resources": [
+  "format_version": "3",
+  "properties": [
     {
-      "name": "pool_a",
+      "key": "brawn",
+      "type": "number",
+      "name": "Brawn",
+      "description": "The fixture's brawn."
+    },
+    {
+      "key": "grit",
+      "type": "number",
+      "name": "Grit",
+      "description": "The fixture's grit."
+    },
+    {
+      "key": "guard",
+      "type": "number",
+      "name": "Guard",
+      "description": "The fixture's guard."
+    },
+    {
+      "key": "pool_a",
+      "type": "resource",
+      "name": "Pool a",
+      "description": "The fixture's pool a.",
       "default_max_expr": "10 + 1d(@brawn)",
       "thresholds": [
-        { "when": "#pool_a", "apply_condition": "guarded", "remove_when_false": true }
+        {
+          "when": "#pool_a",
+          "apply_condition": "guarded",
+          "remove_when_false": true
+        }
       ]
     }
   ]

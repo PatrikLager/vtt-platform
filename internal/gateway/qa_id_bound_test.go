@@ -761,8 +761,8 @@ func qaIDAdventureOnDisk(t *testing.T) (*rules.Ruleset, *adventure.Adventure) {
 	root := t.TempDir()
 	rsDir, advDir := filepath.Join(root, "ruleset"), filepath.Join(root, "adventure")
 	qaIDWriteJSON(t, filepath.Join(rsDir, "ruleset.json"), map[string]any{
-		"id": "qa-rules", "name": "QA Rules", "format_version": "2",
-		"attributes": []string{"vim"}, "defenses": []string{}, "resources": []any{},
+		"id": "qa-rules", "name": "QA Rules", "format_version": "3",
+		"properties": []map[string]any{{"key": "vim", "type": "number", "name": "Vim", "description": "A QA number."}},
 	})
 	qaIDWriteJSON(t, filepath.Join(advDir, "adventure.json"), map[string]any{
 		"id": "qa-adv", "name": "QA", "format_version": "1", "ruleset": "qa-rules", "opening_narration": "qa",

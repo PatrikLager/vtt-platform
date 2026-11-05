@@ -1,12 +1,61 @@
 {
   "id": "dnd45e-minimal",
   "name": "D&D 4.5e (Minimal)",
-  "format_version": "2",
-  "attributes": ["str", "dex", "con", "max_hp"],
-  "defenses": ["ac", "fort", "ref", "will"],
-  "resources": [
+  "format_version": "3",
+  "properties": [
     {
-      "name": "hp",
+      "key": "str",
+      "type": "number",
+      "name": "Strength",
+      "description": "The melee attack and damage stat: the longsword and the staggering blow."
+    },
+    {
+      "key": "dex",
+      "type": "number",
+      "name": "Dexterity",
+      "description": "The ranged and finesse attack stat: the goblins' weapons, the crossbow and the hunter's flurry roll with it, and the hunter's flurry adds it to damage."
+    },
+    {
+      "key": "con",
+      "type": "number",
+      "name": "Constitution",
+      "description": "Adds to what a rally restores to the creature it is used on."
+    },
+    {
+      "key": "max_hp",
+      "type": "number",
+      "name": "Maximum hit points",
+      "description": "A copy of the hit points' maximum, which no expression can read; bloodied reads this instead. Keep the two equal."
+    },
+    {
+      "key": "ac",
+      "type": "number",
+      "name": "Armor Class",
+      "description": "The defense a weapon attack rolls against, unless the power names another."
+    },
+    {
+      "key": "fort",
+      "type": "number",
+      "name": "Fortitude",
+      "description": "The defense the staggering blow attacks instead of Armor Class."
+    },
+    {
+      "key": "ref",
+      "type": "number",
+      "name": "Reflex",
+      "description": "A defense declared for later powers; nothing attacks it yet."
+    },
+    {
+      "key": "will",
+      "type": "number",
+      "name": "Will",
+      "description": "A defense declared for later powers; nothing attacks it yet."
+    },
+    {
+      "key": "hp",
+      "type": "resource",
+      "name": "Hit points",
+      "description": "A creature's hit points; every statblock sets their current value and maximum. At half or below the creature is bloodied, at zero it is dying, and healing clears each again.",
       "thresholds": [
         {
           "when": "max(0, @max_hp - #hp * 2 + 1)",
@@ -21,7 +70,10 @@
       ]
     },
     {
-      "name": "flurry_uses",
+      "key": "flurry_uses",
+      "type": "resource",
+      "name": "Flurry uses",
+      "description": "What the hunter's flurry, the one encounter power here, spends. Only a creature with that power needs it, one use a fresh encounter, and nothing here refills it.",
       "thresholds": []
     }
   ]

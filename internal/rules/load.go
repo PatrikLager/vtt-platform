@@ -10,52 +10,21 @@ import (
 	"sort"
 )
 
-// supportedFormatVersions is the set of format_version values Load
-// accepts. Task 4 (v1 sunset, spec §9's migration): format v1 is retired —
-// "2" (spec 2026-07-25-format-v2-composition-design.md §3 — atoms/
-// compositions, compiled at load into the small declarative execution
-// shape 5a proved; see loadV2 and compile.go) is the only value Load will
-// ever load. "1" is a clean break, not a silent guess: both rulesets that
-// existed under it (rulesets/tavern-brawl, internal/rules/testdata/valid)
-// migrated to v2 in this task, and spec §3 states plainly there are no
-// external v1 authors yet to protect.
-var supportedFormatVersions = map[string]bool{"2": true}
+// formatVersion is the one format_version Load reads (VTT-616).
+const formatVersion = "3"
 
-// formatVersion1RejectedMsg is the clear, spec-naming error Load produces
-// for format_version "1" (or any other unsupported value) — spec §3: "clean
-// break... both existing rulesets are in-repo and migrate". Named as its
-// own constant (rather than inlined into loadManifest's fieldErr call) so
-// the exact wording load_test.go's rejection test pins is visibly the same
-// text a ruleset author would see, not a paraphrase.
-const formatVersion1RejectedMsg = "format v1 is retired (clean break, no external v1 authors — see docs/superpowers/specs/2026-07-25-format-v2-composition-design.md §3/§9); this ruleset must declare \"format_version\": \"2\" and be authored as atoms/compositions (§4)"
+// formatVersionWant ends every refusal of a format_version, and tells the
+// author what to do (VTT-616).
+const formatVersionWant = `this loader reads format_version "3", which declares every property under "properties" with its key, type, name and description (docs/adr/012-the-rules-contract.md)`
 
 // maxIDBytes mirrors internal/engine's bound on an id (SPEC-018).
 const maxIDBytes = 128
 
-// Load reads and fully validates the ruleset directory at dir: strict JSON
-// decoding of ruleset.json/conditions/*.json/atoms/*.json/
-// abilities/*.json-as-compositions (no unknown fields tolerated), the
-// grammar of every expression (parsed once, here, so a loaded Ruleset
-// never fails to parse an expression at runtime), every cross-reference a
-// resource, threshold, atom, or composition makes (attributes, resources,
-// defenses, and condition ids must all be declared — spec §5), and —
-// compile-at-load (spec §6) — every composition ability flattened into
-// Ruleset.Compiled by compile.go's compileCompositions. Ruleset.Compiled is
-// always populated on a successful Load, and Resolve reads Compiled
-// exclusively — spec 5c pillar "ONE execution path". Every error names the
-// offending file and field.
-//
-// format_version "1" (spec §3/§9, Task 4's sunset): REJECTED, by
-// loadManifest, before this function ever reads conditions/atoms/
-// abilities — supportedFormatVersions holds only "2", so manifest.
-// FormatVersion is always "2" by the time control reaches here. Both
-// rulesets that ever shipped as v1 (rulesets/tavern-brawl,
-// internal/rules/testdata/valid) migrated to v2 atoms/compositions in this
-// task; the entire v1 file-decode/cross-validate/adapt machinery that used
-// to run here (loadAbilities, crossValidate, adaptV1Abilities, and the
-// AdaptV1Ability adapter itself) had no caller left and was removed as dead
-// code. Resolve executes the compiled form for every ability; hand-built
-// test fixtures construct CompiledPower values directly.
+// Load reads and validates the ruleset directory at dir: every file strictly
+// decoded, every expression parsed, every property and condition a resource,
+// threshold or composed atom reads checked against what the ruleset declares
+// (VTT-613, VTT-614), and every ability compiled into Ruleset.Compiled. Every
+// error names the offending file and field.
 func Load(dir string) (*Ruleset, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -104,9 +73,7 @@ func loadV2(dir string, manifest *loadedManifest) (*Ruleset, error) {
 		ID:            manifest.ID,
 		Name:          manifest.Name,
 		FormatVersion: manifest.FormatVersion,
-		Resources:     manifest.resources,
-		Defenses:      manifest.Defenses,
-		Attributes:    manifest.Attributes,
+		Properties:    manifest.properties,
 		Conditions:    conditions,
 		Atoms:         atoms,
 		Guide:         string(guide),
@@ -130,15 +97,18 @@ type manifestJSON struct {
 	ID            string         `json:"id"`
 	Name          string         `json:"name"`
 	FormatVersion string         `json:"format_version"`
-	Attributes    []string       `json:"attributes"`
-	Defenses      []string       `json:"defenses"`
-	Resources     []resourceJSON `json:"resources"`
+	Properties    []propertyJSON `json:"properties"`
 }
 
-type resourceJSON struct {
-	Name           string          `json:"name"`
-	DefaultMaxExpr *string         `json:"default_max_expr"`
-	Thresholds     []thresholdJSON `json:"thresholds"`
+type propertyJSON struct {
+	Key            string  `json:"key"`
+	Type           string  `json:"type"`
+	Name           string  `json:"name"`
+	Description    string  `json:"description"`
+	DefaultMaxExpr *string `json:"default_max_expr"`
+	// A pointer, so that a number property carrying "thresholds": [] is
+	// told apart from one that omits the key (VTT-615).
+	Thresholds *[]thresholdJSON `json:"thresholds"`
 }
 
 type thresholdJSON struct {
@@ -151,168 +121,176 @@ type thresholdJSON struct {
 	RemoveWhenFalse *bool `json:"remove_when_false"`
 }
 
-// loadedManifest carries both the raw decoded manifest and its resources
-// already converted to the public ResourceDef shape (expressions parsed),
-// since manifestJSON.resources needs its exprs parsed before
-// crossValidateResources can walk them for Refs().
+// loadedManifest is ruleset.json with its properties' expressions parsed,
+// which crossValidateResources walks for Refs().
 type loadedManifest struct {
 	ID            string
 	Name          string
 	FormatVersion string
-	Attributes    []string
-	Defenses      []string
-	resources     []ResourceDef
+	properties    []Property
 }
 
-// Complexity: straight-line validation of one manifest — a long sequence of
-// independent field checks, each with its own error. Splitting it would only
-// move the branches somewhere else.
-//
-//nolint:gocyclo
+// checkFormatVersion refuses any format_version but "3" (VTT-616). It reads
+// the field alone, before the shape is decoded, so that a ruleset in a
+// retired format is told what to do rather than which field is unknown.
+func checkFormatVersion(path string, written json.RawMessage) error {
+	if written == nil {
+		return fieldErr(path, "format_version", "is absent: "+formatVersionWant)
+	}
+	var v string
+	if json.Unmarshal(written, &v) == nil && v == formatVersion {
+		return nil
+	}
+	return fieldErr(path, "format_version", fmt.Sprintf("unsupported value %s: %s", written, formatVersionWant))
+}
+
 func loadManifest(path string) (*loadedManifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("rules: %s: %w", path, err)
+	}
+	var probe struct {
+		FormatVersion json.RawMessage `json:"format_version"`
+	}
+	// A file that is not a JSON object is left to decodeStrict to name.
+	if json.Unmarshal(data, &probe) == nil {
+		if err := checkFormatVersion(path, probe.FormatVersion); err != nil {
+			return nil, err
+		}
+	}
 	var raw manifestJSON
 	if err := decodeStrict(path, &raw); err != nil {
 		return nil, err
 	}
-
 	if raw.ID == "" {
 		return nil, fieldErr(path, "id", "must not be empty")
 	}
 	if raw.Name == "" {
 		return nil, fieldErr(path, "name", "must not be empty")
 	}
-	if !supportedFormatVersions[raw.FormatVersion] {
-		return nil, fieldErr(path, "format_version", fmt.Sprintf("unsupported value %q — %s", raw.FormatVersion, formatVersion1RejectedMsg))
-	}
 	if err := checkManifestBounds(path, &raw); err != nil {
 		return nil, err
 	}
 
-	seenAttr := map[string]bool{}
-	for _, a := range raw.Attributes {
-		if a == "" {
-			return nil, fieldErr(path, "attributes", "must not contain an empty name")
+	seen := map[string]bool{}
+	props := make([]Property, 0, len(raw.Properties))
+	for i, p := range raw.Properties {
+		field := fmt.Sprintf("properties[%d]", i)
+		if err := checkPropertyKey(path, field+".key", p.Key, seen); err != nil {
+			return nil, err
 		}
-		if !isValidIdentName(a) {
-			return nil, fieldErr(path, "attributes", fmt.Sprintf("attribute name %q must match the expression IDENT charset ^[A-Za-z_][A-Za-z0-9_]*$ (it is referenced as '@'+name inside expressions)", a))
+		seen[p.Key] = true
+		prop, err := loadProperty(path, field, p)
+		if err != nil {
+			return nil, err
 		}
-		if reservedScopeWords[a] {
-			return nil, fieldErr(path, "attributes", fmt.Sprintf("attribute name %q is a reserved actor scope word (caster/target): format v2 refs it as \"@caster.%s\"/\"@target.%s\", so declaring it as a name would be ambiguous (finding F2)", a, a, a))
-		}
-		if seenAttr[a] {
-			return nil, fieldErr(path, "attributes", fmt.Sprintf("duplicate attribute name %q", a))
-		}
-		seenAttr[a] = true
-	}
-	seenDef := map[string]bool{}
-	for _, d := range raw.Defenses {
-		if d == "" {
-			return nil, fieldErr(path, "defenses", "must not contain an empty name")
-		}
-		if !isValidIdentName(d) {
-			return nil, fieldErr(path, "defenses", fmt.Sprintf("defense name %q must match the expression IDENT charset ^[A-Za-z_][A-Za-z0-9_]*$ (kept consistent with attributes/resources)", d))
-		}
-		if reservedScopeWords[d] {
-			return nil, fieldErr(path, "defenses", fmt.Sprintf("defense name %q is a reserved actor scope word (caster/target): format v2 refs it through the same '@'-scope namespace as attributes, so declaring it as a name would be ambiguous (finding F2)", d))
-		}
-		if seenDef[d] {
-			return nil, fieldErr(path, "defenses", fmt.Sprintf("duplicate defense name %q", d))
-		}
-		// A name declared as BOTH an attribute and a defense is rejected
-		// here rather than left to cause trouble later: format v2's
-		// two-actor expressions expose defense values through the SAME
-		// '@' ref namespace attributes use (compile.go's attrOrDefSet —
-		// forced by Task 1's EvalContext having only Attrs/Resources, no
-		// separate defense map), so a collision would make "@caster.x" (or
-		// "@target.x") genuinely ambiguous — which value does it read?
-		// Checked here (loadManifest, shared by both format versions) so
-		// it also protects a v1 ruleset from authoring the same latent
-		// ambiguity, even though v1 has no union namespace of its own to
-		// immediately misbehave from.
-		if seenAttr[d] {
-			return nil, fieldErr(path, "defenses", fmt.Sprintf("name %q is declared as both an attribute and a defense — a two-actor expression's \"@caster.%s\"/\"@target.%s\" would be ambiguous (format v2 exposes defenses through the same '@' ref namespace as attributes); use distinct names", d, d, d))
-		}
-		seenDef[d] = true
-	}
-
-	seenRes := map[string]bool{}
-	resources := make([]ResourceDef, 0, len(raw.Resources))
-	for i, r := range raw.Resources {
-		field := fmt.Sprintf("resources[%d]", i)
-		if r.Name == "" {
-			return nil, fieldErr(path, field+".name", "must not be empty")
-		}
-		if !isValidIdentName(r.Name) {
-			return nil, fieldErr(path, field+".name", fmt.Sprintf("resource name %q must match the expression IDENT charset ^[A-Za-z_][A-Za-z0-9_]*$ (it is referenced as '#'+name inside expressions)", r.Name))
-		}
-		if reservedScopeWords[r.Name] {
-			return nil, fieldErr(path, field+".name", fmt.Sprintf("resource name %q is a reserved actor scope word (caster/target): format v2 refs it as \"#caster.%s\"/\"#target.%s\", so declaring it as a name would be ambiguous (finding F2)", r.Name, r.Name, r.Name))
-		}
-		if seenRes[r.Name] {
-			return nil, fieldErr(path, "resources", fmt.Sprintf("duplicate resource name %q", r.Name))
-		}
-		seenRes[r.Name] = true
-
-		def := ResourceDef{Name: r.Name}
-		if r.DefaultMaxExpr != nil {
-			e, err := Parse(*r.DefaultMaxExpr)
-			if err != nil {
-				return nil, fieldErr(path, field+".default_max_expr", err.Error())
-			}
-			if e.HasDice() {
-				return nil, fieldErr(path, field+".default_max_expr", "must not contain dice (v1: default_max_expr is evaluated without recording its rolls — see internal/rules/expr.go)")
-			}
-			// default_max_expr is a single-actor position (spec v2 §5): a
-			// scoped ref ('@caster.x'/'@target.x') has no second context to
-			// resolve against here and must be rejected at load time, not
-			// left to Eval's defense-in-depth runtime error. Grammar v2
-			// (Task 1) parses scopes anywhere syntactically — this loader
-			// enforces where they're actually legal. A no-op for every v1
-			// fixture (none uses scope syntax), so v1 loading is unaffected.
-			if hasScopedRef(e) {
-				return nil, fieldErr(path, field+".default_max_expr", "must not contain a scoped reference (@caster.x / @target.x): default_max_expr is a single-actor position, write a bare reference instead")
-			}
-			def.DefaultMaxExpr = e
-			def.DefaultMaxExprSrc = *r.DefaultMaxExpr
-		}
-
-		for j, th := range r.Thresholds {
-			thField := fmt.Sprintf("%s.thresholds[%d]", field, j)
-			if th.When == "" {
-				return nil, fieldErr(path, thField+".when", "must not be empty")
-			}
-			if th.ApplyCondition == "" {
-				return nil, fieldErr(path, thField+".apply_condition", "must not be empty")
-			}
-			if th.RemoveWhenFalse == nil {
-				return nil, fieldErr(path, thField+".remove_when_false", "must be set (true or false; the key must be present)")
-			}
-			whenExpr, err := Parse(th.When)
-			if err != nil {
-				return nil, fieldErr(path, thField+".when", err.Error())
-			}
-			if whenExpr.HasDice() {
-				return nil, fieldErr(path, thField+".when", "must not contain dice (v1: a threshold 'when' is evaluated without recording its rolls, which would break the rolled-once-recorded-forever testimony contract — see internal/rules/expr.go)")
-			}
-			// See the identical default_max_expr comment above: threshold
-			// 'when' is also a single-actor position.
-			if hasScopedRef(whenExpr) {
-				return nil, fieldErr(path, thField+".when", "must not contain a scoped reference (@caster.x / @target.x): threshold when is a single-actor position, write a bare reference instead")
-			}
-			def.Thresholds = append(def.Thresholds, Threshold{
-				When:            whenExpr,
-				WhenSrc:         th.When,
-				ApplyCondition:  th.ApplyCondition,
-				RemoveWhenFalse: *th.RemoveWhenFalse,
-			})
-		}
-		resources = append(resources, def)
+		props = append(props, prop)
 	}
 
 	return &loadedManifest{
-		ID: raw.ID, Name: raw.Name, FormatVersion: raw.FormatVersion,
-		Attributes: raw.Attributes, Defenses: raw.Defenses, resources: resources,
+		ID: raw.ID, Name: raw.Name, FormatVersion: raw.FormatVersion, properties: props,
 	}, nil
+}
+
+// checkPropertyKey refuses a key an expression could not read as one
+// identifier, or that another property already declares (VTT-612).
+func checkPropertyKey(path, field, key string, seen map[string]bool) error {
+	if key == "" {
+		return fieldErr(path, field, "must not be empty")
+	}
+	if !isValidIdentName(key) {
+		return fieldErr(path, field, fmt.Sprintf("property key %q must match the expression IDENT charset ^[A-Za-z_][A-Za-z0-9_]*$ (it is read as '@'+key or '#'+key inside expressions)", key))
+	}
+	if reservedScopeWords[key] {
+		return fieldErr(path, field, fmt.Sprintf("property key %q is a reserved actor scope word (caster/target): \"@caster.%s\" would be ambiguous", key, key))
+	}
+	if seen[key] {
+		return fieldErr(path, field, fmt.Sprintf("duplicate property key %q", key))
+	}
+	return nil
+}
+
+// loadProperty checks one property's words and type, and parses what a
+// resource carries (VTT-610, VTT-611, VTT-615).
+func loadProperty(path, field string, p propertyJSON) (Property, error) {
+	if p.Name == "" {
+		return Property{}, fieldErr(path, field+".name", fmt.Sprintf("property %q: must not be empty", p.Key))
+	}
+	if p.Description == "" {
+		return Property{}, fieldErr(path, field+".description", fmt.Sprintf("property %q: must not be empty", p.Key))
+	}
+	prop := Property{Key: p.Key, Type: p.Type, Name: p.Name, Description: p.Description}
+	switch p.Type {
+	case PropertyNumber:
+		if p.DefaultMaxExpr != nil {
+			return Property{}, fieldErr(path, field+".default_max_expr", fmt.Sprintf("property %q is a number; only a resource carries this field", p.Key))
+		}
+		if p.Thresholds != nil {
+			return Property{}, fieldErr(path, field+".thresholds", fmt.Sprintf("property %q is a number; only a resource carries this field", p.Key))
+		}
+		return prop, nil
+	case PropertyResource:
+		def, err := loadResourceDef(path, field, p)
+		if err != nil {
+			return Property{}, err
+		}
+		prop.Resource = def
+		return prop, nil
+	}
+	return Property{}, fieldErr(path, field+".type", fmt.Sprintf("property %q: unknown type %q (want %q or %q)", p.Key, p.Type, PropertyNumber, PropertyResource))
+}
+
+// loadResourceDef parses a resource property's default maximum and
+// thresholds. Both are single-actor positions: a scoped ref has no second
+// actor to read here, so it is refused at load.
+func loadResourceDef(path, field string, p propertyJSON) (*ResourceDef, error) {
+	def := &ResourceDef{}
+	if p.DefaultMaxExpr != nil {
+		e, err := Parse(*p.DefaultMaxExpr)
+		if err != nil {
+			return nil, fieldErr(path, field+".default_max_expr", err.Error())
+		}
+		if e.HasDice() {
+			return nil, fieldErr(path, field+".default_max_expr", "must not contain dice (v1: default_max_expr is evaluated without recording its rolls — see internal/rules/expr.go)")
+		}
+		if hasScopedRef(e) {
+			return nil, fieldErr(path, field+".default_max_expr", "must not contain a scoped reference (@caster.x / @target.x): default_max_expr is a single-actor position, write a bare reference instead")
+		}
+		def.DefaultMaxExpr = e
+		def.DefaultMaxExprSrc = *p.DefaultMaxExpr
+	}
+	if p.Thresholds == nil {
+		return def, nil
+	}
+	for j, th := range *p.Thresholds {
+		thField := fmt.Sprintf("%s.thresholds[%d]", field, j)
+		if th.When == "" {
+			return nil, fieldErr(path, thField+".when", "must not be empty")
+		}
+		if th.ApplyCondition == "" {
+			return nil, fieldErr(path, thField+".apply_condition", "must not be empty")
+		}
+		if th.RemoveWhenFalse == nil {
+			return nil, fieldErr(path, thField+".remove_when_false", "must be set (true or false; the key must be present)")
+		}
+		whenExpr, err := Parse(th.When)
+		if err != nil {
+			return nil, fieldErr(path, thField+".when", err.Error())
+		}
+		if whenExpr.HasDice() {
+			return nil, fieldErr(path, thField+".when", "must not contain dice (v1: a threshold 'when' is evaluated without recording its rolls, which would break the rolled-once-recorded-forever testimony contract — see internal/rules/expr.go)")
+		}
+		if hasScopedRef(whenExpr) {
+			return nil, fieldErr(path, thField+".when", "must not contain a scoped reference (@caster.x / @target.x): threshold when is a single-actor position, write a bare reference instead")
+		}
+		def.Thresholds = append(def.Thresholds, Threshold{
+			When:            whenExpr,
+			WhenSrc:         th.When,
+			ApplyCondition:  th.ApplyCondition,
+			RemoveWhenFalse: *th.RemoveWhenFalse,
+		})
+	}
+	return def, nil
 }
 
 // --- conditions/*.json ---
@@ -431,58 +409,65 @@ func (u *Usage) UnmarshalJSON(data []byte) error {
 
 // --- cross-reference validation (spec §5) ---
 
-// checkExprRefs validates every attribute/resource ref e.Refs() finds
-// against attrSet/resSet, naming path/field on the first miss.
-//
-// Called from crossValidateResources ONLY, at exactly two sites: a resource's
-// default_max_expr and a threshold's when. An earlier version of this comment
-// claimed compile.go's v2 cross-reference checks shared it; they do not, and
-// the difference matters -- for a long time NO fixture carried an undeclared
-// name through either of these two sites, so inverting the nil guard below
-// (which makes this skip every non-nil expression) left the whole suite green.
-// testdata/invalid/{resource-default-max-undeclared-ref,threshold-when-undeclared-ref}
-// exist for that.
-func checkExprRefs(path, field string, e *Expr, attrSet, resSet map[string]bool) error {
+// propertyTypes maps each key rs declares to its property's type.
+func propertyTypes(rs *Ruleset) map[string]string {
+	out := make(map[string]string, len(rs.Properties))
+	for _, p := range rs.Properties {
+		out[p.Key] = p.Type
+	}
+	return out
+}
+
+// checkPropertyRef refuses key at path/field unless a property of type want
+// declares it (VTT-613, VTT-614).
+func checkPropertyRef(path, field, key, want string, types map[string]string) error {
+	got, ok := types[key]
+	if !ok {
+		return fieldErr(path, field, fmt.Sprintf("references undeclared property %q", key))
+	}
+	if got != want {
+		return fieldErr(path, field, fmt.Sprintf("reads %s property %q as a %s", got, key, want))
+	}
+	return nil
+}
+
+// checkExprRefs checks every '@' ref in e against the number properties and
+// every '#' ref against the resource properties.
+func checkExprRefs(path, field string, e *Expr, types map[string]string) error {
 	if e == nil {
 		return nil
 	}
 	attrs, resources := e.Refs()
 	for _, a := range attrs {
-		if !attrSet[a] {
-			return fieldErr(path, field, fmt.Sprintf("references undeclared attribute %q", a))
+		if err := checkPropertyRef(path, field, a, PropertyNumber, types); err != nil {
+			return err
 		}
 	}
 	for _, r := range resources {
-		if !resSet[r] {
-			return fieldErr(path, field, fmt.Sprintf("references undeclared resource %q", r))
+		if err := checkPropertyRef(path, field, r, PropertyResource, types); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// crossValidateResources checks every resource's default_max_expr and
-// threshold 'when' ref, and every threshold's apply_condition id, against
-// the manifest's declared attribute/resource set and declared conditions.
-// resources+thresholds are declared identically in ruleset.json regardless
-// of format version (spec §3); loadV2 calls this directly. (An ability's
-// own cross-references are validated in compile.go against the compiled
-// composition, not here.)
+// crossValidateResources checks every resource property's default_max_expr
+// and threshold 'when', and every threshold's apply_condition id, against
+// what rs declares. An ability's references are compile.go's.
 func crossValidateResources(rs *Ruleset) error {
-	attrSet := toSet(rs.Attributes)
-	resSet := map[string]bool{}
-	for _, r := range rs.Resources {
-		resSet[r.Name] = true
-	}
-
+	types := propertyTypes(rs)
 	rulesetPath := "ruleset.json"
-	for i, r := range rs.Resources {
-		field := fmt.Sprintf("resources[%d]", i)
-		if err := checkExprRefs(rulesetPath, field+".default_max_expr", r.DefaultMaxExpr, attrSet, resSet); err != nil {
+	for i, p := range rs.Properties {
+		if p.Resource == nil {
+			continue
+		}
+		field := fmt.Sprintf("properties[%d]", i)
+		if err := checkExprRefs(rulesetPath, field+".default_max_expr", p.Resource.DefaultMaxExpr, types); err != nil {
 			return err
 		}
-		for j, th := range r.Thresholds {
+		for j, th := range p.Resource.Thresholds {
 			thField := fmt.Sprintf("%s.thresholds[%d]", field, j)
-			if err := checkExprRefs(rulesetPath, thField+".when", th.When, attrSet, resSet); err != nil {
+			if err := checkExprRefs(rulesetPath, thField+".when", th.When, types); err != nil {
 				return err
 			}
 			if _, ok := rs.Conditions[th.ApplyCondition]; !ok {
@@ -502,8 +487,8 @@ func toSet(items []string) map[string]bool {
 }
 
 // hasScopedRef reports whether e contains any scoped ref (@caster.x /
-// @target.x, either sigil) — used to reject scopes in v2's single-actor
-// positions (default_max_expr, threshold when; spec v2 §5).
+// @target.x, either sigil), which a single-actor position refuses
+// (VTT-630).
 func hasScopedRef(e *Expr) bool {
 	for _, s := range e.Scopes() {
 		if s != ScopeNone {
@@ -513,7 +498,7 @@ func hasScopedRef(e *Expr) bool {
 	return false
 }
 
-// --- atoms/*.json (format v2, spec §4) ---
+// --- atoms/*.json ---
 
 // placeholderRe matches one "{name}" template placeholder occurrence.
 // IDENT charset matches expr.go's (^[A-Za-z_][A-Za-z0-9_]*$) so a
@@ -532,14 +517,10 @@ var placeholderWholeFieldRe = regexp.MustCompile(`^\{[A-Za-z_][A-Za-z0-9_]*\}$`)
 // checkNoScopePositionPlaceholder (finding F2).
 var scopePositionPlaceholderRe = regexp.MustCompile(`[@#]\{[A-Za-z_][A-Za-z0-9_]*\}\.`)
 
-// reservedScopeWords are the two actor scope words (expr.go's
-// parseScopeName). They may not be declared as an attribute, defense,
-// resource, or condition id (finding F2, direction b): format v2 exposes
-// attribute/defense values through the '@'-scope namespace ("@caster.x"),
-// so a name colliding with a scope word makes such a ref ambiguous — and
-// lets a name-kind param binding of "caster"/"target" silently occupy a
-// ref's scope position (substTemplate relies on the words being reserved,
-// alongside the scope-position-placeholder rejection below).
+// reservedScopeWords are the actor scope words (expr.go's parseScopeName).
+// No property key or condition id may be one: "@caster.x" would be
+// ambiguous, and a name-kind binding could occupy a ref's scope position,
+// which substTemplate relies on being impossible.
 var reservedScopeWords = map[string]bool{"caster": true, "target": true}
 
 // reservedBranchLabels are the branch-label words a resolution may NOT use
@@ -570,10 +551,11 @@ func checkNoScopePositionPlaceholder(path, field, raw string) error {
 	return nil
 }
 
-// validParamKinds is the six closed param kinds (spec §4).
+// validParamKinds is the closed set of param kinds; number and resource
+// name a property of that type (VTT-614).
 var validParamKinds = map[string]bool{
 	"int": true, "expr": true,
-	"attribute": true, "resource": true, "defense": true, "condition": true,
+	PropertyNumber: true, PropertyResource: true, "condition": true,
 }
 
 type atomJSON struct {
@@ -634,7 +616,7 @@ func loadAtoms(dir string) (map[string]*AtomDef, error) {
 				return nil, fieldErr(path, field+".name", fmt.Sprintf("duplicate param name %q", p.Name))
 			}
 			if !validParamKinds[p.Kind] {
-				return nil, fieldErr(path, field+".kind", fmt.Sprintf("unknown param kind %q (want one of: int, expr, attribute, resource, defense, condition)", p.Kind))
+				return nil, fieldErr(path, field+".kind", fmt.Sprintf("unknown param kind %q (want one of: int, expr, number, resource, condition)", p.Kind))
 			}
 			paramNames[p.Name] = true
 			paramKinds[p.Name] = p.Kind
@@ -955,11 +937,10 @@ func decodeOutcomeContribution(path, field string, probe map[string]json.RawMess
 	return Contribution{Kind: "outcome", OutcomeKey: key, Branch: branch, Effects: effects}, nil
 }
 
-// --- abilities/*.json as compositions (format v2, spec §4) ---
+// --- abilities/*.json as compositions ---
 
-// compositionAbility is a v2 ability decoded but not yet compiled: id,
-// name, and usage are plain fields identical to v1 (spec §3 — "usage
-// stays a plain ability field"); Compose is the atom-ref+binding list
+// compositionAbility is an ability decoded but not yet compiled: id, name
+// and usage are plain fields; Compose is the atom-ref+binding list
 // compile.go's compileCompositions flattens into a CompiledPower.
 type compositionAbility struct {
 	ID      string
@@ -1073,19 +1054,9 @@ func decodeStrict(path string, v any) error {
 }
 
 func checkManifestBounds(path string, raw *manifestJSON) error {
-	for i, a := range raw.Attributes {
-		if len(a) > maxIDBytes {
-			return fieldErr(path, fmt.Sprintf("attributes[%d]", i), fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(a)))
-		}
-	}
-	for i, d := range raw.Defenses {
-		if len(d) > maxIDBytes {
-			return fieldErr(path, fmt.Sprintf("defenses[%d]", i), fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(d)))
-		}
-	}
-	for i, r := range raw.Resources {
-		if len(r.Name) > maxIDBytes {
-			return fieldErr(path, fmt.Sprintf("resources[%d].name", i), fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(r.Name)))
+	for i, p := range raw.Properties {
+		if len(p.Key) > maxIDBytes {
+			return fieldErr(path, fmt.Sprintf("properties[%d].key", i), fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(p.Key)))
 		}
 	}
 	return nil

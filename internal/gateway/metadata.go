@@ -13,6 +13,7 @@ import (
 
 	"github.com/PatrikLager/vtt-platform/internal/artlib"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
+	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
 // Keep the HTTP gates out of commandRoles: its keys are the ClientCommand
@@ -162,8 +163,10 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 		}
 		slices.SortFunc(out.Conditions, func(a, b conditionJSON) int { return strings.Compare(a.ID, b.ID) })
 
-		for _, rd := range rs.Resources {
-			out.Resources = append(out.Resources, rd.Name)
+		for _, p := range rs.Properties {
+			if p.Type == rules.PropertyResource {
+				out.Resources = append(out.Resources, p.Key)
+			}
 		}
 	}
 	writeJSON(w, out)

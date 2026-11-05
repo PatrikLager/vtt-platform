@@ -14,9 +14,7 @@ func int32Ruleset(t *testing.T) *rules.Ruleset {
 	t.Helper()
 	return &rules.Ruleset{
 		ID: "int32-fixture", Name: "Int32 Fixture",
-		Attributes: []string{"brawn"},
-		Defenses:   []string{"guard"},
-		Resources:  []rules.ResourceDef{{Name: "vigor"}},
+		Properties: append(numberProps("brawn", "guard"), resourceProp("vigor")),
 		Conditions: map[string]*rules.Condition{},
 		Compiled:   int32FixtureCompiled(t),
 	}
@@ -146,9 +144,7 @@ func vsOverflowRuleset(t *testing.T) *rules.Ruleset {
 	}
 	return &rules.Ruleset{
 		ID: "vsoverflow-fixture", Name: "Vs Overflow Fixture",
-		Attributes: []string{"brawn"},
-		Defenses:   []string{"guard"},
-		Resources:  []rules.ResourceDef{{Name: "vigor"}},
+		Properties: append(numberProps("brawn", "guard"), resourceProp("vigor")),
 		Conditions: map[string]*rules.Condition{},
 		Compiled:   map[string]*rules.CompiledPower{"bigvs": bigvs},
 	}

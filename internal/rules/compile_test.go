@@ -48,8 +48,8 @@ func TestLoadValidV2Fixture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(valid-v2): unexpected error: %v", err)
 	}
-	if rs.FormatVersion != "2" {
-		t.Fatalf("FormatVersion = %q, want %q", rs.FormatVersion, "2")
+	if rs.FormatVersion != "3" {
+		t.Fatalf("FormatVersion = %q, want %q", rs.FormatVersion, "3")
 	}
 	if rs.Compiled == nil {
 		t.Fatal("Compiled: want non-nil map for a v2-loaded Ruleset")
@@ -409,15 +409,24 @@ func writeSpliceFixture(t *testing.T, dir, pExprSrc string) {
 	t.Helper()
 	mkdirs(t, dir, "atoms", "abilities", "conditions")
 	writeFile(t, dir+"/ruleset.json", `{
-  "id": "splice-check", "name": "Splice Check", "format_version": "2",
-  "attributes": ["vim"], "defenses": [], "resources": []
+  "id": "splice-check",
+  "name": "Splice Check",
+  "format_version": "3",
+  "properties": [
+    {
+      "key": "vim",
+      "type": "number",
+      "name": "Vim",
+      "description": "The fixture's vim."
+    }
+  ]
 }`)
 	writeFile(t, dir+"/guide.md", "splice check fixture\n")
 	writeFile(t, dir+"/atoms/probe.json", `{
   "id": "probe",
   "params": [
     { "name": "reach", "kind": "int" },
-    { "name": "stat", "kind": "attribute" },
+    { "name": "stat", "kind": "number" },
     { "name": "p", "kind": "expr" }
   ],
   "provides": ["clash"],

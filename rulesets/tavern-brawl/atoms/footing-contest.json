@@ -1,7 +1,7 @@
 {
   "id": "footing-contest",
   "params": [
-    { "name": "attack_stat", "kind": "attribute" }
+    { "name": "attack_stat", "kind": "number" }
   ],
   "provides": ["swing"],
   "consumes": ["reach"],

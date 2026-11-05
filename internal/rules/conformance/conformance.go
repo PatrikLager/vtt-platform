@@ -76,9 +76,8 @@ import (
 // Run validates the ruleset directory at dir. A nil return means dir is a
 // fully conformant ruleset: it loads cleanly, every ability it declares
 // resolves against a fixture actor generated from its own manifest, every
-// golden fixture it ships (if any) reproduces exactly, and — for a
-// format-v2 ruleset (Task 3, spec §8) — every declared ability ships a
-// matching compiled-form golden under goldens/compiled/.
+// golden fixture it ships (if any) reproduces exactly, and every declared
+// ability ships a matching compiled-form golden under goldens/compiled/.
 func Run(dir string) error {
 	rs, err := rules.Load(dir)
 	if err != nil {
@@ -104,17 +103,15 @@ const (
 	fixtureCasterID = "conformance-caster"
 	fixtureTargetID = "conformance-target"
 
-	// fixturePlaceholder is the value given to every declared attribute
-	// and defense on the generated fixture actors — arbitrary but
-	// generous enough that a typical attack-roll-vs-defense comparison
-	// doesn't degenerate (both sides get the same placeholder, so an
-	// at-least-one-attribute-plus-d20 roll usually clears it).
+	// fixturePlaceholder is every number property's value on the generated
+	// fixture actors: arbitrary, but generous enough that a roll of a d20
+	// plus one number against another usually clears it.
 	fixturePlaceholder = int32(10)
 
-	// fixtureResourceFallbackMax is used only for a resource that has no
-	// default_max_expr — generous enough to cover any at-will ability's
-	// resource_change and any limited-use ability's cost in a
-	// reasonably-designed ruleset.
+	// fixtureResourceFallbackMax is used for a resource whose
+	// default_max_expr is absent or not positive — generous enough to cover
+	// any at-will ability's resource_change and any limited-use ability's
+	// cost in a reasonably-designed ruleset.
 	fixtureResourceFallbackMax = int32(1000)
 )
 
@@ -159,31 +156,20 @@ func smokeTest(rs *rules.Ruleset) error {
 	return nil
 }
 
-// buildFixtureState builds a two-actor, one-scene engine.State entirely
-// from rs's own declarations: every declared attribute and defense name
-// gets fixturePlaceholder on BOTH actors (a smoke test can't know which
-// role — attacker or target — any given ability expects of which actor,
-// so both carry every stat); every declared resource gets a max computed
-// from its default_max_expr when that expression is present AND evaluates
-// to a POSITIVE value (against the same placeholder attributes), or
-// fixtureResourceFallbackMax otherwise — 0 falls back exactly as a missing
-// expression does, since a stand-in actor with a max of 0 could afford no
-// limited ability and every smoke failure would say nothing about the
-// ruleset (pinned by minimal-v2-zero-default-max), with
-// current seeded to that max so at-will/limited usage costs and
-// resource_change outcomes have generous headroom. Both actors' tokens
-// share one grid cell, so every declared range (including 0) is
-// satisfied regardless of which ability is being smoke-tested.
+// buildFixtureState builds a two-actor, one-scene engine.State from rs alone:
+// every number property is fixturePlaceholder on both actors, and every
+// resource property starts full at its default_max_expr when that is
+// positive, else at fixtureResourceFallbackMax (minimal-v2-zero-default-max).
+// Both tokens share one square.
 func buildFixtureState(rs *rules.Ruleset) *engine.State {
 	st := engine.NewState()
 	st.Scenes[fixtureSceneID] = engine.Scene{ID: fixtureSceneID, Name: fixtureSceneID, GridWidth: 1, GridHeight: 1}
 
 	attrs := map[string]int32{}
-	for _, a := range rs.Attributes {
-		attrs[a] = fixturePlaceholder
-	}
-	for _, d := range rs.Defenses {
-		attrs[d] = fixturePlaceholder
+	for _, p := range rs.Properties {
+		if p.Type == rules.PropertyNumber {
+			attrs[p.Key] = fixturePlaceholder
+		}
 	}
 	attrsInt := make(map[string]int, len(attrs))
 	for k, v := range attrs {
@@ -191,8 +177,12 @@ func buildFixtureState(rs *rules.Ruleset) *engine.State {
 	}
 
 	buildResources := func() map[string]*vttv1.Resource {
-		out := make(map[string]*vttv1.Resource, len(rs.Resources))
-		for _, r := range rs.Resources {
+		out := make(map[string]*vttv1.Resource, len(rs.Properties))
+		for _, p := range rs.Properties {
+			r := p.Resource
+			if r == nil {
+				continue
+			}
 			largest := fixtureResourceFallbackMax
 			if r.DefaultMaxExpr != nil {
 				if v, err := rules.Eval(r.DefaultMaxExpr, attrsInt, nil, smokeRoller{}); err == nil && v > 0 {
@@ -210,7 +200,7 @@ func buildFixtureState(rs *rules.Ruleset) *engine.State {
 					largest = int32(v)
 				}
 			}
-			out[r.Name] = &vttv1.Resource{Current: largest, Max: largest}
+			out[p.Key] = &vttv1.Resource{Current: largest, Max: largest}
 		}
 		return out
 	}
@@ -500,25 +490,6 @@ func compareOneEvent(env *vttv1.Envelope, w goldenEvent) error {
 	}
 }
 
-// --- compiled-form goldens (Task 3, spec 5c §6/§8) ---
-//
-// A compiled-form golden (goldens/compiled/<ability>.json) pins the
-// flattened CompiledPower a ruleset's Load produces for one ability — spec
-// §6's "inspectable artifact... conformance can dump it" — so a refactor
-// of a v2 ruleset's atoms that changes what an ability compiles TO (not
-// just how it's authored) is a visible, reviewed drift, not a silent
-// behavior change. REQUIRED per declared ability: every ruleset loads as
-// format_version "2" (format v1 is retired — load.go), so every ability a
-// ruleset declares ships a compiled-form golden. The canonical
-// serialization is compiledPowerDump below:
-// stable field order (a struct, not CompiledPower's own map-shaped
-// internals — it has none, but the DTO shape is what's actually
-// marshaled, independent of Go's zero-value/field-order quirks), and
-// expression SourceText (RollSrc/VsSrc/DeltaExprSrc — spec's explicit
-// "not AST" requirement; CompiledPower's *Expr fields have no exported
-// internals to marshal at all, so this DTO is the only way to serialize
-// one regardless).
-
 // DumpCompiledPower renders cp as the canonical JSON serialization
 // compiled-form goldens pin. Exported as the "dump helper... for
 // authoring" the task brief calls for: derive a golden by loading the
@@ -621,15 +592,10 @@ func toOutcomeDumps(outcomes []rules.Outcome) []outcomeDump {
 	return out
 }
 
-// runCompiledGoldens enforces spec §8's per-ability compiled-form golden:
-// goldens/compiled/<id>.json must exist and deep-equal (via
-// compiledPowerDump, so JSON formatting/key-order differences never cause a
-// false failure — only real content drift does) the ruleset's actual
-// rs.Compiled[id]. A missing file or a content mismatch is a named failure,
-// naming both the ability and the golden path, with a got/want dump on
-// mismatch (mirroring compareEvents' diagnostic style below for the
-// batch-golden pass). Every ruleset loads as format_version "2" (v1 is
-// retired), so there is no exemption.
+// runCompiledGoldens requires goldens/compiled/<id>.json for every ability
+// in rs.Compiled and compares it through compiledPowerDump, so formatting
+// and key order never fail it; a missing file or a mismatch names the
+// ability and the golden path.
 func runCompiledGoldens(dir string, rs *rules.Ruleset) error {
 	ids := make([]string, 0, len(rs.Compiled))
 	for id := range rs.Compiled {

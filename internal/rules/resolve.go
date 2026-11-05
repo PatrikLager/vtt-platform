@@ -523,9 +523,11 @@ func (r *resolveState) applyOutcomes(casterID, actorID string, outcomes []Outcom
 // pairs that didn't change this Resolve call — thresholds fire as a
 // reaction to a change, not a periodic sweep over all state.
 func (r *resolveState) evalThresholds() ([]*vttv1.Envelope, error) {
-	byName := make(map[string]*ResourceDef, len(r.rs.Resources))
-	for i := range r.rs.Resources {
-		byName[r.rs.Resources[i].Name] = &r.rs.Resources[i]
+	byName := make(map[string]*ResourceDef, len(r.rs.Properties))
+	for _, p := range r.rs.Properties {
+		if p.Resource != nil {
+			byName[p.Key] = p.Resource
+		}
 	}
 
 	var events []*vttv1.Envelope

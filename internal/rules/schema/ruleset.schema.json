@@ -2,52 +2,80 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PatrikLager/vtt-platform/internal/rules/schema/ruleset.schema.json",
   "title": "Ruleset manifest (ruleset.json)",
-  "description": "The top-level manifest of a rulesets/<id>/ directory: identity, format version, and the ruleset's declared attribute/defense/resource vocabulary. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
+  "description": "The top-level manifest of a rulesets/<id>/ directory: identity, format version, and every property the ruleset's actors carry, each named in the table's words. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
   "type": "object",
-  "required": ["id", "name", "format_version"],
+  "required": [
+    "id",
+    "name",
+    "format_version"
+  ],
   "additionalProperties": false,
   "properties": {
-    "id": { "type": "string", "minLength": 1 },
-    "name": { "type": "string", "minLength": 1 },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
     "format_version": {
       "type": "string",
-      "enum": ["2"],
-      "description": "Only \"2\" is accepted by this loader version — format v1 is retired (Task 4, spec 2026-07-25-format-v2-composition-design.md §3/§9: clean break, no external v1 authors). See atom.schema.json for the atoms/*.json this format version composes abilities from."
+      "enum": [
+        "3"
+      ],
+      "description": "Only \"3\" is accepted by this loader. Any other value, a retired format's among them, is refused with what format \"3\" declares (docs/adr/012-the-rules-contract.md). See atom.schema.json for the atoms/*.json this format composes abilities from."
     },
-    "attributes": {
+    "properties": {
       "type": "array",
-      "description": "Names usable as '@'-refs in expressions (e.g. attack rolls, damage, default_max_expr). Each name must match ^[A-Za-z_][A-Za-z0-9_]*$ — the expression grammar's IDENT charset (internal/rules/expr.go); NOT the kebab-case used for ability/condition ids, since a hyphenated name would lex as subtraction rather than one identifier (e.g. \"brawn-2\" -> \"brawn\" - 2). At most 128 bytes of UTF-8 per name.",
-      "items": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
-      "uniqueItems": true
-    },
-    "defenses": {
-      "type": "array",
-      "description": "Names an ability's attack.vs may target. Constrained to the same ^[A-Za-z_][A-Za-z0-9_]*$ charset as attributes/resources for consistency, even though defense names are currently only ever used as plain string field values (attack.vs), never lexed inside an expression. At most 128 bytes of UTF-8 per name.",
-      "items": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
-      "uniqueItems": true
-    },
-    "resources": {
-      "type": "array",
+      "description": "Every property the ruleset's actors carry, in the order the ruleset declares them. A key is declared once, whatever its type.",
       "items": {
         "type": "object",
-        "required": ["name"],
+        "required": [
+          "key",
+          "type",
+          "name",
+          "description"
+        ],
         "additionalProperties": false,
         "properties": {
-          "name": {
+          "key": {
             "type": "string",
             "minLength": 1,
             "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-            "description": "Also usable as a '#'-ref in expressions — must match ^[A-Za-z_][A-Za-z0-9_]*$ (the expression grammar's IDENT charset), not kebab-case. At most 128 bytes of UTF-8."
+            "description": "What an expression reads: '@'+key for a number, '#'+key for a resource. Must match ^[A-Za-z_][A-Za-z0-9_]*$, the expression grammar's IDENT charset (internal/rules/expr.go), not kebab-case, since a hyphenated key would lex as subtraction (\"brawn-2\" -> \"brawn\" - 2); must not be \"caster\" or \"target\". At most 128 bytes of UTF-8."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "number",
+              "resource"
+            ],
+            "description": "A number is one value on an actor's sheet; a resource is a current value under a maximum."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The property's display name: what the table calls it, shown wherever the window names it."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What the property means at the table, for a player and for the agent."
           },
           "default_max_expr": {
             "type": "string",
-            "description": "Optional expression (see internal/rules/expr.go grammar). Dice (NdM) are rejected at load time in v1: this expression is evaluated without recording its rolls, so a die here would draw from the Roller unrecorded."
+            "description": "A resource only. Optional expression (see internal/rules/expr.go grammar). Dice (NdM) are rejected at load time in v1: this expression is evaluated without recording its rolls, so a die here would draw from the Roller unrecorded."
           },
           "thresholds": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["when", "apply_condition", "remove_when_false"],
+              "required": [
+                "when",
+                "apply_condition",
+                "remove_when_false"
+              ],
               "additionalProperties": false,
               "properties": {
                 "when": {
@@ -60,9 +88,12 @@
                   "minLength": 1,
                   "description": "A condition id declared under conditions/."
                 },
-                "remove_when_false": { "type": "boolean" }
+                "remove_when_false": {
+                  "type": "boolean"
+                }
               }
-            }
+            },
+            "description": "A resource only: conditions that follow its value."
           }
         }
       }

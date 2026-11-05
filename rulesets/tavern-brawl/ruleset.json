@@ -1,12 +1,31 @@
 {
   "id": "tavern-brawl",
   "name": "Tavern Brawl",
-  "format_version": "2",
-  "attributes": ["brawn", "grit"],
-  "defenses": ["footing"],
-  "resources": [
+  "format_version": "3",
+  "properties": [
     {
-      "name": "drink",
+      "key": "brawn",
+      "type": "number",
+      "name": "Brawn",
+      "description": "Raw physical force. Every attack here rolls 1d20 plus the attacker's brawn."
+    },
+    {
+      "key": "grit",
+      "type": "number",
+      "name": "Grit",
+      "description": "How much punishment a patron shrugs off before the room starts spinning. By default a patron holds up to 3 plus their grit in drink."
+    },
+    {
+      "key": "footing",
+      "type": "number",
+      "name": "Footing",
+      "description": "How hard a patron is to knock off balance. Every attack here rolls against the target's footing."
+    },
+    {
+      "key": "drink",
+      "type": "resource",
+      "name": "Drink",
+      "description": "How much ale has ended up on or in a patron, by default up to 3 plus their grit. While any is left the patron is dazed by ale; sobering up drains it to nothing, which clears the daze.",
       "default_max_expr": "3 + @grit",
       "thresholds": [
         {
@@ -17,7 +36,10 @@
       ]
     },
     {
-      "name": "stamina",
+      "key": "stamina",
+      "type": "resource",
+      "name": "Stamina",
+      "description": "How many big, showy moves a patron has left this scene, 2 by default. A chair swing spends one, and nothing here restores it.",
       "default_max_expr": "2",
       "thresholds": []
     }

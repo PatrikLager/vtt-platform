@@ -1,12 +1,31 @@
 {
   "id": "proving-grounds-mini",
   "name": "Proving Grounds Mini",
-  "format_version": "2",
-  "attributes": ["vim", "vigor"],
-  "defenses": ["brace"],
-  "resources": [
+  "format_version": "3",
+  "properties": [
     {
-      "name": "focus",
+      "key": "vim",
+      "type": "number",
+      "name": "Vim",
+      "description": "The fixture's vim."
+    },
+    {
+      "key": "vigor",
+      "type": "number",
+      "name": "Vigor",
+      "description": "The fixture's vigor."
+    },
+    {
+      "key": "brace",
+      "type": "number",
+      "name": "Brace",
+      "description": "The fixture's brace."
+    },
+    {
+      "key": "focus",
+      "type": "resource",
+      "name": "Focus",
+      "description": "The fixture's focus.",
       "default_max_expr": "10 + @vim",
       "thresholds": []
     }

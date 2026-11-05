@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PatrikLager/vtt-platform/internal/rules/schema/ability.schema.json",
-  "title": "Ability composition (abilities/*.json, format v2)",
-  "description": "One usable ability as a format-v2 composition: id/name/usage (plain fields — spec 2026-07-25-format-v2-composition-design.md §3: \"usage stays a plain ability field\") plus a compose list of atom refs + param bindings, flattened into a CompiledPower at load (internal/rules/load.go's loadCompositions + internal/rules/compile.go). This document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
+  "title": "Ability composition (abilities/*.json)",
+  "description": "One usable ability as a composition: id/name/usage (plain fields — spec 2026-07-25-format-v2-composition-design.md §3: \"usage stays a plain ability field\") plus a compose list of atom refs + param bindings, flattened into a CompiledPower at load (internal/rules/load.go's loadCompositions + internal/rules/compile.go). This document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
   "type": "object",
   "required": ["id", "name", "usage", "compose"],
   "additionalProperties": false,

@@ -1,7 +1,7 @@
 {
   "id": "strike-roll",
   "params": [
-    { "name": "attack_stat", "kind": "attribute" }
+    { "name": "attack_stat", "kind": "number" }
   ],
   "provides": ["strike"],
   "consumes": ["delivery"],

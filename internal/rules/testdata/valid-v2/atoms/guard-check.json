@@ -1,7 +1,7 @@
 {
   "id": "guard-check",
   "params": [
-    { "name": "guard_stat", "kind": "defense" }
+    { "name": "guard_stat", "kind": "number" }
   ],
   "provides": ["check"],
   "consumes": ["delivery3"],

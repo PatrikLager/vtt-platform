@@ -1,12 +1,25 @@
 {
   "id": "invalid-fixture",
   "name": "Invalid Fixture",
-  "format_version": "2",
-  "attributes": ["vim"],
-  "defenses": ["brace"],
-  "resources": [
+  "format_version": "3",
+  "properties": [
     {
-      "name": "focus",
+      "key": "vim",
+      "type": "number",
+      "name": "Vim",
+      "description": "The fixture's vim."
+    },
+    {
+      "key": "brace",
+      "type": "number",
+      "name": "Brace",
+      "description": "The fixture's brace."
+    },
+    {
+      "key": "focus",
+      "type": "resource",
+      "name": "Focus",
+      "description": "The fixture's focus.",
       "thresholds": [
         {
           "when": "@caster.vim",

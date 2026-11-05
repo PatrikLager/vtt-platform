@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PatrikLager/vtt-platform/internal/rules/schema/atom.schema.json",
-  "title": "Atom (atoms/*.json, format v2)",
-  "description": "One ruleset-authored atomic statement (format v2, sub-project 5c): a named, parameterized fragment of an ability's execution, contributing targeting/resolution/outcome pieces to whatever composition(s) include it. Only present under format_version \"2\" rulesets. See internal/rules/load.go (loadAtoms/decodeContribution) for the authoritative loader and internal/rules/compile.go for how a composition's param bindings flatten an atom's templates into a CompiledPower; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
+  "title": "Atom (atoms/*.json)",
+  "description": "One ruleset-authored atomic statement (sub-project 5c): a named, parameterized fragment of an ability's execution, contributing targeting/resolution/outcome pieces to whatever composition(s) include it. Only present under format_version \"3\" rulesets. See internal/rules/load.go (loadAtoms/decodeContribution) for the authoritative loader and internal/rules/compile.go for how a composition's param bindings flatten an atom's templates into a CompiledPower; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
   "type": "object",
   "required": ["id", "contributes"],
   "additionalProperties": false,
@@ -10,7 +10,7 @@
     "id": { "type": "string", "minLength": 1 },
     "params": {
       "type": "array",
-      "description": "Parameters a composition's \"bind\" object supplies concrete values for. A \"{name}\" placeholder anywhere in this atom's contributes templates must name one of these. Optional — omitted or [] both mean \"no params\" (same convention as ruleset.schema.json's optional attributes/defenses/resources arrays).",
+      "description": "Parameters a composition's \"bind\" object supplies concrete values for. A \"{name}\" placeholder anywhere in this atom's contributes templates must name one of these. Optional — omitted or [] both mean \"no params\" (same convention as ruleset.schema.json's optional properties array).",
       "items": { "$ref": "#/$defs/param" }
     },
     "provides": {
@@ -43,8 +43,8 @@
         },
         "kind": {
           "type": "string",
-          "enum": ["int", "expr", "attribute", "resource", "defense", "condition"],
-          "description": "int/expr are VALUE kinds: a binding splices into a contribution expression as a parenthesized parsed subtree — hygienic, the binding can never change the surrounding expression's precedence. attribute/resource/defense/condition are NAME kinds: a binding substitutes as a bare identifier into a ref position (e.g. \"@caster.{attack_stat}\") or a plain name field (e.g. a resource_change's \"resource\"), validated against the ruleset's declared vocabulary of that kind."
+          "enum": ["int", "expr", "number", "resource", "condition"],
+          "description": "int/expr are VALUE kinds: a binding splices into a contribution expression as a parenthesized parsed subtree — hygienic, the binding can never change the surrounding expression's precedence. number/resource/condition are NAME kinds: a binding substitutes as a bare identifier into a ref position (e.g. \"@caster.{attack_stat}\") or a plain name field (e.g. a resource_change's \"resource\"); a number or resource binding must name a property of that type, a condition binding a declared condition id. int is a value; number is the key of a number property."
         }
       }
     },
@@ -77,7 +77,7 @@
     },
     "resolutionContribution": {
       "type": "object",
-      "description": "At most one per composition (format v2.0). roll is compared to the vs threshold expression: roll total >= vs selects branches[0] (the ge-label), else branches[1] (the lt-label) — both flow into AbilityUsed.outcome_summary verbatim.",
+      "description": "At most one per composition. roll is compared to the vs threshold expression: roll total >= vs selects branches[0] (the ge-label), else branches[1] (the lt-label) — both flow into AbilityUsed.outcome_summary verbatim.",
       "required": ["kind", "key", "roll", "vs", "branches"],
       "additionalProperties": false,
       "properties": {
