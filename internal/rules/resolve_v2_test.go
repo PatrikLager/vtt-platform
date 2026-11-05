@@ -8,30 +8,9 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
-// --- Resolve against REAL format-v2 compositions (Task 3) ---
-//
-// Loads testdata/valid-v2 (Task 2's fixture — proving_grounds: attributes
-// vim/vigor, defense brace, resource focus with a nonzero->winded
-// removeWhenFalse threshold) and exercises quick-jab, rally, tag-team, and
-// ward-shift end to end through the real Load -> compile.go pipeline (not
-// hand-built structs, unlike fixtureRuleset — this is the "against the
-// valid-v2 fixture" half of the task brief's requirement). Every
-// CompiledPower's exact flattened shape is independently pinned by
-// TestLoadValidV2Fixture (compile_test.go); these tests hand-derive the
-// EXECUTION batch a fixed-seed roller must produce, proving Resolve's new
-// EvalScoped-based two-actor execution against a real compiled composition,
-// not just against the v1-adapted fixtures fixtureRuleset already covers.
-//
-// A vs-expression-with-dice case (proving Vs is recorded onto
-// AbilityUsed.rolls, in "roll then vs" order, ONLY when it actually rolls)
-// is deliberately NOT added to testdata/valid-v2 itself: doing so would
-// change len(rs.Compiled)/len(rs.Atoms), breaking compile_test.go's
-// pinned exact counts (TestLoadValidV2Fixture, TestCompileDeterministic) —
-// compile_test.go is Task 2's file, out of this task's scope. See
-// TestResolveV2VsExpressionWithDiceRecordsInOrder below, which hand-builds
-// a standalone CompiledPower (exactly fixtureRuleset's own established
-// idiom for exercising Resolve without depending on Load) for that one
-// case instead.
+// Do not add an ability or atom to testdata/valid-v2 for a case here:
+// TestLoadValidV2Fixture pins what it compiles to, so a test that needs
+// another ability builds its CompiledPower by hand.
 
 func loadV2Fixture(t *testing.T) *rules.Ruleset {
 	t.Helper()

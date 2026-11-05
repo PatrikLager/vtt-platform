@@ -13,11 +13,8 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
-// loadFixtureRuleset loads the small "proving-grounds-mini" ruleset every
-// Load test validates statblocks against (testdata/ruleset): attributes
-// vim/vigor, defense brace, resource focus — deliberately generic
-// vocabulary (vim/brace style), matching internal/rules' own testdata
-// fixtures.
+// loadFixtureRuleset loads testdata/ruleset, the ruleset this file's Load
+// tests check statblocks against.
 func loadFixtureRuleset(t *testing.T) *rules.Ruleset {
 	t.Helper()
 	rs, err := rules.Load("testdata/ruleset")

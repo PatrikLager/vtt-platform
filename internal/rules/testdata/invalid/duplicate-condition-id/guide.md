@@ -7,7 +7,7 @@ loader and interpreter in tests. Not a real game system.
 
 - **melee-delivery** (`reach`: int) — targeting at the given reach.
 - **self-delivery** — targeting at range 0.
-- **strike-roll** (`attack_stat`: attribute) — `1d20 + attack_stat` vs
+- **strike-roll** (`attack_stat`: number) — `1d20 + attack_stat` vs
   `guard`, labeled `hit`/`miss`.
 - **strike-damage** (`power`: int) — on a `strike-roll` hit, spends
   `power` points of `pool_a`.

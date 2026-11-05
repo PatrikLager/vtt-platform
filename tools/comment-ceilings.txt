@@ -85,7 +85,7 @@ internal/adventure/conformance/qa_placement_texts_test.go  3.2
 internal/adventure/format.go  64.9
 internal/adventure/format_test.go  37.0
 internal/adventure/load.go  31.3
-internal/adventure/load_test.go  28.8
+internal/adventure/load_test.go  28.5
 internal/adventure/qa_cmd_id_bound_test.go  0.0
 internal/adventure/qa_id_bound_test.go  0.0
 internal/adventure/qa_name_bound_test.go  0.0
@@ -341,7 +341,7 @@ internal/rules/format.go  57.8
 internal/rules/id_bound_internal_test.go  0.0
 internal/rules/load.go  17.2
 internal/rules/load_dice_test.go  11.2
-internal/rules/load_test.go  11.4
+internal/rules/load_test.go  8.5
 internal/rules/property_test.go  3.9
 internal/rules/qa_ability_outcomes_test.go  0.0
 internal/rules/qa_property_format_test.go  0.3
@@ -350,7 +350,7 @@ internal/rules/resolve.go  37.6
 internal/rules/resolve_dup_target_test.go  37.1
 internal/rules/resolve_int32_test.go  26.4
 internal/rules/resolve_test.go  11.7
-internal/rules/resolve_v2_test.go  30.5
+internal/rules/resolve_v2_test.go  27.3
 internal/rules/schema.go  77.0
 internal/rules/schema_test.go  19.5
 internal/sight/sight.go  59.2

@@ -1,6 +1,6 @@
 # resource-default-max-undeclared-ref
 
-`default_max_expr: "10 + @nosuch"` against `attributes: [brawn, grit]`.
+`default_max_expr: "10 + @nosuch"` where no property declares `nosuch`.
 
 Exercises `checkExprRefs` at **load.go:465**, the resource call site. Its
 sibling `threshold-when-undeclared-ref` covers the other one (:470); between

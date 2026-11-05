@@ -160,7 +160,7 @@
         "resource": {
           "type": "string",
           "minLength": 1,
-          "description": "A resource name declared in ruleset.json, or a \"{param}\" placeholder naming a resource-kind param."
+          "description": "The key of a resource property declared in ruleset.json, or a \"{param}\" placeholder naming a resource-kind param."
         },
         "delta_expr": {
           "type": "string",

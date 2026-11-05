@@ -51,7 +51,7 @@
         },
         "bind": {
           "type": "object",
-          "description": "param name -> bound value: an integer for an int-kind param, a string (an expression) for an expr-kind param, or a string (a declared name) for an attribute/resource/defense/condition-kind param. Must bind every param the referenced atom declares, and no others (atom.schema.json's params list)."
+          "description": "param name -> bound value: an integer for an int-kind param, a string (an expression) for an expr-kind param, or a string (a declared key or condition id) for a number/resource/condition-kind param. Must bind every param the referenced atom declares, and no others (atom.schema.json's params list)."
         }
       }
     }

@@ -465,32 +465,9 @@ func TestLoadAcceptsUsageLimitedZeroCost(t *testing.T) {
 	}
 }
 
-// TestLoadRejectsTargetingMissingRange and TestLoadAcceptsTargetingZeroRange
-// (v1-only test surface, EXCISED — Task 4): both pinned abilityJSON's
-// top-level "targeting.range" field, a shape that no longer exists at all
-// in format v2 — a v2 composition has no ability-level "targeting" field;
-// targeting comes exclusively from a composed atom's targeting
-// contribution (atom.schema.json's targetingContribution, required
-// "range"/"max_targets" — spec §4). That v2 equivalent already has
-// coverage: TestSchemaRequiredFieldsMatchLoaderEnforcementV2 (schema_
-// test.go) walks atom.schema.json's targetingContribution.required
-// against testdata/valid-v2/atoms/reach-delivery.json (its own comment
-// names it "targeting contribution"), deleting "range" and asserting Load
-// rejects it — the same validation rule, exercised at the position it
-// actually lives in now. The zero-range positive case is likewise still
-// live: internal/rules/testdata/valid's own self-delivery/melee-delivery
-// atoms and rulesets/tavern-brawl's sober-up (reach 0) both load and
-// resolve through TestLoadValidFixture and the conformance suite.
-
-// TestLoadRejectsInvalidAttributeIdentifier pins that manifest attribute/
-// defense/resource names must match the expression grammar's IDENT
-// production ([A-Za-z_][A-Za-z0-9_]*) — anything else can be declared but
-// can never actually be referenced via '@'/'#' in an expression (e.g. a
-// hyphenated name lexes as subtraction, not one identifier; see
-// isValidIdentName's doc). Caught at load time rather than surfacing as a
-// confusing "undeclared attribute" cross-ref error the first time someone
-// tries to reference it.
-func TestLoadRejectsInvalidAttributeIdentifier(t *testing.T) {
+// TestLoadRejectsANumberKeyThatIsNotAnIdentifier holds VTT-626's charset
+// for a number key: "grit-bonus" would lex as a subtraction after '@'.
+func TestLoadRejectsANumberKeyThatIsNotAnIdentifier(t *testing.T) {
 	dir := t.TempDir()
 	copyDir(t, fixture(t, "valid"), dir)
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
@@ -528,15 +505,16 @@ func TestLoadRejectsInvalidAttributeIdentifier(t *testing.T) {
 }`)
 	_, err := rules.Load(dir)
 	if err == nil {
-		t.Fatal(`Load with attribute name "grit-bonus": want error, got nil`)
+		t.Fatal(`Load with number key "grit-bonus": want error, got nil`)
 	}
 	if !strings.Contains(err.Error(), "grit-bonus") {
 		t.Errorf("error = %q, want it to name grit-bonus", err)
 	}
 }
 
-// TestLoadRejectsInvalidResourceIdentifier: same rule, resource names.
-func TestLoadRejectsInvalidResourceIdentifier(t *testing.T) {
+// TestLoadRejectsAResourceKeyThatIsNotAnIdentifier: the same for a
+// resource key, read after '#'.
+func TestLoadRejectsAResourceKeyThatIsNotAnIdentifier(t *testing.T) {
 	dir := t.TempDir()
 	copyDir(t, fixture(t, "valid"), dir)
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
@@ -573,66 +551,15 @@ func TestLoadRejectsInvalidResourceIdentifier(t *testing.T) {
 }`)
 	_, err := rules.Load(dir)
 	if err == nil {
-		t.Fatal(`Load with resource name "pool-a": want error, got nil`)
+		t.Fatal(`Load with resource key "pool-a": want error, got nil`)
 	}
 	if !strings.Contains(err.Error(), "pool-a") {
 		t.Errorf("error = %q, want it to name pool-a", err)
 	}
 }
 
-// TestLoadRejectsInvalidDefenseIdentifier: same rule, defense names — kept
-// consistent with attributes/resources even though defense names are
-// currently only ever used as plain string field values (attack.vs), never
-// lexed inside an expression, so ruleset authors don't have to remember
-// which of the three declared-name categories allows hyphens.
-func TestLoadRejectsInvalidDefenseIdentifier(t *testing.T) {
-	dir := t.TempDir()
-	copyDir(t, fixture(t, "valid"), dir)
-	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
-  "id": "test-ruleset",
-  "name": "Test Ruleset",
-  "format_version": "3",
-  "properties": [
-    {
-      "key": "brawn",
-      "type": "number",
-      "name": "Brawn",
-      "description": "The fixture's brawn."
-    },
-    {
-      "key": "grit",
-      "type": "number",
-      "name": "Grit",
-      "description": "The fixture's grit."
-    },
-    {
-      "key": "will-power",
-      "type": "number",
-      "name": "Will-power",
-      "description": "The fixture's will-power."
-    },
-    {
-      "key": "pool_a",
-      "type": "resource",
-      "name": "Pool a",
-      "description": "The fixture's pool a.",
-      "thresholds": []
-    }
-  ]
-}`)
-	_, err := rules.Load(dir)
-	if err == nil {
-		t.Fatal(`Load with defense name "will-power": want error, got nil`)
-	}
-	if !strings.Contains(err.Error(), "will-power") {
-		t.Errorf("error = %q, want it to name will-power", err)
-	}
-}
-
-// TestLoadAcceptsValidIdentifierNames is the companion positive case: the
-// existing valid fixture's attribute/defense/resource names (brawn, grit,
-// guard, pool_a) already satisfy the charset and must keep loading
-// cleanly — a regression guard against the new check being too strict.
+// TestLoadAcceptsValidIdentifierNames is the companion positive case:
+// testdata/valid's keys satisfy the charset and must keep loading.
 func TestLoadAcceptsValidIdentifierNames(t *testing.T) {
 	if _, err := rules.Load(fixture(t, "valid")); err != nil {
 		t.Fatalf("Load(valid): unexpected error: %v", err)
