@@ -17,7 +17,7 @@ names and ids by `internal/adventure/load.go`'s constants and for a map's name
 and ids by `internal/mapdef/load.go`'s `maxNameBytes` and `maxIDBytes`, for a
 map's and an adventure's scene objects' ids by `internal/mapdef`'s
 `CheckObjectIDs`, which both loaders call, and for a ruleset's ability and
-condition ids, attribute, defense and resource names and branch labels by
+condition ids, property keys and branch labels by
 `internal/rules/load.go`'s `maxIDBytes`, which the ruleset schemas in
 `internal/rules/schema/` state; stated to an agent by
 `tools/toolgen/main.go`'s `manifest` for `move_token`'s `reason`,
@@ -35,6 +35,7 @@ condition ids, attribute, defense and resource names and branch labels by
 `qa_id_bound_test.go`, `internal/mapdef/load_test.go`, `installed_test.go`,
 `qa_name_bound_test.go`, `qa_id_bound_test.go`, `internal/rules/load_test.go`,
 `resolve_test.go`, `id_bound_internal_test.go`, `qa_ruleset_bound_test.go`,
+`qa_property_format_test.go`,
 `internal/engine/qa_ruleset_bound_test.go`,
 `internal/gateway/qa_ruleset_bound_test.go`,
 `internal/campaign/qa_ruleset_bound_test.go`,
@@ -138,7 +139,7 @@ into `AbilityUsed.outcome_summary` or a reason, and the spectator's one cell,
 | `Actor.controller_id`, `Actor.controller_ids` | `engine.Apply` refuses an `ActorAdded` that declares either, and fills them from `ActorControlGranted.participant_id` |
 | `AbilityUsed.actor_id`, `AbilityUsed.target_ids`, `AbilityUsed.Outcome.target_id` | `Resolve` refuses a value that names no folded actor |
 | `AbilityUsed.Outcome.result` | `Resolve` writes a branch label, which `internal/rules/load.go` bounds at `maxIDBytes` |
-| `ConditionApplied.source`, `ResourceChanged.reason`, `ConditionRemoved.reason` | `Resolve` writes each as `ability:` followed by an ability id and a branch label, `effect` or `usage`, or as `threshold:` followed by a resource name, and `internal/rules/load.go` bounds the id, the label and the name; `ToEvent` writes a `remove_condition`'s reason as `manual` |
+| `ConditionApplied.source`, `ResourceChanged.reason`, `ConditionRemoved.reason` | `Resolve` writes each as `ability:` followed by an ability id and a branch label, `effect` or `usage`, or as `threshold:` followed by a resource property's key, and `internal/rules/load.go` bounds the id, the label and the key; `ToEvent` writes a `remove_condition`'s reason as `manual` |
 | `AbilityUsed.outcome_summary`, `AbilityUsed.Roll.expression` | `Resolve` writes the first from an ability's display name, each target's id and, for an ability with a resolution, a branch label and two totals, and the second from the ruleset's compiled expressions; no loader bounds a display name or an expression |
 | `TileRef.kind`, `TileRef.material` | `BuildSceneCreated` writes them from `StandardTile`'s vocabulary |
 | `TileRef.art`, `SceneObject.art` | `BuildSceneCreated` writes an art id only when `internal/artlib` resolves it, and `isArtID` refuses one longer than `maxArtIDLen` |
@@ -159,7 +160,7 @@ over `'*.go' ':!*_test.go' ':!contract/gen' ':!contract-spike'`: `-E
 internal/adventure ':!*_test.go'` prints only the loader's and
 `BuildSceneCreated`'s copies of an object's `kind`. `grep -n -E
 'len\([^)]*(Name|Expr|Src|Description)[^)]*\) >' internal/rules/load.go`
-prints only the resource-name bound; and `-E 'len\([^)]*(Name|Notes)[^)]*\) >'
+prints nothing; and `-E 'len\([^)]*(Name|Notes)[^)]*\) >'
 -- internal/mapdef internal/adventure internal/engine ':!*_test.go'
 ':!*/testdata/*'` prints only the bounds on a session's, a scene's, an
 actor's, an adventure's and a map's name, none on a token's text.
@@ -205,7 +206,7 @@ and through `CheckObjectIDs` a map's and an adventure's scene objects' ids,
 held by the `object-id-too-long` rows, `TestAnObjectIDOfExactlyTheBoundLoads`
 and `TestLoadAcceptsValuesExactlyOnEveryLimit`; `internal/rules/load.go` holds
 its own `maxIDBytes`, for a ruleset's ability and condition ids, its
-attribute, defense and resource names and its resolutions' branch labels,
+property keys and its resolutions' branch labels,
 which `TestTheIDBoundMirrorsEngine` pins to 128, and the ruleset schemas state
 it, which `TestTheSchemasStateTheIDBound` requires; nothing compares any copy
 with the engine's constants. A map, an adventure or a ruleset over one of them
@@ -250,6 +251,6 @@ requires them to state it too. The `add_whisper` tool describes its `text` as
 ## Requirements
 
 VTT-264, VTT-265, VTT-266, VTT-274, VTT-275, VTT-276, VTT-277, VTT-278,
-VTT-279, VTT-281, VTT-282, VTT-283, VTT-284, VTT-285, VTT-286, VTT-287,
-VTT-289, VTT-290, VTT-291, VTT-292, VTT-293, VTT-294, VTT-296, VTT-297,
-VTT-585, VTT-586.
+VTT-279, VTT-281, VTT-282, VTT-284, VTT-285, VTT-286, VTT-289, VTT-290,
+VTT-291, VTT-292, VTT-293, VTT-294, VTT-296, VTT-297, VTT-585, VTT-586,
+VTT-624, VTT-625.

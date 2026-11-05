@@ -117,8 +117,12 @@ as controlled, and nothing at any other set or in any other window, and
 tells a perching player that they play no character, by
 `client/test/app.test.ts`, `client/test/session.test.ts`,
 `client/test/spectator-view.test.ts`, `client/test/qa-refusal-words.test.ts`
-and `client/e2e/handover.spec.ts` (VTT-604 to VTT-607). Every `client/e2e/`
-file runs outside `task check`.
+and `client/e2e/handover.spec.ts` (VTT-604 to VTT-607). That a window names
+a resource its ruleset declares by the property's display name and any other
+by its key is held by `client/test/naming.test.ts`,
+`client/test/spectator-view.test.ts`, `client/test/app.test.ts` and
+`client/test/qa-property-names.test.ts` (VTT-622, VTT-623). Every
+`client/e2e/` file runs outside `task check`.
 
 That `internal/harness`'s client hands its reader every entry and each switch
 and that a dial names a log is held by
@@ -148,8 +152,9 @@ Principles 11, 12, 13, 14 and 22 of `docs/blueprint.md`:
 - **11.** A reader folds one log, from its first entry, and never splices two.
 - **12.** A player is told when a party member stops being theirs, and a
   perching player that they play no character.
-- **13.** `namer` never shows a token or an actor by its id, and `describe`
-  words every payload (VTT-474 to VTT-477).
+- **13.** `namer` never shows a token or an actor by its id, names a resource
+  its ruleset declares by its display name, and `describe` words every
+  payload (VTT-474 to VTT-477, VTT-622).
 - **14.** A player's click on a cell holding the watched one's token and no
   other listed member's sends nothing.
 - **22.** A reload keeps the viewpoint.
@@ -463,13 +468,15 @@ asks for no repaint, frees the control that sent it, and passes its error to
 ### How the window names what it shows
 
 `namer` in `client/src/view/naming.ts` names each token and actor the window
-shows, except in the panel's chips and the perch's buttons. `renderSpectator`
-builds one per paint, from the fold, the log, `ViewExtras.dm` and
-`ViewExtras.abilities`, for a disc's initial and its native `title`, its card,
-and the Story and the Events panel; `paint` in `startSession` sets `dm` to
-`isDM` and `abilities` to the list `/api/ruleset` gave, for every role.
-`renderPlayerPanel` builds its own for its target buttons, from the fold alone
-with no log, by the role `/api/me` last gave (VTT-475, VTT-484, by the owner's
+shows, except in the panel's chips and the perch's buttons, and a resource
+as below. `renderSpectator` builds one per paint, from the fold, the log,
+`ViewExtras.dm`, `ViewExtras.abilities` and `ViewExtras.properties`, for a
+disc's initial, its native `title` and its resource chips, its card, and the
+Story and the Events panel; `paint` in `startSession` sets `dm` to `isDM`,
+and `abilities` and `properties` to the lists `/api/ruleset` gave, for every
+role. `renderPlayerPanel` builds its own for its target buttons and its
+abilities' costs, from the fold, the abilities and the properties with no
+log, by the role `/api/me` last gave (VTT-475, VTT-484, by the owner's
 rulings A-6 and K-1 of 2026-10-22).
 - **A window that is not a DM's or an agent's** names a token by its `Name`,
   else its actor's name when the actor is a party member, else `a creature`
@@ -485,6 +492,16 @@ rulings A-6 and K-1 of 2026-10-22).
 - **The initial** is the naming's first character in upper case, and `?` for
   `a creature`. An ability is named by the display name `/api/ruleset` gives
   it, else its id.
+- **A resource** is named by `Namer.resource`: by the display name of the
+  property `/api/ruleset` gives under its key as a `resource`, else by its
+  key, and by its key while the window has no properties; a `number`
+  property names no resource (VTT-622, VTT-623). A disc's resource chip
+  shows `current/max` and is titled so (`ResourceChip.label`, which
+  `tokensOnScene` sets), and a token's chips stay sorted by key. The Story's
+  and the Events panel's line of a `resourceChanged` reads the actor, the
+  resource so named, ` → ` and the new value. On the panel, a resource
+  ability's button is titled the resource so named, a space and the cost,
+  and ` — not enough` when the acting actor cannot afford it.
 
 A player's chips and the perch's buttons name a party member as the
 `WatchableChanged` set names it, and a DM's or an agent's chips an actor as
@@ -519,8 +536,8 @@ by the owner's ruling of 2026-10-24 on the ability's line). A whisper reads
 "The DM whispers to ", its `to_actor_ids` named as the window names actors
 and joined by ", ", then ": " and its text, or its `from_actor_id` so named,
 " whispers to the DM: " and its text, and the Story draws it with the class
-`whisper` (VTT-597). A condition, a resource, a note's key and an
-adventure's id are shown as the entry names them.
+`whisper` (VTT-597). A condition, a note's key and an adventure's id are
+shown as the entry names them, and a resource as `Namer.resource` names it.
 
 **The console's rewrite.** `renderDMConsole` in `client/src/view/dm.ts` draws,
 when the world holds a token, a "Describe tokens" group with one row per token
@@ -715,4 +732,4 @@ VTT-526, VTT-527, VTT-528, VTT-530, VTT-531, VTT-532, VTT-533, VTT-534,
 VTT-535, VTT-536, VTT-537, VTT-538, VTT-540, VTT-541, VTT-572, VTT-573,
 VTT-574, VTT-575, VTT-576, VTT-577, VTT-579, VTT-580, VTT-592, VTT-593,
 VTT-594, VTT-595, VTT-596, VTT-597, VTT-599, VTT-600, VTT-604, VTT-605,
-VTT-606, VTT-607.
+VTT-606, VTT-607, VTT-622, VTT-623.

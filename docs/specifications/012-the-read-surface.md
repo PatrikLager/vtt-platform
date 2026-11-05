@@ -11,9 +11,13 @@ Accepted. Implemented by `internal/gateway/metadata.go` (`authed`,
 `internal/gateway/server.go` (the `ruleset`, `roller`, `adventures` and
 `adventureGuides` fields of `Server`, `WithRuleset`, `WithAdventures`;
 `Handler` registers the routes, SPEC-011), fed by `cmd/vtt/serve_compose.go`'s
-`composeServer`; pinned by `internal/gateway/metadata_test.go`,
+`composeServer`, and read for the agent by `internal/mcp/ruleset_tool.go`
+(`registerRulesetTool`, `handleGetRuleset`) through `readMetadata` in
+`internal/mcp/door_tools.go`; pinned by `internal/gateway/metadata_test.go`,
 `qa_me_503_test.go`, `adventure_test.go`, `ruleset_test.go`,
-`artfile_internal_test.go` and, for
+`ruleset_properties_test.go`, `qa_ruleset_route_test.go`,
+`artfile_internal_test.go`, `internal/mcp/ruleset_tool_test.go`,
+`cmd/vtt/qa_get_ruleset_test.go` and, for
 the default cell size, `cmd/vtt/art_test.go`.
 
 ## Principles served
@@ -24,9 +28,10 @@ Principles 6, 15 and 35 of `docs/blueprint.md`:
   request, and never by a client hiding what it was sent.
 - **15.** A piece of art is opened from the art directory on every request,
   and nothing is cached.
-- **35.** Every participant, whatever the role, is served the ruleset's guide
-  and a summary of its abilities, conditions and resources; how an ability
-  resolves is not served.
+- **35.** Every participant, whatever the role, is served the ruleset's guide,
+  a summary of its abilities and conditions, and every property it declares
+  with its display name and explanation; how an ability resolves, and what a
+  resource carries beyond its words, is not served.
 
 ## How it works
 
@@ -64,15 +69,15 @@ of `commandRoles` in `authz.go`: that table's keys are the `ClientCommand`
 oneof's fields, and `TestEveryClientCommandHasRoleCells` walks that oneof.
 
 **Empty is not an error, and a missing guide is.** `handleRuleset` builds its
-answer with every slice non-nil (`Abilities`, `Conditions`, `Resources` start
-as empty slices), and `handleAdventures` and `handleMaps` start from an empty
-slice, so a server with nothing loaded answers `/api/ruleset`,
-`/api/adventures` and `/api/maps` with status 200 and `[]` where a client
-expects an array, never `null`. A guide is different: `handleRulesetGuide`
-answers 404 with `gateway: no ruleset guide available` when there is no
-ruleset or its `Guide` is empty, and `handleAdventureGuide` answers 404 with
-`gateway: no guide for that adventure` when the id names no guide or an
-empty one, because an empty document would read as a broken one.
+answer with every slice non-nil (`Abilities`, `Conditions`, `Resources` and
+`Properties` start as empty slices), and `handleAdventures` and `handleMaps`
+start from an empty slice, so a server with nothing loaded answers
+`/api/ruleset`, `/api/adventures` and `/api/maps` with status 200 and `[]`
+where a client expects an array, never `null`. A guide is different:
+`handleRulesetGuide` answers 404 with `gateway: no ruleset guide available`
+when there is no ruleset or its `Guide` is empty, and `handleAdventureGuide`
+answers 404 with `gateway: no guide for that adventure` when the id names no
+guide or an empty one, because an empty document would read as a broken one.
 
 **What `/api/me` answers.** `handleMe` writes `meJSON`: the `participantId`,
 `name` and `role` of the `identity.Participant` `authed` returned, and
@@ -85,12 +90,25 @@ route reveals nothing the caller did not prove by holding the token.
 ruleset's `id` and `name`, `abilities` as `abilityJSON` (`id`, `name`,
 `range`, `maxTargets` and `usage`, which is `usageJSON` with `kind` `atWill`,
 or `kind` `resource` with `resource` and `cost`), `conditions` as
-`conditionJSON` (`id`, `name`, `description`), and `resources` as the names
-of the ruleset's resource definitions. Abilities and conditions are sorted by
-id with `slices.SortFunc`, because `rules.Ruleset.Compiled` and `Conditions`
-are maps and Go randomises map iteration; resources are a slice and keep the
-ruleset's declared order. `handleRulesetGuide` writes `{"guide": ...}` with
-the ruleset's `Guide` markdown.
+`conditionJSON` (`id`, `name`, `description`), `resources` as the keys of
+the ruleset's resource properties (VTT-631), and `properties` as
+`propertyJSON`, each property's `key`, `type`, `name` and `description`
+(VTT-619, SPEC-024); a resource's `default_max_expr` and thresholds are not
+served. Abilities and conditions are sorted by id with `slices.SortFunc`,
+because `rules.Ruleset.Compiled` and `Conditions` are maps and Go randomises
+map iteration; `resources` and `properties` are built from
+`rules.Ruleset.Properties`, a slice, and keep the ruleset's declared order.
+`handleRulesetGuide` writes `{"guide": ...}` with the ruleset's `Guide`
+markdown.
+
+**The agent's reader.** The MCP tool `get_ruleset`, which
+`registerRulesetTool` adds and `GoRegisteredToolNames` lists, takes no
+arguments: `handleGetRuleset` runs `readMetadata` on `/api/ruleset` with the
+MCP server's own token. A 200 whose body is JSON is returned verbatim as the
+tool's text content (VTT-621); any other final status is returned as an
+error naming the route, never as content (VTT-633). `readMetadata` sends
+through `http.DefaultClient`, which follows a redirect. `get_ruleset_guide`'s
+description points to `get_ruleset` for what a property means.
 
 **Adventures, and the guide.** `handleAdventures` writes
 `{"adventures": [...]}` with an `adventureJSON` (`id`, `name`) per adventure
@@ -212,6 +230,8 @@ A client author is bound by these:
   reads it makes at load (SPEC-022).
 - `[]` is an empty table and a 404 on a guide is "no guide"; neither is an
   error the UI should raise.
+- What a property means is read from `/api/ruleset`'s `properties`, or
+  `get_ruleset`, and not from a guide (SPEC-024).
 - Who the caller is comes from `/api/me`; what they control comes from the
   log, never from `/api/me`.
 - A map draws at its entry's `cellPx`, and the campaign's `cellPx` is what a
@@ -229,4 +249,5 @@ A client author is bound by these:
 VTT-112, VTT-113, VTT-114, VTT-115, VTT-116, VTT-117, VTT-118,
 VTT-119, VTT-120, VTT-121, VTT-122, VTT-123, VTT-124, VTT-125, VTT-126,
 VTT-127, VTT-128, VTT-129, VTT-130, VTT-131, VTT-132, VTT-133, VTT-134,
-VTT-135, VTT-136, VTT-137, VTT-578, VTT-581.
+VTT-135, VTT-136, VTT-137, VTT-578, VTT-581, VTT-619, VTT-620, VTT-621,
+VTT-631, VTT-632, VTT-633.
