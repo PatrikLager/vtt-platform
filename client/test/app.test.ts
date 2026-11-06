@@ -2994,7 +2994,7 @@ test("a player's move moves the character they watch", async () => {
   s?.close();
 });
 
-// VTT-393 VTT-445 VTT-446 VTT-449
+// VTT-393 VTT-445 VTT-446 VTT-662
 test("no role's window shows a log sequence number", async () => {
   const seqs = [7001, 7002, 7003, 7004, 7005, 7006];
   const shows = (t: string, n: number) =>
@@ -3366,7 +3366,7 @@ test("a page sent the set but no viewpoint leaves the next page the party member
 
 const storyRows = (r: HTMLElement) => Array.from(r.querySelectorAll(".feed .mechanical"), (n) => n.textContent);
 
-// VTT-445 VTT-449
+// VTT-445 VTT-662
 test("a player's and a spectator's window draws no Events panel, and its Story shows what it was sent", async () => {
   const own: Record<string, string> = { player: ".player", spectator: ".perch" };
   for (const role of ["player", "spectator"]) {
@@ -3382,7 +3382,7 @@ test("a player's and a spectator's window draws no Events panel, and its Story s
   }
 });
 
-// VTT-445 VTT-449
+// VTT-445 VTT-662
 test("a page whose /api/me answers no role draws no Events panel, and its Story shows what it was sent", async () => {
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({});
@@ -3398,7 +3398,7 @@ test("a page whose /api/me answers no role draws no Events panel, and its Story 
   s?.close();
 });
 
-// VTT-446 VTT-447 VTT-449
+// VTT-446 VTT-447 VTT-662
 test("a DM's and an agent's window draws a row in the Events panel for each entry it was sent, newest first", async () => {
   for (const role of ["dm", "agent"]) {
     const { r, s } = await tableAs(role);

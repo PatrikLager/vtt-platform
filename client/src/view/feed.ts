@@ -1,15 +1,7 @@
-// The story feed: the log rendered as a narrative, not as a list of rows.
-//
-// One rule does the work: anchored narration is grouped WITH the events it
-// describes. "Lera steps toward the bar" belongs beside the move it narrates;
-// rendering it as a separate later line reads as a second, unrelated beat.
-// That grouping is the entire reason NarrationAdded carries an anchor range
-// at all.
-//
-// Everything in the log is shown. The feed used to hide what a retraction
-// marker covered, so that it agreed with the fold about what had happened;
-// the log only goes forward now, so agreeing with the fold means showing
-// every envelope it applies.
+// The Story's beats (SPEC-022). Keep an anchored narration in the beat of the
+// events its range names, and show every entry of the log but the runs
+// reintroductions names (VTT-662). Leave them out here alone: the fold, the
+// namer and the Events panel are handed the whole log.
 
 import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 
@@ -30,7 +22,10 @@ export interface FeedEntry {
   narrations: Narration[];
 }
 
-export function buildFeed(log: Envelope[]): FeedEntry[] {
+export function buildFeed(whole: Envelope[]): FeedEntry[] {
+  const left = reintroductions(whole);
+  const log = whole.filter((e) => !left.has(e));
+
   // Narration is not a mechanical beat: it is the prose ABOUT the beats, and
   // it is placed by the anchor loop below rather than rendered as a row of
   // its own.
@@ -84,14 +79,32 @@ export function buildFeed(log: Envelope[]): FeedEntry[] {
           (c) => isMechanical(c) && c.sequence >= n.anchorFromSeq && c.sequence <= n.anchorToSeq,
         )
       : undefined;
-    // No event in the anchored range means a spectator who joined mid-session
-    // has a truncated log. The narration stands on its own rather than being
-    // dropped: silently hiding story from late joiners is worse than showing
-    // it slightly out of place.
+    // Never drop a narration whose range names no entry kept here, as after a
+    // left-out run: give it a beat of its own (VTT-662).
     entryAt(target ? groupOf.get(target.sequence)! : e.sequence).narrations.push(narration);
   }
 
   return [...bySeq.values()]
     .filter((e) => e.events.length > 0 || e.narrations.length > 0)
     .sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0));
+}
+
+/** reintroductions is what the Story leaves out of log (VTT-662). */
+function reintroductions(log: readonly Envelope[]): Set<Envelope> {
+  const out = new Set<Envelope>();
+  for (let i = 0; i + 1 < log.length; i++) {
+    const gone = log[i]!;
+    const back = log[i + 1]!.payload;
+    if (gone.eventId !== "" || gone.payload.case !== "actorRemoved" || back.case !== "actorAdded") continue;
+    const id = gone.payload.value.actorId;
+    if (back.value.actor?.actorId !== id) continue;
+    out.add(gone).add(log[i + 1]!);
+    for (let j = i + 2; j < log.length && restates(log[j]!, id); j++) out.add(log[j]!);
+  }
+  return out;
+}
+
+function restates(e: Envelope, id: string): boolean {
+  const p = e.payload;
+  return e.eventId === "" && (p.case === "actorControlGranted" || p.case === "conditionApplied") && p.value.actorId === id;
 }

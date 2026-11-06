@@ -5,6 +5,9 @@ import {
   SessionStartedSchema,
   TokenMovedSchema,
   NarrationAddedSchema,
+  ActorAddedSchema,
+  ActorRemovedSchema,
+  ActorKind,
   type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { buildFeed } from "../src/view/feed";
@@ -244,4 +247,33 @@ test("an unset payload alongside real events leaves the real ones intact", () =>
   const bare = create(EnvelopeSchema, { eventId: "x", sequence: 2n });
   const feed = buildFeed([moved(1, { x: 1, y: 1 }), bare, moved(3, { x: 3, y: 3 })]);
   expect(feed.map((e) => Number(e.seq))).toEqual([1, 2, 3]);
+});
+
+// VTT-662
+test("a removal that carries an event id, or that another actor's introduction follows, is told", () => {
+  const removed = (seq: number, actorId: string, eventId: string) =>
+    create(EnvelopeSchema, {
+      eventId, sequence: BigInt(seq), payload: { case: "actorRemoved", value: create(ActorRemovedSchema, { actorId }) },
+    });
+  const added = (seq: number, actorId: string, eventId: string) =>
+    create(EnvelopeSchema, {
+      eventId, sequence: BigInt(seq),
+      payload: { case: "actorAdded", value: create(ActorAddedSchema, { actor: { actorId, name: actorId, kind: ActorKind.PARTY_MEMBER } }) },
+    });
+  const told = (log: Envelope[]) => buildFeed(log).flatMap((e) => e.events.map((v) => `${v.payload.case} ${v.sequence}`));
+  expect(told([removed(1, "a1", "evt-1"), added(2, "a1", "evt-2")])).toEqual(["actorRemoved 1", "actorAdded 2"]);
+  expect(told([removed(1, "a1", ""), added(2, "a2", "")])).toEqual(["actorRemoved 1", "actorAdded 2"]);
+});
+
+// VTT-662
+test("an entry with no event id that is not a removal is told with the add behind it", () => {
+  const used = create(EnvelopeSchema, {
+    sequence: 1n, payload: { case: "abilityUsed", value: { actorId: "a1", abilityId: "wave" } },
+  });
+  const added = create(EnvelopeSchema, {
+    sequence: 2n,
+    payload: { case: "actorAdded", value: create(ActorAddedSchema, { actor: { actorId: "a1", name: "a1", kind: ActorKind.PARTY_MEMBER } }) },
+  });
+  const told = buildFeed([used, added]).flatMap((e) => e.events.map((v) => `${v.payload.case} ${v.sequence}`));
+  expect(told).toEqual(["abilityUsed 1", "actorAdded 2"]);
 });

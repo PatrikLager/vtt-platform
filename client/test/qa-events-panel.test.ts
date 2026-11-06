@@ -367,7 +367,7 @@ for (const role of ["player", "spectator"] as const) {
     expect(Array.from(r.querySelectorAll("h2")).map((h) => h.textContent)).not.toContain("Events");
   });
 
-  // VTT-449
+  // VTT-662
   test(`qaEP: ${role}: the Story still shows every entry of the log, more than 40 included`, async () => {
     const { r } = await openSeat(role, logWith(45));
     const rows = feedRows(r);
@@ -392,7 +392,7 @@ for (const role of ["player", "spectator"] as const) {
 }
 
 for (const role of ["dm", "agent"] as const) {
-  // VTT-449
+  // VTT-662
   test(`qaEP: ${role}: the Story shows every entry of the log while the panel shows 40`, async () => {
     const { r } = await openWorld(role, logWith(45));
     expect(ticks(r)).toHaveLength(40);

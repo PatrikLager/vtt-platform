@@ -15,6 +15,7 @@ import {
 import { renderSpectator, describe as describeEvent, CELL, boardCamera, paneSize,
   DEFAULT_PANE_W, DEFAULT_PANE_H, type ViewExtras } from "../src/view/spectator";
 import { newState, type State } from "../src/state";
+import { fold } from "../src/fold";
 import { ActorKind, NoteVisibility } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderPlayerPanel, type PlayerUIState } from "../src/view/player";
 import type { Ability, Me, Property } from "../src/metadata";
@@ -1505,7 +1506,7 @@ test("the ticker section carries its class, and headings carry none", () => {
   for (const h of Array.from(root.querySelectorAll("h2"))) expect(h.className).toBe("");
 });
 
-// VTT-445 VTT-449
+// VTT-445 VTT-662
 test("a window not asked for the Events panel draws none, and its Story still shows the log", () => {
   // More entries than the Events panel shows, so a bounded Story goes red.
   const log = Array.from({ length: 45 }, (_, i) =>
@@ -1517,6 +1518,31 @@ test("a window not asked for the Events panel draws none, and its Story still sh
   const names = namer(world(), log, false, undefined);
   expect(Array.from(root.querySelectorAll(".feed .mechanical"), (n) => n.textContent))
     .toEqual(log.map((e) => describeEvent(e, names)));
+});
+
+// VTT-662
+test("at a companion's first sight the Story shows it coming into view and neither its leaving nor its joining", () => {
+  // The log's own entries carry no event id; what it forwards from the world does.
+  const own = (seq: number, payload: Envelope["payload"]): Envelope =>
+    create(EnvelopeSchema, { sequence: BigInt(seq), payload });
+  const bram = (sheet: { attributes?: Record<string, number>; resources?: Record<string, { current: number; max: number }> }) =>
+    create(ActorAddedSchema, { actor: { actorId: "a2", name: "Bram", kind: ActorKind.PARTY_MEMBER, ...sheet } });
+  const granted = create(ActorControlGrantedSchema, { actorId: "a2", participantId: "p-friend", kind: ActorKind.PARTY_MEMBER });
+  const log = [
+    env(1, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "s1", name: "The Hall", gridWidth: 6, gridHeight: 4 }) }),
+    own(2, { case: "actorAdded", value: bram({}) }),
+    own(3, { case: "actorControlGranted", value: granted }),
+    own(4, { case: "actorRemoved", value: create(ActorRemovedSchema, { actorId: "a2" }) }),
+    own(5, { case: "actorAdded", value: bram({ attributes: { might: 2 }, resources: { vigor: { current: 3, max: 10 } } }) }),
+    own(6, { case: "actorControlGranted", value: granted }),
+    own(7, { case: "conditionApplied", value: create(ConditionAppliedSchema, { actorId: "a2", conditionId: "dazed", source: "dm" }) }),
+    own(8, { case: "tokenPlaced", value: create(TokenPlacedSchema, { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 4, y: 1 } }) }),
+    env(9, { case: "doorOpened", value: create(DoorOpenedSchema, { sceneId: "s1", at: { x: 3, y: 1 } }) }),
+  ];
+  const story = Array.from(render(fold(log), log).querySelectorAll(".feed .mechanical"), (n) => n.textContent);
+  expect(story).toEqual([
+    `scene "The Hall"`, "Bram is in the party", "control of Bram given", "Bram is at 4,1", "a door opened at 3,1",
+  ]);
 });
 
 test("a scene keyed by the empty string is still rendered", () => {
