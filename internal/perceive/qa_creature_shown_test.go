@@ -981,7 +981,7 @@ func TestQACSACreatureAddedAgainWithAnotherModuleIsIntroducedAfresh(t *testing.T
 	v.noSecrets(qacsSecrets)
 }
 
-// VTT-470 VTT-659
+// VTT-470 VTT-664
 func TestQACSAPartyMemberAddedAgainIsIntroducedAfreshOrCorrected(t *testing.T) {
 	v := qacsTable(t)
 	v.move(qacsFriendTok, 0, 0)
@@ -1007,7 +1007,7 @@ func TestQACSAPartyMemberAddedAgainIsIntroducedAfreshOrCorrected(t *testing.T) {
 	addFrames := v.steps[len(v.steps)-1]
 	frames = v.step(qacsPlace("tok-bram-3", qacsFriend, 0, 0, "Bram", "", "", ""))
 	qacsCheckReintroduced(t, "VTT-470", addFrames, v.seq-1, qacsFriend, "", qacsUnseen(v.world.Actors[qacsFriend]))
-	qacsCheckReintroduced(t, "VTT-659", frames, v.seq, qacsFriend, "tok-bram-3", qacsWhole(v.world.Actors[qacsFriend]))
+	qacsCheckReintroduced(t, "VTT-664", frames, v.seq, qacsFriend, "tok-bram-3", qacsWhole(v.world.Actors[qacsFriend]))
 	if got := v.shown.Actors[qacsFriend].GetName(); got != "Bram the Second" {
 		t.Errorf("VTT-470: the fold holds %q", got)
 	}

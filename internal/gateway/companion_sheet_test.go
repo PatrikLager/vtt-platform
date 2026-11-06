@@ -50,7 +50,7 @@ func sheetWireNarrate(text string) *vttv1.Envelope {
 	return &vttv1.Envelope{Payload: &vttv1.Envelope_NarrationAdded{NarrationAdded: &vttv1.NarrationAdded{Text: text}}}
 }
 
-// VTT-658 VTT-659
+// VTT-658 VTT-664
 func TestASeatIsSentNoCompanionsSheetBeforeItsCharacterSeesIt(t *testing.T) {
 	w := qacsWireTable(t)
 	playerTok, playerID, err := w.ids.CreateInvite("Ayla's player", identity.RolePlayer)
@@ -128,15 +128,15 @@ func TestASeatIsSentNoCompanionsSheetBeforeItsCharacterSeesIt(t *testing.T) {
 					continue
 				}
 				if !proto.Equal(a, want) {
-					t.Errorf("VTT-659: on sight the %s was introduced to %s as %v, want it whole", who, want.GetActorId(), a)
+					t.Errorf("VTT-664: on sight the %s was introduced to %s as %v, want it whole", who, want.GetActorId(), a)
 				}
 				whole++
 			}
 			if whole != 1 {
-				t.Errorf("VTT-659: on sight the %s was introduced to %s %d times, want once", who, want.GetActorId(), whole)
+				t.Errorf("VTT-664: on sight the %s was introduced to %s %d times, want once", who, want.GetActorId(), whole)
 			}
 			if held := shown.Actors[want.GetActorId()]; !proto.Equal(held, want) {
-				t.Errorf("VTT-659: the %s holds %s as %v, want it whole", who, want.GetActorId(), held)
+				t.Errorf("VTT-664: the %s holds %s as %v, want it whole", who, want.GetActorId(), held)
 			}
 		}
 	}

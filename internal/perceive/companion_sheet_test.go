@@ -140,7 +140,7 @@ func TestACompanionItsCharacterHasNotSeenArrivesWithoutItsSheet(t *testing.T) {
 	}
 }
 
-// VTT-659 VTT-657
+// VTT-664 VTT-657
 func TestACompanionsSheetArrivesWhenItsCharacterFirstSeesIt(t *testing.T) {
 	stripped := []string{
 		"*vttv1.Envelope_ActorRemoved ally",

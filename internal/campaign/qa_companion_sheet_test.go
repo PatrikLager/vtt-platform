@@ -369,7 +369,7 @@ func TestQASheetALogOpensWithEachCompanionWithoutItsSheet(t *testing.T) {
 	qaSheetAssertStripped(t, "VTT-658 in the opening", opened, worldA, []string{"p-a"})
 }
 
-// VTT-658 VTT-660 VTT-661 VTT-659 VTT-486
+// VTT-658 VTT-660 VTT-661 VTT-664 VTT-486
 func TestQASheetACampaignLogIsWrittenNoCompanionSheetBeforeSight(t *testing.T) {
 	l := qaSheetBuildUnseen(t)
 	c, seqs := qaSheetAppend(t, l.envs)
@@ -390,18 +390,18 @@ func TestQASheetACampaignLogIsWrittenNoCompanionSheetBeforeSight(t *testing.T) {
 	}
 	worldA := l.envs[4].GetActorAdded().GetActor()
 	qaSheetAssertStripped(t, "VTT-660 before the door opens", qaSheetFoldEntries(t, before), worldA, []string{"p-a"})
-	// VTT-659
+	// VTT-664
 	through := qaSheetThrough(entries, doorSeq)
 	atDoor, err := campaign.FoldPrefix(qaSheetWorld(t, c)[:qaSheetUnseenDoorOpen])
 	if err != nil {
 		t.Fatal(err)
 	}
-	qaSheetAssertWhole(t, "VTT-659 at the door's opening", qaSheetFoldEntries(t, through), atDoor, qaSheetA)
+	qaSheetAssertWhole(t, "VTT-664 at the door's opening", qaSheetFoldEntries(t, through), atDoor, qaSheetA)
 	// VTT-486
 	qaSheetAssertWhole(t, "VTT-486 at the end", qaSheetFoldEntries(t, entries), c.State(), qaSheetA)
 }
 
-// VTT-663 VTT-658 VTT-659 VTT-657
+// VTT-663 VTT-658 VTT-664 VTT-657
 func TestQASheetALogOpenedInSightOfACompanionBringsItsSheetAtTheOpeningEvent(t *testing.T) {
 	l := &qaSheetLog{}
 	l.session()
@@ -427,8 +427,8 @@ func TestQASheetALogOpenedInSightOfACompanionBringsItsSheetAtTheOpeningEvent(t *
 	// VTT-663, VTT-658
 	worldA := proto.Clone(l.envs[2].GetActorAdded().GetActor()).(*vttv1.Actor)
 	qaSheetAssertStripped(t, "VTT-663 in the opening", qaSheetFoldEntries(t, opening), worldA, []string{"p-a"})
-	// VTT-659
-	qaSheetAssertWhole(t, "VTT-659 at the event that opened the log", qaSheetFoldEntries(t, entries), c.State(), qaSheetA)
+	// VTT-664
+	qaSheetAssertWhole(t, "VTT-664 at the event that opened the log", qaSheetFoldEntries(t, entries), c.State(), qaSheetA)
 	// VTT-657
 	qaSheetAssertWhole(t, "VTT-657 B's own sheet", qaSheetFoldEntries(t, entries), c.State(), qaSheetB)
 }
@@ -453,7 +453,7 @@ func TestQASheetTheWorldLogKeepsEveryEventUnchanged(t *testing.T) {
 	}
 }
 
-// VTT-660 VTT-312 VTT-659 VTT-486
+// VTT-660 VTT-312 VTT-664 VTT-486
 func TestQASheetAReopenedCampaignBringsTheSheetAtTheFirstSight(t *testing.T) {
 	l := qaSheetBuildUnseen(t)
 	dir := t.TempDir()
@@ -491,12 +491,12 @@ func TestQASheetAReopenedCampaignBringsTheSheetAtTheFirstSight(t *testing.T) {
 	worldA := l.envs[4].GetActorAdded().GetActor()
 	// VTT-660
 	qaSheetAssertStripped(t, "VTT-660 before the door, across a reopen", qaSheetFoldEntries(t, qaSheetThrough(entries, doorSeq-1)), worldA, []string{"p-a"})
-	// VTT-312, VTT-659
+	// VTT-312, VTT-664
 	atDoor, err := campaign.FoldPrefix(qaSheetWorld(t, c)[:qaSheetUnseenDoorOpen])
 	if err != nil {
 		t.Fatal(err)
 	}
-	qaSheetAssertWhole(t, "VTT-659 at the door after a reopen", qaSheetFoldEntries(t, qaSheetThrough(entries, doorSeq)), atDoor, qaSheetA)
+	qaSheetAssertWhole(t, "VTT-664 at the door after a reopen", qaSheetFoldEntries(t, qaSheetThrough(entries, doorSeq)), atDoor, qaSheetA)
 	// VTT-486
 	qaSheetAssertWhole(t, "VTT-486 at the end after a reopen", qaSheetFoldEntries(t, entries), c.State(), qaSheetA)
 }

@@ -59,7 +59,7 @@ type Projection struct {
 	// Withdraw a gone actor only before its id is introduced again: a bare
 	// ActorRemoved at any other time reports a removal the viewer did not see.
 	gone map[string]bool
-	// Re-introduce a reshaped actor only in sight: unseen, it waits (VTT-481, VTT-659).
+	// Re-introduce a reshaped actor only in sight: unseen, it waits (VTT-481, VTT-664).
 	reshaped map[string]bool
 }
 
