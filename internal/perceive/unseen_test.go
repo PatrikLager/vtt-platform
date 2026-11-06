@@ -2,6 +2,7 @@ package perceive_test
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -118,17 +119,13 @@ func TestAnActorAddedAgainWithAnotherAttributeIsIntroducedAfresh(t *testing.T) {
 	back := w.feed(scout(2))
 	back = append(back, w.feed(&vttv1.TokenPlaced{TokenId: "t-scout-2", SceneId: "s", ActorId: "scout",
 		Position: &vttv1.GridPosition{X: 2, Y: 1}})...)
-	var removed, added bool
-	for _, f := range back {
-		if f.GetActorRemoved().GetActorId() == "scout" {
-			removed = !added
-		}
-		if f.GetActorAdded().GetActor().GetActorId() == "scout" {
-			added = true
-		}
-	}
-	if !removed || !added {
-		t.Errorf("an actor added again with another attribute must be withdrawn, then introduced; removed %v, added %v", removed, added)
+	first := slices.IndexFunc(back, func(f *vttv1.Envelope) bool {
+		return f.GetActorRemoved().GetActorId() == "scout" || f.GetActorAdded().GetActor().GetActorId() == "scout" ||
+			f.GetTokenPlaced().GetActorId() == "scout"
+	})
+	if first < 0 || first+1 == len(back) || back[first].GetActorRemoved().GetActorId() != "scout" ||
+		back[first+1].GetActorAdded().GetActor().GetActorId() != "scout" {
+		t.Errorf("an actor added again with another attribute must be withdrawn, then introduced; sent %v", back)
 	}
 	if got := w.v.shown.Actors["scout"].GetAttributes()["weight"]; got != 2 {
 		t.Errorf("the viewer must hold the new scout's weight 2, holds %d", got)

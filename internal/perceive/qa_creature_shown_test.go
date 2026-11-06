@@ -368,6 +368,10 @@ func qacsWhole(a *vttv1.Actor) *vttv1.Actor {
 	return c
 }
 
+func qacsUnseen(a *vttv1.Actor) *vttv1.Actor {
+	return &vttv1.Actor{ActorId: a.GetActorId(), Name: a.GetName(), ModuleId: a.GetModuleId(), Kind: a.GetKind()}
+}
+
 func qacsSorted(in []string) []string {
 	out := append([]string(nil), in...)
 	sort.Strings(out)
@@ -457,8 +461,8 @@ func TestQACSACreatureIsIntroducedByItsIdModuleAndKindWithItsGrantsAndConditions
 	v.noSecrets(qacsSecrets)
 }
 
-// VTT-485
-func TestQACSAPartyMemberIsIntroducedWhole(t *testing.T) {
+// VTT-657 VTT-658
+func TestQACSAPartyMemberIsIntroducedWholeOnlyInSight(t *testing.T) {
 	v := qacsTable(t)
 	for _, id := range []string{qacsHero, qacsFriend} {
 		idx := -1
@@ -470,12 +474,15 @@ func TestQACSAPartyMemberIsIntroducedWhole(t *testing.T) {
 			}
 		}
 		if idx < 0 {
-			t.Fatalf("VTT-485: %s never introduced", id)
+			t.Fatalf("VTT-657 VTT-658: %s never introduced", id)
 		}
 		got := frames[idx].GetActorAdded().GetActor()
-		want := qacsWhole(v.world.Actors[id])
+		label, want := "VTT-657", qacsWhole(v.world.Actors[id])
+		if id == qacsFriend {
+			label, want = "VTT-658", qacsUnseen(v.world.Actors[id])
+		}
 		if !proto.Equal(got, want) {
-			t.Errorf("VTT-485: %s introduced as\n  %v\nwant\n  %v", id, got, want)
+			t.Errorf("%s: %s introduced as\n  %v\nwant\n  %v", label, id, got, want)
 		}
 	}
 }
@@ -759,7 +766,7 @@ func TestQACSAPartyMemberMadeNonPartyInSightIsHeldWithoutItsStatblock(t *testing
 	}
 }
 
-// VTT-481 VTT-471
+// VTT-481 VTT-660
 func TestQACSAKindChangeOutOfSightWaitsUntilTheActorComesIntoSight(t *testing.T) {
 	v := qacsTable(t)
 	v.move(qacsBeastTok, 5, 0)
@@ -768,9 +775,9 @@ func TestQACSAKindChangeOutOfSightWaitsUntilTheActorComesIntoSight(t *testing.T)
 		t.Errorf("VTT-481: the creature made a party member out of sight arrived at once: %v", frames)
 	}
 	held := v.shown.Actors[qacsBeast]
-	qacsHasNoStatblock(t, "VTT-471", held)
+	qacsHasNoStatblock(t, "VTT-660", held)
 	if held.GetKind() != vttv1.ActorKind_ACTOR_KIND_NON_PARTY || !qacsSame(held.GetControllerIds(), []string{"p-agent", "p-zed"}) {
-		t.Errorf("VTT-471: the unseen creature is held as %v", held)
+		t.Errorf("VTT-660: the unseen creature is held as %v", held)
 	}
 	v.step(qacsPool(qacsBeast, "grit", -1, 3))
 	frames = v.move(qacsBeastTok, 2, 0)
@@ -779,13 +786,15 @@ func TestQACSAKindChangeOutOfSightWaitsUntilTheActorComesIntoSight(t *testing.T)
 		t.Errorf("VTT-469: a party member coming into sight holds grit %d, want 3", got)
 	}
 
+	v.move(qacsFriendTok, 0, 0)
+	v.move(qacsFriendTok, 5, 1)
 	frames = v.step(qacsGrant(qacsFriend, "p-bram", vttv1.ActorKind_ACTOR_KIND_NON_PARTY))
 	if bad := append(qacsFind(frames, qacsAddedOf(qacsFriend)), qacsFind(frames, qacsRemovedOf(qacsFriend))...); len(bad) != 0 {
 		t.Errorf("VTT-481: the party member made non-party out of sight was re-sent at once: %v", frames)
 	}
 	if b := v.shown.Actors[qacsFriend]; b.GetName() != "Bram Holt" || b.GetKind() != vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER ||
 		b.GetResources()["vigor"].GetCurrent() != 9 {
-		t.Errorf("VTT-471: the unseen party member is not held as at its introduction: %v", b)
+		t.Errorf("VTT-660: the unseen party member is not held as last seen: %v", b)
 	}
 	frames = v.move(qacsFriendTok, 0, 1)
 	qacsCheckReintroduced(t, "VTT-481", frames, v.seq, qacsFriend, qacsFriendTok, qacsStripped(v.world.Actors[qacsFriend]))
@@ -804,7 +813,7 @@ func qacsEnvelopeIsBare(t *testing.T, label string, f *vttv1.Envelope) {
 	}
 }
 
-// VTT-471 VTT-469 VTT-249
+// VTT-660 VTT-469 VTT-249
 func TestQACSAnUnseenCreatureIsHeldAsLastSeenAndBroughtToItsPresentOnSight(t *testing.T) {
 	v := qacsTable(t)
 	v.move(qacsBeastTok, 5, 0)
@@ -822,9 +831,9 @@ func TestQACSAnUnseenCreatureIsHeldAsLastSeenAndBroughtToItsPresentOnSight(t *te
 		if !qacsSame(qacsConds(v.shown, qacsBeast), []string{"prone", "dazed"}) ||
 			!qacsSame(held.GetControllerIds(), []string{"p-agent", "p-zed"}) ||
 			held.GetKind() != vttv1.ActorKind_ACTOR_KIND_NON_PARTY {
-			t.Errorf("VTT-471: the unseen creature is held as %v with %v", held, qacsConds(v.shown, qacsBeast))
+			t.Errorf("VTT-660: the unseen creature is held as %v with %v", held, qacsConds(v.shown, qacsBeast))
 		}
-		qacsHasNoStatblock(t, "VTT-471", held)
+		qacsHasNoStatblock(t, "VTT-660", held)
 	}
 	frames := v.move(qacsBeastTok, 2, 0)
 	if bad := append(qacsFind(frames, qacsAddedOf(qacsBeast)), qacsFind(frames, qacsRemovedOf(qacsBeast))...); len(bad) != 0 {
@@ -855,7 +864,7 @@ func TestQACSAnUnseenCreatureIsHeldAsLastSeenAndBroughtToItsPresentOnSight(t *te
 	v.noSecrets(qacsSecrets)
 }
 
-// VTT-471 VTT-469 VTT-249
+// VTT-660 VTT-469 VTT-249
 func TestQACSAnUnseenPartyMemberIsHeldAtItsResourcesThenAndBroughtToThemOnSight(t *testing.T) {
 	v := qacsTable(t)
 	v.move(qacsFriendTok, 0, 0)
@@ -866,10 +875,10 @@ func TestQACSAnUnseenPartyMemberIsHeldAtItsResourcesThenAndBroughtToThemOnSight(
 	v.step(qacsPool(qacsFriend, "vigor", -4, 5))
 	v.step(qacsCond(qacsFriend, "weary"))
 	if got := v.shown.Actors[qacsFriend].GetResources()["vigor"].GetCurrent(); got != 9 {
-		t.Errorf("VTT-471: unseen Bram is held at vigor %d, want 9", got)
+		t.Errorf("VTT-660: unseen Bram is held at vigor %d, want 9", got)
 	}
 	if len(qacsConds(v.shown, qacsFriend)) != 0 {
-		t.Errorf("VTT-471: unseen Bram is held with %v", qacsConds(v.shown, qacsFriend))
+		t.Errorf("VTT-660: unseen Bram is held with %v", qacsConds(v.shown, qacsFriend))
 	}
 	frames := v.move(qacsFriendTok, 0, 0)
 	is := qacsFind(frames, qacsPoolOf(qacsFriend))
@@ -972,7 +981,7 @@ func TestQACSACreatureAddedAgainWithAnotherModuleIsIntroducedAfresh(t *testing.T
 	v.noSecrets(qacsSecrets)
 }
 
-// VTT-470
+// VTT-470 VTT-659
 func TestQACSAPartyMemberAddedAgainIsIntroducedAfreshOrCorrected(t *testing.T) {
 	v := qacsTable(t)
 	v.move(qacsFriendTok, 0, 0)
@@ -997,8 +1006,8 @@ func TestQACSAPartyMemberAddedAgainIsIntroducedAfreshOrCorrected(t *testing.T) {
 	v.step(qacsAdd(other))
 	addFrames := v.steps[len(v.steps)-1]
 	frames = v.step(qacsPlace("tok-bram-3", qacsFriend, 0, 0, "Bram", "", "", ""))
-	both := append(append([]*vttv1.Envelope{}, addFrames...), frames...)
-	qacsCheckReintroduced(t, "VTT-470", both, 0, qacsFriend, "", qacsWhole(v.world.Actors[qacsFriend]))
+	qacsCheckReintroduced(t, "VTT-470", addFrames, v.seq-1, qacsFriend, "", qacsUnseen(v.world.Actors[qacsFriend]))
+	qacsCheckReintroduced(t, "VTT-659", frames, v.seq, qacsFriend, "tok-bram-3", qacsWhole(v.world.Actors[qacsFriend]))
 	if got := v.shown.Actors[qacsFriend].GetName(); got != "Bram the Second" {
 		t.Errorf("VTT-470: the fold holds %q", got)
 	}

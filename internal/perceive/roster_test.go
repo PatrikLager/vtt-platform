@@ -859,7 +859,7 @@ func TestARemovalBatchProjectsToTheBytesBothFoldsRead(t *testing.T) {
 	}
 }
 
-// VTT-465 VTT-485
+// VTT-465 VTT-657
 func TestACreatureIsIntroducedWithItsIdModuleKindAndConditionsAlone(t *testing.T) {
 	st := creatureWorld()
 	v := newViewer(t, heroEyes())

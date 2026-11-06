@@ -530,7 +530,7 @@ func qaCreatureLine(e campaign.CharacterEntry) string {
 	return fmt.Sprintf("ws=%d %s", e.WorldSeq, b)
 }
 
-// VTT-316 VTT-317 VTT-321
+// VTT-316 VTT-663 VTT-321
 func TestQACreatureGrantOpensTheCreaturesOwnLog(t *testing.T) {
 	tb, _, pID := qaCreatureSetup(t)
 	tb.dm.mustOK(qaCreatureMove(qaCreatureTokGob, 5, 0))
@@ -558,7 +558,7 @@ func TestQACreatureGrantOpensTheCreaturesOwnLog(t *testing.T) {
 	// VTT-321
 	qaCreatureContiguous(t, log, "VTT-321")
 
-	// VTT-317
+	// VTT-663
 	k := -1
 	for i, e := range log {
 		if e.WorldSeq != 0 {
@@ -567,10 +567,10 @@ func TestQACreatureGrantOpensTheCreaturesOwnLog(t *testing.T) {
 		}
 	}
 	if k <= 0 {
-		t.Fatalf("VTT-317: want opening entries before the grant's frames, first caused entry at %d", k)
+		t.Fatalf("VTT-663: want opening entries before the grant's frames, first caused entry at %d", k)
 	}
 	if log[k].WorldSeq != g {
-		t.Errorf("VTT-317: the first caused entry is of world event %d, want the grant %d", log[k].WorldSeq, g)
+		t.Errorf("VTT-663: the first caused entry is of world event %d, want the grant %d", log[k].WorldSeq, g)
 	}
 	earlierIDs := map[string]bool{}
 	for _, e := range world {
@@ -580,22 +580,22 @@ func TestQACreatureGrantOpensTheCreaturesOwnLog(t *testing.T) {
 	}
 	for i, e := range log {
 		if e.WorldSeq != 0 && e.WorldSeq < g {
-			t.Errorf("VTT-317: entry %d forwarded from world event %d, appended before the grant", i, e.WorldSeq)
+			t.Errorf("VTT-663: entry %d forwarded from world event %d, appended before the grant", i, e.WorldSeq)
 		}
 		if id := e.Env.GetEventId(); id != "" && earlierIDs[id] {
-			t.Errorf("VTT-317: entry %d carries the id of an event appended before the grant: %s", i, qaCreatureLine(e))
+			t.Errorf("VTT-663: entry %d carries the id of an event appended before the grant: %s", i, qaCreatureLine(e))
 		}
 	}
 	opening := log[:k]
 	ss := opening[0].Env.GetSessionStarted()
 	if ss == nil || ss.GetName() != qaCreatureOpenName || opening[0].Env.GetSessionId() != tb.sessID {
-		t.Errorf("VTT-317: the opening's first entry is %s, want SessionStarted %q of session %s", qaCreatureLine(opening[0]), qaCreatureOpenName, tb.sessID)
+		t.Errorf("VTT-663: the opening's first entry is %s, want SessionStarted %q of session %s", qaCreatureLine(opening[0]), qaCreatureOpenName, tb.sessID)
 	}
 	var noteKeys []string
 	heroIntroduced := false
 	for i, e := range opening {
 		if i > 0 && (e.Env.GetSessionStarted() != nil || e.Env.GetSessionEnded() != nil) {
-			t.Errorf("VTT-317: the opening holds a second session entry: %s", qaCreatureLine(e))
+			t.Errorf("VTT-663: the opening holds a second session entry: %s", qaCreatureLine(e))
 		}
 		if n := e.Env.GetNoteUpserted(); n != nil {
 			noteKeys = append(noteKeys, n.GetKey())
@@ -605,22 +605,22 @@ func TestQACreatureGrantOpensTheCreaturesOwnLog(t *testing.T) {
 			case qaCreatureHero:
 				heroIntroduced = true
 			case qaCreatureGoblin:
-				t.Errorf("VTT-317: the opening introduces the goblin, which was not of the party before the grant: %s", qaCreatureLine(e))
+				t.Errorf("VTT-663: the opening introduces the goblin, which was not of the party before the grant: %s", qaCreatureLine(e))
 			}
 		}
 	}
 	if !heroIntroduced {
-		t.Errorf("VTT-317: the opening does not introduce the party's hero")
+		t.Errorf("VTT-663: the opening does not introduce the party's hero")
 	}
 	if fmt.Sprint(noteKeys) != fmt.Sprint([]string{"qa-a-lore", "qa-b-lore"}) {
-		t.Errorf("VTT-317: the opening's public notes are %q, want [qa-a-lore qa-b-lore]", noteKeys)
+		t.Errorf("VTT-663: the opening's public notes are %q, want [qa-a-lore qa-b-lore]", noteKeys)
 	}
 	for _, e := range log {
 		if n := e.Env.GetNoteUpserted(); n != nil && (n.GetKey() == "qa-secret" || n.GetKey() == "qa-c-gone") {
-			t.Errorf("VTT-317: the log holds note %q, which was not a public note before the grant", n.GetKey())
+			t.Errorf("VTT-663: the log holds note %q, which was not a public note before the grant", n.GetKey())
 		}
 		if e.Env.GetSessionStarted() != nil && e.Env.GetSessionStarted().GetName() == "S1" {
-			t.Errorf("VTT-317: the log holds the ended session S1")
+			t.Errorf("VTT-663: the log holds the ended session S1")
 		}
 	}
 

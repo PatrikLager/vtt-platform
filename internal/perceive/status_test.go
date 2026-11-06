@@ -220,7 +220,7 @@ func correctionFrames(t *testing.T, out []*vttv1.Envelope, actorID string) []*vt
 	return fix
 }
 
-// VTT-469 VTT-249 VTT-471
+// VTT-469 VTT-249 VTT-660
 func TestDamageTakenOutOfSightArrivesWhenTheEyeWalksIn(t *testing.T) {
 	steps := testimonyLog(
 		rogueLeaves,
@@ -251,7 +251,7 @@ func TestDamageTakenOutOfSightArrivesWhenTheEyeWalksIn(t *testing.T) {
 	}
 }
 
-// VTT-469 VTT-471 VTT-481
+// VTT-469 VTT-660 VTT-481
 func TestAKindChangedOutOfSightIsBroughtToItsPresentOnSight(t *testing.T) {
 	charm := &vttv1.ActorControlGranted{ActorId: "goblin", ParticipantId: "p-3",
 		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}
@@ -296,13 +296,14 @@ func TestAResourceStartedBelowZeroIsCorrectedOnSight(t *testing.T) {
 			Kind:      vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
 			Resources: map[string]*vttv1.Resource{"pool": {Current: math.MinInt32}}}},
 		&vttv1.TokenPlaced{TokenId: "t-wraith", SceneId: "s", ActorId: "wraith",
-			Position: &vttv1.GridPosition{X: 5, Y: 1}},
+			Position: &vttv1.GridPosition{X: 2, Y: 1}},
+		&vttv1.TokenMoved{TokenId: "t-wraith", SceneId: "s", To: &vttv1.GridPosition{X: 5, Y: 1}},
 		&vttv1.ResourceChanged{ActorId: "wraith", Resource: "pool", Delta: 1, NewValue: 0},
 		&vttv1.ResourceChanged{ActorId: "wraith", Resource: "pool", Delta: math.MaxInt32, NewValue: math.MaxInt32},
 		&vttv1.DoorOpened{SceneId: "s", At: testimonyDoor},
 	))
 	viewer := foldSteps(t, frames)
-	fix := correctionFrames(t, frames[14], "wraith")
+	fix := correctionFrames(t, frames[15], "wraith")
 	if len(fix) != 2 {
 		t.Fatalf("seeing the wraith sent %v, want two frames through zero", fix)
 	}
@@ -359,13 +360,14 @@ func TestADifferenceOfExactlyMaxInt32IsOneCorrection(t *testing.T) {
 			Kind:      vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
 			Resources: map[string]*vttv1.Resource{"pool": {Current: -1}}}},
 		&vttv1.TokenPlaced{TokenId: "t-wraith", SceneId: "s", ActorId: "wraith",
-			Position: &vttv1.GridPosition{X: 5, Y: 1}},
+			Position: &vttv1.GridPosition{X: 2, Y: 1}},
+		&vttv1.TokenMoved{TokenId: "t-wraith", SceneId: "s", To: &vttv1.GridPosition{X: 5, Y: 1}},
 		&vttv1.ResourceChanged{ActorId: "wraith", Resource: "pool", Delta: 1, NewValue: 0},
 		&vttv1.ResourceChanged{ActorId: "wraith", Resource: "pool", Delta: math.MaxInt32 - 1, NewValue: math.MaxInt32 - 1},
 		&vttv1.DoorOpened{SceneId: "s", At: testimonyDoor},
 	))
 	foldSteps(t, frames)
-	fix := correctionFrames(t, frames[14], "wraith")
+	fix := correctionFrames(t, frames[15], "wraith")
 	if len(fix) != 1 || fix[0].GetResourceChanged().GetDelta() != math.MaxInt32 {
 		t.Errorf("a difference of exactly MaxInt32 arrived as %v, want one frame carrying it", fix)
 	}
@@ -429,10 +431,16 @@ func TestARemovedActorWhoseIdNeverReturnsStaysInTheFold(t *testing.T) {
 		&vttv1.ConditionApplied{ActorId: "hero", ConditionId: "relieved"},
 	))
 	viewer := foldSteps(t, frames)
+	const firstSight, removal = 8, 12
 	for i, batch := range frames {
-		for _, e := range batch {
-			if e.GetActorRemoved().GetActorId() == "rogue" {
+		for j, e := range batch {
+			if e.GetActorRemoved().GetActorId() != "rogue" {
+				continue
+			}
+			if i >= removal {
 				t.Errorf("step %d sent the player a removal of the rogue, whose id never returned: %v", i, e)
+			} else if i != firstSight || e.GetEventId() != "" || j+1 == len(batch) || batch[j+1].GetActorAdded().GetActor().GetActorId() != "rogue" {
+				t.Errorf("step %d sent the player a removal of the rogue other than the bare one directly before its introduction at its first sight: %v", i, batch)
 			}
 		}
 	}

@@ -172,7 +172,7 @@ func TestANonPartyActorHasNoLog(t *testing.T) {
 	}
 }
 
-// VTT-317 VTT-372
+// VTT-663 VTT-372
 func TestALateLogOpensWithThePresent(t *testing.T) {
 	c := openTemp(t)
 	must(t, c, cenv(nextID(), &vttv1.SessionStarted{Name: "Night one"}))
@@ -208,7 +208,7 @@ func TestALateLogOpensWithThePresent(t *testing.T) {
 	assertFoldsAtEveryPrefix(t, "asme's log", got)
 }
 
-// VTT-317
+// VTT-663
 func TestALogOpensWhenAGrantMakesAPartyMember(t *testing.T) {
 	c := openTemp(t)
 	hallWithHero(t, c, 2)
@@ -229,7 +229,7 @@ func TestALogOpensWhenAGrantMakesAPartyMember(t *testing.T) {
 	assertFoldsAtEveryPrefix(t, "the goblin's log", got)
 }
 
-// VTT-317
+// VTT-663
 func TestALogOpensForAPartyMemberThatHadNone(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "campaign")
 	if err := campaign.EnsureDir(dir); err != nil {
@@ -402,7 +402,7 @@ func TestAReopenAfterADropDoesNotRepeatIt(t *testing.T) {
 	assertTheGoblinArrives(t, openAt(t, dir), hero, 0)
 }
 
-// VTT-317
+// VTT-663
 func TestALogOpeningMidBatchIsTheWorldBeforeItsEvent(t *testing.T) {
 	c := openTemp(t)
 	must(t, c, cenv(nextID(), partyMember("bard")))

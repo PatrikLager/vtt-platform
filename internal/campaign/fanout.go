@@ -247,8 +247,8 @@ func appendEntries(entries []store.Entry, id string, cause int, frames []*vttv1.
 	return entries
 }
 
-// opening is the present as before holds it: the open session, the party and
-// the public notes (VTT-317).
+// opening is what before holds of the open session, the public notes and the
+// party, each party member introduced unseen (VTT-663).
 func opening(before *engine.State) []*vttv1.Envelope {
 	var out []*vttv1.Envelope
 	if s, ok := openSession(before); ok {

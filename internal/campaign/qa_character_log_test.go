@@ -639,7 +639,7 @@ func TestQALogAnEventReachesALogOnlyWhileItsActorIsAPartyMember(t *testing.T) {
 
 	tb.add(g.e("pg", qaLogGrant("p", "alice", qaLogParty)))
 	if len(tb.log("p")) == 0 {
-		t.Fatalf("VTT-317: the grant made p a party member and its log did not open")
+		t.Fatalf("VTT-663: the grant made p a party member and its log did not open")
 	}
 	tb.add(g.e("n1", qaLogNarrate("qalog while a party member")))
 	if i := qaLogIndex(tb.log("p"), qaLogEvent("qalog-n1")); i < 0 {
@@ -690,7 +690,7 @@ func TestQALogAnEventReachesALogOnlyWhileItsActorIsAPartyMember(t *testing.T) {
 
 	tb.add(g.e("s", qaLogActor("s", qaLogNonParty)), g.e("sg", qaLogGrant("s", "erin", qaLogParty)))
 	if len(tb.log("s")) == 0 {
-		t.Errorf("VTT-317: the grant made s a party member and its log did not open")
+		t.Errorf("VTT-663: the grant made s a party member and its log did not open")
 	}
 	for _, e := range tb.log("s") {
 		if e.WorldSeq == tb.seqOf("qalog-s") {
@@ -702,17 +702,17 @@ func TestQALogAnEventReachesALogOnlyWhileItsActorIsAPartyMember(t *testing.T) {
 func qaLogCheckOpening(t *testing.T, log []campaign.CharacterEntry, sid, name string) {
 	t.Helper()
 	if len(log) == 0 {
-		t.Fatalf("VTT-317: the log did not open")
+		t.Fatalf("VTT-663: the log did not open")
 	}
 	first := log[0].Env
 	if first.GetSessionStarted() == nil {
-		t.Fatalf("VTT-317: the log does not open with the open session's SessionStarted\n%s", qaLogDescribe(log))
+		t.Fatalf("VTT-663: the log does not open with the open session's SessionStarted\n%s", qaLogDescribe(log))
 	}
 	if first.GetSessionId() != sid {
-		t.Errorf("VTT-317: the opening's SessionStarted carries session %q, the open session is %q", first.GetSessionId(), sid)
+		t.Errorf("VTT-663: the opening's SessionStarted carries session %q, the open session is %q", first.GetSessionId(), sid)
 	}
 	if first.GetSessionStarted().GetName() != name {
-		t.Errorf("VTT-317: the opening's SessionStarted is named %q, the open session is %q", first.GetSessionStarted().GetName(), name)
+		t.Errorf("VTT-663: the opening's SessionStarted is named %q, the open session is %q", first.GetSessionStarted().GetName(), name)
 	}
 	if first.GetEventId() != "" || first.GetOccurredAt() != nil {
 		t.Errorf("ruling: the opening's SessionStarted is synthesized and carries an event id or a time: %s", qaLogLine(log[0]))
@@ -723,7 +723,7 @@ func qaLogNothingFrom(t *testing.T, log []campaign.CharacterEntry, earlier []*vt
 	t.Helper()
 	for _, w := range earlier {
 		if i := qaLogIndex(log, qaLogEvent(w.GetEventId())); i >= 0 {
-			t.Errorf("VTT-317: the log holds entry %s forwarded from an event appended before it opened", qaLogLine(log[i]))
+			t.Errorf("VTT-663: the log holds entry %s forwarded from an event appended before it opened", qaLogLine(log[i]))
 		}
 	}
 	for _, e := range log {
@@ -733,8 +733,34 @@ func qaLogNothingFrom(t *testing.T, log []campaign.CharacterEntry, earlier []*vt
 	}
 }
 
-// TestQALogALateLogOpensWithThePresent pins VTT-317.
-// VTT-317
+func qaLogOpensUnseen(t *testing.T, log []campaign.CharacterEntry, id string) {
+	t.Helper()
+	i := qaLogIndex(log, qaLogAdds(id))
+	if i < 0 || log[i].WorldSeq != 0 {
+		t.Fatalf("VTT-663: the opening does not introduce %q\n%s", id, qaLogDescribe(log))
+	}
+	want := &vttv1.Actor{ActorId: id, Name: "qalog " + id, Kind: qaLogParty}
+	if a := log[i].Env.GetActorAdded().GetActor(); !proto.Equal(a, want) {
+		t.Errorf("VTT-663: the opening introduces %q as %v, want %v", id, a, want)
+	}
+}
+
+func qaLogHoldsItsOwnPool(t *testing.T, log []campaign.CharacterEntry, id string, pool int32) {
+	t.Helper()
+	i := qaLogIndex(log, func(env *vttv1.Envelope) bool {
+		a := env.GetActorAdded().GetActor()
+		return a.GetActorId() == id && len(a.GetResources()) > 0
+	})
+	if i < 0 || log[i].WorldSeq == 0 {
+		t.Errorf("VTT-657: %q's own log is not introduced to %q whole in an event's frames\n%s", id, id, qaLogDescribe(log))
+	}
+	if got := qaLogFold(t, log).Actors[id].GetResources()["pool"].GetCurrent(); got != pool {
+		t.Errorf("VTT-657: %q's own log holds its pool at %d, the world at %d", id, got, pool)
+	}
+}
+
+// TestQALogALateLogOpensWithThePresent pins VTT-663 and VTT-657.
+// VTT-663 VTT-657
 func TestQALogALateLogOpensWithThePresent(t *testing.T) {
 	tb := qaLogNew(t, "p", "q", "x")
 	g := &qaLogGen{}
@@ -772,28 +798,33 @@ func TestQALogALateLogOpensWithThePresent(t *testing.T) {
 	party := qaLogIndex(log, qaLogAdds("q"))
 	note := qaLogIndex(log, qaLogNotes("pub"))
 	if party < 0 || note < 0 {
-		t.Fatalf("VTT-317: the opening lacks the party (q at %d) or the public note (pub at %d)\n%s", party, note, qaLogDescribe(log))
+		t.Fatalf("VTT-663: the opening lacks the party (q at %d) or the public note (pub at %d)\n%s", party, note, qaLogDescribe(log))
 	}
 	if self >= 0 && (party > self || note > self) {
-		t.Errorf("VTT-317: the opening is not before the event's frames: p's own ActorAdded is entry %d, q's %d, the note %d\n%s", self+1, party+1, note+1, qaLogDescribe(log))
+		t.Errorf("VTT-663: the opening is not before the event's frames: p's own ActorAdded is entry %d, q's %d, the note %d\n%s", self+1, party+1, note+1, qaLogDescribe(log))
 	}
 	for _, key := range []string{"sec", "uns", "gone", "hid"} {
 		if i := qaLogIndex(log, qaLogNotes(key)); i >= 0 {
-			t.Errorf("VTT-317: the opening holds note %q, which is not public: %s", key, qaLogLine(log[i]))
+			t.Errorf("VTT-663: the opening holds note %q, which is not public: %s", key, qaLogLine(log[i]))
 		}
 	}
 	held := qaLogFold(t, log)
 	if s, ok := qaLogOpenSession(held); !ok || s.ID != sid || len(held.Sessions) != 1 {
-		t.Errorf("VTT-317: the opened log holds sessions %+v, the present is %s open", held.Sessions, sid)
+		t.Errorf("VTT-663: the opened log holds sessions %+v, the present is %s open", held.Sessions, sid)
 	}
 	if n, ok := held.Notes["pub"]; !ok || n.Text != "new text" || len(held.Notes) != 1 {
-		t.Errorf("VTT-317: the opened log holds notes %+v, the present is pub=new text", held.Notes)
+		t.Errorf("VTT-663: the opened log holds notes %+v, the present is pub=new text", held.Notes)
 	}
-	if a, ok := held.Actors["q"]; !ok || a.GetResources()["pool"].GetCurrent() != 6 {
-		t.Errorf("VTT-317: the opened log holds q as %v, the world holds its pool at 6", a)
+	qaLogOpensUnseen(t, log, "q")
+	if a, ok := held.Actors["q"]; !ok || len(a.GetResources()) != 0 {
+		t.Errorf("VTT-663: the opened log holds q as %v, which p never saw", a)
 	}
+	if got := held.Actors["q"].GetControllerIds(); len(got) != 1 || got[0] != "bob" {
+		t.Errorf("VTT-663: the opened log holds q's controllers %v, the present is [bob]", got)
+	}
+	qaLogHoldsItsOwnPool(t, tb.log("q"), "q", 6)
 	if _, ok := held.Actors["x"]; ok {
-		t.Errorf("VTT-317: the opening introduces x, which is neither in the party nor in p's sight")
+		t.Errorf("VTT-663: the opening introduces x, which is neither in the party nor in p's sight")
 	}
 
 	tb.add(g.e("new", qaLogNarrate("qalog-new")))
@@ -803,12 +834,12 @@ func TestQALogALateLogOpensWithThePresent(t *testing.T) {
 	tb.add(g.end("end2"))
 	held = qaLogFold(t, tb.log("p"))
 	if _, ok := qaLogOpenSession(held); ok {
-		t.Errorf("VTT-317: the session open at the opening is still open in p's log after it ended\n%s", qaLogDescribe(tb.log("p")))
+		t.Errorf("VTT-663: the session open at the opening is still open in p's log after it ended\n%s", qaLogDescribe(tb.log("p")))
 	}
 }
 
-// TestQALogALateLogOpensWithoutASessionWhenNoneIsOpen pins VTT-317.
-// VTT-317
+// TestQALogALateLogOpensWithoutASessionWhenNoneIsOpen pins VTT-663.
+// VTT-663
 func TestQALogALateLogOpensWithoutASessionWhenNoneIsOpen(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -826,15 +857,15 @@ func TestQALogALateLogOpensWithoutASessionWhenNoneIsOpen(t *testing.T) {
 			tb.add(g.e("p", qaLogActor("p", qaLogParty)))
 			log := tb.log("p")
 			if len(log) == 0 {
-				t.Fatalf("VTT-317: the log did not open")
+				t.Fatalf("VTT-663: the log did not open")
 			}
 			for _, e := range log {
 				if e.Env.GetSessionStarted() != nil || e.Env.GetSessionEnded() != nil {
-					t.Errorf("VTT-317: no session is open, and the opening holds %s", qaLogLine(e))
+					t.Errorf("VTT-663: no session is open, and the opening holds %s", qaLogLine(e))
 				}
 			}
 			if qaLogIndex(log, qaLogNotes("pub")) < 0 {
-				t.Errorf("VTT-317: the opening lacks the public note\n%s", qaLogDescribe(log))
+				t.Errorf("VTT-663: the opening lacks the public note\n%s", qaLogDescribe(log))
 			}
 			tb.add(g.start("s2", "qalog-s2", "second"))
 			tb.add(g.end("end2"))
@@ -845,8 +876,8 @@ func TestQALogALateLogOpensWithoutASessionWhenNoneIsOpen(t *testing.T) {
 	}
 }
 
-// TestQALogALogOpensWhenAGrantMakesAPartyMember pins VTT-317 and VTT-316.
-// VTT-317 VTT-316
+// TestQALogALogOpensWhenAGrantMakesAPartyMember pins VTT-663 and VTT-316.
+// VTT-663 VTT-316
 func TestQALogALogOpensWhenAGrantMakesAPartyMember(t *testing.T) {
 	tb := qaLogNew(t, "p", "q", "x")
 	g := &qaLogGen{}
@@ -880,20 +911,20 @@ func TestQALogALogOpensWhenAGrantMakesAPartyMember(t *testing.T) {
 	grant := tb.seqOf("qalog-pg")
 	for _, e := range log {
 		if e.WorldSeq != 0 && e.WorldSeq != grant {
-			t.Errorf("VTT-317: the log opens at the grant (world %d) and holds %s", grant, qaLogLine(e))
+			t.Errorf("VTT-663: the log opens at the grant (world %d) and holds %s", grant, qaLogLine(e))
 		}
 	}
 	party := qaLogIndex(log, qaLogAdds("q"))
 	note := qaLogIndex(log, qaLogNotes("pub"))
 	self := qaLogIndex(log, qaLogAdds("p"))
 	if party < 0 || note < 0 {
-		t.Fatalf("VTT-317: the opening lacks the party (q at %d) or the public note (pub at %d)\n%s", party, note, qaLogDescribe(log))
+		t.Fatalf("VTT-663: the opening lacks the party (q at %d) or the public note (pub at %d)\n%s", party, note, qaLogDescribe(log))
 	}
 	if self >= 0 && (party > self || note > self) {
-		t.Errorf("VTT-317: p was not a party member before the grant, yet the opening's party includes it\n%s", qaLogDescribe(log))
+		t.Errorf("VTT-663: p was not a party member before the grant, yet the opening's party includes it\n%s", qaLogDescribe(log))
 	}
 	if qaLogIndex(log, qaLogNotes("sec")) >= 0 {
-		t.Errorf("VTT-317: the opening holds the secret note\n%s", qaLogDescribe(log))
+		t.Errorf("VTT-663: the opening holds the secret note\n%s", qaLogDescribe(log))
 	}
 	held := qaLogFold(t, log)
 	if a, ok := held.Actors["p"]; !ok || a.GetKind() != qaLogParty {
@@ -901,8 +932,8 @@ func TestQALogALogOpensWhenAGrantMakesAPartyMember(t *testing.T) {
 	}
 }
 
-// TestQALogALogOpensForAPartyMemberThatHadNone pins VTT-317 and VTT-324.
-// VTT-317 VTT-324
+// TestQALogALogOpensForAPartyMemberThatHadNone pins VTT-663, VTT-657 and VTT-324.
+// VTT-663 VTT-657 VTT-324
 func TestQALogALogOpensForAPartyMemberThatHadNone(t *testing.T) {
 	dir := t.TempDir()
 	if err := campaign.EnsureDir(dir); err != nil {
@@ -945,14 +976,19 @@ func TestQALogALogOpensForAPartyMemberThatHadNone(t *testing.T) {
 		held := qaLogFold(t, log)
 		for _, a := range []string{"p", "q"} {
 			if !qaLogIsParty(held, a) {
-				t.Errorf("VTT-317: %q's opening lacks party member %q\n%s", id, a, qaLogDescribe(log))
+				t.Errorf("VTT-663: %q's opening lacks party member %q\n%s", id, a, qaLogDescribe(log))
 			}
 		}
-		if held.Actors["q"].GetResources()["pool"].GetCurrent() != 7 {
-			t.Errorf("VTT-317: %q's opening holds q's pool at %d, the world at 7", id, held.Actors["q"].GetResources()["pool"].GetCurrent())
+		if id == "p" {
+			qaLogOpensUnseen(t, log, "q")
+			if n := len(held.Actors["q"].GetResources()); n != 0 {
+				t.Errorf("VTT-663: p's log holds %d of the resources of q, which p never saw", n)
+			}
+		} else {
+			qaLogHoldsItsOwnPool(t, log, "q", 7)
 		}
 		if _, ok := held.Notes["pub"]; !ok || len(held.Notes) != 1 {
-			t.Errorf("VTT-317: %q's opening holds notes %+v, the public notes are {pub}", id, held.Notes)
+			t.Errorf("VTT-663: %q's opening holds notes %+v, the public notes are {pub}", id, held.Notes)
 		}
 		if last := log[len(log)-1].Env; last.GetEventId() != "qalog-next" {
 			t.Errorf("the event that opened %q's log is not its last entry\n%s", id, qaLogDescribe(log))
@@ -1155,8 +1191,8 @@ func TestQALogAFailedFanOutDoesNotAdvanceACharactersMemory(t *testing.T) {
 	}
 }
 
-// TestQALogAFailedOpeningLeavesTheLogToOpenAgain pins VTT-325 and VTT-317.
-// VTT-325 VTT-317
+// TestQALogAFailedOpeningLeavesTheLogToOpenAgain pins VTT-325 and VTT-663.
+// VTT-325 VTT-663
 func TestQALogAFailedOpeningLeavesTheLogToOpenAgain(t *testing.T) {
 	watch := []string{"p", "q", "late"}
 	control := qaLogNew(t, watch...)

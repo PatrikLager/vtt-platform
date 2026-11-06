@@ -574,7 +574,7 @@ func TestQAPauseRevocationAndAKindlessGrantDoNotPause(t *testing.T) {
 	qaPauseFoldAll(t, w.log(qaPauseEye))
 }
 
-// VTT-317 against VTT-318: the opening carries the open session and the public
+// VTT-663 against VTT-318: the opening carries the open session and the public
 // notes; the resume carries neither, and hides every token the board holds.
 // VTT-318
 func TestQAPauseTheResumeIsNotASecondOpening(t *testing.T) {

@@ -332,7 +332,7 @@ func TestQACSAKindChangeInSightRewritesTheCreatureInAPlayersLog(t *testing.T) {
 		t.Errorf("VTT-468: the creature's token is not on the log's board after the grant")
 	}
 	if len(q.log(qacsBeast)) == 0 {
-		t.Errorf("VTT-317: the creature made a party member has no log of its own")
+		t.Errorf("VTT-663: the creature made a party member has no log of its own")
 	}
 	own := len(q.log(qacsBeast))
 	before := len(q.log(qacsHero))

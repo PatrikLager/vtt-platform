@@ -59,7 +59,7 @@ type Projection struct {
 	// Withdraw a gone actor only before its id is introduced again: a bare
 	// ActorRemoved at any other time reports a removal the viewer did not see.
 	gone map[string]bool
-	// Re-introduce a reshaped actor only in sight: unseen, it waits (VTT-481).
+	// Re-introduce a reshaped actor only in sight: unseen, it waits (VTT-481, VTT-659).
 	reshaped map[string]bool
 }
 
@@ -163,10 +163,10 @@ func (pr *Projection) recall(shown, st *engine.State) {
 	for id, a := range shown.Actors {
 		pr.actors[id] = true
 		pr.belief[id] = beliefOf(a, shown.Conditions[id])
-		// Mark gone the actor the world added again as another: the viewer never
-		// saw it removed, so it is withdrawn before it is introduced (VTT-470).
+		// Mark gone only an actor matching neither the world's as its held kind shows
+		// it nor unseenAs: the world added it again as another (VTT-470, VTT-661).
 		if w, ok := st.Actors[id]; ok {
-			if !sameIncarnation(a, shownWith(w, engine.IsPartyMember(a))) {
+			if !sameIncarnation(a, shownWith(w, engine.IsPartyMember(a))) && !sameIncarnation(a, unseenAs(w)) {
 				pr.gone[id] = true
 			} else if !sameIncarnation(a, shownAs(w)) {
 				pr.reshaped[id] = true
@@ -213,9 +213,17 @@ func sameIncarnation(a, b *vttv1.Actor) bool {
 	return true
 }
 
-// shownAs is what a character log may hold of a: a party member whole, any
-// other actor its id, module, kind and controllers alone (VTT-465).
+// shownAs is what a log may hold of a once seen: a party member whole,
+// any other actor its id, module, kind and controllers alone (VTT-465, VTT-657).
 func shownAs(a *vttv1.Actor) *vttv1.Actor { return shownWith(a, engine.IsPartyMember(a)) }
+
+// unseenAs is what a log may hold of a party member its eyes never saw (VTT-658).
+// Never introduce a creature in this form: it keeps the name VTT-465 withholds.
+func unseenAs(a *vttv1.Actor) *vttv1.Actor {
+	u := shownWith(a, false)
+	u.Name = a.GetName()
+	return u
+}
 
 func shownWith(a *vttv1.Actor, whole bool) *vttv1.Actor {
 	if whole {
@@ -373,7 +381,7 @@ func (pr *Projection) transitions(cause *vttv1.Envelope, seq int64, now sightVie
 			out = append(out, pr.withdraw(id, seq))
 		}
 		if !pr.actors[id] {
-			out = append(out, pr.introduce(id, seq, a, st)...)
+			out = append(out, pr.introduce(id, seq, a, now.sees[id], st)...)
 			continue
 		}
 		if now.sees[id] && !pr.sighted[id] {
@@ -749,11 +757,15 @@ func (pr *Projection) noteTransitions(seq int64, st *engine.State) []*vttv1.Enve
 	return out
 }
 
-// introduce sends the viewer an actor it does not hold, with its controllers
-// as grants and its conditions behind it (SPEC-016).
-func (pr *Projection) introduce(id string, seq int64, a *vttv1.Actor, st *engine.State) []*vttv1.Envelope {
+// introduce sends the viewer an actor it does not hold, shownAs's form if seen
+// and unseenAs's if not, its controllers as grants behind it (VTT-657, VTT-658).
+func (pr *Projection) introduce(id string, seq int64, a *vttv1.Actor, seen bool, st *engine.State) []*vttv1.Envelope {
+	held := shownAs(a)
+	if !seen {
+		held = unseenAs(a)
+	}
 	// Clone the actor: st.Actors holds live pointers a later grant mutates.
-	clone := proto.Clone(shownAs(a)).(*vttv1.Actor)
+	clone := proto.Clone(held).(*vttv1.Actor)
 
 	// Clear the controllers from the introduction, since both folds refuse an
 	// ActorAdded that names one, and send each behind it as a grant stating the
@@ -768,12 +780,14 @@ func (pr *Projection) introduce(id string, seq int64, a *vttv1.Actor, st *engine
 			Payload: &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
 				ActorId: id, ParticipantId: cid, Kind: a.GetKind()}}})
 	}
-	// Send its conditions behind it, since the Actor does not carry them, and
-	// without their source (VTT-249).
-	for _, c := range st.Conditions[id] {
-		out = append(out, &vttv1.Envelope{Sequence: seq,
-			Payload: &vttv1.Envelope_ConditionApplied{ConditionApplied: &vttv1.ConditionApplied{
-				ActorId: id, ConditionId: c.ID}}})
+	// Send its conditions behind it only when seen (VTT-658), since the Actor
+	// does not carry them, and without their source (VTT-249).
+	if seen {
+		for _, c := range st.Conditions[id] {
+			out = append(out, &vttv1.Envelope{Sequence: seq,
+				Payload: &vttv1.Envelope_ConditionApplied{ConditionApplied: &vttv1.ConditionApplied{
+					ActorId: id, ConditionId: c.ID}}})
+		}
 	}
 	pr.actors[id] = true
 	return out
@@ -836,7 +850,7 @@ func (pr *Projection) correct(id string, seq int64, a *vttv1.Actor, st *engine.S
 	if !ok {
 		// Re-introduce what no grant can carry.
 		out := append(pr.hideTokensOf(id, seq), pr.withdraw(id, seq))
-		return append(out, pr.introduce(id, seq, a, st)...)
+		return append(out, pr.introduce(id, seq, a, true, st)...)
 	}
 	return fix
 }
