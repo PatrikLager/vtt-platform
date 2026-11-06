@@ -636,6 +636,38 @@ sentinel; the three directives stay, by the owner's ruling, each with a
 warning that only forced true is equivalent, and only while the element is
 empty, and that the directive hides forced false too. Recipe: none; the defect was prose.
 
+## 2026-11-06 — a wedged player's padding stopped reaching its log
+
+**`TestAWedgedWatcherIsTornDownAndOthersKeepServing` in
+`internal/gateway/seat_internal_test.go` wedged its player by adding party
+members whose module data was far larger than its shrunken socket buffers.**
+Since `5534066` a character log is introduced to a party member its eyes do not
+see without its module data (VTT-658), so those introductions became small and
+the player's socket filled only by chance. The test turned intermittent: green
+in the runs of Task 1 of
+`docs/superpowers/plans/2026-11-06-a-companions-sheet-is-seen-with-the-companion.md`
+and in a first whole `task check`, red in the second ("the wedged watcher was
+not closed: a read timed out instead"), and red in isolated runs on `3b0c1ef`
+at `-count` above one, while `84c4ac8` stays green. Nothing reached the
+table; the defect was the test's.
+
+Recipe: in that test, replace the narration loop's command with the earlier
+`ClientCommand_AddActor` of an `Actor` with `ActorId: "act-" +
+strconv.Itoa(i)`, `ModuleData: bigPadding(t)` and `Kind:
+ActorKind_ACTOR_KIND_PARTY_MEMBER`; drop `line` and the `strings` import, or
+the package does not build. Run the test alone with `-count` above one, at
+`-cpu 1`.
+
+The check that should have caught it is that plan's search for the existing
+tests that change (its P5). It listed the tests that failed under the probe,
+and one run of a test that depends on timing passed. Once the change landed,
+no fixture reached the wedge the test was built for. A search for fixtures
+that rely on a companion's values reaching a player's log would have found it.
+Labels: `test data missing`.
+
+**Closed by** the fixture's narration: lines at the text bound, which reach
+every character log whatever its character sees (VTT-362).
+
 ## Open debt
 
 **`migrateLocked`'s re-read error arm is unreachable through `testdb`.**

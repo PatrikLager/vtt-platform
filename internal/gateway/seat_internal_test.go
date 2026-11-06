@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -226,12 +227,12 @@ func TestAWedgedWatcherIsTornDownAndOthersKeepServing(t *testing.T) {
 	}
 	driverGone, healthyGone := readAll(driver), readAll(healthy)
 
-	// Introduce party members the victim's hero knows of, each too big for the
-	// shrunken socket buffers, and never read the victim.
+	// Narrate lines that each fill a shrunken socket buffer, and never read the
+	// victim: narration reaches every log, whatever its character sees (VTT-362).
+	line := strings.Repeat("x", 8*1024)
 	for i := range 40 {
-		cmd := &vttv1.ClientCommand{RequestId: strconv.Itoa(i), Command: &vttv1.ClientCommand_AddActor{
-			AddActor: &vttv1.AddActor{Actor: &vttv1.Actor{ActorId: "act-" + strconv.Itoa(i),
-				ModuleData: bigPadding(t), Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}}}}
+		cmd := &vttv1.ClientCommand{RequestId: strconv.Itoa(i), Command: &vttv1.ClientCommand_AddNarration{
+			AddNarration: &vttv1.AddNarration{Text: line}}}
 		raw, err := protojson.Marshal(cmd)
 		if err != nil {
 			t.Fatal(err)
