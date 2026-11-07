@@ -93,6 +93,7 @@ TS_LINES = {
     72: " * a doc-comment continuation line",
     77: "const seventyseven = true;",
     80: "const eighty = notAString;",   # col 16 is an identifier, not a quote
+    85: "const m = /^a$/.exec(t);",     # col 11 opens a regular expression
     90: 'label("other");',          # col 7 opens a string literal, on a
     91: 'label("other");',          # statement the `send` lines cannot be
     95: 'send("a", "b");',          # cols 6 and 11 open strings: two mutants of
@@ -633,6 +634,13 @@ class EntryCheck(unittest.TestCase):
 
     def test_a_string_key_on_a_quote_is_accepted(self):
         self.assertEqual(self.faults(entry("client/src/a.ts", "30:6", "StringLiteral", '""')), [])
+
+    def test_a_regex_key_whose_column_does_not_open_a_regex_is_rejected(self):
+        [fault] = self.faults(entry("client/src/a.ts", "85:9", "Regex", "/^a/"))
+        self.assertIn("opens no regular expression", fault)
+
+    def test_a_regex_key_on_its_slash_is_accepted(self):
+        self.assertEqual(self.faults(entry("client/src/a.ts", "85:11", "Regex", "/^a/")), [])
 
     def test_an_operator_key_is_checked_against_its_own_replacement_text(self):
         """THE OFFSET IS NOT THE OPERATOR: Stryker reports the expression's

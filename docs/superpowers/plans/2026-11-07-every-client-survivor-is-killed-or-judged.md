@@ -12,8 +12,8 @@ report.
 ## Constraints
 
 - CLAUDE.md rule 2: the gate is not weakened. Nothing in `stryker.conf.json`,
-  `tools/check-ts-mutation.py`, `tools/ts-mutation-report.py` or the hashed
-  input list changes.
+  `tools/ts-mutation-report.py` or the hashed input list changes, and
+  `tools/check-ts-mutation.py` gains only the Regex offset rule of D7.
 - SPEC-020: an entry is keyed as the checker prints it, and carries its code
   line and its reason.
 - SPEC-023 and the owner's rule of 2026-10-26: the full run happens on the
@@ -63,6 +63,14 @@ report.
   and the specification sentences, never the source or the tests. The other
   tests are shown to fail by their own mutants applied by hand, and each
   entry by its survivor reproduced by hand; the reading review reads both.
+- D7. `tools/check-ts-mutation.py` gains a Regex offset rule, found while
+  doing Task 1 and not foreseen here. Forced by the checker's own test
+  `test_every_real_adjudication_still_points_at_its_mutant`, which refuses an
+  entry whose mutator has no position rule; the `readLine` entries are the
+  file's first Regex entries. The rule, that the offset opens the literal at
+  its `/`, is the stricter of the two tables a regular expression could go
+  in: `NO_POSITION_RULE` would check no column. An entry with a wrong offset can only go stale,
+  never excuse a mutant. SPEC-020 lists the column rules and moves with it.
 
 ## The requirements sort
 
@@ -110,7 +118,8 @@ Refused:
 4. **The report**, `docs/reports/2026-11-07-every-client-survivor-is-killed-or-judged.md`.
 5. **The specifications**: SPEC-022 (VTT-592's three citations, near the
    list of what the client holds, in the Say paragraph and in its
-   Requirements, pointed at VTT-665; the panel's blank line, VTT-666) and
-   SPEC-009 (Boot's question, VTT-667).
+   Requirements, pointed at its successor; the panel's blank line, VTT-666),
+   SPEC-009 (Boot's question, VTT-667) and SPEC-020 (the Regex column rule,
+   D7).
 6. **The gate**, last, on the branch's final tree: `task check` (item 5).
    The full run on the owner's word (item 4).

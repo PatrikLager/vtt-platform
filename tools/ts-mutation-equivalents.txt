@@ -335,6 +335,57 @@ client/src/player.ts  EqualityOperator  offset=30  span=21  nth=1  copies=1  a.a
     code: a.actorId < b.actorId ? -1 : a.actorId > b.actorId ? 1 : 0,
     Comparator boundary that differs only when the two ids are equal. They are object keys of the same map, so no two elements can share one.
 
+# readLine's patterns, from the whispering ticket
+# (docs/superpowers/specs/2026-11-01-whispering-to-and-from-characters-design.md).
+# The entries below stand on these facts of readLine; whoever edits its `t`,
+# its `close` or a pattern re-judges them by hand.
+# - `t` is `raw.trim()`, so the `(.*)` of the `/dm` and the `/w` pattern, and
+#   the text `(.*)` of the name pattern, end in no whitespace; each follows a
+#   greedy `\s+` or `\s*`, or is empty, so none starts with any. `\s`
+#   matches, and `String.prototype.trim` strips, the same characters,
+#   WhiteSpace and LineTerminator. The `trim()` entries, the `\s+` entry and
+#   the `\s*` entry stand on this.
+# - A `$` after a `.*` under the `s` flag always holds, because `.*` then
+#   matches every character, line breaks included, and is greedy. The `$`
+#   entries and the name pattern's `^` entry stand on this.
+# - `close` is `rest.indexOf('"', 1)`. The `close <= 0` entry stands on this.
+
+client/src/player.ts  Regex  offset=12  span=35  nth=1  copies=1  /^\/(?:dm|gm|togm)(?:\s+|$)(.*)/is
+    code: const dm = /^\/(?:dm|gm|togm)(?:\s+|$)(.*)$/is.exec(t);
+    The final `$` dropped. It follows `.*` under the `s` flag, so it always holds: the pattern matches the same inputs, with the same capture.
+
+client/src/player.ts  Regex  offset=12  span=35  nth=1  copies=1  /^\/(?:dm|gm|togm)(?:\s|$)(.*)$/is
+    code: const dm = /^\/(?:dm|gm|togm)(?:\s+|$)(.*)$/is.exec(t);
+    `\s+` as `\s`. One whitespace character is the least either takes, so the pattern matches the same inputs; the capture then starts with the whitespace after the first, and its one reader, `dm[1]!.trim()` on the next line, strips it.
+
+client/src/player.ts  MethodExpression  offset=38  span=13  nth=1  copies=1  dm[1]!
+    code: if (dm) return { kind: "toDM", text: dm[1]!.trim() };
+    `.trim()` dropped. The capture is a suffix of the trimmed `t`, after a greedy `\s+` or at the end, so it has no whitespace at either end to strip.
+
+client/src/player.ts  Regex  offset=11  span=34  nth=1  copies=1  /^\/(?:w|whisper)(?:\s+|$)(.*)/is
+    code: const w = /^\/(?:w|whisper)(?:\s+|$)(.*)$/is.exec(t);
+    The final `$` dropped. It follows `.*` under the `s` flag, so it always holds: the pattern matches the same inputs, with the same capture.
+
+client/src/player.ts  EqualityOperator  offset=5  span=9  nth=1  copies=1  close <= 0
+    code: if (close < 0) return { kind: "whisper", name: rest.slice(1).trim(), text: "" };
+    `close` is `rest.indexOf('"', 1)`, which searches from index 1 and so returns -1 or at least 1. It is never 0.
+
+client/src/player.ts  Regex  offset=24  span=17  nth=1  copies=1  /(\S*)\s*(.*)$/s
+    code: const [, name, text] = /^(\S*)\s*(.*)$/s.exec(rest)!;
+    The `^` dropped. `exec` tries index 0 first, and the pattern matches there for every input: `(\S*)` and `\s*` may match empty, and `(.*)$` under the `s` flag always holds. So the search returns the anchored match.
+
+client/src/player.ts  Regex  offset=24  span=17  nth=1  copies=1  /^(\S*)\s*(.*)/s
+    code: const [, name, text] = /^(\S*)\s*(.*)$/s.exec(rest)!;
+    The final `$` dropped. It follows `.*` under the `s` flag, so it always holds: the pattern matches the same inputs, with the same captures.
+
+client/src/player.ts  Regex  offset=24  span=17  nth=1  copies=1  /^(\S*)\S*(.*)$/s
+    code: const [, name, text] = /^(\S*)\s*(.*)$/s.exec(rest)!;
+    `\s*` as `\S*`. `(\S*)` is greedy, so the name is the same run of non-whitespace and the mutated `\S*` matches empty after it; the text then starts with the whitespace the original's `\s*` took, which `text!.trim()` on the next line strips.
+
+client/src/player.ts  MethodExpression  offset=46  span=12  nth=1  copies=1  text!
+    code: return { kind: "whisper", name: name!, text: text!.trim() };
+    `.trim()` dropped. The text is a suffix of the trimmed `t`, after a greedy `\s*`, so it has no whitespace at either end to strip.
+
 # --- client/src/view/player.ts -----------------------------------------------
 #
 # NOT client/src/player.ts above -- a different file, the view module for the

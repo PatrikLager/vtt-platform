@@ -195,9 +195,15 @@ MUTATOR_TOKENS = {
 # find — but its offset must OPEN one, in any of JavaScript's three quotes.
 STRING_MUTATORS = ("StringLiteral",)
 
+# Stryker's Regex mutator rewrites a regular expression literal, and also the
+# pattern string of `new RegExp(...)`. Only the literal is judged here: its
+# offset must OPEN it, at its first `/`. An entry on the constructor form is
+# refused until that form is given a rule of its own.
+REGEX_MUTATORS = ("Regex",)
+
 # Mutators whose offset is checked for the comment rule ONLY, each with the
 # reason it cannot take the column rule. An entry here is a NARROWER check, so
-# it is written down per mutator; a mutator in neither table FAILS.
+# it is written down per mutator; a mutator in no table FAILS.
 #
 #   ConditionalExpression  spans a whole clause — `case "x":`, an `if` test, a
 #                          ternary arm — and its replacement is `true`, `false`
@@ -369,7 +375,7 @@ def entry_faults(entries, root="."):
     Refused: a file that cannot be read; code that stands in its file a number
     of times other than `copies` (VTT-302); an `nth` above `copies`; two
     entries for one key; code that is a comment; a column rule its mutator
-    fails; a mutator in neither table (fail closed). `span` cannot be checked
+    fails; a mutator in no table (fail closed). `span` cannot be checked
     without a parser: a wrong one matches nothing, and fails as stale.
     """
     sharing = collections.Counter(entry_key(e) for e in entries)
@@ -412,11 +418,19 @@ def _entry_fault(e, lines, sharing):
                     f"{opener.decode('utf-8', 'replace')!r}, which opens no string or template "
                     f"literal")
         return ""
+    if e.mutator in REGEX_MUTATORS:
+        opener = code[off:off + 1] if off < len(code) else b""
+        if opener != b"/":
+            return (f"offset {e.offset} of {e.code!r} holds "
+                    f"{opener.decode('utf-8', 'replace')!r}, which opens no regular expression "
+                    f"literal")
+        return ""
     tokens = MUTATOR_TOKENS.get(e.mutator)
     if tokens is None:
-        return (f"{e.mutator} is in neither MUTATOR_TOKENS nor NO_POSITION_RULE, so this check "
-                f"cannot say what its offset should hold and is not checking this entry at all. "
-                f"Add it to whichever it belongs in, with the reason")
+        return (f"{e.mutator} is in none of MUTATOR_TOKENS, STRING_MUTATORS, REGEX_MUTATORS and "
+                f"NO_POSITION_RULE, so this check cannot say what its offset should hold and is "
+                f"not checking this entry at all. Add it to whichever it belongs in, with the "
+                f"reason")
     if off >= len(code):
         return f"offset {e.offset} is past the end of {e.code!r}"
     if not operator_at(code[off:], e.replacement.encode(), tokens):
