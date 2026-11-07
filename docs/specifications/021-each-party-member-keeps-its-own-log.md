@@ -26,7 +26,7 @@ Pinned by `internal/store/character_log_test.go`,
 `store_failure_test.go`,
 `internal/campaign/character_log_test.go`,
 `character_log_property_test.go`, `qa_character_log_test.go`,
-`qa_pause_resume_test.go`, `property_test.go`,
+`qa_companion_sheet_test.go`, `qa_pause_resume_test.go`, `property_test.go`,
 `character_subscribe_test.go`, `qa_character_subscribe_test.go`,
 `append_watch_test.go`, `qa_append_watch_test.go`,
 `every_log_told_test.go`, `character_log_oracle_test.go` and
@@ -73,12 +73,22 @@ active decision from its log and the world it is in
 (`restartDecisionsLocked`, VTT-325).
 
 **The opening.** A log opens before the frames of the first event after which
-its actor is a party member while its log is empty (VTT-317). It opens with
+its actor is a party member while its log is empty (VTT-663). It opens with
 the present as the world stood before that event: the open session's
-`SessionStarted`, with that session's id and name; then the party, as
-`Perch` through no eyes introduces it (SPEC-016); then a `NoteUpserted` for
-each public note, by key. Nothing appended earlier is forwarded into it. Its
-decision starts from nothing seen (`perceive.New(eyes, nil)`).
+`SessionStarted`, with that session's id and name; then each party member, as
+`Perch` through no eyes introduces it (SPEC-016, VTT-658); then a
+`NoteUpserted` for each public note, by key. Nothing appended earlier is
+forwarded into it. Its decision starts from nothing seen
+(`perceive.New(eyes, nil)`), so the event's frames bring whole each party
+member the log's eyes see (SPEC-016). An opening whose entries do not fold is
+not written, and the log opens at the next event after which its actor is a
+party member (`fanOutLocked` deletes it from its working copy). So a log
+opens for an actor already a party member before its event only while the
+store holds no entry of its log: for a campaign written before the
+`character_events` table existed, after such an opening, and, after a reopen,
+for a log whose opening event's frames did not fold either (VTT-320).
+`c.logs` gains a log only from `loadCharacterLogsLocked`, which reads the
+stored logs, and from a landed append (`Campaign.appendLocked`).
 
 **A pause and a resume.** A log whose actor is not a party member after an
 event, through a grant of another kind or the actor's removal, is paused: it
@@ -90,13 +100,10 @@ the log holds none or another; sessions that opened and closed during the
 pause are not in the log. Then a `TokenHidden` for every token the log holds,
 by id. Its decision starts from nothing seen, so the frames for the resuming
 event place what it sees on its present square and correct each held actor in
-sight. A new actor added under an old id continues that id's log, and is
-withdrawn and introduced afresh, or corrected, as VTT-470 says: what the log
-holds is compared with what it may be sent of the new actor, every field only
-`ActorAdded` writes of a party member and the module id alone of any other
-actor, since a log holds no more of a creature, and an id added again under
-the other kind with the same module id is re-introduced as a kind change is
-(SPEC-016).
+sight, or withdraw and introduce afresh one that is reshaped (SPEC-016). A
+new actor added under an old id continues that id's log, and is withdrawn and
+introduced afresh, or corrected, by the comparison SPEC-016 states (VTT-470,
+VTT-661).
 
 **A creature a player runs.** By the owner's rulings, of 2026-08-23 for a
 creature charmed into a player's service and of 2026-10-19 for one they
@@ -111,18 +118,18 @@ kind is the last one stated for it, by its `ActorAdded` or by a grant, which
 writes it even when the participant already controls the actor (VTT-391),
 and a revocation alone leaves a party member a party member (VTT-392). Its
 log is therefore a party member's: it opens at the first event after which
-the creature is a party member (VTT-317), is paused by an event after which
+the creature is a party member (VTT-663), is paused by an event after which
 it is not, the non-party grant or the removal (VTT-316), and resumes without
 a second opening when it is one again (VTT-318). `grant_actor_control`'s
 description tells the agent to grant such a creature
 `ACTOR_KIND_PARTY_MEMBER` and how to end the run (VTT-389);
 `revoke_actor_control`'s tells it that revoking alone leaves the creature a
 party member (`TestRevokeActorControlSaysItEndsAPlayersRunOfACreature`); and
-`add_actor`'s tells it never to reuse an actor's id (VTT-390). Each of the two
-grants changes what every other log may hold of the creature, its name and
-statblock or its id, module and kind alone, so a log that sees it then is sent
-it again, and one that does not is sent it again when it next sees it
-(SPEC-016, VTT-468, VTT-481).
+`add_actor`'s tells it never to reuse an actor's id (VTT-390). Either grant
+changes what every other log may hold of the creature, its name, with its
+statblock once the log's eyes see it, or its id, module and kind alone, so a
+log that sees it then is sent it again, and one that does not is sent it
+again when it next sees it (SPEC-016, VTT-468, VTT-481).
 
 **Frames that would not fold.** Each actor's frames are folded first onto a
 copy of its log, each stamped with the sequence it will have. A set that does
@@ -212,7 +219,8 @@ bound by these:
   frames would not fold, the character misses them.
 - After a drop, the next event that lands corrects what came into or left
   sight, the visible squares, the doors in sight and the status of each actor
-  in sight. A token that stays in sight keeps the square the log last held
+  in sight, withdrawing and introducing afresh one that is reshaped
+  (SPEC-016). A token that stays in sight keeps the square the log last held
   until its next forwarded move, nothing resends a note or a narration, and
   the next event can drop again while what the log lacks stays in sight.
 - A session the log holds open after a drop, which the world has ended, makes
@@ -258,8 +266,8 @@ bound by these:
 
 ## Requirements
 
-VTT-315, VTT-316, VTT-317, VTT-318, VTT-319, VTT-320, VTT-321, VTT-322,
-VTT-323, VTT-324, VTT-325, VTT-326, VTT-327, VTT-328, VTT-329, VTT-330,
-VTT-331, VTT-332, VTT-333, VTT-334, VTT-335, VTT-336, VTT-337, VTT-353,
-VTT-354, VTT-355, VTT-356, VTT-357, VTT-371, VTT-372, VTT-373, VTT-389,
-VTT-390, VTT-391, VTT-392.
+VTT-315, VTT-316, VTT-318, VTT-319, VTT-320, VTT-321, VTT-322, VTT-323,
+VTT-324, VTT-325, VTT-326, VTT-327, VTT-328, VTT-329, VTT-330, VTT-331,
+VTT-332, VTT-333, VTT-334, VTT-335, VTT-336, VTT-337, VTT-353, VTT-354,
+VTT-355, VTT-356, VTT-357, VTT-371, VTT-372, VTT-373, VTT-389, VTT-390,
+VTT-391, VTT-392, VTT-663.

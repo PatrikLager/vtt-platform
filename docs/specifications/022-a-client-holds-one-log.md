@@ -29,10 +29,12 @@ another token's or another tab's pages were sent, by
 `client/test/qa-reload-viewpoint.test.ts` (VTT-443, VTT-444, VTT-579); that only a
 DM's and an agent's window shows the Events panel, the newest entries of the
 log it holds, newest first and bounded, while every role's window shows in the
-Story each entry of the log it holds, both outside the reason it gives for a
-log it cannot fold, by `client/test/app.test.ts`,
-`client/test/spectator-view.test.ts` and `client/test/qa-events-panel.test.ts`
-(VTT-445 to VTT-449); that a player and a spectator are offered the party
+Story each entry of the log it holds but the runs that withdraw and introduce
+again one actor, both outside the reason it gives for a log it cannot fold,
+by `client/test/app.test.ts`, `client/test/spectator-view.test.ts`,
+`client/test/feed.test.ts`, `client/test/qa-events-panel.test.ts` and
+`client/test/qa-companion-first-sight.test.ts` (VTT-445 to VTT-448,
+VTT-662); that a player and a spectator are offered the party
 members a `WatchableChanged` names and switch between them, by
 `client/test/app.test.ts`, `client/test/player.test.ts`,
 `client/test/spectator-view.test.ts` and `client/test/qa-switch.test.ts`
@@ -175,7 +177,8 @@ reason it gives for a log it cannot fold (VTT-393; the owner's rulings of
 
 Every role's window shows the Story, which `renderSpectator` draws with
 `renderFeed` from `buildFeed` (`client/src/view/feed.ts`): each entry of the
-log the window holds (VTT-449). Only a DM's and an agent's window shows the
+log the window holds but the runs `reintroductions` names, below (VTT-662).
+Only a DM's and an agent's window shows the
 Events panel, by the owner's ruling B-3 of 2026-10-22, and the agent counts as
 the DM there, as it does for the DM's console, by the owner's ruling "Ja, som
 DM-konsolen" of 2026-10-23. The panel, `renderTicker`, draws one row per entry,
@@ -192,7 +195,30 @@ role when its session starts (`startSession`) and again at a presence frame
 naming its own participant, once a first read has answered; while a re-read is
 pending, and after one fails, it keeps the role last read. While the window
 gives the reason it cannot fold its log, that reason is all `paint` draws, so
-neither the Story nor the panel is shown (VTT-446, VTT-449).
+neither the Story nor the panel is shown (VTT-446, VTT-662).
+
+`buildFeed` leaves out, before it groups, each run `reintroductions` names.
+A run is an `actorRemoved` with no event id that the `actorAdded` of the same
+actor directly follows, that `actorAdded`, and each of that actor's
+`actorControlGranted` and `conditionApplied` entries with no event id behind
+it, up to the first entry that is not one: the order in which `introduce`
+writes an introduction's grants and conditions (SPEC-016). In a character log
+such a run opens with the projection's own withdrawal and introduction again
+of one actor, never a removal the log's character saw: a bare `ActorRemoved`
+is sent only directly before an introduction of the same id (VTT-252), and no
+character log is written a forwarded `ActorRemoved` (SPEC-016). So at a
+companion's first sight, at a kind change, at a correction that re-introduces
+and at an id the world adds again as another, the Story draws none of the
+run's lines: neither "<actor> left" nor "<actor> is in the party" nor
+"<actor> comes into sight" nor its grants' and conditions' lines. It draws
+the entries around it, a token's hiding or arrival and the event's own lines
+among them. Every entry of the world log carries an event id:
+`Store.appendLocked` in `internal/store/store.go` is the only writer of the
+`events` table outside tests, only `Store.AppendBatch` calls it, and
+`AppendBatch` refuses an envelope without one. So the Story of a window that
+holds the world log leaves nothing out. A narration anchored only to
+entries of a run is drawn in a beat of its own. The fold, the namer and the
+Events panel are handed the whole log.
 
 ### What the browser client holds, and what it offers
 
@@ -669,9 +695,23 @@ each entry it is sent, and no switch.
   nothing in `client/src` times a command out (`git grep -n
   'setTimeout\|setInterval' client/src` prints nothing).
 
-- The Events panel is no boundary: it shows only entries of the log the window
-  holds, and the window's Story shows each of them. What a connection is sent
-  is SPEC-015's.
+- The Events panel is no boundary and leaves out no run: it shows only
+  entries of the log the window holds, and the window's Story shows each of
+  them, since a window that draws the panel holds the world log (above). What
+  a connection is sent is SPEC-015's.
+- A correction's grants and applied conditions of a run's actor, written
+  directly behind the run at a later event with nothing between, are left out
+  with it, as when the world adds an id again as another, out of sight, as a
+  party member with no attributes, resources or module data, which
+  `add_actor`'s description tells the agent never to do (VTT-390).
+- A creature made a party member in a character log's sight is drawn no
+  "<actor> is in the party" line, though the log held it as a creature until
+  then: the run that introduces it whole is left out, and the forwarded grant
+  behind it still draws "control of <actor> given".
+- A live window can draw "<actor> left" for a moment: it folds and paints
+  each entry as it arrives (`Session.ingest`, then `paint`), and a bare
+  `actorRemoved` that is the log's last entry is not yet a run, so it is drawn
+  until the `actorAdded` behind it arrives.
 - A page whose first read of `/api/me` fails is not read again until it is
   loaded again, so a DM's or an agent's page whose first read fails shows no
   Events panel until it is loaded again. A 401 from that read, or from a
@@ -724,7 +764,7 @@ VTT-405, VTT-407, VTT-408, VTT-409, VTT-410, VTT-411, VTT-412, VTT-413,
 VTT-414, VTT-415, VTT-416, VTT-418, VTT-419, VTT-420, VTT-421, VTT-422,
 VTT-423, VTT-424, VTT-425, VTT-426, VTT-427, VTT-428, VTT-429, VTT-430,
 VTT-431, VTT-432, VTT-433, VTT-434, VTT-435, VTT-443, VTT-444,
-VTT-445, VTT-446, VTT-447, VTT-448, VTT-449, VTT-457, VTT-458, VTT-459,
+VTT-445, VTT-446, VTT-447, VTT-448, VTT-457, VTT-458, VTT-459,
 VTT-460, VTT-461, VTT-464, VTT-474, VTT-475, VTT-476, VTT-477, VTT-483,
 VTT-484, VTT-489, VTT-490, VTT-491, VTT-492, VTT-494, VTT-500, VTT-501,
 VTT-502, VTT-517, VTT-518, VTT-520, VTT-521, VTT-522, VTT-523, VTT-524,
@@ -732,4 +772,4 @@ VTT-526, VTT-527, VTT-528, VTT-530, VTT-531, VTT-532, VTT-533, VTT-534,
 VTT-535, VTT-536, VTT-537, VTT-538, VTT-540, VTT-541, VTT-572, VTT-573,
 VTT-574, VTT-575, VTT-576, VTT-577, VTT-579, VTT-580, VTT-592, VTT-593,
 VTT-594, VTT-595, VTT-596, VTT-597, VTT-599, VTT-600, VTT-604, VTT-605,
-VTT-606, VTT-607, VTT-622, VTT-623.
+VTT-606, VTT-607, VTT-622, VTT-623, VTT-662.
