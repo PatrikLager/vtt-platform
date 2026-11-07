@@ -107,16 +107,17 @@ forget nothing, and that the share link then opens the join form, by
 (VTT-572 to VTT-577, VTT-580); and that `readLine` reads a whisper after
 `/w`, `/whisper`, `/dm`, `/gm` or `/togm`, that the console whispers to a
 party member or to a participant's party members and tells what it cannot,
-that a player's panel whispers to the DM and says no `/w` line aloud, and
-that the Story and the Events panel draw a whisper, by
-`client/test/player.test.ts`, `client/test/dm-view.test.ts`,
-`client/test/spectator-view.test.ts`, `client/test/app.test.ts`,
-`client/test/commands.test.ts`, `client/test/qa-whisper.test.ts`,
-`client/test/qa-whisper-say.test.ts` and `client/e2e/whispering.spec.ts`
-(VTT-592 to VTT-597, VTT-599, VTT-600); and that a window shows a refusal
-as the server words it, tells a player each party member a set stops naming
-as controlled, and nothing at any other set or in any other window, and
-tells a perching player that they play no character, by
+that a player's panel whispers to the DM, says no `/w` line aloud and tells
+nothing for a blank line or a bare `/ooc`, and that the Story and the Events
+panel draw a whisper, by `client/test/player.test.ts`,
+`client/test/dm-view.test.ts`, `client/test/spectator-view.test.ts`,
+`client/test/app.test.ts`, `client/test/commands.test.ts`,
+`client/test/qa-whisper.test.ts`, `client/test/qa-whisper-say.test.ts`,
+`client/test/qa-survivor-rules.test.ts` and `client/e2e/whispering.spec.ts`
+(VTT-593 to VTT-597, VTT-599, VTT-600, VTT-666, VTT-668); and that a window
+shows a refusal as the server words it, tells a player each party member a
+set stops naming as controlled, and nothing at any other set or in any other
+window, and tells a perching player that they play no character, by
 `client/test/app.test.ts`, `client/test/session.test.ts`,
 `client/test/spectator-view.test.ts`, `client/test/qa-refusal-words.test.ts`
 and `client/e2e/handover.spec.ts` (VTT-604 to VTT-607). That a window names
@@ -390,16 +391,19 @@ Send, and Enter in `say-text`, read the line with `readLine` in
 of four kinds. A line whose first word is exactly `/ooc` goes out of
 character, with the rest of the line, trimmed, as its text, and nothing is
 sent when the rest is empty, nor for an empty line in character (VTT-501,
-VTT-530, VTT-531). A line whose first word is `/w` or `/whisper`, in any
-case, is a whisper to the next word, or to the words between a pair of
-double quotes after it, with the rest of the line, trimmed, as its text; one
-whose first word is `/dm`, `/gm` or `/togm`, in any case, is a whisper to the
-DM (VTT-592, VTT-599; the owner's rulings "/w och /dm i Say-rutan" and "Ja,
-som alias" of 2026-11-01). Any other line goes in character: a player's by
-`speakAs`, as the party member the panel acts as, the viewpoint (VTT-500);
-the console's by `addNarration`, naming no actor, with what `say-as` holds,
-trimmed, as `as`, and no `as` when it is blank (VTT-600). A line out of
-character goes by
+VTT-530, VTT-531); a player's panel tells the player nothing for either
+(VTT-666). A line whose first word is `/w` or `/whisper`, in any case, is a
+whisper to the next word, with the rest of the line, trimmed, as its text;
+when that word opens with a double quote, to what stands between that quote
+and the next one, trimmed, with what follows the closing quote, trimmed, as
+its text, and when no later quote closes it, to what follows the opening
+quote, trimmed, with no text. One whose first word is `/dm`, `/gm` or
+`/togm`, in any case, is a whisper to the DM (VTT-668, VTT-599; the owner's
+rulings "/w och /dm i Say-rutan" and "Ja, som alias" of 2026-11-01). Any
+other line goes in character: a player's by `speakAs`, as the party member
+the panel acts as, the viewpoint (VTT-500); the console's by `addNarration`,
+naming no actor, with what `say-as` holds, trimmed, as `as`, and no `as` when
+it is blank (VTT-600). A line out of character goes by
 `speakOutOfCharacter`, carrying `say-as` the same way from the console, and
 no `as` from a player's panel. Send, or Enter in the console's `say-text`,
 leaves `say-as` holding what it held, refused or accepted, so the next line
@@ -770,6 +774,6 @@ VTT-484, VTT-489, VTT-490, VTT-491, VTT-492, VTT-494, VTT-500, VTT-501,
 VTT-502, VTT-517, VTT-518, VTT-520, VTT-521, VTT-522, VTT-523, VTT-524,
 VTT-526, VTT-527, VTT-528, VTT-530, VTT-531, VTT-532, VTT-533, VTT-534,
 VTT-535, VTT-536, VTT-537, VTT-538, VTT-540, VTT-541, VTT-572, VTT-573,
-VTT-574, VTT-575, VTT-576, VTT-577, VTT-579, VTT-580, VTT-592, VTT-593,
-VTT-594, VTT-595, VTT-596, VTT-597, VTT-599, VTT-600, VTT-604, VTT-605,
-VTT-606, VTT-607, VTT-622, VTT-623, VTT-662.
+VTT-574, VTT-575, VTT-576, VTT-577, VTT-579, VTT-580, VTT-593, VTT-594,
+VTT-595, VTT-596, VTT-597, VTT-599, VTT-600, VTT-604, VTT-605, VTT-606,
+VTT-607, VTT-622, VTT-623, VTT-662, VTT-666, VTT-668.

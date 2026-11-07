@@ -25,8 +25,9 @@ pinned by the checks the rows under Requirements name, in
 `internal/gateway/remove_participant_test.go`,
 `internal/gateway/qa_removal_test.go`,
 `internal/gateway/qa_remove_roles_test.go`, `client/test/dm-view.test.ts`,
-`client/test/qa-boot.test.ts`, `client/e2e/booting.spec.ts`,
-`internal/engine/role_test.go` and `internal/engine/qa_role_test.go`.
+`client/test/qa-boot.test.ts`, `client/test/qa-survivor-rules.test.ts`,
+`client/e2e/booting.spec.ts`, `internal/engine/role_test.go` and
+`internal/engine/qa_role_test.go`.
 
 ## Principles served
 
@@ -194,7 +195,10 @@ answered 401, and their display name is free, as any revoked holder's is.
 The DM's console offers the removal as Boot on a player's and a spectator's
 row in `renderDMConsole`, asks first in a message holding their display
 name, sends nothing on a no, and reads the roster again once the removal is
-answered (VTT-568 to VTT-571).
+answered (VTT-568, VTT-569, VTT-570, VTT-571). The message says that their
+sign-in stops working for good, that they no longer control any character,
+and that they can come back only through the share link while it is open
+(VTT-667).
 
 **Revoked participants are not listed.** `identity.List` reads `WHERE revoked =
 0`, ordered by display name and then id, and `GET /api/participants`, open to
@@ -286,4 +290,4 @@ VTT-070, VTT-071, VTT-072, VTT-073, VTT-074, VTT-075, VTT-076, VTT-077,
 VTT-256, VTT-309, VTT-310, VTT-352, VTT-376, VTT-542, VTT-543, VTT-544,
 VTT-545, VTT-546, VTT-548, VTT-549, VTT-550, VTT-551, VTT-552, VTT-553,
 VTT-554, VTT-555, VTT-556, VTT-557, VTT-558, VTT-564, VTT-566, VTT-568,
-VTT-569, VTT-570, VTT-571.
+VTT-569, VTT-570, VTT-571, VTT-667.

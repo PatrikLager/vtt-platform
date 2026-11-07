@@ -76,9 +76,12 @@ the gate holds no rule for. In Go the offset must hold one of the mutator's
 tokens. In TypeScript an operator mutator's code, from its offset, must agree
 with the replacement up to an operator of the mutator's kind, and the code
 after that operator must begin with the replacement's text after its own; a
-StringLiteral's offset must open a string; and the mutators in
-`NO_POSITION_RULE` take no column rule. A refused entry fails the gate,
-matching still runs, and the entry is not also reported stale.
+StringLiteral's offset must open a string; a Regex's offset must open a
+regular expression literal at its `/`, so an entry on the pattern string of
+`new RegExp(...)`, which Stryker's Regex mutator also rewrites, is refused;
+and the mutators in `NO_POSITION_RULE` take no column rule. A refused entry
+fails the gate, matching still runs, and the entry is not also reported
+stale.
 
 **An unadjudicated survivor is printed as an entry ready to paste:** the
 header in column 1, the `code:` line and a placeholder reason indented four
@@ -128,9 +131,10 @@ mutation made by hand.
   leaves its key unchanged.
 - The TypeScript operator rule compares text, so a mutant whose replacement
   Stryker reformats, dropping parentheses or carrying a trailing comment,
-  cannot be adjudicated as it stands; and a survivor of a mutator in neither
-  TypeScript table cannot be adjudicated until the mutator is added to one,
-  with its reason.
+  cannot be adjudicated as it stands; and a survivor of a mutator in none of
+  the TypeScript tables (`MUTATOR_TOKENS`, `STRING_MUTATORS`,
+  `REGEX_MUTATORS`, `NO_POSITION_RULE`) cannot be adjudicated until the
+  mutator is added to one, with its reason.
 - The TypeScript gate splits source on line feeds only, so a U+2028, a U+2029
   or a lone carriage return in the client would put Stryker's line numbers
   and the gate's out of step.
