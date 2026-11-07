@@ -2925,6 +2925,34 @@ test("a player is offered exactly the party members the set names", async () => 
   s?.close();
 });
 
+// VTT-457 VTT-606
+test("sets that drop a party member before /api/me answers leave the window offering the last one, and no toast", async () => {
+  localStorage.setItem("vtt.token", "tok");
+  let answerMe: (r: Response) => void = () => {};
+  const routes: Record<string, unknown> = {
+    "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
+    "/api/adventures": { adventures: [] },
+  };
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") return new Promise<Response>((r) => (answerMe = r));
+    return path in routes ? Response.json(routes[path]) : new Response("", { status: 404 });
+  }) as typeof fetch;
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  opensOn(sock, "a1", [["a1", "Lera"], ["a2", "Bram"]]);
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Lera" }] } });
+  seedTable(sock);
+  answerMe(Response.json({ participantId: "p", name: "Mira", role: "player" }));
+  await settle();
+  expect(chips(r).map((b) => b.textContent)).toEqual(["Lera"]);
+  expect(r.querySelector(".toast")).toBeNull();
+  s?.close();
+});
+
 // VTT-405, VTT-460
 test("a player switches by a button and by a click on the token", async () => {
   const { r, s, sock } = await twoMemberTable("a1", [["a1", "Lera"], ["a2", "Bram"]]);

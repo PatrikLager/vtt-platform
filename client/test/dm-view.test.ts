@@ -2687,6 +2687,23 @@ test("an unknown name, a shared name, a player with no party member, no name, no
   }
 });
 
+// VTT-594
+test("a /w line with no name, or with a name two party members share, says which", () => {
+  const st = whisperTable();
+  st.Actors["t3"] = { ...st.Actors["t2"]!, actorId: "t3" };
+  const told = (line: string) => {
+    const h = harness(st, { participants: PEOPLE });
+    type(h, { "say-text": line });
+    sendLine(h);
+    expect(h.sent).toHaveLength(0);
+    return h.notices.join("\n");
+  };
+  expect(told("/w")).toMatch(/whom/i);
+  const shared = told("/w Tobbe hi");
+  expect(shared).toContain("Tobbe");
+  expect(shared).toMatch(/two|both|share/i);
+});
+
 // VTT-535 VTT-517 VTT-533
 test("a whisper takes the Say's lock, keeps its line when refused and clears it when accepted", async () => {
   const h = harness(whisperTable(), { participants: PEOPLE, answer: "held" });

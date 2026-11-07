@@ -107,20 +107,20 @@ afterEach(() => forgetTheSay());
 
 describe("readLine reads /w and /dm", () => {
   test("a /w line in any case whispers to the next word with the rest trimmed", () => {
-    // VTT-592
+    // VTT-668
     expect(readLine("/w Tobbe An arrow came")).toEqual({ kind: "whisper", name: "Tobbe", text: "An arrow came" });
     expect(readLine("/W Tobbe hi")).toEqual({ kind: "whisper", name: "Tobbe", text: "hi" });
     expect(readLine("/w   Tobbe    two  spaces   ")).toEqual({ kind: "whisper", name: "Tobbe", text: "two  spaces" });
   });
 
   test("a /w line whispers to the words between a pair of double quotes", () => {
-    // VTT-592
+    // VTT-668
     expect(readLine('/w "Two Words" hi there')).toEqual({ kind: "whisper", name: "Two Words", text: "hi there" });
     expect(readLine('/W "two words"   x  ')).toEqual({ kind: "whisper", name: "two words", text: "x" });
   });
 
   test("a /w line with no name or no text is still a whisper, never a say", () => {
-    // VTT-592
+    // VTT-668
     expect(readLine("/w Tobbe")).toEqual({ kind: "whisper", name: "Tobbe", text: "" });
     expect(readLine('/w "Two Words"')).toEqual({ kind: "whisper", name: "Two Words", text: "" });
     expect(readLine("/w").kind).toBe("whisper");
@@ -128,7 +128,7 @@ describe("readLine reads /w and /dm", () => {
   });
 
   test("a /dm line in any case whispers to the DM with the rest trimmed", () => {
-    // VTT-592
+    // VTT-668
     expect(readLine("/dm I pocket the ring")).toEqual({ kind: "toDM", text: "I pocket the ring" });
     expect(readLine("/DM   psst  ")).toEqual({ kind: "toDM", text: "psst" });
     expect(readLine("/Dm x")).toEqual({ kind: "toDM", text: "x" });
@@ -137,7 +137,7 @@ describe("readLine reads /w and /dm", () => {
   });
 
   test("a first word that only begins with /w or /dm is said aloud, and /ooc matches exactly", () => {
-    // VTT-592, VTT-599, VTT-501
+    // VTT-668, VTT-599, VTT-501
     for (const raw of ["/wx Tobbe hi", "/whisperer Tobbe hi", "/dmx hi", "/wTobbe hi", "/dmhi"]) {
       expect(readLine(raw).kind).toBe("say");
     }

@@ -94,7 +94,7 @@ export type Line =
 
 /**
  * readLine reads a Say line: /ooc out of character (VTT-501); /w or /whisper,
- * /dm, /gm or /togm in any case a whisper (VTT-592, VTT-599).
+ * /dm, /gm or /togm in any case a whisper (VTT-668, VTT-599).
  */
 export function readLine(raw: string): Line {
   const t = raw.trim();

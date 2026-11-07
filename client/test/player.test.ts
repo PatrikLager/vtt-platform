@@ -583,7 +583,7 @@ test("a Say line whose first word is not /ooc, /w or /dm is in character, trimme
   expect(readLine("   ")).toEqual({ kind: "say", text: "" });
 });
 
-// VTT-592
+// VTT-668
 test("a Say line whose first word is /w or /dm, in any case, is a whisper", () => {
   expect(readLine("/w Tobbe hi there")).toEqual({ kind: "whisper", name: "Tobbe", text: "hi there" });
   expect(readLine("  /W tobbe   hi ")).toEqual({ kind: "whisper", name: "tobbe", text: "hi" });
@@ -607,4 +607,11 @@ test("a Say line whose first word is /whisper reads as /w, and /gm or /togm as /
   expect(readLine("/ToGM  help ")).toEqual({ kind: "toDM", text: "help" });
   expect(readLine("/gmx hi")).toEqual({ kind: "say", text: "/gmx hi" });
   expect(readLine("/whisperer hi")).toEqual({ kind: "say", text: "/whisperer hi" });
+});
+
+// VTT-668
+test("a /w name in double quotes is trimmed, closed or not, and a /dm later in a /w line is its text", () => {
+  expect(readLine('/w "  Two Words  " hi')).toEqual({ kind: "whisper", name: "Two Words", text: "hi" });
+  expect(readLine('/w "  Unclosed  hi')).toEqual({ kind: "whisper", name: "Unclosed  hi", text: "" });
+  expect(readLine("/w Tobbe /dm hi")).toEqual({ kind: "whisper", name: "Tobbe", text: "/dm hi" });
 });

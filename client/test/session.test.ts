@@ -469,6 +469,25 @@ test("a set that stops naming a party member as controlled tells who left, and a
   }
 });
 
+// VTT-605
+test("a set saying the participant controls none tells every party member the set before named, whatever its id", async () => {
+  // Keep this id: it is the string Stryker's ArrayDeclaration mutant puts in
+  // the kept list, and no other id tells that list from an empty one.
+  const odd = "Stryker was here";
+  const gw = gatewayServing([setOf(false, [odd, "Ama"]), setOf(true, [odd, "Ama"])]);
+  try {
+    const s = new Session(gw.url, "tok");
+    const told: string[][] = [];
+    s.onPartyMembersLeft((left) => told.push(left.map((a) => a.actorId)));
+    await s.start();
+    await until(() => s.controlsNoPartyMember, "the set that says none");
+    expect(told).toEqual([[odd]]);
+    s.close();
+  } finally {
+    gw.stop();
+  }
+});
+
 test("a new set replaces the last", async () => {
   const gw = gatewayServing([watchable("a1", "a2"), viewpoint("a1"), ...world, watchable("a1")]);
   try {

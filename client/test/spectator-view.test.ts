@@ -2349,6 +2349,36 @@ test("a player's /dm whispers to the DM from the party member the panel acts as,
   expect([p.text.value, p.ui.sayText]).toEqual(["", ""]);
 });
 
+// VTT-666
+test("a blank line or a bare /ooc in the player panel sends nothing and tells nothing", () => {
+  const p = whisperPanel();
+  for (const line of ["", "   ", "/ooc", "  /ooc  "]) p.say(line);
+  expect([p.sent.length, p.notices]).toEqual([0, []]);
+});
+
+test("a panel handed no notify raises no error for a /w line or a bare /dm, and sends nothing", () => {
+  const ui: PlayerUIState = { selectedActorId: "a2", selectedAbilityId: "", doorsArmed: false };
+  const sent: ClientCommand[] = [];
+  const node = renderPlayerPanel(twoParty(), me, [], ui, async (c) => {
+    sent.push(c);
+    return ok();
+  }, () => {});
+  const text = node.querySelector<HTMLInputElement>('[data-field="say-text"]')!;
+  const errors: unknown[] = [];
+  const caught = (e: Event) => errors.push((e as ErrorEvent).error);
+  window.addEventListener("error", caught);
+  try {
+    for (const line of ["/w Lera hi", "/dm"]) {
+      text.value = line;
+      text.dispatchEvent(new Event("input"));
+      node.querySelector<HTMLButtonElement>('[data-action="add-narration"]')!.click();
+    }
+  } finally {
+    window.removeEventListener("error", caught);
+  }
+  expect([sent.length, errors]).toEqual([0, []]);
+});
+
 // VTT-596
 test("a player's /w line, or a /dm line with nothing after it, sends nothing, tells them why and keeps the line", () => {
   for (const line of ["/w Lera psst", "/W lera psst", "/dm", "/DM   "]) {

@@ -277,3 +277,24 @@ test("an entry with no event id that is not a removal is told with the add behin
   const told = buildFeed([used, added]).flatMap((e) => e.events.map((v) => `${v.payload.case} ${v.sequence}`));
   expect(told).toEqual(["abilityUsed 1", "actorAdded 2"]);
 });
+
+// VTT-662
+test("a bare removal is told when the entry after it holds nothing this client reads", () => {
+  const gone = create(EnvelopeSchema, {
+    sequence: 1n, payload: { case: "actorRemoved", value: create(ActorRemovedSchema, { actorId: "a1" }) },
+  });
+  const unread = create(EnvelopeSchema, { sequence: 2n });
+  const told = buildFeed([gone, unread]).flatMap((e) => e.events.map((v) => `${v.payload.case} ${v.sequence}`));
+  expect(told).toEqual(["actorRemoved 1", "undefined 2"]);
+});
+
+test("buildFeed tells a bare removal and an actorAdded with no actor after it", () => {
+  const gone = create(EnvelopeSchema, {
+    sequence: 1n, payload: { case: "actorRemoved", value: create(ActorRemovedSchema, { actorId: "a1" }) },
+  });
+  const added = create(EnvelopeSchema, {
+    sequence: 2n, payload: { case: "actorAdded", value: create(ActorAddedSchema, {}) },
+  });
+  const told = buildFeed([gone, added]).flatMap((e) => e.events.map((v) => `${v.payload.case} ${v.sequence}`));
+  expect(told).toEqual(["actorRemoved 1", "actorAdded 2"]);
+});
