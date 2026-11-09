@@ -4,10 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
+	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/artlib"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/campaigncfg"
@@ -186,6 +190,11 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 			_ = c.Close()   // best-effort; the compose error below is what matters
 			return nil, nil, fmt.Errorf("vtt serve: load ruleset %s: %w", rulesetDir, err)
 		}
+		if err := sheetsFit(c.Actors(), rs); err != nil {
+			_ = ids.Close() // best-effort; the compose error below is what matters
+			_ = c.Close()   // best-effort; the compose error below is what matters
+			return nil, nil, fmt.Errorf("vtt serve: ruleset %s: %w", rulesetDir, err)
+		}
 		gw = gw.WithRuleset(rs)
 	}
 
@@ -355,4 +364,21 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 		return cErr
 	}
 	return srv, closeFn, nil
+}
+
+// sheetsFit names, by id, every actor holding a key rs does not declare, or
+// declares as the other type, each with its first such key (VTT-678, VTT-681).
+func sheetsFit(actors map[string]*vttv1.Actor, rs *rules.Ruleset) error {
+	var misfits []string
+	for _, id := range slices.Sorted(maps.Keys(actors)) {
+		a := actors[id]
+		f := rs.SheetKeyFault(slices.Collect(maps.Keys(a.GetAttributes())), slices.Collect(maps.Keys(a.GetResources())))
+		if f != nil {
+			misfits = append(misfits, fmt.Sprintf("actor %q: %s: %s", id, f.Field, f.Reason))
+		}
+	}
+	if len(misfits) == 0 {
+		return nil
+	}
+	return fmt.Errorf("the campaign's actors do not fit it: %s", strings.Join(misfits, "; "))
 }
