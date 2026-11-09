@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -174,9 +176,10 @@ type actorJSON struct {
 	Name    string `json:"name"`
 	// What this creature IS — see actorKinds below for the vocabulary and for
 	// why an authored actor may not leave it out.
-	Kind       string                     `json:"kind"`
-	Attributes map[string]int32           `json:"attributes"`
-	Resources  map[string]resourceValJSON `json:"resources"`
+	Kind string `json:"kind"`
+	// Keep these pointers: a value written as null must be seen (VTT-670).
+	Attributes map[string]*int32           `json:"attributes"`
+	Resources  map[string]*resourceValJSON `json:"resources"`
 }
 
 // actorKinds is the authored vocabulary for an actor's kind, and the whole of
@@ -203,16 +206,16 @@ var actorKinds = map[string]vttv1.ActorKind{
 var actorKindNames = []string{"party_member", "non_party"}
 
 type resourceValJSON struct {
-	Current int32 `json:"current"`
-	Max     int32 `json:"max"`
+	// Keep this a pointer: a current left out must be seen (VTT-670).
+	Current *int32 `json:"current"`
+	Max     *int32 `json:"max"`
 }
 
 // loadActors decodes every actors/*.json file in file-name order, which
-// Compile keeps, checking each actor's required KIND against the two-name
-// vocabulary above (no default; the check says why), each statblock key
-// against rs's properties by type (checkStatblockKey) and each resource's
-// current<=max when max>0. It also returns the set of actor ids, so
-// loadScenes checks a placement's actor without a second directory read.
+// Compile keeps, checking each actor's required KIND (no default; the check
+// says why), its keys against rs (rules.Ruleset.SheetKeyFault) and its values
+// (actorValues). It also returns the set of actor ids, so loadScenes checks a
+// placement's actor without a second directory read.
 func loadActors(dir string, rs *rules.Ruleset) ([]AdventureActor, map[string]bool, error) {
 	paths, err := jsonFilesIn(dir)
 	if err != nil {
@@ -280,43 +283,58 @@ func loadActors(dir string, rs *rules.Ruleset) ([]AdventureActor, map[string]boo
 				"unknown kind %q (want %q or %q)", raw.Kind, actorKindNames[0], actorKindNames[1]))
 		}
 
-		for name := range raw.Attributes {
-			if err := checkStatblockKey(path, "attributes", name, rules.PropertyNumber, rs); err != nil {
-				return nil, nil, err
-			}
+		if f := rs.SheetKeyFault(slices.Collect(maps.Keys(raw.Attributes)), slices.Collect(maps.Keys(raw.Resources))); f != nil {
+			return nil, nil, fieldErr(path, f.Field, f.Reason)
 		}
-		resources := make(map[string]ResourceVal, len(raw.Resources))
-		for name, rv := range raw.Resources {
-			if err := checkStatblockKey(path, "resources", name, rules.PropertyResource, rs); err != nil {
-				return nil, nil, err
-			}
-			if rv.Max > 0 && rv.Current > rv.Max {
-				return nil, nil, fieldErr(path, fmt.Sprintf("resources.%s.current", name), fmt.Sprintf("must not exceed max (%d > %d)", rv.Current, rv.Max))
-			}
-			resources[name] = ResourceVal(rv)
+		attributes, resources, err := actorValues(path, raw)
+		if err != nil {
+			return nil, nil, err
 		}
 
 		actorIDs[raw.ActorID] = true
 		out = append(out, AdventureActor{
 			ID: raw.ActorID, Name: raw.Name, Kind: kind,
-			Attributes: raw.Attributes,
+			Attributes: attributes,
 			Resources:  resources,
 		})
 	}
 	return out, actorIDs, nil
 }
 
-// checkStatblockKey refuses a statblock key the ruleset does not declare as
-// a property of type want (VTT-617, VTT-618).
-func checkStatblockKey(path, field, key, want string, rs *rules.Ruleset) error {
-	p := rs.Property(key)
-	if p == nil {
-		return fieldErr(path, field, fmt.Sprintf("references undeclared property %q", key))
+// actorValues refuses a value written as null and a resource whose current is
+// null or left out (VTT-670), and a current over a max above 0. A max left out
+// or null is no maximum.
+func actorValues(path string, raw actorJSON) (map[string]int32, map[string]ResourceVal, error) {
+	var attributes map[string]int32
+	if raw.Attributes != nil {
+		attributes = make(map[string]int32, len(raw.Attributes))
 	}
-	if p.Type != want {
-		return fieldErr(path, field, fmt.Sprintf("gives %s property %q a %s's value", p.Type, key, want))
+	for _, name := range slices.Sorted(maps.Keys(raw.Attributes)) {
+		v := raw.Attributes[name]
+		if v == nil {
+			return nil, nil, fieldErr(path, "attributes."+name, "must be a number, 0 included, not null")
+		}
+		attributes[name] = *v
 	}
-	return nil
+	resources := make(map[string]ResourceVal, len(raw.Resources))
+	for _, name := range slices.Sorted(maps.Keys(raw.Resources)) {
+		rv := raw.Resources[name]
+		if rv == nil {
+			return nil, nil, fieldErr(path, "resources."+name, "must be an object giving its current, not null")
+		}
+		if rv.Current == nil {
+			return nil, nil, fieldErr(path, "resources."+name+".current", "must be a number, 0 included; a resource gives its current")
+		}
+		val := ResourceVal{Current: *rv.Current}
+		if rv.Max != nil {
+			val.Max = *rv.Max
+		}
+		if val.Max > 0 && val.Current > val.Max {
+			return nil, nil, fieldErr(path, fmt.Sprintf("resources.%s.current", name), fmt.Sprintf("must not exceed max (%d > %d)", val.Current, val.Max))
+		}
+		resources[name] = val
+	}
+	return attributes, resources, nil
 }
 
 // --- scenes/*.json (one scene per file, placements declared inline) ---

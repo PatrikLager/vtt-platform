@@ -15,7 +15,7 @@ and every one of them is legal.
 | scene object `id` 128 bytes | `maxIDBytes` (`internal/mapdef`) | `len(o.ID) > maxIDBytes` |
 | `grid_width` / `grid_height` = 1 | smallest legal grid | `raw.GridWidth < 1` |
 | placement at (0,0) | lowest legal cell | `p.Y < 0` |
-| resource `max: 0`, `current: 7` | 0 means unlimited | `rv.Max > 0 && ...` |
+| resource `max: 0`, `current: 7` | 0 means unlimited | `val.Max > 0 && ...` |
 
 Each check is `>` or `<` for a reason: the limit is INCLUSIVE. Loosen any one
 of them by a single character — `>` to `>=`, `<` to `<=` — and this adventure
