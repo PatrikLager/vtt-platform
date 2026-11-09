@@ -2,8 +2,11 @@ package gateway
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
+	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
 // Check the controller before the id and the kind: a caller wrong in both must
@@ -32,4 +35,25 @@ func validateAddActor(cmd *vttv1.AddActor) error {
 			vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, vttv1.ActorKind_ACTOR_KIND_NON_PARTY)
 	}
 	return nil
+}
+
+// validateAddActorWith answers validateAddActor's refusals first, then a key
+// rs does not have; with no ruleset served, none (VTT-677, VTT-675).
+func validateAddActorWith(cmd *vttv1.AddActor, rs *rules.Ruleset) error {
+	if err := validateAddActor(cmd); err != nil {
+		return err
+	}
+	return validateAddActorKeys(cmd, rs)
+}
+
+func validateAddActorKeys(cmd *vttv1.AddActor, rs *rules.Ruleset) error {
+	a := cmd.GetActor()
+	if rs == nil || a.GetActorId() == "" {
+		return nil
+	}
+	f := rs.SheetKeyFault(slices.Collect(maps.Keys(a.GetAttributes())), slices.Collect(maps.Keys(a.GetResources())))
+	if f == nil {
+		return nil
+	}
+	return fmt.Errorf("gateway: add_actor: actor %q: %s: %s", a.GetActorId(), f.Field, f.Reason)
 }

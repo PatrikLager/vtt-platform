@@ -16,8 +16,8 @@ type SheetFault struct {
 
 // SheetKeyFault answers the first key of attributes, then of resources, each
 // in byte order, that rs does not declare as a number or a resource
-// respectively, or nil when every key fits (VTT-617, VTT-618, VTT-669,
-// VTT-673).
+// respectively, or nil when every key fits (VTT-617, VTT-618, VTT-677,
+// VTT-678).
 func (rs *Ruleset) SheetKeyFault(attributes, resources []string) *SheetFault {
 	if f := rs.keyFault("attributes", attributes, PropertyNumber); f != nil {
 		return f

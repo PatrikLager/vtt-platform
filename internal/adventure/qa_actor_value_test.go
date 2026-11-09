@@ -208,7 +208,7 @@ func TestQAAVAResourceSpentToNothingLoads(t *testing.T) {
 	}
 }
 
-// VTT-670
+// VTT-670 VTT-679
 func TestQAAVAResourceWithoutMaximumLoads(t *testing.T) {
 	cases := []struct {
 		name, spare string

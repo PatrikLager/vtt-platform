@@ -222,6 +222,55 @@ test("a pasted actor that says what it is reaches the wire intact", () => {
   expect(json["addActor"]["actor"]["kind"]).toBe("ACTOR_KIND_PARTY_MEMBER");
 });
 
+// VTT-672
+test("a pasted actor whose resource current is null, left out or empty is refused, naming it", () => {
+  const head = '{"actorId":"a1","name":"Lera","kind":"ACTOR_KIND_PARTY_MEMBER","resources":';
+  for (const resources of [
+    '{"focus":{"current":null,"max":3}}',
+    '{"focus":{"max":3}}',
+    '{"focus":{}}',
+  ]) {
+    const err = parseActorJSON(head + resources + "}");
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain('actor "a1": resources.focus.current');
+    expect((err as Error).message).toContain("a resource gives its current");
+  }
+});
+
+// VTT-672
+test("a pasted actor names its first valueless resource, its keys sorted", () => {
+  const err = parseActorJSON(
+    '{"actorId":"a1","name":"Lera","kind":"ACTOR_KIND_PARTY_MEMBER",' +
+      '"resources":{"zz":{"max":1},"aa":{"max":1},"mm":{"current":1}}}');
+  expect((err as Error).message).toContain('actor "a1": resources.aa.current');
+});
+
+// VTT-672 VTT-679
+test("a pasted actor whose resource current is 0, or has no maximum, reaches the wire", () => {
+  const cmd = parseActorJSON(
+    '{"actorId":"a1","name":"Lera","kind":"ACTOR_KIND_PARTY_MEMBER",' +
+      '"resources":{"focus":{"current":0,"max":3},"spare":{"current":4}}}');
+  expect(cmd).not.toBeInstanceOf(Error);
+  const json = toJson(ClientCommandSchema, cmd as never) as Record<string, any>;
+  expect(json["addActor"]["actor"]["resources"]).toMatchObject({ focus: { max: 3 }, spare: { current: 4 } });
+});
+
+// VTT-672
+test("a pasted actor whose resources are written null holds none, and reaches the wire", () => {
+  const cmd = parseActorJSON('{"actorId":"a1","name":"Lera","kind":"ACTOR_KIND_PARTY_MEMBER","resources":null}');
+  expect(cmd).not.toBeInstanceOf(Error);
+});
+
+// VTT-672
+test("a pasted actor answers about its controller and its kind before a valueless current", () => {
+  const resources = '"resources":{"focus":{"max":3}}';
+  const ctrl = parseActorJSON(
+    '{"actorId":"a1","controllerId":"p-2","kind":"ACTOR_KIND_PARTY_MEMBER",' + resources + "}") as Error;
+  expect(ctrl.message).toContain("declares a controller");
+  const kind = parseActorJSON('{"actorId":"a1",' + resources + "}") as Error;
+  expect(kind.message).toContain('actor is missing "kind"');
+});
+
 test("a pasted actor answers about its controller before its kind, as the server does", () => {
   // Review finding, 2026-08-24. The server checks controller-before-kind on
   // purpose (gateway validateAddActor): "creation does not confer control" is a

@@ -449,6 +449,10 @@ func commandFromArgs(fd protoreflect.FieldDescriptor, args []byte) (*vttv1.Clien
 	if err := protojson.Unmarshal(args, sub); err != nil {
 		return nil, fmt.Errorf("mcp: invalid arguments for %s: %w", fd.Name(), err)
 	}
+	// Keep this after protojson: the walk trusts the shapes protojson accepts.
+	if err := refuseValuelessCurrent(fd.Message(), args); err != nil {
+		return nil, fmt.Errorf("mcp: invalid arguments for %s: %w", fd.Name(), err)
+	}
 
 	cmd := &vttv1.ClientCommand{}
 	cmd.ProtoReflect().Set(fd, protoreflect.ValueOfMessage(sub.ProtoReflect()))

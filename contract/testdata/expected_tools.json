@@ -48,7 +48,7 @@
               "additionalProperties": {
                 "type": "integer"
               },
-              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
+              "description": "The actor's numbers, each under a key the served ruleset declares as a number property (get_ruleset lists them); a sheet holds only the properties this actor has. With a ruleset served, a key it does not declare, or one it declares as a resource, refuses the whole command. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
               "type": "object"
             },
             "controllerId": {
@@ -86,19 +86,20 @@
               "additionalProperties": {
                 "properties": {
                   "current": {
+                    "description": "REQUIRED; the resource's present value, 0 included.",
                     "type": "integer"
                   },
                   "max": {
+                    "description": "Optional; the resource's maximum. Left out or 0, it has none.",
                     "type": "integer"
                   }
                 },
                 "required": [
-                  "current",
-                  "max"
+                  "current"
                 ],
                 "type": "object"
               },
-              "description": "Optional; omit unless a rule module instructs otherwise — moduleData is opaque. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
+              "description": "The actor's resources, each under a key the served ruleset declares as a resource property (get_ruleset lists them), each giving its current, 0 included, and its max if it has one; a sheet holds only the properties this actor has. A resource whose current is null or left out refuses the whole command, and with a ruleset served so does a key it does not declare, or one it declares as a number. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
               "type": "object"
             }
           },

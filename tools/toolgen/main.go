@@ -89,9 +89,17 @@ var manifest = []toolSpec{
 					"controllerIds": "DO NOT SET. Refused, exactly as controllerId is, and for the same reason: control is conferred by grant_actor_control after creation, never here.",
 					"kind":          "REQUIRED. What this actor IS, which decides whether the whole party is told it exists. Set ACTOR_KIND_PARTY_MEMBER for a player's character, ACTOR_KIND_NON_PARTY for every monster, NPC and creature the party must DISCOVER by seeing it. There is no default and omitting it is REFUSED, because an unstated kind cannot be told from a deliberate one — if you are inventing a creature you already know which it is, so say so. Kind is not about who controls the actor: a character whose player is away is still a party member, and a monster you run yourself is still a monster. grant_actor_control states it again every time it grants control, and a creature a player is to run for a while is made a party member there, whatever it was added as.",
 					"moduleId":      "Optional; omit unless a rule module instructs otherwise — moduleData is opaque. At most 128 bytes of UTF-8; a longer one refuses the whole command.",
-					"attributes":    "Optional; omit unless a rule module instructs otherwise — moduleData is opaque. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
-					"resources":     "Optional; omit unless a rule module instructs otherwise — moduleData is opaque. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
+					"attributes":    "The actor's numbers, each under a key the served ruleset declares as a number property (get_ruleset lists them); a sheet holds only the properties this actor has. With a ruleset served, a key it does not declare, or one it declares as a resource, refuses the whole command. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
+					"resources":     "The actor's resources, each under a key the served ruleset declares as a resource property (get_ruleset lists them), each giving its current, 0 included, and its max if it has one; a sheet holds only the properties this actor has. A resource whose current is null or left out refuses the whole command, and with a ruleset served so does a key it does not declare, or one it declares as a number. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
 					"moduleData":    "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
+				},
+			},
+			// A resource's max may be left out for none, so only current is required.
+			"vtt.v1.Resource": {
+				requiredOverride: []string{"current"},
+				fieldDocs: map[string]string{
+					"current": "REQUIRED; the resource's present value, 0 included.",
+					"max":     "Optional; the resource's maximum. Left out or 0, it has none.",
 				},
 			},
 		},

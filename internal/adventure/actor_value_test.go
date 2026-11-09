@@ -64,7 +64,7 @@ func TestAnActorValueWrittenNullOrACurrentLeftOutIsRefused(t *testing.T) {
 	}
 }
 
-// VTT-670
+// VTT-670 VTT-679
 func TestAnActorValueOfZeroAndAResourceWithNoMaximumLoad(t *testing.T) {
 	rs := loadFixtureRuleset(t)
 	cases := []struct {

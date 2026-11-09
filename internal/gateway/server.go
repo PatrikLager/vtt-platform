@@ -744,7 +744,7 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	}
 
 	if aa, ok := cmd.GetCommand().(*vttv1.ClientCommand_AddActor); ok {
-		if err := validateAddActor(aa.AddActor); err != nil {
+		if err := validateAddActorWith(aa.AddActor, s.ruleset); err != nil {
 			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 		}
 	}

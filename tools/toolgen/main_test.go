@@ -201,8 +201,8 @@ func TestAddActorFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T) {
 		"controllerId":  "grant_actor_control",
 		"controllerIds": "grant_actor_control",
 		"moduleId":      "opaque",
-		"attributes":    "opaque",
-		"resources":     "opaque",
+		"attributes":    "only the properties this actor has",
+		"resources":     "only the properties this actor has",
 		"moduleData":    "opaque",
 	}
 	for field, substr := range wantSubstr {
@@ -609,6 +609,41 @@ func TestAddActorStatesTheBoundOnItsModuleAndKeys(t *testing.T) {
 		}
 		if desc, _ := p["description"].(string); !strings.Contains(desc, "At most 128 bytes") {
 			t.Fatalf("add_actor %s description = %q, want it to state the bound", field, desc)
+		}
+	}
+}
+
+// VTT-674
+func TestAddActorRequiresAResourcesCurrentAndNotItsMax(t *testing.T) {
+	actor := findTool(t, "add_actor")["inputSchema"].(map[string]any)["properties"].(map[string]any)["actor"].(map[string]any)
+	pool, ok := actor["properties"].(map[string]any)["resources"].(map[string]any)["additionalProperties"].(map[string]any)
+	if !ok {
+		t.Fatal("add_actor's resources hold no schema for a resource")
+	}
+	if got, want := pool["required"], []any{"current"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("a resource's required = %v, want %v", got, want)
+	}
+}
+
+// VTT-680
+func TestAddActorSaysWhatItRefusesInASheet(t *testing.T) {
+	actor := findTool(t, "add_actor")["inputSchema"].(map[string]any)["properties"].(map[string]any)["actor"].(map[string]any)
+	props := actor["properties"].(map[string]any)
+	for field, wants := range map[string][]string{
+		"attributes": {"get_ruleset", "does not declare", "declares as a resource"},
+		"resources":  {"get_ruleset", "does not declare", "declares as a number", "current is null or left out"},
+	} {
+		desc, _ := props[field].(map[string]any)["description"].(string)
+		for _, want := range wants {
+			if !strings.Contains(desc, want) {
+				t.Errorf("add_actor's %s description = %q, want it to say %q", field, desc, want)
+			}
+		}
+	}
+	pool := props["resources"].(map[string]any)["additionalProperties"].(map[string]any)["properties"].(map[string]any)
+	for field, want := range map[string]string{"current": "0 included", "max": "it has none"} {
+		if desc, _ := pool[field].(map[string]any)["description"].(string); !strings.Contains(desc, want) {
+			t.Errorf("a resource's %s description = %q, want it to say %q", field, desc, want)
 		}
 	}
 }

@@ -285,6 +285,13 @@ export function parseActorJSON(raw: string): ClientCommand | Error {
           '"ACTOR_KIND_NON_PARTY" for a creature they must discover',
       );
     }
+    const valueless = valuelessCurrent(parsed);
+    if (valueless !== null) {
+      return new Error(
+        `actor "${actor.actorId}": resources.${valueless}.current must be a number, 0 included; ` +
+          "a resource gives its current",
+      );
+    }
     return create(ClientCommandSchema, {
       requestId: requestId(),
       command: { case: "addActor", value: { actor } },
@@ -292,6 +299,19 @@ export function parseActorJSON(raw: string): ClientCommand | Error {
   } catch (e) {
     return new Error(`not a valid actor: ${e instanceof Error ? e.message : String(e)}`);
   }
+}
+
+// Read the paste as written, never fromJson's actor: fromJson reads a current
+// written null or left out as 0, which is a value (VTT-672).
+function valuelessCurrent(parsed: unknown): string | null {
+  const resources = (parsed as { resources?: unknown }).resources;
+  if (typeof resources !== "object" || resources === null) return null;
+  const pools = resources as Record<string, unknown>;
+  for (const key of Object.keys(pools).sort()) {
+    const current = (pools[key] as { current?: unknown }).current;
+    if (current === undefined || current === null) return key;
+  }
+  return null;
 }
 
 /**
