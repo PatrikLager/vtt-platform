@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -329,7 +328,7 @@ func (s *Server) handleMaps(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"maps": out, "cellPx": s.cellPx})
 }
 
-// Keep this allowlist closed and set the type before ServeFileFS, or net/http
+// Keep this allowlist closed and set the type before ServeContent, or net/http
 // infers one (SPEC-012).
 var artContentTypes = map[string]string{
 	".png": "image/png",
@@ -356,13 +355,20 @@ func (s *Server) handleArtFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer root.Close()
 
-	// Stat on root.FS(), never on the path: os.DirFS follows a symlink out and
-	// would mask the confinement (TestHandleArtFileRefusesSymlinkEscape).
-	fsys := root.FS()
-	if info, err := fs.Stat(fsys, name); err != nil || !info.Mode().IsRegular() {
+	// Stat and open through root, never by path, and stat first: a path follows
+	// a symlink out (TestHandleArtFileRefusesSymlinkEscape), and an open blocks
+	// on a FIFO.
+	info, err := root.Stat(name)
+	if err != nil || !info.Mode().IsRegular() {
 		http.Error(w, "gateway: no such art", http.StatusNotFound)
 		return
 	}
+	file, err := root.Open(name)
+	if err != nil {
+		http.Error(w, "gateway: no such art", http.StatusNotFound)
+		return
+	}
+	defer file.Close()
 
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	// Keep no-cache: without it a browser reuses month-old art for days
@@ -374,6 +380,5 @@ func (s *Server) handleArtFile(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
 	}
-	// Serve off root.FS(), for the reason the Stat above gives.
-	http.ServeFileFS(w, r, fsys, name)
+	http.ServeContent(w, r, name, info.ModTime(), file)
 }

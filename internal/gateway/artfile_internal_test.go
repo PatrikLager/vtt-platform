@@ -1,10 +1,9 @@
 package gateway
 
 // Every test here calls handleArtFile directly, with a clean r.URL.Path and the
-// payload only in PathValue: ServeMux cleans ".." before matching and
-// http.ServeFileFS guards a dirty path itself, and both would mask a broken
-// handler. Every test asserts its control first, since a handler that refuses
-// everything is green on every refusal (SPEC-012).
+// payload only in PathValue: ServeMux cleans ".." before matching, which would
+// mask a broken handler. Every test asserts its control first, since a handler
+// that refuses everything is green on every refusal (SPEC-012).
 
 import (
 	"io"

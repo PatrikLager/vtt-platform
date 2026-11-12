@@ -56,11 +56,14 @@ func newServeCmd() *cobra.Command {
 				defer cancel()
 				shutdownErr := srv.Shutdown(shutdownCtx)
 				_ = srv.Close()
-				<-serveErrCh // Shutdown/Close close the listener, so ListenAndServe has already returned by now.
+				serveErr := <-serveErrCh // Shutdown/Close close the listener, so ListenAndServe has already returned by now.
+				if errors.Is(serveErr, http.ErrServerClosed) {
+					serveErr = nil
+				}
 				if shutdownErr != nil && !errors.Is(shutdownErr, context.DeadlineExceeded) {
 					return shutdownErr
 				}
-				return nil
+				return serveErr
 			}
 		},
 	}
