@@ -226,33 +226,17 @@ tasks:
       # text matched every `unused` message and so disabled that linter
       # outright).
       #
-      # THE FETCH IS RETRIED because `config verify` loads its JSON schema
-      # OVER THE NETWORK, from a URL pinned to the binary's own major.minor
-      # (golangci.v2.11.jsonschema.json for 2.11.x). A CDN blip therefore reds
-      # the whole gate with `compile schema: failing loading ... context
-      # deadline exceeded`, which looks nothing like a lint problem. Observed
-      # 2026-08-04 in CI run 30912947244: the fetch timed out in ~2s, and that
-      # 2s took a 2m02s run with it. A 2s failure is exactly what makes a
-      # retry cheap.
+      # FROM 2.12, `config verify` checks against the JSON schema BUILT INTO
+      # the binary: it fetches nothing, the schema is always the binary's own,
+      # and the hidden `--schema` flag of earlier versions is gone.
       #
-      # THERE IS A HIDDEN `--schema` FLAG that accepts a local file, and it
-      # does work offline (verified against 2.11.4 with the network blocked:
-      # a valid config passes, `bogus-v1-key` and a numeric `version` both
-      # still fail). It is deliberately NOT used here, for two reasons that
-      # outrank the flake:
-      #   1. A vendored schema DRIFTS. Bump to 2.12 without re-vendoring and
-      #      .golangci.yml is validated against 2.11's schema -- silent
-      #      under-enforcement, which is the precise failure this step exists
-      #      to prevent (see .golangci.yml's header, point 1). Catching that
-      #      drift needs a version check nobody would write. The live fetch is
-      #      definitionally in sync with the binary.
-      #   2. `MarkHidden` is unsupported surface: a minor bump can drop it
-      #      with no changelog line, reddening the gate more confusingly than
-      #      the flake being fixed.
-      # NOT rejected as "hand-rolled enforcement code" -- with --schema you
-      # would vendor DATA and golangci-lint would still be the validator, so
-      # check-mutation.py's precedent about hand-rolled gates does not reach
-      # this alternative. The reason is drift, not authorship.
+      # THE RETRY GUARDS THE FETCH EARLIER VERSIONS MADE. Through 2.11,
+      # `config verify` loaded its schema over the network, from a URL pinned
+      # to the binary's own major.minor, and a CDN blip redded the whole gate
+      # with `compile schema: failing loading ... context deadline exceeded`
+      # (CI run 30912947244, 2026-08-04). Under 2.15 the loop never retries;
+      # it stays because removing it is a gate change of its own (CLAUDE.md
+      # rule 2), and a binary from before the built-in schema still needs it.
       #
       # Making the failure non-fatal was also rejected: an unverified config
       # is the state this step prevents, so warning instead of failing would
