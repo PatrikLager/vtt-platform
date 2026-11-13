@@ -3,6 +3,8 @@ package rules
 import (
 	"fmt"
 	"slices"
+
+	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 )
 
 // SheetFault names a sheet's first entry that does not fit its ruleset, and why
@@ -33,6 +35,11 @@ func (rs *Ruleset) SheetAbilityFault(ids []string) *SheetFault {
 		}
 	}
 	return nil
+}
+
+// Offers reports whether a's sheet names abilityID (VTT-690).
+func Offers(a *vttv1.Actor, abilityID string) bool {
+	return slices.Contains(a.GetAbilityIds(), abilityID)
 }
 
 func (rs *Ruleset) keyFault(field string, keys []string, want string) *SheetFault {

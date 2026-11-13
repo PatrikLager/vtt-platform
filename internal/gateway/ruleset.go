@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"fmt"
+
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -16,6 +18,10 @@ const errNoRulesetLoaded = "gateway: no ruleset loaded"
 func (s *Server) handleUseAbility(requestID string, cmd *vttv1.UseAbility, st *engine.State, p *identity.Participant) *vttv1.CommandResult {
 	if s.ruleset == nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: errNoRulesetLoaded}
+	}
+	if a, held := st.Actors[cmd.GetActorId()]; held && !rules.Offers(a, cmd.GetAbilityId()) {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: fmt.Sprintf(
+			"gateway: use_ability: actor %q does not name ability %q", cmd.GetActorId(), cmd.GetAbilityId())}
 	}
 
 	envs, err := rules.Resolve(s.ruleset, st, cmd, s.roller)

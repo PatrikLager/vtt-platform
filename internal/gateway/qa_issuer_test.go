@@ -41,6 +41,7 @@ func qaIssActor(id string, kind vttv1.ActorKind) *vttv1.Actor {
 			"drink":   {Current: 0, Max: 5},
 			"stamina": {Current: 2, Max: 2},
 		},
+		AbilityIds: []string{"chair-swing", "fists", "sober-up", "splash-of-water"},
 	}
 }
 

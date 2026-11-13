@@ -265,7 +265,7 @@ func qaRuleOK(t *testing.T, qc *qaRuleConn, cmd *vttv1.ClientCommand, wantSeq in
 	return res
 }
 
-func qaRuleBoard(t *testing.T, dm *qaRuleConn, resources map[string]*vttv1.Resource) {
+func qaRuleBoard(t *testing.T, dm *qaRuleConn, resources map[string]*vttv1.Resource, abilityIDs ...string) {
 	t.Helper()
 	res := qaRuleOK(t, dm, &vttv1.ClientCommand{RequestId: "board", Command: &vttv1.ClientCommand_LoadMap{
 		LoadMap: &vttv1.LoadMap{MapId: "qa-board"},
@@ -276,6 +276,7 @@ func qaRuleBoard(t *testing.T, dm *qaRuleConn, resources map[string]*vttv1.Resou
 	}
 	qaRuleOK(t, dm, qaRuleAdd("hero", &vttv1.Actor{
 		ActorId: qaRuleHero, Name: "qa", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY, Resources: resources,
+		AbilityIds: abilityIDs,
 	}), 2)
 	qaRuleOK(t, dm, &vttv1.ClientCommand{RequestId: "place", Command: &vttv1.ClientCommand_PlaceToken{
 		PlaceToken: &vttv1.PlaceToken{
@@ -369,7 +370,7 @@ func TestQARuleAUseWhoseAbilityIDCrossesTheBoundIsRefusedWithTheFoldsText(t *tes
 			tb := qaRuleServe(t, rs)
 			issuer := qaRuleDial(t, tb, tb.dmToken)
 			observer := qaRuleDial(t, tb, tb.obsToken)
-			qaRuleBoard(t, issuer, nil)
+			qaRuleBoard(t, issuer, nil, c.id)
 			cmd := qaRuleUse("use", c.id)
 			want := qaRuleLocalRefusal(t, tb, cmd)
 			res := issuer.send(cmd)
@@ -394,7 +395,7 @@ func TestQARuleAUseWhoseConditionIDCrossesTheBoundIsRefusedWithTheFoldsText(t *t
 			tb := qaRuleServe(t, rs)
 			issuer := qaRuleDial(t, tb, tb.dmToken)
 			observer := qaRuleDial(t, tb, tb.obsToken)
-			qaRuleBoard(t, issuer, nil)
+			qaRuleBoard(t, issuer, nil, "qa-mark-ability")
 			cmd := qaRuleUse("use", "qa-mark-ability")
 			want := qaRuleLocalRefusal(t, tb, cmd)
 			res := issuer.send(cmd)
@@ -419,7 +420,7 @@ func TestQARuleAUseWhoseIDsAreAtTheBoundIsRecordedWhole(t *testing.T) {
 			qaRuleWithAbilityID(rs, c.id)
 			tb := qaRuleServe(t, rs)
 			dm := qaRuleDial(t, tb, tb.dmToken)
-			qaRuleBoard(t, dm, nil)
+			qaRuleBoard(t, dm, nil, c.id)
 			res := qaRuleOK(t, dm, qaRuleUse("use", c.id), 4)
 			if got := dm.event(res.GetSequence()).GetAbilityUsed().GetAbilityId(); got != c.id {
 				t.Fatalf("recorded ability id is %d bytes, sent %d", len(got), len(c.id))
@@ -440,7 +441,7 @@ func TestQARuleAThresholdRefusalOnTheWireNamesTheResourceNotTheExpression(t *tes
 	tb := qaRuleServe(t, rs)
 	issuer := qaRuleDial(t, tb, tb.dmToken)
 	observer := qaRuleDial(t, tb, tb.obsToken)
-	qaRuleBoard(t, issuer, map[string]*vttv1.Resource{qaRulePool: {Current: 9, Max: 9}})
+	qaRuleBoard(t, issuer, map[string]*vttv1.Resource{qaRulePool: {Current: 9, Max: 9}}, "qa-drain")
 	cmd := qaRuleUse("drain", "qa-drain")
 	want := qaRuleLocalRefusal(t, tb, cmd)
 	res := issuer.send(cmd)
@@ -467,7 +468,7 @@ func TestQARuleAUseRefusedForAResourceNameAtTheBoundIsAnsweredOnAnOpenConnection
 	tb := qaRuleServe(t, rs)
 	issuer := qaRuleDial(t, tb, tb.dmToken)
 	observer := qaRuleDial(t, tb, tb.obsToken)
-	qaRuleBoard(t, issuer, nil)
+	qaRuleBoard(t, issuer, nil, "qa-spend")
 	cmd := qaRuleUse("spend", "qa-spend")
 	want := qaRuleLocalRefusal(t, tb, cmd)
 	res := issuer.send(cmd)

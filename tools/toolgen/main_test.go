@@ -660,6 +660,27 @@ func TestAddActorDocumentsTheAbilitiesItsSheetNames(t *testing.T) {
 	}
 }
 
+// VTT-701
+func TestUseAbilitySaysAUseTheSheetDoesNotNameIsRefused(t *testing.T) {
+	desc, _ := findTool(t, "use_ability")["description"].(string)
+	for _, want := range []string{"sheet names", "abilityIds", "any other ability is refused", "whatever your role"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("use_ability's description = %q, want it to say %q", desc, want)
+		}
+	}
+}
+
+// VTT-703
+func TestAddActorSaysAnActorUsesOnlyTheAbilitiesItNames(t *testing.T) {
+	actor := findTool(t, "add_actor")["inputSchema"].(map[string]any)["properties"].(map[string]any)["actor"].(map[string]any)
+	desc, _ := actor["properties"].(map[string]any)["abilityIds"].(map[string]any)["description"].(string)
+	for _, want := range []string{"use_ability refuses this actor any ability not named here", "names none can use none"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("add_actor's abilityIds description = %q, want it to say %q", desc, want)
+		}
+	}
+}
+
 // TestPlaceTokenOffersTheFourTextsAsOptional pins place_token's required list
 // to the four of a bare placement, and has each text say who is sent it.
 func TestPlaceTokenOffersTheFourTextsAsOptional(t *testing.T) {

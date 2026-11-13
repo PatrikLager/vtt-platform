@@ -150,6 +150,7 @@ func setUpTavernBrawlActorsViaMCP(t *testing.T, cs *mcpsdk.ClientSession) {
 			"actorId": "brawler", "name": "Brawler",
 			"kind":       "ACTOR_KIND_PARTY_MEMBER",
 			"attributes": map[string]any{"brawn": 3, "grit": 1},
+			"abilityIds": []any{"fists"},
 		}}},
 		{"add_actor", map[string]any{"actor": map[string]any{
 			"actorId": "patron", "name": "Patron",
@@ -166,6 +167,40 @@ func setUpTavernBrawlActorsViaMCP(t *testing.T, cs *mcpsdk.ClientSession) {
 		if res.IsError || result["ok"] != true {
 			t.Fatalf("setup step %s: want ok, got isError=%v result=%v", st.tool, res.IsError, result)
 		}
+	}
+}
+
+// VTT-690
+func TestMCPUseAbilityTheCastersSheetDoesNotNameIsAToolError(t *testing.T) {
+	rulesetDir, err := resolveRulesetDir("tavern-brawl")
+	if err != nil {
+		t.Fatalf("resolveRulesetDir(tavern-brawl): %v", err)
+	}
+	fx := startMCPFixtureWithRuleset(t, rulesetDir)
+	cs, cleanup := startMCPSession(t, fx.wsURL, fx.agentToken)
+	defer cleanup()
+	setUpTavernBrawlActorsViaMCP(t, cs)
+	for _, st := range []struct {
+		tool string
+		args map[string]any
+	}{
+		{"add_actor", map[string]any{"actor": map[string]any{"actorId": "rookie", "name": "Rookie",
+			"kind": "ACTOR_KIND_PARTY_MEMBER", "attributes": map[string]any{"brawn": 3}}}},
+		{"place_token", map[string]any{"tokenId": "tok-rookie", "sceneId": "tavern", "actorId": "rookie",
+			"position": map[string]any{"x": 0, "y": 1}}},
+	} {
+		if res := mustCallTool(t, cs, st.tool, st.args); res.IsError || toolCommandResult(t, res)["ok"] != true {
+			t.Fatalf("fixture: %s answered %+v", st.tool, res)
+		}
+	}
+	res := mustCallTool(t, cs, "use_ability", map[string]any{
+		"actorId": "rookie", "abilityId": "fists", "targetIds": []any{"patron"},
+	})
+	if !res.IsError {
+		t.Fatalf("use_ability by an actor whose sheet names no ability: want isError=true, got %+v", res)
+	}
+	if body, want := toolResultText(t, res), `actor \"rookie\" does not name ability \"fists\"`; !strings.Contains(body, want) {
+		t.Errorf("use_ability error body = %q, want it to contain %q", body, want)
 	}
 }
 

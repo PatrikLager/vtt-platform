@@ -161,6 +161,7 @@ func qaasOpen(t *testing.T, omit ...string) *qaasTable {
 			ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
 				ActorId: f.id, Name: f.id, Kind: f.kind,
 				Attributes: map[string]int32{"knack": qaasKnack, "guard": qaasGuard},
+				AbilityIds: []string{"shot", "volley"},
 			}},
 		}})
 		if f.controller != "" {

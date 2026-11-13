@@ -19,7 +19,9 @@ type, what the table calls it and what it means. Read them with
 descriptions there are this ruleset's own account of each property, and this
 guide does not repeat them. In `add_actor` and in a statblock, a number
 property goes in `attributes` and a resource property in `resources`, with
-its current value and maximum.
+its current value and maximum, and `abilityIds` names the abilities the
+actor may use, each by its id (`get_ruleset` lists them): `use_ability`
+refuses it any other, so an actor that names none can use none.
 
 ## Conditions
 

@@ -64,7 +64,7 @@ type rulesetFixture struct {
 	t   *testing.T
 	srv *httptest.Server
 
-	dmToken                 string
+	dmToken, agentToken     string
 	brawlerToken, brawlerID string
 	patronToken, patronID   string
 	spectatorToken          string
@@ -94,6 +94,10 @@ func newRulesetFixture(t *testing.T, withRuleset bool) *rulesetFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	agentToken, _, err := ids.CreateInvite("Agent", identity.RoleAgent)
+	if err != nil {
+		t.Fatal(err)
+	}
 	brawlerToken, brawlerID, err := ids.CreateInvite("Brawler", identity.RolePlayer)
 	if err != nil {
 		t.Fatal(err)
@@ -119,6 +123,7 @@ func newRulesetFixture(t *testing.T, withRuleset bool) *rulesetFixture {
 		Actor: &vttv1.Actor{
 			ActorId: "brawler", Name: "Brawler",
 			Attributes: map[string]int32{"brawn": 3, "grit": 1},
+			AbilityIds: []string{"fists"},
 		},
 	}})
 	mustAppend(t, c, "rf-seed-4", &vttv1.Envelope_ActorControlGranted{
@@ -154,7 +159,7 @@ func newRulesetFixture(t *testing.T, withRuleset bool) *rulesetFixture {
 
 	return &rulesetFixture{
 		t: t, srv: httpSrv,
-		dmToken:      dmToken,
+		dmToken: dmToken, agentToken: agentToken,
 		brawlerToken: brawlerToken, brawlerID: brawlerID,
 		patronToken: patronToken, patronID: patronID,
 		spectatorToken: spectatorToken,
@@ -293,11 +298,8 @@ func payloadKind(env *vttv1.Envelope) string {
 	}
 }
 
-// TestUseAbilityResolveValidationErrorIsCleanOkFalse covers Resolve's own
-// validation errors (unknown ability, here) surfacing as an ordinary
-// ok=false CommandResult — proving handleUseAbility does not distinguish
-// "no ruleset" from "ruleset loaded but Resolve rejected the command" at
-// the wire level; both are clean, connection-preserving denials.
+// An unknown ability is refused by the sheet's check before Resolve (VTT-690);
+// keep it an ordinary ok=false, as the no-ruleset refusal is.
 // VTT-132
 func TestUseAbilityResolveValidationErrorIsCleanOkFalse(t *testing.T) {
 	f := newRulesetFixture(t, true)
@@ -311,8 +313,8 @@ func TestUseAbilityResolveValidationErrorIsCleanOkFalse(t *testing.T) {
 	if res.Ok {
 		t.Fatalf("want ok=false for an unknown ability, got %+v", res)
 	}
-	if !strings.Contains(res.Error, "no-such-ability") {
-		t.Fatalf("error = %q, want it to name the unknown ability", res.Error)
+	if want := `gateway: use_ability: actor "brawler" does not name ability "no-such-ability"`; res.Error != want {
+		t.Fatalf("error = %q, want %q", res.Error, want)
 	}
 }
 
@@ -401,6 +403,7 @@ func TestAThresholdRefusalReachesTheIssuerWithoutItsExpression(t *testing.T) {
 	}})
 	mustAppend(t, c, "th-3", &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
 		ActorId: "a", Name: "A", Resources: map[string]*vttv1.Resource{"pool_a": {Current: 5, Max: 10}},
+		AbilityIds: []string{"guard-stance"},
 	}}})
 	mustAppend(t, c, "th-4", &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
 		TokenId: "ta", SceneId: "s1", ActorId: "a", Position: &vttv1.GridPosition{X: 0, Y: 0},

@@ -56,17 +56,18 @@ independent facts.
 
 **Conditions are narration, not enforcement.** The engine tracks which
 conditions are on which actor, and fires `bloodied`/`dying` automatically
-off the `hp` resource's thresholds — but it never READS a condition anywhere
-inside `use_ability`'s resolution. A `dying` (0 hp) or `dazed` actor can
-still be the caster OR the target of any ability, with no rejection, no
-penalty, nothing: the platform will happily let a creature at 0 hp swing a
-weapon, or let a `dazed` actor act as many times as the DM calls
-`use_ability` for it. "Unconscious and failing" (`dying`) and "can act
-only once per turn" (`dazed`) describe what the FICTION says that creature
-can do, not a rule the engine enforces. Stopping a dying goblin from
-striking back, or capping a dazed fighter at one action, is entirely on
-the DM's narration at the table — the same call a human DM would make,
-just without any engine backup.
+off the `hp` resource's thresholds — but it never READS a condition
+anywhere inside `use_ability`'s resolution. A `dying` (0 hp) or `dazed`
+actor can still be the caster of any ability its sheet names, OR the
+target of any ability, with no rejection, no penalty, nothing: the
+platform will happily let a creature at 0 hp swing a weapon, or let a
+`dazed` actor act as many times as the DM calls `use_ability` for it.
+"Unconscious and failing" (`dying`) and "can act only once per turn"
+(`dazed`) describe what the FICTION says that creature can do, not a rule
+the engine enforces. Stopping a dying goblin from striking back, or
+capping a dazed fighter at one action, is entirely on the DM's narration
+at the table — the same call a human DM would make, just without any
+engine backup.
 
 ## Atoms
 
@@ -254,12 +255,9 @@ so they live directly IN the `attributes` map, alongside `str`/`dex`/
 }
 ```
 
-**Ability lists:** the statblock's `abilityIds` names goblin-scimitar. The
-server checks only that each id there is an ability this ruleset holds:
-`use_ability` accepts any ability from this ruleset called from ANY actor,
-whatever its sheet names. Which creature uses which move is the DM's
-discipline to maintain in the fiction, not something the engine checks or
-rejects.
+**Ability lists:** the statblock's `abilityIds` names goblin-scimitar;
+`use_ability` refuses it any ability its sheet does not name, whoever calls
+it.
 
 ### Goblin archer
 
@@ -275,8 +273,8 @@ rejects.
 }
 ```
 
-**Ability lists:** the statblock names goblin-scimitar and goblin-shortbow.
-Same caveat as above: `use_ability` does not hold this actor to them.
+**Ability lists:** the statblock names goblin-scimitar and goblin-shortbow;
+`use_ability` refuses it any other.
 
 ### Human fighter
 
@@ -295,12 +293,11 @@ Same caveat as above: `use_ability` does not hold this actor to them.
 ```
 
 **Ability lists:** the statblock names crossbow-shot, hunters-flurry,
-longsword-strike, rally and staggering-blow. Same caveat again:
-`use_ability` does not hold this actor to them. The `flurry_uses`
-**resource** is what `hunters-flurry` actually spends, and it only exists
-on an actor whose `add_actor` call included it in `resources` — the Human
-Fighter above is the only statblock in this guide that needs it; neither
-goblin statblock carries `flurry_uses` at all.
+longsword-strike, rally and staggering-blow; `use_ability` refuses it any
+other. The `flurry_uses` **resource** is what `hunters-flurry` actually
+spends, and it only exists on an actor whose `add_actor` call included it
+in `resources` — the Human Fighter above is the only statblock in this
+guide that needs it; neither goblin statblock carries `flurry_uses` at all.
 
 ## Combat setup sequence
 

@@ -979,7 +979,7 @@ func newSightTable(t *testing.T) *sightTable {
 		}},
 		&vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
 			ActorId: "archer", Name: "Archer", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
-			Attributes: map[string]int32{"dex": 2},
+			Attributes: map[string]int32{"dex": 2}, AbilityIds: []string{"crossbow-shot"},
 		}}},
 		&vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
 			ActorId: "archer", ParticipantId: playerID, Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
@@ -1054,6 +1054,20 @@ func TestAnUnseenTargetAndAnAbsentOneAreAnsweredAlikeWhateverTheCommand(t *testi
 	}
 	if got := tb.head(t); got != head {
 		t.Errorf("the refusals moved the log head from %d to %d", head, got)
+	}
+}
+
+// Keep sight's answer first, whatever the caster's sheet names.
+// VTT-690 VTT-472
+func TestAPlayersUseAtAnUnseenTargetIsAnsweredBySightBeforeTheSheet(t *testing.T) {
+	tb := newSightTable(t)
+	named := tb.shoot(t, tb.playerToken, "crossbow-shot", "far")
+	unnamed := tb.shoot(t, tb.playerToken, "longsword-strike", "far")
+	if named.GetOk() || unnamed.GetOk() {
+		t.Fatalf("a use at an unseen target answered ok: named %v, unnamed %v", named.GetOk(), unnamed.GetOk())
+	}
+	if unnamed.GetError() != named.GetError() {
+		t.Errorf("an unnamed ability at an unseen target was answered %q, a named one %q", unnamed.GetError(), named.GetError())
 	}
 }
 

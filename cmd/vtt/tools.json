@@ -41,7 +41,7 @@
         "actor": {
           "properties": {
             "abilityIds": {
-              "description": "Optional. The abilities this actor has, each by its id in the served ruleset (get_ruleset lists them). With a ruleset served, an id the ruleset does not hold refuses the whole command.",
+              "description": "Optional. The abilities this actor has, each by its id in the served ruleset (get_ruleset lists them). use_ability refuses this actor any ability not named here, so an actor that names none can use none. With a ruleset served, an id the ruleset does not hold refuses the whole command.",
               "items": {
                 "type": "string"
               },
@@ -267,7 +267,7 @@
     "name": "end_session"
   },
   {
-    "description": "Use one of the loaded ruleset's abilities as an actor against explicit targets.",
+    "description": "Use an ability the acting actor's sheet names (its abilityIds) against explicit targets. A use of any other ability is refused, whatever your role.",
     "inputSchema": {
       "properties": {
         "abilityId": {
