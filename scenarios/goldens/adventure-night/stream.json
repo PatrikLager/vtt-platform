@@ -4144,7 +4144,11 @@
             "max": 6
           }
         },
-        "kind": "ACTOR_KIND_NON_PARTY"
+        "kind": "ACTOR_KIND_NON_PARTY",
+        "abilityIds": [
+          "goblin-scimitar",
+          "goblin-shortbow"
+        ]
       }
     }
   },
@@ -4173,7 +4177,10 @@
             "max": 8
           }
         },
-        "kind": "ACTOR_KIND_NON_PARTY"
+        "kind": "ACTOR_KIND_NON_PARTY",
+        "abilityIds": [
+          "goblin-scimitar"
+        ]
       }
     }
   },
@@ -4206,7 +4213,14 @@
             "max": 28
           }
         },
-        "kind": "ACTOR_KIND_PARTY_MEMBER"
+        "kind": "ACTOR_KIND_PARTY_MEMBER",
+        "abilityIds": [
+          "crossbow-shot",
+          "hunters-flurry",
+          "longsword-strike",
+          "rally",
+          "staggering-blow"
+        ]
       }
     }
   },

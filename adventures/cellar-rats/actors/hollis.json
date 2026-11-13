@@ -16,5 +16,11 @@
       "current": 2,
       "max": 2
     }
-  }
+  },
+  "ability_ids": [
+    "chair-swing",
+    "fists",
+    "sober-up",
+    "splash-of-water"
+  ]
 }

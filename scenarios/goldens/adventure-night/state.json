@@ -19,7 +19,11 @@
           "max": 6
         }
       },
-      "kind": 2
+      "kind": 2,
+      "ability_ids": [
+        "goblin-scimitar",
+        "goblin-shortbow"
+      ]
     },
     "act-cutter": {
       "actor_id": "act-cutter",
@@ -40,7 +44,10 @@
           "max": 8
         }
       },
-      "kind": 2
+      "kind": 2,
+      "ability_ids": [
+        "goblin-scimitar"
+      ]
     },
     "act-fighter": {
       "actor_id": "act-fighter",
@@ -65,7 +72,14 @@
           "max": 28
         }
       },
-      "kind": 1
+      "kind": 1,
+      "ability_ids": [
+        "crossbow-shot",
+        "hunters-flurry",
+        "longsword-strike",
+        "rally",
+        "staggering-blow"
+      ]
     }
   },
   "Conditions": {},

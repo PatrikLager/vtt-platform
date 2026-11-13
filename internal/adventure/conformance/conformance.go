@@ -32,7 +32,7 @@
 //	  "objects": [{"object_id": "...", "kind": "...", "at": {"x": 0, "y": 0}, "width": 0, "height": 0,
 //	    "rotation_degrees": 0, "blocks_sight": false, "blocks_move": false, "art": "..."}]}}
 //	{"type": "actor_added", "actor_added": {"actor_id": "...", "name": "...",
-//	  "kind": "ACTOR_KIND_PARTY_MEMBER|ACTOR_KIND_NON_PARTY",
+//	  "kind": "ACTOR_KIND_PARTY_MEMBER|ACTOR_KIND_NON_PARTY", "ability_ids": ["..."],
 //	  "attributes": {"...": 0}, "resources": {"...": {"current": 0, "max": 0}}}}
 //	{"type": "token_placed", "token_placed": {"token_id": "...", "scene_id": "...", "actor_id": "...", "x": 0, "y": 0}}
 //	{"type": "note_upserted", "note_upserted": {"key": "...", "title": "...",
@@ -309,6 +309,7 @@ type actorAddedDump struct {
 	Kind       string                  `json:"kind"`
 	Attributes map[string]int32        `json:"attributes,omitempty"`
 	Resources  map[string]resourceDump `json:"resources,omitempty"`
+	AbilityIDs []string                `json:"ability_ids,omitempty"`
 }
 
 type resourceDump struct {
@@ -418,6 +419,9 @@ func toObjectsDump(objects []*vttv1.SceneObject) []sceneObjectDump {
 
 func toActorAddedDump(a *vttv1.Actor) *actorAddedDump {
 	d := &actorAddedDump{ActorID: a.ActorId, Name: a.Name, Kind: a.GetKind().String()}
+	if len(a.GetAbilityIds()) > 0 {
+		d.AbilityIDs = a.GetAbilityIds()
+	}
 	if len(a.Attributes) > 0 {
 		d.Attributes = make(map[string]int32, len(a.Attributes))
 		for k, v := range a.Attributes {

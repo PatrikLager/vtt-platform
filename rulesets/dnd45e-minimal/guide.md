@@ -208,8 +208,9 @@ Each JSON block below is the EXACT `actor` argument to pass to `add_actor`
 — copy it verbatim, wire field for wire field, INCLUDING `kind`.
 
 `add_actor`'s wire schema is `actorId`/`kind`/`name`/`attributes`/
-`resources` (plus the opaque `moduleId`/`moduleData` pair this slice
-doesn't use). Two of those fields are not optional in the way the rest are:
+`resources`/`abilityIds` (plus the opaque `moduleId`/`moduleData` pair
+this slice doesn't use). Two of those fields are not optional in the way
+the rest are:
 
 - **`actorId` and `kind` are REQUIRED.** `kind` is `ACTOR_KIND_PARTY_MEMBER`
   for a player's character and `ACTOR_KIND_NON_PARTY` for every monster, NPC
@@ -222,11 +223,12 @@ doesn't use). Two of those fields are not optional in the way the rest are:
   Control is conferred afterwards by `grant_actor_control` — add first, then
   grant, two calls, always.
 
-There is NO `x`/`y` field and NO `abilities` field, and the MCP layer
-rejects unknown fields outright (`mcp: invalid arguments for add_actor:
-...`). Positioning is a SEPARATE call, `place_token`, made AFTER
-`add_actor` — see "Combat setup sequence" below. Each statblock's "Ability
-lists" note explains why abilities aren't part of the payload either.
+There is NO `x`/`y` field, and the MCP layer rejects unknown fields
+outright (`mcp: invalid arguments for add_actor: ...`). Positioning is a
+SEPARATE call, `place_token`, made AFTER `add_actor` — see "Combat setup
+sequence" below. `abilityIds` names the abilities the actor has, each by
+its id in this ruleset; with this ruleset served, an id it does not hold
+refuses the whole command.
 
 (The statblocks below carried no `kind` from 2026-07-26, when they were
 written (`298f677`), until 2026-09-02. `kind` became mandatory at `8f130c8`
@@ -247,16 +249,17 @@ so they live directly IN the `attributes` map, alongside `str`/`dex`/
   "name": "Goblin Cutter",
   "attributes": {"str": 1, "dex": 3, "con": 1, "max_hp": 8,
                  "ac": 15, "fort": 12, "ref": 14, "will": 11},
-  "resources": {"hp": {"current": 8, "max": 8}}
+  "resources": {"hp": {"current": 8, "max": 8}},
+  "abilityIds": ["goblin-scimitar"]
 }
 ```
 
-**Ability lists (narrative discipline):** goblin-scimitar. The platform
-does not enforce per-actor ability lists anywhere on the wire —
+**Ability lists:** the statblock's `abilityIds` names goblin-scimitar. The
+server checks only that each id there is an ability this ruleset holds:
 `use_ability` accepts any ability from this ruleset called from ANY actor,
-regardless of what it "should" know. Which creature knows which move is
-the DM's discipline to maintain in the fiction, not something the engine
-checks or rejects.
+whatever its sheet names. Which creature uses which move is the DM's
+discipline to maintain in the fiction, not something the engine checks or
+rejects.
 
 ### Goblin archer
 
@@ -267,13 +270,13 @@ checks or rejects.
   "name": "Goblin Archer",
   "attributes": {"str": 0, "dex": 4, "con": 1, "max_hp": 6,
                  "ac": 14, "fort": 11, "ref": 15, "will": 11},
-  "resources": {"hp": {"current": 6, "max": 6}}
+  "resources": {"hp": {"current": 6, "max": 6}},
+  "abilityIds": ["goblin-scimitar", "goblin-shortbow"]
 }
 ```
 
-**Ability lists (narrative discipline):** goblin-shortbow, goblin-scimitar.
-Same caveat as above — nothing on the wire binds these two abilities to
-this actor specifically; it is narration, not a platform rule.
+**Ability lists:** the statblock names goblin-scimitar and goblin-shortbow.
+Same caveat as above: `use_ability` does not hold this actor to them.
 
 ### Human fighter
 
@@ -285,18 +288,19 @@ this actor specifically; it is narration, not a platform rule.
   "attributes": {"str": 4, "dex": 2, "con": 3, "max_hp": 28,
                  "ac": 17, "fort": 15, "ref": 13, "will": 12},
   "resources": {"hp": {"current": 28, "max": 28},
-                "flurry_uses": {"current": 1, "max": 1}}
+                "flurry_uses": {"current": 1, "max": 1}},
+  "abilityIds": ["crossbow-shot", "hunters-flurry", "longsword-strike",
+                 "rally", "staggering-blow"]
 }
 ```
 
-**Ability lists (narrative discipline):** longsword-strike, crossbow-shot,
-hunters-flurry, staggering-blow, rally. Same caveat again — this is a note
-for the DM's own bookkeeping, not a wire-enforced list. The `flurry_uses`
-**resource**, by contrast, IS wire-real: it's what `hunters-flurry` actually
-spends, and it only exists on an actor whose `add_actor` call included it
-in `resources` — the Human Fighter above is the only statblock in this
-guide that needs it; neither goblin statblock carries `flurry_uses` at
-all.
+**Ability lists:** the statblock names crossbow-shot, hunters-flurry,
+longsword-strike, rally and staggering-blow. Same caveat again:
+`use_ability` does not hold this actor to them. The `flurry_uses`
+**resource** is what `hunters-flurry` actually spends, and it only exists
+on an actor whose `add_actor` call included it in `resources` — the Human
+Fighter above is the only statblock in this guide that needs it; neither
+goblin statblock carries `flurry_uses` at all.
 
 ## Combat setup sequence
 

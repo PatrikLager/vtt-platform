@@ -64,7 +64,13 @@
                 "current": 2,
                 "max": 2
               }
-            }
+            },
+            "abilityIds": [
+              "chair-swing",
+              "fists",
+              "sober-up",
+              "splash-of-water"
+            ]
           }
         }
       },
@@ -124,7 +130,13 @@
                 "current": 2,
                 "max": 2
               }
-            }
+            },
+            "abilityIds": [
+              "chair-swing",
+              "fists",
+              "sober-up",
+              "splash-of-water"
+            ]
           }
         }
       },
@@ -243,7 +255,13 @@
                 "current": 2,
                 "max": 2
               }
-            }
+            },
+            "abilityIds": [
+              "chair-swing",
+              "fists",
+              "sober-up",
+              "splash-of-water"
+            ]
           }
         }
       },

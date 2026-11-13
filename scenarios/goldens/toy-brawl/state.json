@@ -20,7 +20,13 @@
       "controller_ids": [
         "p-brawler"
       ],
-      "kind": 1
+      "kind": 1,
+      "ability_ids": [
+        "chair-swing",
+        "fists",
+        "sober-up",
+        "splash-of-water"
+      ]
     },
     "act-patron": {
       "actor_id": "act-patron",
@@ -44,7 +50,13 @@
       "controller_ids": [
         "p-patron"
       ],
-      "kind": 1
+      "kind": 1,
+      "ability_ids": [
+        "chair-swing",
+        "fists",
+        "sober-up",
+        "splash-of-water"
+      ]
     }
   },
   "Conditions": {

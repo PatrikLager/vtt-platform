@@ -17,5 +17,8 @@
       "current": 8,
       "max": 8
     }
-  }
+  },
+  "ability_ids": [
+    "goblin-scimitar"
+  ]
 }

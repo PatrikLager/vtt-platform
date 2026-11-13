@@ -22,7 +22,13 @@
       "controller_ids": [
         "p-hidden"
       ],
-      "kind": 2
+      "kind": 2,
+      "ability_ids": [
+        "chair-swing",
+        "fists",
+        "sober-up",
+        "splash-of-water"
+      ]
     },
     "act-latecomer": {
       "actor_id": "act-latecomer",
@@ -44,7 +50,13 @@
       "controller_ids": [
         "p-latecomer"
       ],
-      "kind": 1
+      "kind": 1,
+      "ability_ids": [
+        "chair-swing",
+        "fists",
+        "sober-up",
+        "splash-of-water"
+      ]
     },
     "act-watcher": {
       "actor_id": "act-watcher",
@@ -66,7 +78,13 @@
       "controller_ids": [
         "p-watcher"
       ],
-      "kind": 1
+      "kind": 1,
+      "ability_ids": [
+        "chair-swing",
+        "fists",
+        "sober-up",
+        "splash-of-water"
+      ]
     }
   },
   "Conditions": {

@@ -147,7 +147,13 @@
             "max": 2
           }
         },
-        "kind": "ACTOR_KIND_PARTY_MEMBER"
+        "kind": "ACTOR_KIND_PARTY_MEMBER",
+        "abilityIds": [
+          "chair-swing",
+          "fists",
+          "sober-up",
+          "splash-of-water"
+        ]
       }
     }
   },
@@ -175,7 +181,13 @@
             "max": 2
           }
         },
-        "kind": "ACTOR_KIND_PARTY_MEMBER"
+        "kind": "ACTOR_KIND_PARTY_MEMBER",
+        "abilityIds": [
+          "chair-swing",
+          "fists",
+          "sober-up",
+          "splash-of-water"
+        ]
       }
     }
   },

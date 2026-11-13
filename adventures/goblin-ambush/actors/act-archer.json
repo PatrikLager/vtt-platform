@@ -17,5 +17,9 @@
       "current": 6,
       "max": 6
     }
-  }
+  },
+  "ability_ids": [
+    "goblin-scimitar",
+    "goblin-shortbow"
+  ]
 }
