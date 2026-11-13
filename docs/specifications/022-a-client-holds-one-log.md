@@ -124,8 +124,11 @@ and `client/e2e/handover.spec.ts` (VTT-604 to VTT-607). That a window names
 a resource its ruleset declares by the property's display name and any other
 by its key is held by `client/test/naming.test.ts`,
 `client/test/spectator-view.test.ts`, `client/test/app.test.ts` and
-`client/test/qa-property-names.test.ts` (VTT-622, VTT-623). Every
-`client/e2e/` file runs outside `task check`.
+`client/test/qa-property-names.test.ts` (VTT-622, VTT-623). That the
+console's paste refuses a resource whose `current` has no value, and
+passes a `current` of `0` and a resource with no maximum, is held by
+`client/test/commands.test.ts` and `client/test/qa-add-actor-paste.test.ts`
+(VTT-672, VTT-679). Every `client/e2e/` file runs outside `task check`.
 
 That `internal/harness`'s client hands its reader every entry and each switch
 and that a dial names a log is held by
@@ -432,6 +435,18 @@ optional `notify`, to which `paint` passes the same `notify` it hands the
 console, which sets the toast and repaints, sending nothing and leaving
 `say-text` as typed (VTT-596). A whisper takes the Say's lock, and is kept and
 cleared as a line is.
+
+**Adding an actor from JSON.** Add from JSON hands the paste to
+`parseActorJSON` in `client/src/commands.ts`, which returns an `addActor`
+command or an error that the console tells through `DMDeps.notify`,
+sending nothing. It refuses, in this order, a paste that is not JSON, an
+actor `fromJson` refuses, and an actor with no `actorId`, one that names a
+controller and one with no `kind`, which the server refuses too (SPEC-013);
+then one holding a resource whose `current` is written `null`
+or left out, naming the actor and the key (VTT-672, SPEC-024).
+`valuelessCurrent` reads that from the paste as written, since `fromJson`
+reads such a `current` as `0`. A `current` of `0` passes, and a `max` left
+out or written `null` is no maximum (VTT-679).
 
 **What a command's answer leaves typed** (the owner's rulings "Ja, Say och
 alla formulär" and "Töm ändå", 2026-10-29). The console's controls that
@@ -776,4 +791,4 @@ VTT-526, VTT-527, VTT-528, VTT-530, VTT-531, VTT-532, VTT-533, VTT-534,
 VTT-535, VTT-536, VTT-537, VTT-538, VTT-540, VTT-541, VTT-572, VTT-573,
 VTT-574, VTT-575, VTT-576, VTT-577, VTT-579, VTT-580, VTT-593, VTT-594,
 VTT-595, VTT-596, VTT-597, VTT-599, VTT-600, VTT-604, VTT-605, VTT-606,
-VTT-607, VTT-622, VTT-623, VTT-662, VTT-666, VTT-668.
+VTT-607, VTT-622, VTT-623, VTT-662, VTT-666, VTT-668, VTT-672, VTT-679.

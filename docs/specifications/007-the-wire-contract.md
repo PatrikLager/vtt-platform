@@ -15,8 +15,11 @@ perch appends nothing, by `internal/gateway/server_visibility_test.go` and
 `internal/gateway/qa_controls_none_test.go`; that a player's result names the
 world event, by `TestThreeRoleExitScenarioOverLiveWebSockets` in
 `internal/gateway/scenario_test.go`; the `upsert_note` tool's schema, by
-`tools/toolgen/main_test.go` (VTT-232); a token's four texts, the rewrite and
-an ability's outcomes, by `TestTokenPlacedWithTextEnvelopeRoundTrip`,
+`tools/toolgen/main_test.go` (VTT-232); that `add_actor`'s schema requires a
+resource's `current` and not its `max`, by
+`TestAddActorRequiresAResourcesCurrentAndNotItsMax` in the same file and by
+`tools/toolgen/qa_add_actor_schema_test.go` (VTT-674); a token's four texts,
+the rewrite and an ability's outcomes, by `TestTokenPlacedWithTextEnvelopeRoundTrip`,
 `TestTokenDescribedEnvelopeRoundTrip`, `TestDescribeTokenCommandRoundTrip` and
 `TestAbilityUsedWithOutcomesEnvelopeRoundTrip` in
 `contract/roundtrip_test.go`, and their tools by
@@ -101,7 +104,11 @@ content schemas. Go access walks `structpb.Value`.
 **proto3 `optional` is the optionality annotation.** A field marked `optional`
 is an optional parameter in the derived MCP tool; an unannotated field is
 required. proto3 cannot express caller-facing optionality on its own, so this
-annotation is what `tools/toolgen` reads.
+annotation is what `tools/toolgen` reads, unless its manifest replaces a
+message's `required` list for one tool, wherever that tool's schema reaches
+the message (`fieldOverride.requiredOverride`). `add_actor`'s
+`vtt.v1.Resource` requires `current` alone, so a resource's `max` may be
+left out for none (VTT-674).
 
 ### A token's texts and an ability's outcomes
 
@@ -375,4 +382,4 @@ Those readers are not reading this record.
 ## Requirements
 
 VTT-184, VTT-232, VTT-473, VTT-479, VTT-480, VTT-505, VTT-559, VTT-560,
-VTT-561, VTT-562, VTT-563, VTT-567, VTT-591.
+VTT-561, VTT-562, VTT-563, VTT-567, VTT-591, VTT-674.

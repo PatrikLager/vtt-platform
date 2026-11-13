@@ -11,14 +11,17 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `internal/gateway/viewpoint.go` (`ownPartyMember`),
 `internal/gateway/grant_validate.go`
 (`validateGrantActorControl`), `internal/gateway/add_actor_validate.go`
-(`validateAddActor`), `internal/gateway/note_validate.go`
-(`validateUpsertNote`), `internal/gateway/convert.go` (`ToEvent`, `voice`) and
+(`validateAddActor`, `validateAddActorWith`),
+`internal/gateway/note_validate.go` (`validateUpsertNote`),
+`internal/gateway/convert.go` (`ToEvent`, `voice`) and
 `internal/gateway/server.go` (`answerCommand`, `authorize`,
 `handleSetViewpoint`, `handleCommand`, `describeBlockage`, `doorSquare`),
-with `perceive.SeesActor` and `rules.UnknownTarget` for the sight gate and
+with `perceive.SeesActor` and `rules.UnknownTarget` for the sight gate,
+`rules.Ruleset.SheetKeyFault` for `add_actor`'s keys and
 `engine.State.IsDoor` for the door gate, against `internal/engine`'s
 `State`; pinned by `internal/gateway/authz_test.go`,
 `grant_validate_test.go`, `add_actor_validate_test.go`,
+`add_actor_fit_internal_test.go`, `qa_add_actor_keys_test.go`,
 `note_validate_test.go`, `convert_test.go`, `server_test.go`,
 `server_visibility_test.go`, `server_internal_test.go`, `watch_test.go`,
 `seat_internal_test.go`, `viewpoint_test.go`, `qa_seat_test.go`,
@@ -231,7 +234,8 @@ runs, in this order, and stops at the first refusal:
 2. for a player's `use_ability`, the sight gate below;
 3. for an `open_door` or a `close_door`, from any role, the door gate below;
 4. `validateGrantActorControl`, for a `grant_actor_control`;
-5. `validateAddActor`, for an `add_actor`;
+5. `validateAddActorWith`, for an `add_actor`: `validateAddActor`, then the
+   actor's keys against the served ruleset;
 6. `validateUpsertNote`, for an `upsert_note`;
 7. the dispatch of `use_ability`, `load_adventure`, `load_map`,
    `remove_actor`, `remove_participant`, `promote_participant`,
@@ -330,7 +334,11 @@ included, with a message naming `grant_actor_control`; then leaves an
 the id is missing; then refuses a `kind` of `ACTOR_KIND_UNSPECIFIED` and
 accepts every other value, so an `add_actor` may declare a party member that
 nobody controls yet. A command wrong in both the controller and the kind is
-told about the controller. `engine.Apply` refuses an `ActorAdded` that names
+told about the controller. `validateAddActorWith` runs `validateAddActor`
+and then, with a ruleset served, reads an actor with an id against it,
+refusing a key the ruleset does not declare, or declares as the other type,
+naming the actor, the map and the key (VTT-677, SPEC-024); with none served
+it reads no key (VTT-675). `engine.Apply` refuses an `ActorAdded` that names
 a controller as well, and accepts one with no kind, which on a recorded event
 reads as not a party member; the kind refusal exists at the command boundary
 alone. `validateUpsertNote` refuses an `upsert_note` whose `visibility` is
@@ -442,4 +450,5 @@ VTT-147, VTT-148, VTT-149, VTT-150, VTT-151, VTT-152, VTT-153, VTT-154,
 VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161, VTT-162, VTT-231,
 VTT-261, VTT-344, VTT-379, VTT-463, VTT-472, VTT-482, VTT-487, VTT-495,
 VTT-496, VTT-497, VTT-498, VTT-499, VTT-503, VTT-506, VTT-565, VTT-587,
-VTT-588, VTT-589, VTT-590, VTT-601, VTT-602, VTT-603, VTT-608, VTT-609.
+VTT-588, VTT-589, VTT-590, VTT-601, VTT-602, VTT-603, VTT-608, VTT-609,
+VTT-675, VTT-677.
