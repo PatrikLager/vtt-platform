@@ -106,7 +106,7 @@ const sessionStarted: Frame = { sessionStarted: { name: "Night" } };
 const scene = (tiles?: Record<string, Frame>): Frame => ({
   sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 8, gridHeight: 8, ...(tiles ? { tiles } : {}) },
 });
-const actor = (actorId: string, name: string): Frame => ({ actorAdded: { actor: { actorId, name } } });
+const actor = (actorId: string, name: string): Frame => ({ actorAdded: { actor: { actorId, name, abilityIds: ["poke"] } } });
 const grant = (actorId: string, participantId: string, kind: string): Frame => ({
   actorControlGranted: { actorId, participantId, kind },
 });

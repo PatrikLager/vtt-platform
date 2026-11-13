@@ -136,7 +136,9 @@ test("a board click moves the selected actor's token", () => {
 test("a board click does NOT move while an ability is armed", () => {
   // Otherwise arming an ability and then clicking the board to aim would walk
   // your token onto the target instead of attacking it.
-  const cmd = moveCommandFor(world(), me, { selectedActorId: "mine", selectedAbilityId: "strike", doorsArmed: false }, { x: 4, y: 5 });
+  const st = world();
+  st.Actors["mine"]!.abilityIds = ["strike"];
+  const cmd = moveCommandFor(st, me, { selectedActorId: "mine", selectedAbilityId: "strike", doorsArmed: false }, { x: 4, y: 5 });
   expect(cmd).toBeNull();
 });
 

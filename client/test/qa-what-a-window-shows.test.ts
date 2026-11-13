@@ -39,7 +39,7 @@ const SECRETS = [
 function actor(id: string, name: string, kind: ActorKind, ctl: string[] = []): Actor {
   return {
     actorId: id, name, moduleId: "mod-x", attributes: {}, resources: {},
-    controllerId: ctl[0] ?? "", controllerIds: ctl, kind, abilityIds: [],
+    controllerId: ctl[0] ?? "", controllerIds: ctl, kind, abilityIds: ["ab-strike"],
   };
 }
 

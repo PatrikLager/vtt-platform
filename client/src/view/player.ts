@@ -1,17 +1,12 @@
-// The player panel: pick an actor you control, move it, use an ability, speak.
-//
-// Every rule this panel applies — who you control, what you can afford, what
-// is in reach — lives in player.ts as a tested pure function. None of them is
-// a security boundary: the server checks all three authoritatively, and this
-// only keeps a player from firing commands that would bounce.
-//
-// One ledgered limitation shows through here (T3): the ruleset format has no
-// target-kind, so the picker cannot tell a heal from a strike. Every token in
-// range is offered, including your own, and the server rejects illegal uses.
+// Keep every rule this panel applies — what its sheet names, what you can
+// afford, what is in reach — in player.ts as a tested pure function; none is
+// a security boundary, since the server checks each.
+// Offer every token in range, your own included: the ruleset format has no
+// target kind, and the server refuses an illegal use.
 
 import type { State } from "../state";
 import type { Ability, Me, Property } from "../metadata";
-import { affordable, controlledActors, readLine, targetableTokens } from "../player";
+import { affordable, controlledActors, offered, readLine, sheetNames, targetableTokens } from "../player";
 import { moveToken, useAbility, setViewpoint, speakAs, speakOutOfCharacter, addWhisper } from "../commands";
 import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import { currentSceneId, mayWorkDoor } from "./doors";
@@ -113,10 +108,11 @@ export function renderPlayerPanel(
   }
 
   // --- abilities ---
-  if (abilities.length > 0) {
+  const offers = offered(abilities, actor);
+  if (offers.length > 0) {
     wrap.appendChild(el("h3", undefined, "Abilities"));
     const list = el("div", "row");
-    for (const ab of abilities) {
+    for (const ab of offers) {
       const can = affordable(ab, actor);
       const b = el("button", ui.selectedAbilityId === ab.id ? "chip sel" : "chip", ab.name || ab.id);
       // Unaffordable abilities are shown and disabled rather than hidden: a
@@ -136,7 +132,7 @@ export function renderPlayerPanel(
   }
 
   // --- targets, when an ability is armed ---
-  const armed = abilities.find((a) => a.id === ui.selectedAbilityId);
+  const armed = offers.find((a) => a.id === ui.selectedAbilityId);
   if (armed && tokenId !== "") {
     const targets = targetableTokens(st, tokenId, armed);
     wrap.appendChild(el("h3", undefined, `Targets (range ${armed.range})`));
@@ -247,8 +243,10 @@ export function moveCommandFor(
   const tokenId = tokenForActor(st, actorId);
   if (tokenId === "") return null;
   // An armed ability means the click is aimed, not a move; targeting is
-  // handled by the target buttons so a stray board click cannot fire it.
-  if (ui.selectedAbilityId !== "") return null;
+  // handled by the target buttons so a stray board click cannot fire it. Keep
+  // a selection the sheet does not name unarmed (VTT-695).
+  const actor = st.Actors[actorId];
+  if (ui.selectedAbilityId !== "" && actor && sheetNames(actor, ui.selectedAbilityId)) return null;
   return moveToken(tokenId, cell);
 }
 

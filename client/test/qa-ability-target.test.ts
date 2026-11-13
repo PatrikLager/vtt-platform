@@ -30,7 +30,7 @@ function actor(id: string, name: string, controllers: string[], kind: ActorKind)
     resources: { drink: { current: 1, max: 4 }, stamina: { current: 2, max: 2 } },
     controllerId: controllers[0] ?? "",
     controllerIds: [...controllers],
-    kind, abilityIds: [],
+    kind, abilityIds: ["fists", "splash-of-water", "sober-up"],
   };
 }
 
@@ -288,8 +288,8 @@ test("qaAT: with no actor selected the first controlled actor by id casts, from 
   expect(ua.targetIds).toEqual(["act-hollis"]);
 });
 
-// VTT-438
-test("qaAT: one button per ability the ruleset lists", () => {
+// VTT-695
+test("qaAT: one button per ability the sheet names", () => {
   const st = world([MARA()], [token("tok-mara", "act-mara", 5, 5)]);
   const { el } = draw(st, PLAYER, [FISTS, SPLASH, SOBER], armed("act-mara", ""));
   const t = texts(el);

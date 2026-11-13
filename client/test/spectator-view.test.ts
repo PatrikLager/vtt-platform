@@ -44,7 +44,7 @@ function world(): State {
   st.Scenes["s1"] = { ID: "s1", Name: "The Hall", GridWidth: 6, GridHeight: 4 };
   st.Actors["a1"] = {
     actorId: "a1", name: "Lera", moduleId: "", attributes: {},
-    resources: { vigor: { current: 3, max: 10 } }, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.PARTY_MEMBER, abilityIds: [],
+    resources: { vigor: { current: 3, max: 10 } }, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.PARTY_MEMBER, abilityIds: ["jab", "poke", "m", "swing", "surge"],
   };
   st.Tokens["t1"] = { ID: "t1", SceneID: "s1", ActorID: "a1", X: 2, Y: 1 };
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 4 }];
@@ -365,7 +365,7 @@ test("a participant controlling nothing is told so, not shown empty controls", (
   expect(panel(st, [atWill]).node.textContent).toContain("do not control");
 });
 
-// VTT-438
+// VTT-695
 test("an unaffordable ability is shown but DISABLED, not hidden", () => {
   // A player needs to know the ability exists and why it is unavailable.
   const node = panel(world(), [costly]).node;
@@ -1612,7 +1612,7 @@ test("omitted extras leave no trace, not the word 'undefined'", () => {
 test("the selected actor's chip is marked, and the others are not", () => {
   const st = world();
   st.Actors["a2"] = {
-    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED, abilityIds: [],
+    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED, abilityIds: ["jab", "poke", "m", "swing", "surge"],
   };
   const p = panel(st, [atWill], { selectedActorId: "a2", selectedAbilityId: "" });
   expect(p.button("Bran").className).toBe("chip sel");
@@ -1622,7 +1622,7 @@ test("the selected actor's chip is marked, and the others are not", () => {
 test("clicking an actor selects it, drops any armed ability, and repaints", () => {
   const st = world();
   st.Actors["a2"] = {
-    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED, abilityIds: [],
+    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED, abilityIds: ["jab", "poke", "m", "swing", "surge"],
   };
   const p = panel(st, [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
   p.button("Bran").click();

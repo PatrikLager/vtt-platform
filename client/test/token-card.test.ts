@@ -21,7 +21,7 @@ function table(): State {
   const actor = (id: string, name: string, kind: ActorKind, controllers: string[] = []) => {
     st.Actors[id] = {
       actorId: id, name, moduleId: "", attributes: {}, resources: {},
-      controllerId: controllers[0] ?? "", controllerIds: controllers, kind, abilityIds: [],
+      controllerId: controllers[0] ?? "", controllerIds: controllers, kind, abilityIds: ["longsword-strike", "reach"],
     };
   };
   actor("act-lera", "Lera", ActorKind.PARTY_MEMBER, ["p-me"]);

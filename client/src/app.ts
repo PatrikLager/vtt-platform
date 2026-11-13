@@ -501,13 +501,10 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     void fetchMe(location.origin, token).then((m) => {
       me = m;
       paint();
-      // NO refresh here. A promotion is bounded to player and spectator
-      // (spec §3.1a) and the server refuses a target who is currently dm or
-      // agent, so re-reading a role can never WIDEN what this person may
-      // read: whenever the new role could see the sharing panel, the old one
-      // already could, and the refresh above has already run. A second call
-      // guarded on the new role would be a branch no supported transition can
-      // reach.
+      // Keep the sharing refresh above alone: a promotion is bounded to player
+      // and spectator, so no new role widens the sharing panel. A promotion or
+      // a demotion changes the abilities the window reads (VTT-712).
+      rereadIfStale();
     });
   });
 
@@ -533,12 +530,36 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     toast = `You no longer play ${left.map((a) => a.name || "an unnamed character").join(" and ")}.`;
   });
 
+  // Keep the ticket: two reads can be in flight, and only the newest may be
+  // drawn (VTT-696, VTT-697).
+  let rulesetKey = "";
+  let newestRuleset: object = {};
+  // Key a window that is not a player's as "": its read does not follow its set.
+  const watchKey = () => me?.role === "player"
+    ? JSON.stringify([session.watchable.map((a) => a.actorId), session.controlsNoPartyMember])
+    : "";
+  const rereadIfStale = () => {
+    if (watchKey() !== rulesetKey) void readRuleset().catch(() => undefined);
+  };
+  const readRuleset = () => {
+    const ticket = {};
+    newestRuleset = ticket;
+    rulesetKey = watchKey();
+    return fetchRuleset(location.origin, token).then((rs) => {
+      if (ticket !== newestRuleset) return;
+      abilities = rs.abilities;
+      properties = rs.properties;
+      paint();
+    });
+  };
+
   session.onChange(() => {
     // ART BEFORE PAINT, so a scene that has just arrived starts fetching in the
     // same tick it becomes visible. loadSceneArt issues no request at all once
     // every id it can see has been asked for, which is every frame but the ones
     // a new scene arrives on.
     loadSceneArt(session.state);
+    rereadIfStale();
     paint();
   });
 
@@ -561,14 +582,9 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
       // Gated on the role so a player never asks for a link the server would
       // refuse them.
       if (mayShare(me)) refreshSharing();
-      return fetchRuleset(location.origin, token);
+      return readRuleset();
     })
-    .then((rs) => {
-      abilities = rs.abilities;
-      properties = rs.properties;
-      paint();
-      return fetchAdventures(location.origin, token);
-    })
+    .then(() => fetchAdventures(location.origin, token))
     .then((advs) => {
       adventures = advs;
       paint();

@@ -1221,10 +1221,10 @@ function opensOn(sock: FakeSocket, viewpoint: string, actors: [string, string][]
 // a controller: creation makes a character, a grant hands it over (visibility
 // spec §5.1, 2026-08-24). This is also the shape the server's own projection
 // now sends a seat — an introduction with the grants behind it.
-function seedTable(sock: FakeSocket, actorId = "a1", participantId = "p") {
+function seedTable(sock: FakeSocket, actorId = "a1", participantId = "p", abilityIds: string[] = []) {
   sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
   sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 8, gridHeight: 8 } }));
-  sock.deliver(envelope(3, { actorAdded: { actor: { actorId, name: "Lera" } } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId, name: "Lera", abilityIds } } }));
   sock.deliver(
     envelope(4, {
       actorControlGranted: { actorId, participantId, kind: "ACTOR_KIND_PARTY_MEMBER" },
@@ -1253,7 +1253,7 @@ test("the ruleset's abilities reach the player panel, and nothing else does", as
   const sock = FakeSocket.instances[0]!;
   sock.open();
   opensOn(sock, "a1");
-  seedTable(sock);
+  seedTable(sock, "a1", "p", ["poke"]);
   await settle();
 
   const panel = r.querySelector(".player")!;
@@ -1274,10 +1274,145 @@ test("a ruleset that never loads leaves the panel with no ability list at all", 
   const sock = FakeSocket.instances[0]!;
   sock.open();
   opensOn(sock, "a1");
-  seedTable(sock);
+  seedTable(sock, "a1", "p", ["poke"]);
   await settle();
 
   expect(r.querySelector(".player")!.textContent).not.toContain("Abilities");
+  s?.close();
+});
+
+/** Serve /api/ruleset reads one at a time: each waits until the test answers it. */
+function stubRulesetReads(role: string | (() => string)) {
+  const reads: ((abilityIds: string[]) => void)[] = [];
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") return json({ participantId: "p", name: "Lera", role: typeof role === "string" ? role : role() });
+    if (path === "/api/adventures") return json({ adventures: [] });
+    if (path === "/api/ruleset") {
+      return new Promise<Response>((answer) => reads.push((ids) => answer(json({
+        id: "r", name: "R", conditions: [], resources: [], properties: [],
+        abilities: ids.map((id) => ({ id, name: id.toUpperCase(), range: 1, maxTargets: 1, usage: { kind: "atWill" } })),
+      }))));
+    }
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+  return reads;
+}
+
+/** A table with a1 controlled and naming poke and jab, its first read unanswered. */
+async function playerAwaitingReads(role = "player") {
+  localStorage.setItem("vtt.token", "tok");
+  const reads = stubRulesetReads(role);
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  opensOn(sock, "a1");
+  seedTable(sock, "a1", "p", ["poke", "jab"]);
+  await settle();
+  return { r, s, sock, reads };
+}
+
+const offeredChips = (r: HTMLElement) =>
+  Array.from(r.querySelector(".player")?.querySelectorAll("button") ?? []).map((b) => b.textContent);
+
+// VTT-696
+test("a player's window reads the ruleset again when its watchable set or flag changes, and only then", async () => {
+  const { r, s, sock, reads } = await playerAwaitingReads();
+  expect(reads.length).toBe(1);
+  reads[0]!(["poke"]);
+  await settle();
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Lera" }] } });
+  await settle();
+  expect(reads.length).toBe(1);
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Lera" }, { actorId: "a2", name: "Bo" }] } });
+  await settle();
+  expect(reads.length).toBe(2);
+  reads[1]!(["poke", "jab"]);
+  await settle();
+  expect(offeredChips(r)).toContain("JAB");
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Lera" }], controlsNoPartyMember: true } });
+  await settle();
+  expect(reads.length).toBe(3);
+  s?.close();
+});
+
+// Keep a DM's window on its one read: it reads every ability.
+test("a DM's window reads the ruleset once", async () => {
+  const { s, sock, reads } = await playerAwaitingReads("dm");
+  reads[0]!(["poke", "jab"]);
+  await settle();
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a2", name: "Bo" }] } });
+  await settle();
+  expect(reads.length).toBe(1);
+  s?.close();
+});
+
+// VTT-712
+test("a spectator who already controls the only party member and is made a player is offered its abilities", async () => {
+  let role = "spectator";
+  localStorage.setItem("vtt.token", "tok");
+  const reads = stubRulesetReads(() => role);
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  opensOn(sock, "a1");
+  seedTable(sock, "a1", "p", ["poke"]);
+  await settle();
+  reads[0]!([]);
+  await settle();
+  role = "player";
+  sock.deliver({ presenceChanged: { participantId: "p", displayName: "Lera", state: "PRESENCE_STATE_CONNECTED" } });
+  await settle();
+  expect(reads.length).toBe(2);
+  reads[1]!(["poke"]);
+  await settle();
+  expect(offeredChips(r)).toContain("POKE");
+  s?.close();
+});
+
+// VTT-712
+test("a player made a spectator reads the ruleset again", async () => {
+  let role = "player";
+  localStorage.setItem("vtt.token", "tok");
+  const reads = stubRulesetReads(() => role);
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  opensOn(sock, "a1");
+  seedTable(sock, "a1", "p", ["poke"]);
+  await settle();
+  reads[0]!(["poke"]);
+  await settle();
+  role = "spectator";
+  sock.deliver({ presenceChanged: { participantId: "p", displayName: "Lera", state: "PRESENCE_STATE_CONNECTED" } });
+  await settle();
+  expect(reads.length).toBe(2);
+  s?.close();
+});
+
+// VTT-697
+test("an older ruleset read answering after a newer one is not drawn", async () => {
+  const { r, s, sock, reads } = await playerAwaitingReads();
+  reads[0]!([]);
+  await settle();
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Lera" }, { actorId: "a2", name: "Bo" }] } });
+  await settle();
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Lera" }, { actorId: "a3", name: "Cy" }] } });
+  await settle();
+  expect(reads.length).toBe(3);
+  reads[2]!(["jab"]);
+  await settle();
+  reads[1]!(["poke"]);
+  await settle();
+  expect(offeredChips(r)).toContain("JAB");
+  expect(offeredChips(r)).not.toContain("POKE");
   s?.close();
 });
 
@@ -2887,7 +3022,8 @@ test("the window follows the ViewpointChanged, not the command's result", async 
  * A player at playerTableWithDoor's 4x4 scale (120 px per cell from x=80),
  * holding Lera (a1) at (1,1) and Bram (a2) at (1,0), opened on `viewpoint`.
  */
-async function twoMemberTable(viewpoint: string, set: [string, string][], abilities: unknown[] = []) {
+async function twoMemberTable(viewpoint: string, set: [string, string][], abilities: { id: string }[] = []) {
+  const abilityIds = abilities.map((a) => a.id);
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
     "/api/me": { participantId: "p", name: "Mira", role: "player" },
@@ -2902,9 +3038,9 @@ async function twoMemberTable(viewpoint: string, set: [string, string][], abilit
   opensOn(sock, viewpoint, set);
   sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
   sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 4, gridHeight: 4 } }));
-  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera" } } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera", abilityIds } } }));
   sock.deliver(envelope(4, { actorControlGranted: { actorId: "a1", participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
-  sock.deliver(envelope(5, { actorAdded: { actor: { actorId: "a2", name: "Bram" } } }));
+  sock.deliver(envelope(5, { actorAdded: { actor: { actorId: "a2", name: "Bram", abilityIds } } }));
   sock.deliver(envelope(6, { actorControlGranted: { actorId: "a2", participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
   sock.deliver(envelope(7, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }));
   sock.deliver(envelope(8, { tokenPlaced: { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 1, y: 0 } } }));
@@ -3001,7 +3137,7 @@ test("a player's armed ability stays armed, and a switch disarms it", async () =
   sock.deliver({ viewpointChanged: { actorId: "a2" } });
   sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
   sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 4, gridHeight: 4 } }));
-  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a2", name: "Bram" } } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a2", name: "Bram", abilityIds: ["poke"] } } }));
   sock.deliver(envelope(4, { actorControlGranted: { actorId: "a2", participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
   sock.deliver(envelope(5, { tokenPlaced: { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 1, y: 0 } } }));
   await settle();
@@ -3806,7 +3942,7 @@ test("the ruleset's properties reach the chip, the Story and the cost", async ()
   opensOn(sock, "a1");
   sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
   sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 8, gridHeight: 8 } }));
-  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera", resources: { vigor: { current: 3, max: 10 } } } } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera", resources: { vigor: { current: 3, max: 10 } }, abilityIds: ["jab"] } } }));
   sock.deliver(envelope(4, { actorControlGranted: { actorId: "a1", participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
   sock.deliver(envelope(5, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }));
   sock.deliver(envelope(6, { resourceChanged: { actorId: "a1", resource: "vigor", delta: -1, newValue: 2 } }));

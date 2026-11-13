@@ -51,7 +51,7 @@ function qaPNActor(
 ): State["Actors"][string] {
   return {
     actorId: id, name, moduleId: "mod", attributes: { ac: 17 }, resources,
-    controllerId: controllers[0] ?? "", controllerIds: controllers, kind, abilityIds: [],
+    controllerId: controllers[0] ?? "", controllerIds: controllers, kind, abilityIds: ["ab-zap", "ab-focus", "ab-hp", "ab-poke"],
   };
 }
 

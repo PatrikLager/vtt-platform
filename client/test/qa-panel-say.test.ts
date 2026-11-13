@@ -28,7 +28,7 @@ function world(controller: string): State {
     st.Actors[id] = {
       actorId: id, name, moduleId: "", attributes: {}, resources: {},
       controllerId: controller, controllerIds: [controller],
-      kind: ActorKind.PARTY_MEMBER, abilityIds: [],
+      kind: ActorKind.PARTY_MEMBER, abilityIds: ["strike"],
     };
   }
   st.Scenes["s-1"] = { ID: "s-1", Name: "Hall", GridWidth: 5, GridHeight: 5 };
@@ -160,7 +160,7 @@ describe("a DM's and an agent's panel draw no trace of Say", () => {
     expectNoSay(paint(t));
   });
 
-  // VTT-438
+  // VTT-695
   test("a DM's panel still draws its actors' chips and abilities", () => {
     const t = table("dm", recorder().send);
     const names = chipNames(paint(t));
@@ -169,7 +169,7 @@ describe("a DM's and an agent's panel draw no trace of Say", () => {
     expect(names).toContain("Strike");
   });
 
-  // VTT-438
+  // VTT-695
   test("an agent's panel still draws its actors' chips and abilities", () => {
     const t = table("agent", recorder().send);
     const names = chipNames(paint(t));

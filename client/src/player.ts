@@ -1,4 +1,4 @@
-// Player-side rules: what you control, what you can afford, what you can reach.
+// Player-side rules: what you control, are offered, can afford and can reach.
 //
 // These decide what the UI OFFERS. The server decides what is allowed — every
 // one of these checks is mirrored by an authoritative one behind the wire, and
@@ -24,6 +24,16 @@ export function controlledActors(st: State, participantId: string): Actor[] {
     // the server had already authorised.
     .filter((a) => a.controllerIds.includes(participantId))
     .sort((a, b) => (a.actorId < b.actorId ? -1 : a.actorId > b.actorId ? 1 : 0));
+}
+
+/** Whether actor's sheet names abilityId (VTT-695). */
+export function sheetNames(actor: Actor, abilityId: string): boolean {
+  return actor.abilityIds.includes(abilityId);
+}
+
+/** The window's abilities the actor's sheet names, in the window's order (VTT-695). */
+export function offered(abilities: Ability[], actor: Actor): Ability[] {
+  return abilities.filter((a) => sheetNames(actor, a.id));
 }
 
 /** Whether actor can currently pay for ability. */
