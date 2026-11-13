@@ -16,9 +16,9 @@ Accepted. Implemented by `internal/gateway/metadata.go` (`authed`,
 `internal/mcp/door_tools.go`; pinned by `internal/gateway/metadata_test.go`,
 `qa_me_503_test.go`, `adventure_test.go`, `ruleset_test.go`,
 `ruleset_properties_test.go`, `qa_ruleset_route_test.go`,
-`artfile_internal_test.go`, `internal/mcp/ruleset_tool_test.go`,
-`cmd/vtt/qa_get_ruleset_test.go` and, for
-the default cell size, `cmd/vtt/art_test.go`.
+`artfile_internal_test.go`, `qa_art_root_test.go`,
+`internal/mcp/ruleset_tool_test.go`, `cmd/vtt/qa_get_ruleset_test.go` and,
+for the default cell size, `cmd/vtt/art_test.go`.
 
 ## Principles served
 
@@ -147,24 +147,31 @@ lookup to the directory without flattening it. Then the root is opened with
 `os.OpenRoot` on every request and nothing is cached, so a piece installed or
 overwritten while the server runs is served on its next request; an art
 directory that is unset, absent or unopenable is answered 404, never 500.
-`fs.Stat` runs on `root.FS()`, the same `fs.FS` the serve uses, and requires a
-regular file, so a directory wearing an art name is 404 and a symlink out of
-the directory is not followed. Every served file carries
-`X-Content-Type-Options: nosniff` and `Cache-Control: no-cache` (a refusal
-carries the `nosniff` that `http.Error` sets and no `Cache-Control`), and the
-content type is set before `http.ServeFileFS` runs, because net/http infers one
-only when none is set: a name in `artContentTypes`, which holds `.png` alone,
-is served inline as `image/png`, and any other name, which is the sidecar, as
-`application/octet-stream` with `Content-Disposition: attachment`. The
-allowlist is closed, and the sidecar an attachment, because a file served with
-a browser-executable content type at a same-origin URL would let script read
-the client's bearer token from its storage and call every route as that seat;
-markdown a guide route returns is JSON-wrapped and never executed. `no-cache`
-rather than `no-store`: a browser may keep the bytes and must revalidate, and
-`http.ServeFileFS`'s `Last-Modified` answers an unchanged file's conditional
-request with 304 and no body. Every refusal is status 404 with the one body
+The file is reached through the root and never by path, so a symlink out of
+the directory is not followed, and `root.Stat` runs before `root.Open`: the
+stat requires a regular file before anything is opened, so a FIFO wearing an
+art name, whose open would hold the request, is refused without being opened,
+and a directory wearing an art name is 404; a file the root can stat and not
+open is 404 as well. Every served file carries
+`X-Content-Type-Options: nosniff` and `Cache-Control: no-cache` (a refusal the
+route makes carries the `nosniff` that `http.Error` sets and no
+`Cache-Control`), and the content type is set before `http.ServeContent` runs,
+because net/http infers one only when none is set: a name in
+`artContentTypes`, which holds `.png` alone, is served inline as `image/png`,
+and any other name, which is the sidecar, as `application/octet-stream` with
+`Content-Disposition: attachment`. The allowlist is closed, and the sidecar an
+attachment, because a file served with a browser-executable content type at a
+same-origin URL would let script read the client's bearer token from its
+storage and call every route as that seat; markdown a guide route returns is
+JSON-wrapped and never executed. `no-cache` rather than `no-store`: a browser
+may keep the bytes and must revalidate, and `http.ServeContent`, handed the
+stat's modification time, sets `Last-Modified` and answers an unchanged file's
+conditional request with 304 and no body. Every refusal the route makes once
+`authed` admits the caller is status 404 with the one body
 `gateway: no such art`, and no response names a path on the server, because a
-body reaches every authenticated seat.
+body reaches every authenticated seat. `http.ServeContent` itself refuses a
+`Range` it cannot parse or the file cannot satisfy, with 416, and a
+precondition the file fails (`If-Match`, `If-Unmodified-Since`), with 412.
 
 **What is set at boot.** The content the routes answer is set before the server
 serves and read from disk by `cmd/vtt`, not here. `WithRuleset` sets
@@ -250,4 +257,4 @@ VTT-112, VTT-113, VTT-114, VTT-115, VTT-116, VTT-117, VTT-118,
 VTT-119, VTT-120, VTT-121, VTT-122, VTT-123, VTT-124, VTT-125, VTT-126,
 VTT-127, VTT-128, VTT-129, VTT-130, VTT-131, VTT-132, VTT-133, VTT-134,
 VTT-135, VTT-136, VTT-137, VTT-578, VTT-581, VTT-619, VTT-620, VTT-621,
-VTT-631, VTT-632, VTT-633.
+VTT-631, VTT-632, VTT-633, VTT-682.
