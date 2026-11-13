@@ -1499,6 +1499,23 @@ func TestAnUnopenableArtRootDegradesAtRequestTime(t *testing.T) {
 	}
 }
 
+// VTT-682
+func TestAnArtFileTheServerCannotReadIs404(t *testing.T) {
+	f := newGatewayWithArt(t)
+	file := filepath.Join(f.artDir, "masonry-1.png")
+	if err := os.Chmod(file, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(file, 0o644) })
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: mode 000 does not forbid this process anything")
+	}
+	code, body := f.get("/api/art/masonry-1.png")
+	if code != http.StatusNotFound || strings.TrimSpace(string(body)) != "gateway: no such art" {
+		t.Fatalf("status = %d (%q), want 404 with the route's one body", code, body)
+	}
+}
+
 // TestNoArtResponseNamesWhereTheCampaignLives is internal/mapdef's
 // TestNoArtFailureNamesTheDirectoryItRead at the HTTP surface. An error body
 // travels to any authenticated seat, an agent included, and the server's

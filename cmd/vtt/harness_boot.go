@@ -14,8 +14,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -316,10 +318,13 @@ func bootSelfContained(sc *harness.Scenario) (*bootResult, error) {
 	wsURL := "ws://" + ln.Addr().String() + "/ws"
 	closeFn := func() error {
 		shutdownErr := srv.Close()
-		<-serveErrCh
+		serveErr := <-serveErrCh
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			serveErr = nil
+		}
 		composeErr := closeCompose()
 		removeErr := os.RemoveAll(dir)
-		return firstNonNil(shutdownErr, composeErr, removeErr)
+		return firstNonNil(shutdownErr, serveErr, composeErr, removeErr)
 	}
 	return &bootResult{WSURL: wsURL, Tokens: tokens, IDs: ids, CampaignDir: campaignPath, close: closeFn}, nil
 }
