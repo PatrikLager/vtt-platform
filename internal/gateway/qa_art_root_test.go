@@ -765,7 +765,7 @@ func TestQAArtRootAFIFOWearingAnArtFilenameIs404WithoutBlocking(t *testing.T) {
 	qaWantRefusal(t, "fifo", qaArtAnswer{status: resp.StatusCode, header: resp.Header, body: body, length: resp.ContentLength})
 }
 
-// VTT-117
+// VTT-709
 func TestQAArtRootArtIsAnsweredToEveryRole(t *testing.T) {
 	_, art, picture, _ := qaArtLayout(t)
 	tb := qaArtServe(t, art, true)

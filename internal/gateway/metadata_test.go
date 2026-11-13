@@ -210,7 +210,7 @@ func TestMetadataRejectsBadMissingAndRevokedTokens(t *testing.T) {
 // responses the UI renders honestly": a server with no ruleset answers 200
 // with empty collections rather than 404 or 500, so the client shows an empty
 // picker instead of an error banner.
-// VTT-114 VTT-115
+// VTT-114 VTT-711
 func TestMetadataEmptyCollectionsWithNothingLoaded(t *testing.T) {
 	f := newMetaFixture(t, false)
 
@@ -305,7 +305,7 @@ func TestMetadataRulesetAbilitiesAreSortedById(t *testing.T) {
 // TestMetadataAdventuresListedForEveryRole pins that the LIST is public to
 // all four roles even though the GUIDES are not — a player must be able to
 // see which adventures exist without reading the DM's secrets.
-// VTT-117 VTT-118
+// VTT-709 VTT-118
 func TestMetadataAdventuresListedForEveryRole(t *testing.T) {
 	f := newMetaFixture(t, true)
 
@@ -342,34 +342,47 @@ func TestMetadataAdventuresListedForEveryRole(t *testing.T) {
 	}
 }
 
-// TestMetadataRulesetGuideServedForEveryRole is the ruleset guide's happy path;
-// unlike an adventure guide it carries no DM secrets and is open to all four
-// roles (the LLM affordance every client may read).
-// VTT-117
-func TestMetadataRulesetGuideServedForEveryRole(t *testing.T) {
+// Keep this table written by hand, one cell per role, as the adventure guide's
+// is: a table derived from the role map would only say the map equals itself.
+// VTT-702
+func TestMetadataRulesetGuideRoleTable(t *testing.T) {
 	f := newMetaFixture(t, true)
-
 	for _, tc := range []struct {
-		role  string
-		token string
+		role, token string
+		want        int
 	}{
-		{"dm", f.dmToken},
-		{"agent", f.agentToken},
-		{"player", f.playerToken},
-		{"spectator", f.spectatorToken},
+		{"dm", f.dmToken, http.StatusOK},
+		{"agent", f.agentToken, http.StatusOK},
+		{"player", f.playerToken, http.StatusForbidden},
+		{"spectator", f.spectatorToken, http.StatusForbidden},
 	} {
 		code, body := f.get("/api/ruleset/guide", tc.token)
-		if code != http.StatusOK {
-			t.Fatalf("%s: status = %d, want 200 (body %s)", tc.role, code, body)
+		if code != tc.want {
+			t.Errorf("%s: status = %d, want %d (body %s)", tc.role, code, tc.want, body)
+			continue
 		}
-		var got struct {
-			Guide string `json:"guide"`
+		var got map[string]any
+		_ = json.Unmarshal(body, &got)
+		if g, _ := got["guide"].(string); (tc.want == http.StatusOK) != (g != "") {
+			t.Errorf("%s: answered %d with guide %q", tc.role, code, g)
 		}
-		if err := json.Unmarshal(body, &got); err != nil {
-			t.Fatalf("%s: decode: %v", tc.role, err)
-		}
-		if got.Guide == "" {
-			t.Errorf("%s: guide is empty", tc.role)
+	}
+}
+
+// VTT-711
+func TestARulesetGuideThatDoesNotExistIs404ToTheDMAndTheAgent(t *testing.T) {
+	f := newMetaFixture(t, false)
+	for _, tc := range []struct {
+		role, token string
+		want        int
+	}{
+		{"dm", f.dmToken, http.StatusNotFound},
+		{"agent", f.agentToken, http.StatusNotFound},
+		{"player", f.playerToken, http.StatusForbidden},
+		{"spectator", f.spectatorToken, http.StatusForbidden},
+	} {
+		if code, body := f.get("/api/ruleset/guide", tc.token); code != tc.want {
+			t.Errorf("%s: status = %d, want %d (body %s)", tc.role, code, tc.want, body)
 		}
 	}
 }
@@ -838,7 +851,7 @@ func TestNoPackRouteIsServed(t *testing.T) {
 // cellPx to draw with — client/src/view/spectator.ts's CELL = 44 is the only
 // cell size in the renderer, and metadata.ts merely declared the field. Task 6
 // of that plan is what gives a campaign-level cellPx its first reader.
-// VTT-117
+// VTT-709
 func TestMapsListedForEveryRole(t *testing.T) {
 	f := newGatewayWithMaps(t)
 	for _, tc := range []struct {
@@ -1379,7 +1392,7 @@ func TestArtFilesRequireAuth(t *testing.T) {
 // design spec §7's "everyone still sees the whole map. No filtering in this
 // arc". Unlike an adventure guide (DM secrets) or the join link (admission
 // control), a picture of a wall carries neither.
-// VTT-117
+// VTT-709
 func TestArtIsReadableByEveryRole(t *testing.T) {
 	f := newGatewayWithArt(t)
 	for _, tc := range []struct{ role, token string }{

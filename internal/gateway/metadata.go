@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/artlib"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
 	"github.com/PatrikLager/vtt-platform/internal/rules"
@@ -18,6 +19,12 @@ import (
 // Keep the HTTP gates out of commandRoles: its keys are the ClientCommand
 // oneof's fields, which TestEveryClientCommandHasRoleCells walks (SPEC-012).
 var adventureGuideRoles = map[identity.Role]bool{
+	identity.RoleDM:    true,
+	identity.RoleAgent: true,
+}
+
+// Keep this apart from adventureGuideRoles: widening one must not widen the other.
+var rulesetGuideRoles = map[identity.Role]bool{
 	identity.RoleDM:    true,
 	identity.RoleAgent: true,
 }
@@ -127,7 +134,8 @@ type propertyJSON struct {
 }
 
 func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
-	if s.authed(w, r) == nil {
+	who := s.authed(w, r)
+	if who == nil {
 		return
 	}
 	// Keep every slice non-nil: a JSON null where the client expects an array
@@ -142,7 +150,11 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 		rs := s.ruleset
 		out.ID, out.Name = rs.ID, rs.Name
 
+		reads := s.abilitiesReadBy(who)
 		for _, p := range rs.Compiled {
+			if !reads(p.ID) {
+				continue
+			}
 			a := abilityJSON{
 				ID:         p.ID,
 				Name:       p.Name,
@@ -184,8 +196,36 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
+// Keep this decided per request through controls (VTT-691): a set kept between
+// reads outlives a revocation.
+func (s *Server) abilitiesReadBy(p *identity.Participant) func(string) bool {
+	switch p.Role {
+	case identity.RoleDM, identity.RoleAgent:
+		return func(string) bool { return true }
+	case identity.RolePlayer:
+		var mine []*vttv1.Actor
+		if st := s.campaign.State(); st != nil {
+			for _, a := range st.Actors {
+				if controls(a, p.ID) {
+					mine = append(mine, a)
+				}
+			}
+		}
+		return func(id string) bool {
+			return slices.ContainsFunc(mine, func(a *vttv1.Actor) bool { return rules.Offers(a, id) })
+		}
+	default:
+		return func(string) bool { return false }
+	}
+}
+
 func (s *Server) handleRulesetGuide(w http.ResponseWriter, r *http.Request) {
-	if s.authed(w, r) == nil {
+	p := s.authed(w, r)
+	if p == nil {
+		return
+	}
+	if !rulesetGuideRoles[p.Role] {
+		http.Error(w, "gateway: not authorized", http.StatusForbidden)
 		return
 	}
 	if s.ruleset == nil || s.ruleset.Guide == "" {

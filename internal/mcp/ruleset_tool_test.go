@@ -1,7 +1,9 @@
 package mcp_test
 
 import (
+	"context"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 
@@ -46,4 +48,31 @@ func TestGetRulesetReturnsTheRulesetRouteVerbatim(t *testing.T) {
 	if got != answer {
 		t.Fatalf("the tool returned\n %s\nwant the route's answer verbatim\n %s", got, answer)
 	}
+}
+
+// VTT-694
+func TestGetRulesetSaysWhichAbilitiesEachRoleReads(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	cs, cleanup := startSession(t, fs.wsURL())
+	defer cleanup()
+	list, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	for _, tool := range list.Tools {
+		if tool.Name != "get_ruleset" {
+			continue
+		}
+		for _, want := range []string{"every ability for the DM and the agent",
+			"for a player only the abilities named by the sheets of the actors they control"} {
+			if !strings.Contains(tool.Description, want) {
+				t.Errorf("get_ruleset's description = %q, want it to say %q", tool.Description, want)
+			}
+		}
+		if strings.Contains(tool.Description, "as every participant can") {
+			t.Errorf("get_ruleset's description still says it reads %q", "as every participant can")
+		}
+		return
+	}
+	t.Fatal("no get_ruleset tool is served")
 }

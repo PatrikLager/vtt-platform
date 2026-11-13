@@ -288,7 +288,7 @@ func qaRRCheckBody(t *testing.T, rs *rules.Ruleset, body []byte) {
 	qaRRCheckProperties(t, rs, obj["properties"])
 }
 
-// VTT-632
+// VTT-632 VTT-710
 func TestQARRRulesetRouteAnswersEveryRole(t *testing.T) {
 	for name, rs := range qaRRFixtures(t) {
 		tbl := qaRRStart(t, rs, nil)
@@ -298,7 +298,17 @@ func TestQARRRulesetRouteAnswersEveryRole(t *testing.T) {
 				t.Errorf("%s as %s: status %d, want 200: %s", name, role, code, body)
 				continue
 			}
-			qaRRCheckBody(t, rs, body)
+			if role == identity.RoleDM || role == identity.RoleAgent {
+				qaRRCheckBody(t, rs, body)
+				continue
+			}
+			obj := qaRRObject(t, body)
+			if string(obj["abilities"]) != "[]" {
+				t.Errorf("%s as %s: abilities %s, want []", name, role, obj["abilities"])
+			}
+			qaRRCheckConditions(t, rs, obj["conditions"])
+			qaRRCheckResources(t, rs, obj["resources"])
+			qaRRCheckProperties(t, rs, obj["properties"])
 		}
 	}
 }
@@ -402,7 +412,7 @@ func TestQARRRulesetRouteAnswers401WithoutAnAcceptedToken(t *testing.T) {
 	}
 }
 
-// VTT-117
+// VTT-709
 func TestQARRMetadataRoutesAnswerEveryRole(t *testing.T) {
 	rs := qaRRLoad(t, qaRRRulesetDirs[0])
 	art := t.TempDir()
@@ -411,7 +421,7 @@ func TestQARRMetadataRoutesAnswerEveryRole(t *testing.T) {
 		t.Fatalf("write art: %v", err)
 	}
 	tbl := qaRRStart(t, rs, func(s *gateway.Server) { s.WithArtDir(art) })
-	routes := []string{"/api/adventures", "/api/ruleset/guide", "/api/maps", "/api/art/qa-rr-art.png"}
+	routes := []string{"/api/adventures", "/api/maps", "/api/art/qa-rr-art.png"}
 	for _, role := range qaRRRoles {
 		for _, route := range routes {
 			code, body := qaRRGet(t, tbl.url+route, tbl.tokens[role])
