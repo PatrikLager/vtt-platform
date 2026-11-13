@@ -243,7 +243,7 @@ function richState(): State {
   st.Scenes["s1"] = { ID: "s1", Name: "Hall", GridWidth: 4, GridHeight: 4 };
   st.Actors["a1"] = {
     actorId: "a1", name: "Hero", moduleId: "", attributes: {}, resources: {},
-    controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.PARTY_MEMBER,
+    controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.PARTY_MEMBER, abilityIds: [],
   };
   st.Tokens["t1"] = { ID: "t1", SceneID: "s1", ActorID: "a1", X: 1, Y: 1 };
   st.Conditions["a1"] = [{ ID: "prone", Source: "src", AppliedSeq: 1 }];

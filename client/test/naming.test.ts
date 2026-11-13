@@ -13,7 +13,7 @@ const env = (seq: number, payload: Envelope["payload"]): Envelope =>
 function actor(st: State, id: string, name: string, kind: ActorKind): void {
   st.Actors[id] = {
     actorId: id, name, moduleId: "", attributes: {}, resources: {},
-    controllerId: "", controllerIds: [], kind,
+    controllerId: "", controllerIds: [], kind, abilityIds: [],
   };
 }
 

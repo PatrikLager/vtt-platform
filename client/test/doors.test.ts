@@ -95,7 +95,7 @@ function sceneWithToken(
   const controllerId = opts.controllerId ?? "p-1";
   st.Actors["a1"] = {
     actorId: "a1", name: "Hero", moduleId: "", attributes: {}, resources: {},
-    controllerId, controllerIds: [controllerId], kind: ActorKind.PARTY_MEMBER,
+    controllerId, controllerIds: [controllerId], kind: ActorKind.PARTY_MEMBER, abilityIds: [],
   };
   st.Tokens["t1"] = { ID: "t1", SceneID: opts.sceneId ?? "scn", ActorID: "a1", X: x, Y: y };
   return st;

@@ -1,0 +1,17 @@
+{
+  "eventId": "evt-actor-1",
+  "sequence": "7",
+  "occurredAt": "2026-11-13T10:00:00Z",
+  "sessionId": "sess-1",
+  "actorRole": "dm",
+  "participantId": "p-dm",
+  "actorAdded": {
+    "actor": {
+      "actorId": "act-fighter",
+      "name": "Human Fighter",
+      "moduleId": "dnd45e-minimal",
+      "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "abilityIds": ["staggering-blow", "longsword-strike", "rally"]
+    }
+  }
+}

@@ -31,7 +31,7 @@ function table(role: Me["role"], answer: Send): Table {
   st.Actors["a1"] = {
     actorId: "a1", name: "Brakka", moduleId: "", attributes: {},
     resources: {}, controllerId: "p1", controllerIds: ["p1"],
-    kind: ActorKind.PARTY_MEMBER,
+    kind: ActorKind.PARTY_MEMBER, abilityIds: [],
   };
   const send: Send = (c) => {
     t.sent.push(c);

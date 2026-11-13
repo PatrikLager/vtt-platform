@@ -30,7 +30,7 @@ function actor(id: string, name: string, controllers: string[], kind: ActorKind)
     resources: { drink: { current: 1, max: 4 }, stamina: { current: 2, max: 2 } },
     controllerId: controllers[0] ?? "",
     controllerIds: [...controllers],
-    kind,
+    kind, abilityIds: [],
   };
 }
 

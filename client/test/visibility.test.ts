@@ -248,11 +248,11 @@ function playerBoard(): State {
   const st = fold(walkedThrough());
   st.Actors["hero"] = {
     actorId: "hero", name: "Lera", moduleId: "", attributes: {}, resources: {},
-    controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED,
+    controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED, abilityIds: [],
   };
   st.Actors["goblin"] = {
     actorId: "goblin", name: "Goblin", moduleId: "", attributes: {}, resources: {},
-    controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
+    controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
   };
   st.Tokens["t-hero"] = { ID: "t-hero", SceneID: "s1", ActorID: "hero", X: 1, Y: 1 };
   st.Tokens["t-gob"] = { ID: "t-gob", SceneID: "s1", ActorID: "goblin", X: 2, Y: 1 };

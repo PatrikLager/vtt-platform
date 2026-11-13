@@ -180,7 +180,7 @@ test("no control in the DM console retracts anything", () => {
 test("a condition on an actor gets a removal button that sends removeCondition", () => {
   const st = newState();
   st.Actors["a1"] = {
-    actorId: "a1", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
+    actorId: "a1", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
   };
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 3 }];
   const h = harness(st);
@@ -443,7 +443,7 @@ test("a remembered kind selects THAT option, and only that one", () => {
   const st = newState();
   st.Actors["act-boar"] = {
     actorId: "act-boar", name: "Boar", moduleId: "",
-    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
   };
   const parts = [{ participantId: "p-bo", displayName: "Bo" }];
   const first = harness(st, { participants: parts });
@@ -1052,7 +1052,7 @@ function tableWithActor(): State {
   st.Actors["act-warden"] = {
     actorId: "act-warden", name: "Warden", moduleId: "",
     attributes: {}, resources: {},
-    controllerId: "p-ana", controllerIds: ["p-ana"], kind: ActorKind.UNSPECIFIED,
+    controllerId: "p-ana", controllerIds: ["p-ana"], kind: ActorKind.UNSPECIFIED, abilityIds: [],
   };
   return st;
 }
@@ -1259,7 +1259,7 @@ test("each actor remembers its OWN grant choice", () => {
   const st = tableWithActor();
   st.Actors["act-adder"] = {
     actorId: "act-adder", name: "Adder", moduleId: "",
-    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
   };
   const parts = [{ participantId: "p-bo", displayName: "Bo" }];
   const first = harness(st, { participants: parts });
@@ -1288,7 +1288,7 @@ test("each actor remembers its OWN answer about what it is", () => {
   const st = tableWithActor();
   st.Actors["act-adder"] = {
     actorId: "act-adder", name: "Adder", moduleId: "",
-    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
   };
   const parts = [{ participantId: "p-bo", displayName: "Bo" }];
   const first = harness(st, { participants: parts });
@@ -1313,6 +1313,7 @@ test("the control panel's order does not depend on insertion order", () => {
   const mk = (id: string) => ({
     actorId: id, name: id, moduleId: "",
     attributes: {}, resources: {}, controllerId: "", controllerIds: [] as string[], kind: ActorKind.UNSPECIFIED,
+    abilityIds: [] as string[],
   });
   st.Actors["act-adder"] = mk("act-adder");
   st.Actors["act-warden"] = mk("act-warden");
@@ -1327,7 +1328,7 @@ test("the control panel lists actors in a stable order", () => {
   const st = tableWithActor();
   st.Actors["act-adder"] = {
     actorId: "act-adder", name: "Adder", moduleId: "",
-    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
   };
   const h = harness(st, { participants: [] });
   expect(Array.from(h.node.querySelectorAll(".control-actor")).map((r) => (r as HTMLElement).dataset["actor"]))
@@ -2000,7 +2001,7 @@ function tableForEveryForm(): State {
   for (const id of ["act-r1", "act-r2"]) {
     st.Actors[id] = {
       actorId: id, name: id, moduleId: "", attributes: {}, resources: {},
-      controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
+      controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
     };
   }
   return st;
@@ -2310,7 +2311,7 @@ function tableWithHeldActors(): State {
   const st = tableWithActor();
   st.Actors["act-dm"] = {
     actorId: "act-dm", name: "Grimble", moduleId: "", attributes: {}, resources: {},
-    controllerId: "p-dm", controllerIds: ["p-dm"], kind: ActorKind.NON_PARTY,
+    controllerId: "p-dm", controllerIds: ["p-dm"], kind: ActorKind.NON_PARTY, abilityIds: [],
   };
   return st;
 }
@@ -2621,7 +2622,7 @@ function whisperTable(): State {
   const pm = (id: string, name: string, who: string[]) => {
     st.Actors[id] = {
       actorId: id, name, moduleId: "", attributes: {}, resources: {},
-      controllerId: who[0] ?? "", controllerIds: who, kind: ActorKind.PARTY_MEMBER,
+      controllerId: who[0] ?? "", controllerIds: who, kind: ActorKind.PARTY_MEMBER, abilityIds: [],
     };
   };
   pm("t2", "Tobbe", ["p-kim"]);

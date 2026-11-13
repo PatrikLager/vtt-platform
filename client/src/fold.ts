@@ -527,6 +527,7 @@ function copyActor(a: {
   controllerId: string;
   controllerIds: string[];
   kind: ActorKind;
+  abilityIds: string[];
 }): Actor {
   const resources = emptyMap<Resource>();
   for (const [k, v] of Object.entries(a.resources ?? {})) {
@@ -538,6 +539,7 @@ function copyActor(a: {
     moduleId: a.moduleId,
     attributes: Object.assign(emptyMap<number>(), a.attributes),
     resources,
+    abilityIds: [...a.abilityIds],
     // VERBATIM, and no migration here — the strict mirror of internal/engine's
     // Apply, which gets this for free from proto.Clone. "Absent + a controller
     // means a party member" (visibility spec §5.1) is a READER's rule: applying
@@ -683,13 +685,11 @@ function actorJSON(a: Actor): Record<string, unknown> {
   }
   if (a.controllerId !== "") out["controller_id"] = a.controllerId;
   if (a.controllerIds.length > 0) out["controller_ids"] = a.controllerIds;
-  // LAST, because Go emits a struct in its DECLARED field order and kind is
-  // field 9, after controller_ids. A NUMBER rather than the enum name: Go's
-  // Actor is protobuf-generated but `vtt state dump` marshals it with
-  // encoding/json, not protojson, so an int32-based enum prints as its integer.
-  // Omitted at UNSPECIFIED, mirroring `json:"kind,omitempty"` — and that
-  // omission is what keeps all eight scenarios/goldens byte-identical, since
-  // every one of them predates this field.
+  // Kind, then ability_ids: fields 9 and 10, in Go's DECLARED field order.
+  // Kind is a NUMBER, not the enum name: `vtt state dump` marshals the
+  // protobuf-generated Actor with encoding/json, which prints an int32 enum
+  // as its integer. Each is omitted when zero or empty, as `omitempty` does.
   if (a.kind !== 0) out["kind"] = a.kind;
+  if (a.abilityIds.length > 0) out["ability_ids"] = a.abilityIds;
   return out;
 }

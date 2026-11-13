@@ -20,7 +20,7 @@ type Person = { id: string; name: string; role: "dm" | "agent" | "player" | "spe
 function qaActor(st: State, id: string, name: string, kind: ActorKind, controllers: string[]): void {
   st.Actors[id] = {
     actorId: id, name, moduleId: "", attributes: {}, resources: {},
-    controllerId: controllers[0] ?? "", controllerIds: controllers, kind,
+    controllerId: controllers[0] ?? "", controllerIds: controllers, kind, abilityIds: [],
   };
 }
 

@@ -28,7 +28,7 @@ function world(controller: string): State {
     st.Actors[id] = {
       actorId: id, name, moduleId: "", attributes: {}, resources: {},
       controllerId: controller, controllerIds: [controller],
-      kind: ActorKind.PARTY_MEMBER,
+      kind: ActorKind.PARTY_MEMBER, abilityIds: [],
     };
   }
   st.Scenes["s-1"] = { ID: "s-1", Name: "Hall", GridWidth: 5, GridHeight: 5 };

@@ -283,6 +283,24 @@ func TestActorControlRevokedEnvelopeRoundTrip(t *testing.T) {
 	roundTrip(t, "actor_control_revoked_envelope.json", &vttv1.Envelope{})
 }
 
+// VTT-683
+func TestActorAddedWithAbilityIdsRoundTripsInItsOrder(t *testing.T) {
+	roundTrip(t, "actor_added_ability_ids_envelope.json", &vttv1.Envelope{})
+}
+
+// VTT-683
+func TestAnActorsAbilityIdsAreAPlainListOfStrings(t *testing.T) {
+	fd := (&vttv1.Actor{}).ProtoReflect().Descriptor().Fields().ByName("ability_ids")
+	if fd == nil {
+		t.Fatal("vtt.v1.Actor has no ability_ids field")
+	}
+	if fd.Number() != 10 || !fd.IsList() || fd.Kind() != protoreflect.StringKind ||
+		fd.HasOptionalKeyword() || fd.JSONName() != "abilityIds" {
+		t.Errorf("ability_ids is field %d, list %v, kind %v, optional %v, JSON %q; want 10, a list of string, not optional, abilityIds",
+			fd.Number(), fd.IsList(), fd.Kind(), fd.HasOptionalKeyword(), fd.JSONName())
+	}
+}
+
 // Presence rides the ServerFrame, NEVER the Envelope. Who happened to be
 // online is not campaign history: appending it would make every replay
 // reconstruct session noise and change what `vtt state dump` prints.

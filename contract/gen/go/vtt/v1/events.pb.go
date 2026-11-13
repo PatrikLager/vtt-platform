@@ -617,7 +617,9 @@ type Actor struct {
 	// adventure's actors/*.json. An ungranted actor declaring PARTY_MEMBER is a
 	// pregenerated character waiting to be assigned, which the party is right to
 	// know about — a grant later restates the standing if it changes.
-	Kind          ActorKind `protobuf:"varint,9,opt,name=kind,proto3,enum=vtt.v1.ActorKind" json:"kind,omitempty"`
+	Kind ActorKind `protobuf:"varint,9,opt,name=kind,proto3,enum=vtt.v1.ActorKind" json:"kind,omitempty"`
+	// The ruleset's abilities this actor has, by id; SPEC-025.
+	AbilityIds    []string `protobuf:"bytes,10,rep,name=ability_ids,json=abilityIds,proto3" json:"ability_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -713,6 +715,13 @@ func (x *Actor) GetKind() ActorKind {
 		return x.Kind
 	}
 	return ActorKind_ACTOR_KIND_UNSPECIFIED
+}
+
+func (x *Actor) GetAbilityIds() []string {
+	if x != nil {
+		return x.AbilityIds
+	}
+	return nil
 }
 
 // ActorControlGranted adds a participant to an actor's controller set, and
@@ -3179,7 +3188,7 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\aoutcome\x18\b \x01(\tR\aoutcome\"6\n" +
 	"\bResource\x12\x18\n" +
 	"\acurrent\x18\x01 \x01(\x05R\acurrent\x12\x10\n" +
-	"\x03max\x18\x02 \x01(\x05R\x03max\"\x8a\x04\n" +
+	"\x03max\x18\x02 \x01(\x05R\x03max\"\xab\x04\n" +
 	"\x05Actor\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
@@ -3192,7 +3201,10 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"moduleData\x12#\n" +
 	"\rcontroller_id\x18\a \x01(\tR\fcontrollerId\x12%\n" +
 	"\x0econtroller_ids\x18\b \x03(\tR\rcontrollerIds\x12%\n" +
-	"\x04kind\x18\t \x01(\x0e2\x11.vtt.v1.ActorKindR\x04kind\x1a=\n" +
+	"\x04kind\x18\t \x01(\x0e2\x11.vtt.v1.ActorKindR\x04kind\x12\x1f\n" +
+	"\vability_ids\x18\n" +
+	" \x03(\tR\n" +
+	"abilityIds\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\x1aN\n" +

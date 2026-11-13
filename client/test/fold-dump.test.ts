@@ -59,6 +59,24 @@ test("an actor's module_id is emitted when set and omitted when empty", () => {
   expect(parsed.Actors.a2).not.toHaveProperty("module_id");
 });
 
+// VTT-704 VTT-706
+test("an actor's ability_ids follow its kind in their order, and are omitted when empty", () => {
+  const log = [
+    started,
+    env(2, {
+      actorAdded: {
+        actor: { actorId: "a1", name: "A", kind: "ACTOR_KIND_PARTY_MEMBER", abilityIds: ["rally", "fists"] },
+      },
+    }),
+    env(3, { actorAdded: { actor: { actorId: "a2", name: "B", kind: "ACTOR_KIND_PARTY_MEMBER" } } }),
+  ];
+  const { parsed } = dumpOf(log);
+  expect(Object.keys(parsed.Actors.a1).slice(-2)).toEqual(["kind", "ability_ids"]);
+  expect(parsed.Actors.a1.ability_ids).toEqual(["rally", "fists"]);
+  expect(parsed.Actors.a2).not.toHaveProperty("ability_ids");
+  expect(fold(log).Actors["a1"]!.abilityIds).toEqual(["rally", "fists"]);
+});
+
 test("a resource's zero max is OMITTED while a set max is present", () => {
   // max <= 0 means unlimited, and protobuf omitempty makes {current:0,max:0}
   // marshal as {}. Emitting `max: 0` would diverge from Go's dump.

@@ -35,10 +35,10 @@ function worldWith(): State {
     moduleId: "",
     attributes: {},
     resources: { vigor: { current: 3, max: 10 }, focus: { current: 7, max: 7 } },
-    controllerId: "p-player", controllerIds: ["p-player"], kind: ActorKind.PARTY_MEMBER,
+    controllerId: "p-player", controllerIds: ["p-player"], kind: ActorKind.PARTY_MEMBER, abilityIds: [],
   };
   st.Actors["a2"] = {
-    actorId: "a2", name: "", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
+    actorId: "a2", name: "", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
   };
   st.Tokens["t1"] = { ID: "t1", SceneID: "s1", ActorID: "a1", X: 2, Y: 3 };
   st.Tokens["t2"] = { ID: "t2", SceneID: "s2", ActorID: "a2", X: 0, Y: 0 };
@@ -105,7 +105,7 @@ test("discs come back in tokenId order regardless of insertion order", () => {
   for (const id of ["t3", "t1", "t4", "t2"]) {
     st.Actors["a" + id] = {
       actorId: "a" + id, name: id.toUpperCase(), moduleId: "",
-      attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
+      attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
     };
     st.Tokens[id] = { ID: id, SceneID: "s1", ActorID: "a" + id, X: 0, Y: 0 };
   }
@@ -119,7 +119,7 @@ test("the order is ASCENDING, and it is the comparator producing it", () => {
   // answer here.
   const st = newState();
   st.Scenes["s1"] = { ID: "s1", Name: "Hall", GridWidth: 4, GridHeight: 4 };
-  st.Actors["a"] = { actorId: "a", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED };
+  st.Actors["a"] = { actorId: "a", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [] };
   st.Tokens["zz"] = { ID: "zz", SceneID: "s1", ActorID: "a", X: 0, Y: 0 };
   st.Tokens["aa"] = { ID: "aa", SceneID: "s1", ActorID: "a", X: 1, Y: 1 };
   const ids = discsOf(st, "s1").map((d) => d.tokenId);
@@ -156,7 +156,7 @@ test("a long reversed board still sorts, exercising the merge paths", () => {
   // equal keys are impossible, so the arm is unobservable rather than untested.
   const st = newState();
   st.Scenes["s1"] = { ID: "s1", Name: "Hall", GridWidth: 40, GridHeight: 40 };
-  st.Actors["a"] = { actorId: "a", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED };
+  st.Actors["a"] = { actorId: "a", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [] };
   const ids = Array.from({ length: 20 }, (_, i) => `t${String(20 - i).padStart(2, "0")}`);
   for (const id of ids) st.Tokens[id] = { ID: id, SceneID: "s1", ActorID: "a", X: 0, Y: 0 };
   const got = discsOf(st, "s1").map((d) => d.tokenId);

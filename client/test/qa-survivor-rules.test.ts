@@ -248,7 +248,7 @@ function playerPanel(): Panel {
   st.Actors["actor-1"] = {
     actorId: "actor-1", name: "Ada Byron", moduleId: "module-1",
     attributes: {}, resources: {}, controllerId: "p-1",
-    controllerIds: ["p-1"], kind: ActorKind.PARTY_MEMBER,
+    controllerIds: ["p-1"], kind: ActorKind.PARTY_MEMBER, abilityIds: [],
   };
   const me = { participantId: "p-1", name: "Pat", role: "player" as const };
   const ui: PlayerUIState = {

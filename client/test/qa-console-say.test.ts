@@ -42,7 +42,7 @@ function aWorldWhereTheDMControlsAnActor(): Table {
   st.Actors["hero"] = {
     actorId: "hero", name: "Hero", moduleId: "", attributes: {},
     resources: {}, controllerId: "dm-1", controllerIds: ["dm-1"],
-    kind: ActorKind.PARTY_MEMBER,
+    kind: ActorKind.PARTY_MEMBER, abilityIds: [],
   };
   const t = table(st);
   t.participants = [{ participantId: "dm-1", displayName: "Dee" }];

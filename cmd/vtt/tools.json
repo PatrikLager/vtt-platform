@@ -40,6 +40,12 @@
       "properties": {
         "actor": {
           "properties": {
+            "abilityIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "actorId": {
               "description": "The new actor's id. Never reuse the id of an actor this campaign has had, even one since removed: a character log is named by its actor's id, so an actor added under a used id continues the earlier actor's log, if it had one, once it is a party member. At most 128 bytes of UTF-8; a longer id refuses the whole command.",
               "type": "string"

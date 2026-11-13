@@ -65,7 +65,7 @@ function world(sfx: string): State {
   for (const a of [`act-${sfx}`, `act2-${sfx}`]) {
     st.Actors[a] = {
       actorId: a, name: `Name of ${a}`, moduleId: "", attributes: {},
-      resources: {}, controllerId: "", controllerIds: [], kind: 1,
+      resources: {}, controllerId: "", controllerIds: [], kind: 1, abilityIds: [],
     };
   }
   for (const t of [`tok-${sfx}`, `tok2-${sfx}`]) {

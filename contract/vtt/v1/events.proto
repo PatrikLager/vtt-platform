@@ -158,6 +158,8 @@ message Actor {
   // pregenerated character waiting to be assigned, which the party is right to
   // know about — a grant later restates the standing if it changes.
   ActorKind kind = 9;
+  // The ruleset's abilities this actor has, by id; SPEC-025.
+  repeated string ability_ids = 10;
 }
 
 // ActorControlGranted adds a participant to an actor's controller set, and

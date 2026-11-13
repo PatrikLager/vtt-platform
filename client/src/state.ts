@@ -191,6 +191,8 @@ export interface Actor {
    * party" without asking who holds whom.
    */
   kind: ActorKind;
+  /** The ruleset's abilities this actor has, by id; SPEC-025. */
+  abilityIds: string[];
 }
 
 export interface State {
