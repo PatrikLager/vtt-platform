@@ -180,6 +180,7 @@ type actorJSON struct {
 	// Keep these pointers: a value written as null must be seen (VTT-670).
 	Attributes map[string]*int32           `json:"attributes"`
 	Resources  map[string]*resourceValJSON `json:"resources"`
+	AbilityIDs []string                    `json:"ability_ids"`
 }
 
 // actorKinds is the authored vocabulary for an actor's kind, and the whole of
@@ -213,9 +214,10 @@ type resourceValJSON struct {
 
 // loadActors decodes every actors/*.json file in file-name order, which
 // Compile keeps, checking each actor's required KIND (no default; the check
-// says why), its keys against rs (rules.Ruleset.SheetKeyFault) and its values
-// (actorValues). It also returns the set of actor ids, so loadScenes checks a
-// placement's actor without a second directory read.
+// says why), its keys against rs (rules.Ruleset.SheetKeyFault), its values
+// (actorValues) and its ability ids (rules.Ruleset.SheetAbilityFault). It
+// also returns the set of actor ids, so loadScenes checks a placement's actor
+// without a second directory read.
 func loadActors(dir string, rs *rules.Ruleset) ([]AdventureActor, map[string]bool, error) {
 	paths, err := jsonFilesIn(dir)
 	if err != nil {
@@ -290,12 +292,16 @@ func loadActors(dir string, rs *rules.Ruleset) ([]AdventureActor, map[string]boo
 		if err != nil {
 			return nil, nil, err
 		}
+		if f := rs.SheetAbilityFault(raw.AbilityIDs); f != nil {
+			return nil, nil, fieldErr(path, f.Field, f.Reason)
+		}
 
 		actorIDs[raw.ActorID] = true
 		out = append(out, AdventureActor{
 			ID: raw.ActorID, Name: raw.Name, Kind: kind,
 			Attributes: attributes,
 			Resources:  resources,
+			AbilityIDs: raw.AbilityIDs,
 		})
 	}
 	return out, actorIDs, nil

@@ -41,6 +41,7 @@
         "actor": {
           "properties": {
             "abilityIds": {
+              "description": "Optional. The abilities this actor has, each by its id in the served ruleset (get_ruleset lists them). With a ruleset served, an id the ruleset does not hold refuses the whole command.",
               "items": {
                 "type": "string"
               },

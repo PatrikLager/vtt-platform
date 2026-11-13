@@ -37,21 +37,24 @@ func validateAddActor(cmd *vttv1.AddActor) error {
 	return nil
 }
 
-// validateAddActorWith answers validateAddActor's refusals first, then a key
-// rs does not have; with no ruleset served, none (VTT-677, VTT-675).
+// validateAddActorWith answers validateAddActor's refusals, then a sheet that
+// does not fit rs, or none without rs (VTT-675, VTT-677, VTT-685, VTT-686).
 func validateAddActorWith(cmd *vttv1.AddActor, rs *rules.Ruleset) error {
 	if err := validateAddActor(cmd); err != nil {
 		return err
 	}
-	return validateAddActorKeys(cmd, rs)
+	return validateAddActorSheet(cmd, rs)
 }
 
-func validateAddActorKeys(cmd *vttv1.AddActor, rs *rules.Ruleset) error {
+func validateAddActorSheet(cmd *vttv1.AddActor, rs *rules.Ruleset) error {
 	a := cmd.GetActor()
 	if rs == nil || a.GetActorId() == "" {
 		return nil
 	}
 	f := rs.SheetKeyFault(slices.Collect(maps.Keys(a.GetAttributes())), slices.Collect(maps.Keys(a.GetResources())))
+	if f == nil {
+		f = rs.SheetAbilityFault(a.GetAbilityIds())
+	}
 	if f == nil {
 		return nil
 	}

@@ -648,6 +648,18 @@ func TestAddActorSaysWhatItRefusesInASheet(t *testing.T) {
 	}
 }
 
+// VTT-700
+func TestAddActorDocumentsTheAbilitiesItsSheetNames(t *testing.T) {
+	actor := findTool(t, "add_actor")["inputSchema"].(map[string]any)["properties"].(map[string]any)["actor"].(map[string]any)
+	desc, _ := actor["properties"].(map[string]any)["abilityIds"].(map[string]any)["description"].(string)
+	for _, want := range []string{"abilities this actor has", "by its id", "get_ruleset",
+		"an id the ruleset does not hold refuses the whole command"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("add_actor's abilityIds description = %q, want it to say %q", desc, want)
+		}
+	}
+}
+
 // TestPlaceTokenOffersTheFourTextsAsOptional pins place_token's required list
 // to the four of a bare placement, and has each text say who is sent it.
 func TestPlaceTokenOffersTheFourTextsAsOptional(t *testing.T) {

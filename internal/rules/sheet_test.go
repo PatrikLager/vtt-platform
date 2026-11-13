@@ -78,3 +78,46 @@ func TestSheetKeyFaultLeavesItsCallersKeysInTheirOrder(t *testing.T) {
 		t.Fatalf("keys = %v after SheetKeyFault, want them as passed", keys)
 	}
 }
+
+// VTT-685 VTT-687 VTT-688
+func TestSheetAbilityFaultNamesTheFirstIdTheRulesetDoesNotHold(t *testing.T) {
+	rs := &rules.Ruleset{Compiled: map[string]*rules.CompiledPower{"fists": {}, "rally": {}}}
+	cases := []struct {
+		name string
+		ids  []string
+		key  string
+	}{
+		{name: "held ids fit", ids: []string{"rally", "fists"}},
+		{name: "a sheet naming no ability fits"},
+		{name: "a repeated held id fits", ids: []string{"fists", "fists"}},
+		{name: "an id the ruleset does not hold", ids: []string{"fists", "nope"}, key: "nope"},
+		{name: "ids are read in byte order, upper case before lower",
+			ids: []string{"zz", "b", "B", "fists"}, key: "B"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := rs.SheetAbilityFault(c.ids)
+			if c.key == "" {
+				if f != nil {
+					t.Fatalf("SheetAbilityFault = %+v, want nil", *f)
+				}
+				return
+			}
+			want := rules.SheetFault{Field: "ability_ids", Key: c.key,
+				Reason: `names ability "` + c.key + `", which the ruleset does not hold`}
+			if f == nil || *f != want {
+				t.Fatalf("SheetAbilityFault = %+v, want %+v", f, want)
+			}
+		})
+	}
+}
+
+// VTT-683
+func TestSheetAbilityFaultLeavesItsCallersIdsInTheirOrder(t *testing.T) {
+	rs := &rules.Ruleset{}
+	ids := []string{"c", "a", "b"}
+	rs.SheetAbilityFault(ids)
+	if ids[0] != "c" || ids[1] != "a" || ids[2] != "b" {
+		t.Fatalf("ids = %v after SheetAbilityFault, want them as passed", ids)
+	}
+}

@@ -2,6 +2,7 @@ package adventure
 
 import (
 	"fmt"
+	"slices"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
@@ -157,6 +158,7 @@ func buildActor(a AdventureActor) *vttv1.Actor {
 		Kind:       a.Kind,
 		Attributes: attrs,
 		Resources:  res,
+		AbilityIds: slices.Clone(a.AbilityIDs),
 	}
 }
 

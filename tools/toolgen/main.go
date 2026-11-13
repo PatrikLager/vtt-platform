@@ -92,6 +92,7 @@ var manifest = []toolSpec{
 					"attributes":    "The actor's numbers, each under a key the served ruleset declares as a number property (get_ruleset lists them); a sheet holds only the properties this actor has. With a ruleset served, a key it does not declare, or one it declares as a resource, refuses the whole command. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
 					"resources":     "The actor's resources, each under a key the served ruleset declares as a resource property (get_ruleset lists them), each giving its current, 0 included, and its max if it has one; a sheet holds only the properties this actor has. A resource whose current is null or left out refuses the whole command, and with a ruleset served so does a key it does not declare, or one it declares as a number. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
 					"moduleData":    "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
+					"abilityIds":    "Optional. The abilities this actor has, each by its id in the served ruleset (get_ruleset lists them). With a ruleset served, an id the ruleset does not hold refuses the whole command.",
 				},
 			},
 			// A resource's max may be left out for none, so only current is required.

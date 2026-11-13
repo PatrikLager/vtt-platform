@@ -255,6 +255,15 @@ test("a pasted actor whose resource current is 0, or has no maximum, reaches the
   expect(json["addActor"]["actor"]["resources"]).toMatchObject({ focus: { max: 3 }, spare: { current: 4 } });
 });
 
+// VTT-683
+test("a pasted actor's ability ids reach the wire in their order", () => {
+  const cmd = parseActorJSON(
+    '{"actorId":"a1","name":"Lera","kind":"ACTOR_KIND_PARTY_MEMBER","abilityIds":["rally","fists","rally"]}');
+  expect(cmd).not.toBeInstanceOf(Error);
+  const json = toJson(ClientCommandSchema, cmd as never) as Record<string, any>;
+  expect(json["addActor"]["actor"]["abilityIds"]).toEqual(["rally", "fists", "rally"]);
+});
+
 // VTT-672
 test("a pasted actor whose resources are written null holds none, and reaches the wire", () => {
   const cmd = parseActorJSON('{"actorId":"a1","name":"Lera","kind":"ACTOR_KIND_PARTY_MEMBER","resources":null}');
