@@ -164,7 +164,7 @@ func (pr *Projection) recall(shown, st *engine.State) {
 		pr.actors[id] = true
 		pr.belief[id] = beliefOf(a, shown.Conditions[id])
 		// Mark gone only an actor matching neither the world's as its held kind shows
-		// it nor unseenAs: the world added it again as another (VTT-470, VTT-661).
+		// it nor unseenAs: the world added it again as another (VTT-707, VTT-708).
 		if w, ok := st.Actors[id]; ok {
 			if !sameIncarnation(a, shownWith(w, engine.IsPartyMember(a))) && !sameIncarnation(a, unseenAs(w)) {
 				pr.gone[id] = true
@@ -193,10 +193,10 @@ func trueKeys(m map[string]bool) map[string]bool {
 }
 
 // sameIncarnation reports whether a and b agree on every field only
-// ActorAdded writes, so that one may stand for the other (VTT-470).
+// ActorAdded writes, so that one may stand for the other (VTT-707).
 func sameIncarnation(a, b *vttv1.Actor) bool {
 	if a.GetName() != b.GetName() || a.GetModuleId() != b.GetModuleId() ||
-		!proto.Equal(a.GetModuleData(), b.GetModuleData()) ||
+		!proto.Equal(a.GetModuleData(), b.GetModuleData()) || !slices.Equal(a.GetAbilityIds(), b.GetAbilityIds()) ||
 		len(a.GetAttributes()) != len(b.GetAttributes()) || len(a.GetResources()) != len(b.GetResources()) {
 		return false
 	}

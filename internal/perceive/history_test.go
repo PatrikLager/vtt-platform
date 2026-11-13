@@ -162,7 +162,7 @@ func historyByName(t *testing.T, name string) historyFold {
 	return historyFold{}
 }
 
-// VTT-470
+// VTT-707
 func TestAnActorAddedAgainIsIntroducedAfreshOnlyWhenItIsAnother(t *testing.T) {
 	for name, want := range map[string][]string{
 		"reuse-identical": {"TokenPlaced t-gob2"},
@@ -252,7 +252,7 @@ func TestAnActorAddedAgainUnchangedWithItsConditionsReachesTheViewerAsTheWorldHo
 	}
 }
 
-// VTT-470
+// VTT-707
 func TestACreatureInSightIsNotIntroducedAgain(t *testing.T) {
 	st := creatureWorld()
 	v := newViewer(t, heroEyes())

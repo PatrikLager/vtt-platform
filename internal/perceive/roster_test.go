@@ -447,7 +447,7 @@ func TestARemovedActorReachesOnlyTheSeatThatHeldIt(t *testing.T) {
 // TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh holds the case where
 // the seat saw the removal: the projector forgets the actor with its fold, so
 // the id used again is introduced in full (SPEC-016).
-// VTT-470
+// VTT-707
 func TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh(t *testing.T) {
 	st := twoRooms()
 	pr := newViewer(t, player())

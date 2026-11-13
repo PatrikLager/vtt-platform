@@ -305,7 +305,7 @@ func TestQACSAReopenedLogDoesNotIntroduceAHeldCreatureAgain(t *testing.T) {
 	q.append(qacsEnvPool(qacsBeast, "grit", -1, 3))
 	after := q.log(qacsHero)[before:]
 	if n := qacsCount(after, qacsArrival(qacsBeast)); n != 0 {
-		t.Errorf("VTT-470: after a reopen, %d arrivals", n)
+		t.Errorf("VTT-707: after a reopen, %d arrivals", n)
 	}
 	cond := 0
 	for _, e := range after {

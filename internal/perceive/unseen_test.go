@@ -104,7 +104,7 @@ func TestAControllerRevokedWhileUnseenIsRevokedOnSight(t *testing.T) {
 	}
 }
 
-// VTT-470
+// VTT-707
 func TestAnActorAddedAgainWithAnotherAttributeIsIntroducedAfresh(t *testing.T) {
 	scout := func(weight int32) *vttv1.ActorAdded {
 		return &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "scout", Name: "Scout",

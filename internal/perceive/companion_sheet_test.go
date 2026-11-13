@@ -96,7 +96,7 @@ func sheetHeldAsTheWorldHoldsIt(t *testing.T, tb *sheetTable) {
 	}
 }
 
-// VTT-658 VTT-660 VTT-661
+// VTT-658 VTT-660 VTT-708
 func TestACompanionItsCharacterHasNotSeenArrivesWithoutItsSheet(t *testing.T) {
 	tb := newSheetTable(t, sheetAlly(t, true, true))
 	about := sheetAbout(tb.step(&vttv1.NarrationAdded{Text: "look"}))

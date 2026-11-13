@@ -461,7 +461,7 @@ func TestQASheetTheViewersOwnCharacterIsIntroducedWhole(t *testing.T) {
 	}
 }
 
-// VTT-660 VTT-486 VTT-661
+// VTT-660 VTT-486 VTT-708
 func TestQASheetChangesToAnUnseenCompanionSendNothing(t *testing.T) {
 	run := qaSheetWalk(t, qaSheetEyesB, qaSheetMainLog(t), qaSheetMainStart)
 	for seq := 8; seq <= 14; seq++ {
@@ -470,16 +470,16 @@ func TestQASheetChangesToAnUnseenCompanionSendNothing(t *testing.T) {
 		if got := qaSheetCarriers(run.frames[i], qaSheetA); len(got) != 0 {
 			t.Errorf("VTT-660, VTT-486: event %d: B's log, which never saw A, is sent A's values: %v", seq, got)
 		}
-		// VTT-661
+		// VTT-708
 		if n := qaSheetRemovals(run.frames[i], qaSheetA); n != 0 {
-			t.Errorf("VTT-661: event %d sends %d bare ActorRemoved of A before B sees it", seq, n)
+			t.Errorf("VTT-708: event %d sends %d bare ActorRemoved of A before B sees it", seq, n)
 		}
 		// VTT-660
 		qaSheetAssertStripped(t, fmt.Sprintf("VTT-660 after event %d", seq), run.folds[i], run.worlds[i], qaSheetA, []string{"p-a"})
 	}
 }
 
-// VTT-664 VTT-661 VTT-486
+// VTT-664 VTT-708 VTT-486
 func TestQASheetTheSheetArrivesWithTheFirstSight(t *testing.T) {
 	run := qaSheetWalk(t, qaSheetEyesB, qaSheetMainLog(t), qaSheetMainStart)
 	i := run.at(15)
@@ -495,9 +495,9 @@ func TestQASheetTheSheetArrivesWithTheFirstSight(t *testing.T) {
 	if got := qaSheetCondIDs(run.folds[i], qaSheetA); !qaSheetSameStrings(got, []string{"hasted"}) {
 		t.Errorf("VTT-664: A's conditions after first sight %v, want [hasted]", got)
 	}
-	// VTT-661
+	// VTT-708
 	if n := qaSheetRemovals(run.frames[i], qaSheetA); n > 1 {
-		t.Errorf("VTT-661: first sight sends %d bare ActorRemoved of A", n)
+		t.Errorf("VTT-708: first sight sends %d bare ActorRemoved of A", n)
 	}
 	// VTT-486
 	j := run.at(16)
@@ -684,7 +684,7 @@ func TestQASheetAPerchOntoEyesThatSeeACompanionBringsItToItsPresent(t *testing.T
 	}
 }
 
-// VTT-661 VTT-660 VTT-664 VTT-312
+// VTT-708 VTT-660 VTT-664 VTT-312
 func TestQASheetAReAddUnderTheSameNameSendsNoRemoval(t *testing.T) {
 	base := qaSheetMainLog(t)[:14]
 	reborn := qaSheetActor(t, qaSheetA, "Aster", qaSheetPartyK, 20, 30, 30)
@@ -700,9 +700,9 @@ func TestQASheetAReAddUnderTheSameNameSendsNoRemoval(t *testing.T) {
 	qaSheetAssertRestarts(t, run)
 	for seq := 15; seq <= 19; seq++ {
 		i := run.at(seq)
-		// VTT-661
+		// VTT-708
 		if n := qaSheetRemovals(run.frames[i], qaSheetA); n != 0 {
-			t.Errorf("VTT-661: event %d sends %d bare ActorRemoved of A, re-added under the same name and module id", seq, n)
+			t.Errorf("VTT-708: event %d sends %d bare ActorRemoved of A, re-added under the same name and module id", seq, n)
 		}
 		if got := qaSheetCarriers(run.frames[i], qaSheetA); len(got) != 0 {
 			t.Errorf("VTT-660: event %d sends A's values unseen: %v", seq, got)
@@ -716,7 +716,7 @@ func TestQASheetAReAddUnderTheSameNameSendsNoRemoval(t *testing.T) {
 	}
 }
 
-// VTT-661 VTT-658 VTT-664 VTT-312
+// VTT-708 VTT-658 VTT-664 VTT-312
 func TestQASheetAReAddUnderAnotherNameIsIntroducedAfreshWithoutItsSheet(t *testing.T) {
 	base := qaSheetMainLog(t)[:14]
 	reborn := qaSheetActor(t, qaSheetA, "Aster Reborn", qaSheetPartyK, 20, 30, 30)
@@ -730,9 +730,9 @@ func TestQASheetAReAddUnderAnotherNameIsIntroducedAfreshWithoutItsSheet(t *testi
 	run := qaSheetWalk(t, qaSheetEyesB, events, qaSheetMainStart)
 	qaSheetAssertRestarts(t, run)
 	i := run.at(17)
-	// VTT-661
+	// VTT-708
 	if n := qaSheetRemovals(run.frames[i], qaSheetA); n != 1 {
-		t.Errorf("VTT-661: the re-add under another name sends %d bare ActorRemoved of A, want 1", n)
+		t.Errorf("VTT-708: the re-add under another name sends %d bare ActorRemoved of A, want 1", n)
 	}
 	// VTT-658
 	if got := qaSheetCarriers(run.frames[i], qaSheetA); len(got) != 0 {
@@ -831,7 +831,7 @@ func TestQASheetAFirstSightWhoseFramesWereDroppedBringsTheSheetNext(t *testing.T
 	qaSheetAssertWhole(t, "after a dropped first sight and event 16", lagging, run.worlds[i], qaSheetA)
 }
 
-// VTT-658 VTT-664 VTT-661 VTT-486 VTT-312
+// VTT-658 VTT-664 VTT-708 VTT-486 VTT-312
 func TestQASheetTheSheetArrivesWithTheFirstSightHoweverItComes(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -859,9 +859,9 @@ func TestQASheetTheSheetArrivesWithTheFirstSightHoweverItComes(t *testing.T) {
 			}
 			// VTT-664
 			qaSheetAssertWhole(t, "VTT-664 at the first sight", run.folds[i], run.worlds[i], qaSheetA)
-			// VTT-661
+			// VTT-708
 			if n := qaSheetRemovals(run.frames[i], qaSheetA); n > 1 {
-				t.Errorf("VTT-661: the first sight sends %d bare ActorRemoved of A", n)
+				t.Errorf("VTT-708: the first sight sends %d bare ActorRemoved of A", n)
 			}
 			// VTT-486
 			j := run.at(16)
@@ -870,7 +870,7 @@ func TestQASheetTheSheetArrivesWithTheFirstSightHoweverItComes(t *testing.T) {
 	}
 }
 
-// VTT-660 VTT-470 VTT-312
+// VTT-660 VTT-707 VTT-312
 func TestQASheetASeenCompanionReAddedUnseenIsIntroducedAfreshOnSight(t *testing.T) {
 	base := qaSheetMainLog(t)[:17]
 	reborn := qaSheetActor(t, qaSheetA, "Aster", qaSheetPartyK, 20, 30, 30)
@@ -888,7 +888,7 @@ func TestQASheetASeenCompanionReAddedUnseenIsIntroducedAfreshOnSight(t *testing.
 			t.Errorf("VTT-660: event %d sends the re-added A's values unseen: %v", seq, got)
 		}
 	}
-	// VTT-470
+	// VTT-707
 	i := run.at(22)
-	qaSheetAssertWhole(t, "VTT-470 after the re-added A comes into sight", run.folds[i], run.worlds[i], qaSheetA)
+	qaSheetAssertWhole(t, "VTT-707 after the re-added A comes into sight", run.folds[i], run.worlds[i], qaSheetA)
 }

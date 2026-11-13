@@ -369,7 +369,7 @@ func TestQASheetALogOpensWithEachCompanionWithoutItsSheet(t *testing.T) {
 	qaSheetAssertStripped(t, "VTT-658 in the opening", opened, worldA, []string{"p-a"})
 }
 
-// VTT-658 VTT-660 VTT-661 VTT-664 VTT-486
+// VTT-658 VTT-660 VTT-708 VTT-664 VTT-486
 func TestQASheetACampaignLogIsWrittenNoCompanionSheetBeforeSight(t *testing.T) {
 	l := qaSheetBuildUnseen(t)
 	c, seqs := qaSheetAppend(t, l.envs)
@@ -385,7 +385,7 @@ func TestQASheetACampaignLogIsWrittenNoCompanionSheetBeforeSight(t *testing.T) {
 			t.Errorf("entry %d (world sequence %d) carries A's values before B sees A: %v", i, e.WorldSeq, e.Env)
 		}
 		if e.Env.GetActorRemoved().GetActorId() == qaSheetA {
-			t.Errorf("VTT-661: entry %d (world sequence %d) is a bare ActorRemoved of A before B sees A", i, e.WorldSeq)
+			t.Errorf("VTT-708: entry %d (world sequence %d) is a bare ActorRemoved of A before B sees A", i, e.WorldSeq)
 		}
 	}
 	worldA := l.envs[4].GetActorAdded().GetActor()

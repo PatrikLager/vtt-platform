@@ -397,7 +397,7 @@ func TestARemovalOutOfSightIsNotReported(t *testing.T) {
 	}
 }
 
-// VTT-252 VTT-470
+// VTT-252 VTT-707
 func TestAnIdReusedAfterAnUnseenRemovalFoldsAgain(t *testing.T) {
 	frames := runTestimony(t, player(), testimonyLog(
 		rogueLeaves,
