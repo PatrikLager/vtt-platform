@@ -6,7 +6,7 @@ import (
 )
 
 // SheetFault is the first key of a sheet that its ruleset does not declare as
-// a property of the type of the map that holds it (SPEC-024).
+// a property of the type of the map that holds it (SPEC-025).
 type SheetFault struct {
 	// Field is the map that holds the key: "attributes" or "resources".
 	Field  string

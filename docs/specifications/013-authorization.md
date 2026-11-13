@@ -337,7 +337,7 @@ nobody controls yet. A command wrong in both the controller and the kind is
 told about the controller. `validateAddActorWith` runs `validateAddActor`
 and then, with a ruleset served, reads an actor with an id against it,
 refusing a key the ruleset does not declare, or declares as the other type,
-naming the actor, the map and the key (VTT-677, SPEC-024); with none served
+naming the actor, the map and the key (VTT-677, SPEC-025); with none served
 it reads no key (VTT-675). `engine.Apply` refuses an `ActorAdded` that names
 a controller as well, and accepts one with no kind, which on a recorded event
 reads as not a party member; the kind refusal exists at the command boundary

@@ -443,7 +443,7 @@ sending nothing. It refuses, in this order, a paste that is not JSON, an
 actor `fromJson` refuses, and an actor with no `actorId`, one that names a
 controller and one with no `kind`, which the server refuses too (SPEC-013);
 then one holding a resource whose `current` is written `null`
-or left out, naming the actor and the key (VTT-672, SPEC-024).
+or left out, naming the actor and the key (VTT-672, SPEC-025).
 `valuelessCurrent` reads that from the paste as written, since `fromJson`
 reads such a `current` as `0`. A `current` of `0` passes, and a `max` left
 out or written `null` is no maximum (VTT-679).
