@@ -1,6 +1,7 @@
 package perceive_test
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 
@@ -425,5 +426,24 @@ func TestANamelessCreatureMadeAPartyMemberInSightIsForwardedATakeThatFolds(t *te
 	}
 	if ids := heldIDs(tb.v.shown, "who"); !sameIDSet(ids, []string{"l"}) {
 		t.Errorf("after the take the log holds the party member naming %q, want [l]", ids)
+	}
+}
+
+// VTT-755
+func TestANamelessActorWithNoListChangingKindInSightIsForwardedTheGrantAlone(t *testing.T) {
+	for from, to := range map[vttv1.ActorKind]vttv1.ActorKind{
+		sheetParty: vttv1.ActorKind_ACTOR_KIND_NON_PARTY, vttv1.ActorKind_ACTOR_KIND_NON_PARTY: sheetParty,
+	} {
+		tb := namelessIn(t, from)
+		out := tb.step(&vttv1.ActorControlGranted{ActorId: "who", ParticipantId: "p-3", Kind: to})
+		if got, want := shapes(out), []string{"*vttv1.Envelope_ActorControlGranted who"}; !slices.Equal(got, want) {
+			t.Errorf("%v made %v in sight sent %v, want the grant alone %v", from, to, got, want)
+		}
+		if len(out) == 1 && out[0].GetEventId() != fmt.Sprintf("evt-%d", tb.seq) {
+			t.Errorf("%v made %v in sight sent a built grant, event id %q", from, to, out[0].GetEventId())
+		}
+		if got := tb.v.shown.Actors["who"].GetKind(); got != to {
+			t.Errorf("%v made %v in sight is held as %v", from, to, got)
+		}
 	}
 }
