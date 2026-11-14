@@ -11,17 +11,22 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `internal/gateway/viewpoint.go` (`ownPartyMember`),
 `internal/gateway/grant_validate.go`
 (`validateGrantActorControl`), `internal/gateway/add_actor_validate.go`
-(`validateAddActor`, `validateAddActorWith`),
+(`validateAddActor`, `validateAddActorWith`, `validateAddActorSheet`),
 `internal/gateway/note_validate.go` (`validateUpsertNote`),
-`internal/gateway/convert.go` (`ToEvent`, `voice`) and
+`internal/gateway/convert.go` (`ToEvent`, `voice`),
+`internal/gateway/ruleset.go` (`handleUseAbility`'s refusal of a use the
+sheet does not name) and
 `internal/gateway/server.go` (`answerCommand`, `authorize`,
 `handleSetViewpoint`, `handleCommand`, `describeBlockage`, `doorSquare`),
 with `perceive.SeesActor` and `rules.UnknownTarget` for the sight gate,
-`rules.Ruleset.SheetKeyFault` for `add_actor`'s keys and
+`rules.Ruleset.SheetKeyFault` and `rules.Ruleset.SheetAbilityFault` for
+`add_actor`'s sheet, `rules.Offers` for the sheet's refusal of a use and
 `engine.State.IsDoor` for the door gate, against `internal/engine`'s
 `State`; pinned by `internal/gateway/authz_test.go`,
 `grant_validate_test.go`, `add_actor_validate_test.go`,
 `add_actor_fit_internal_test.go`, `qa_add_actor_keys_test.go`,
+`add_actor_abilities_internal_test.go`, `qa_add_actor_abilities_test.go`,
+`use_ability_sheet_test.go`, `qa_use_unnamed_test.go`,
 `note_validate_test.go`, `convert_test.go`, `server_test.go`,
 `server_visibility_test.go`, `server_internal_test.go`, `watch_test.go`,
 `seat_internal_test.go`, `viewpoint_test.go`, `qa_seat_test.go`,
@@ -35,7 +40,7 @@ and `qa_door_square_test.go`, and by `internal/engine/terrain_test.go` and
 
 ## Principles served
 
-Principles 6, 7, 10, 13, 20 and 34 of `docs/blueprint.md`:
+Principles 6, 7, 10, 13, 20, 27 and 34 of `docs/blueprint.md`:
 
 - **6.** A command is judged on the server, never by the window that sent it.
 - **7.** It is judged per command, against the fold as it stands when the
@@ -47,6 +52,8 @@ Principles 6, 7, 10, 13, 20 and 34 of `docs/blueprint.md`:
   (VTT-601 to VTT-603, VTT-608); this record bounds no other refusal's text.
 - **20.** A player's move onto a square their party member cannot see is
   refused, and so is an ability aimed at an actor it does not see.
+- **27.** A use of an ability its actor's sheet does not name is refused,
+  for the DM, the agent and a player alike.
 - **34.** The door tools say a door command is refused unless the square's
   tile is a door, and the door gate refuses it so, for every role.
 
@@ -213,8 +220,9 @@ controls, and acting on it leaves its `controller_ids` as they were; they
 work a door from anywhere, though only a door; they move a token onto any
 square, a wall and a square no player can see included (VTT-158, VTT-379);
 they aim an ability at an actor no character sees (VTT-482). The table's
-cells, the four checks for every role, the door gate and the three
-validators bind them.
+cells, the checks `Authorize` runs for every role, the door gate, the
+validators and the sheet's refusal of a use bind them: they use, for any
+actor, only an ability its sheet names (VTT-690).
 
 **The command path.** `serve`'s read loop decodes each frame, re-resolves the
 participant through `identity.Lookup` (SPEC-009) and hands the command to
@@ -234,12 +242,15 @@ runs, in this order, and stops at the first refusal:
 2. for a player's `use_ability`, the sight gate below;
 3. for an `open_door` or a `close_door`, from any role, the door gate below;
 4. `validateGrantActorControl`, for a `grant_actor_control`;
-5. `validateAddActorWith`, for an `add_actor`: `validateAddActor`, then the
-   actor's keys against the served ruleset;
+5. `validateAddActorWith`, for an `add_actor`: `validateAddActor`, then,
+   in `validateAddActorSheet`, the actor's keys and then its ability ids
+   against the served ruleset;
 6. `validateUpsertNote`, for an `upsert_note`;
 7. the dispatch of `use_ability`, `load_adventure`, `load_map`,
    `remove_actor`, `remove_participant`, `promote_participant`,
-   `set_join_door` and `rotate_join_link` to their handlers;
+   `set_join_door` and `rotate_join_link` to their handlers, where
+   `handleUseAbility` refuses a use with no ruleset served and then the
+   sheet's refusal below runs;
 8. `ToEvent`, which makes every other command one envelope stamped with the
    participant's id and role;
 9. for a `TokenMoved`, the backfill of `SceneId` and `From` from the
@@ -288,12 +299,32 @@ names no actor, and appends nothing (VTT-472; A-10 in
 `docs/superpowers/notes/2026-10-22-alpha-one-findings.md`). It runs before
 `Resolve`, and an absent id is not seen either, so an unseen target and an
 absent one get the same answer whatever else the command carries: an unknown
-ability, a target named twice, more targets than the ability allows. A command
-whose every target is seen goes on to `handleUseAbility` (VTT-487). The eyes
+ability, an ability the actor's sheet does not name, a target named twice,
+more targets than the ability allows
+(`TestAPlayersUseAtAnUnseenTargetIsAnsweredBySightBeforeTheSheet`). A
+command whose every target is seen goes on to `handleUseAbility` (VTT-487),
+which answers the sheet's refusal below before `Resolve`. The eyes
 are the ones the move gate judges by, so a party member of the player's out of
 that character's sight cannot be aimed at, not even by itself as caster, and a
 player who controls only a creature has no eyes and names no target that is
 not refused.
+
+**The sheet's refusal of a use.** `handleUseAbility` first refuses a use
+with no ruleset served (SPEC-012). Then, when the snapshot `authorize` took
+holds the command's actor and `rules.Offers` answers that its `ability_ids`
+does not name the command's ability, it refuses with
+`gateway: use_ability: actor "<id>" does not name ability "<ability>"` and
+appends nothing, for the DM, the agent and a player alike (VTT-690); only
+then does it call `rules.Resolve`. An actor the snapshot does not hold is
+left to `Resolve`, whose refusal names the unknown actor
+(`TestAUseByAnActorTheCampaignDoesNotHoldIsLeftToResolve`). `Offers`
+compares ids byte for byte, and with a ruleset served no sheet names an id
+the ruleset does not hold (SPEC-025), so a use of an ability the ruleset
+does not hold, and of an empty id, by an actor the snapshot holds is
+answered with this refusal and not `Resolve`'s. It runs after `Authorize`,
+and for a player after the sight gate, so a player's use through an actor
+they do not control is answered by `authorizeActorOwnership`, and one at an
+unseen target as an absent target, whatever the sheet names.
 
 **The door gate.** For an `open_door` or a `close_door` that `Authorize`
 accepts, from any role, `handleCommand` takes the command's scene id and
@@ -335,10 +366,13 @@ the id is missing; then refuses a `kind` of `ACTOR_KIND_UNSPECIFIED` and
 accepts every other value, so an `add_actor` may declare a party member that
 nobody controls yet. A command wrong in both the controller and the kind is
 told about the controller. `validateAddActorWith` runs `validateAddActor`
-and then, with a ruleset served, reads an actor with an id against it,
-refusing a key the ruleset does not declare, or declares as the other type,
-naming the actor, the map and the key (VTT-677, SPEC-025); with none served
-it reads no key (VTT-675). `engine.Apply` refuses an `ActorAdded` that names
+and then `validateAddActorSheet`, which, with a ruleset served, reads an
+actor with an id against it, refusing a key the ruleset does not declare,
+or declares as the other type, naming the actor, the map and the key
+(VTT-677), and then, when every key fits, an `ability_ids` holding an id the
+ruleset does not hold, naming the actor and the first such id in byte order
+(VTT-685, SPEC-025); with none served it reads no key and no ability id
+(VTT-675, VTT-686). `engine.Apply` refuses an `ActorAdded` that names
 a controller as well, and accepts one with no kind, which on a recorded event
 reads as not a party member; the kind refusal exists at the command boundary
 alone. `validateUpsertNote` refuses an `upsert_note` whose `visibility` is
@@ -349,11 +383,12 @@ projection writes to no character log (SPEC-016), so this refusal too
 exists at the command boundary alone.
 
 **What is dispatched, and what becomes one envelope.** `use_ability`
-(`handleUseAbility`) and `load_adventure` (`handleLoadAdventure`) are
-SPEC-012's; `load_map` (`handleLoadMap`) is SPEC-014's; `remove_actor`
-(`handleRemoveActor`) is SPEC-017's; `remove_participant` (`handleRemoval`)
-is SPEC-009's; and SPEC-007 states what the `load_map`, `remove_actor` and
-`remove_participant` batches carry. All five append a whole batch through
+(`handleUseAbility`), the sheet's refusal above aside, and `load_adventure`
+(`handleLoadAdventure`) are SPEC-012's; `load_map` (`handleLoadMap`) is
+SPEC-014's; `remove_actor` (`handleRemoveActor`) is SPEC-017's;
+`remove_participant` (`handleRemoval`) is SPEC-009's; and SPEC-007 states
+what the `load_map`, `remove_actor` and `remove_participant` batches carry.
+Each of those handlers appends a whole batch through
 `campaign.AppendBatch`, but a removal of a participant who controls no actor
 appends nothing, and its ok=true result carries no sequence.
 `promote_participant` (`handlePromotion`),
@@ -403,6 +438,9 @@ A client or tool author is bound by these:
   a square they remember and cannot see is refused.
 - A player aims an ability only at actors that party member sees; a target it
   does not see is answered as a target that names no actor.
+- An actor uses only the abilities its sheet names: a `use_ability` naming
+  any other is refused for every role, the DM's and the agent's included,
+  and an actor whose sheet names none can use none.
 - A token's texts are written by the DM and the agent alone.
 - A player speaks as a named party member they control, or out of
   character; the server writes the name either line is shown under. The DM
@@ -432,8 +470,8 @@ A client or tool author is bound by these:
   name (SPEC-022) and the agent names itself, as `add_whisper`'s tool tells
   it (SPEC-007).
 - The DM and the agent are bound by the table's cells, by promotion's bound,
-  by `mayVoice`, by `mayWhisper`, by the door gate and by the three
-  validators, and by no player rule.
+  by `mayVoice`, by `mayWhisper`, by the door gate, by the validators and
+  by the sheet's refusal of a use, and by no player rule.
 - What a reconnect opens on is SPEC-015's.
 
 And whoever changes the code:
@@ -451,4 +489,4 @@ VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161, VTT-162, VTT-231,
 VTT-261, VTT-344, VTT-379, VTT-463, VTT-472, VTT-482, VTT-487, VTT-495,
 VTT-496, VTT-497, VTT-498, VTT-499, VTT-503, VTT-506, VTT-565, VTT-587,
 VTT-588, VTT-589, VTT-590, VTT-601, VTT-602, VTT-603, VTT-608, VTT-609,
-VTT-675, VTT-677.
+VTT-675, VTT-677, VTT-685, VTT-686, VTT-690.

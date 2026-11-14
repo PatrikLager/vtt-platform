@@ -150,6 +150,7 @@ into `AbilityUsed.outcome_summary` or a reason, and the spectator's one cell,
 | `SceneObject.kind` | nothing: it is a map's or an adventure's object `kind`, which no loader checks, and the fold keeps it; `describeBlockage` clips it where a player's move refusal names it (SPEC-013) |
 | `TokenPlaced.name`, `TokenPlaced.notes`, `TokenPlaced.gm_name`, `TokenPlaced.gm_notes`, and the same four on `TokenDescribed` | the WebSocket frame alone (`maxWSFrameBytes`, SPEC-011) for `place_token` and `describe_token`, commands of the DM and the agent, and nothing for a placement in a map or an adventure file, which no loader bounds; the fold keeps each |
 | `Actor.module_data` | the WebSocket frame alone (`maxWSFrameBytes`, SPEC-011): `add_actor`, a command of the DM and the agent, is its one writer, and the fold keeps it; its shape is a rule module's (SPEC-007) |
+| `Actor.ability_ids` | with a ruleset served, `add_actor` and `adventure.Load` refuse an id the ruleset does not hold (SPEC-025), and `internal/rules/load.go` bounds an ability id at `maxIDBytes`; with none, the WebSocket frame alone (`maxWSFrameBytes`, SPEC-011), for `add_actor`, a command of the DM and the agent, since `vtt serve` loads no adventure without a ruleset; neither fold bounds the list's length or an id's length, and each keeps it |
 
 The cells that say nothing or none rest on these searches, each a `git grep`
 over `'*.go' ':!*_test.go' ':!contract/gen' ':!contract-spike'`: `-E
@@ -163,7 +164,10 @@ internal/adventure ':!*_test.go'` prints only the loader's and
 prints nothing; and `-E 'len\([^)]*(Name|Notes)[^)]*\) >'
 -- internal/mapdef internal/adventure internal/engine ':!*_test.go'
 ':!*/testdata/*'` prints only the bounds on a session's, a scene's, an
-actor's, an adventure's and a map's name, none on a token's text.
+actor's, an adventure's and a map's name, none on a token's text. `AbilityIds
+-- internal/engine ':!*_test.go'` prints nothing, and `grep -n abilityIds
+client/src/fold.ts` prints only `copyActor`'s parameter and copy and
+`actorJSON`'s write, so neither fold reads an ability id.
 
 A string a map, an adventure or a ruleset file carries and its loader does not
 bound is under the same decision: a ruleset's display names, descriptions,
@@ -171,9 +175,12 @@ expressions, atom ids, param names and graph keys, its manifest's id and name,
 and its guide; a map's or an adventure's `overrides` values and objects'
 `kind` and `art`; a map's or an adventure's placement `name`, `notes`,
 `gm_name` and `gm_notes`; and a map's placement `actor_id`. Where one reaches
-the log, it is only as a field of the two tables above; a ruleset's display
-names, descriptions and manifest id and name reach every participant through
-`/api/ruleset`, and its guide through `/api/ruleset/guide` (SPEC-012). A
+the log, it is only as a field of the tables above. Through
+`/api/ruleset` (SPEC-012), a ruleset's manifest id and name and its
+conditions' and properties' display names and descriptions reach every
+participant, and an ability's display name reaches the DM, the agent and a
+player who controls an actor whose sheet names it; its guide reaches the DM
+and the agent through `/api/ruleset/guide`. A
 refusal that quotes such a value, or an id a command gave that names nothing,
 goes to the issuer of the command that met it (SPEC-013), or, when a file is
 refused at boot, to whoever starts the server.

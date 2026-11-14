@@ -18,8 +18,19 @@ world event, by `TestThreeRoleExitScenarioOverLiveWebSockets` in
 `tools/toolgen/main_test.go` (VTT-232); that `add_actor`'s schema requires a
 resource's `current` and not its `max`, by
 `TestAddActorRequiresAResourcesCurrentAndNotItsMax` in the same file and by
-`tools/toolgen/qa_add_actor_schema_test.go` (VTT-674); a token's four texts,
-the rewrite and an ability's outcomes, by `TestTokenPlacedWithTextEnvelopeRoundTrip`,
+`tools/toolgen/qa_add_actor_schema_test.go` (VTT-674); the abilities a
+sheet names, by `TestActorAddedWithAbilityIdsRoundTripsInItsOrder` and
+`TestAnActorsAbilityIdsAreAPlainListOfStrings` in
+`contract/roundtrip_test.go`, and their tools by
+`TestAddActorDocumentsTheAbilitiesItsSheetNames`,
+`TestAddActorSaysAnActorUsesOnlyTheAbilitiesItNames` and
+`TestUseAbilitySaysAUseTheSheetDoesNotNameIsRefused` in
+`tools/toolgen/main_test.go`, by
+`tools/toolgen/qa_add_actor_abilities_doc_test.go`, and, for the texts
+`vtt mcp` serves, by `cmd/vtt/qa_campaign_abilities_fit_test.go` and
+`cmd/vtt/qa_use_unnamed_test.go` (VTT-700, VTT-701, VTT-703); a token's
+texts, the rewrite and an ability's outcomes, by
+`TestTokenPlacedWithTextEnvelopeRoundTrip`,
 `TestTokenDescribedEnvelopeRoundTrip`, `TestDescribeTokenCommandRoundTrip` and
 `TestAbilityUsedWithOutcomesEnvelopeRoundTrip` in
 `contract/roundtrip_test.go`, and their tools by
@@ -132,6 +143,22 @@ ability with no resolution carries none. `outcome_summary` is written beside
 it from the same roll, with the ability's display name and the compared total
 too, and stays whole ("utfallsraden står", the owner's ruling of
 2026-10-24).
+
+### The abilities a sheet names
+
+`Actor` carries `ability_ids` (field 10), a plain `repeated string` whose
+JSON name is `abilityIds`: the ruleset's abilities the actor has, each by
+its id, in the order the writer gave them, a repeat kept. Which ids a sheet
+may name, and where they are read against the ruleset, is SPEC-025's; what a
+use, a read of the ruleset and the panel make of them is SPEC-013's,
+SPEC-012's and SPEC-022's. `add_actor`'s tool keeps `abilityIds` out of the
+actor's required fields and documents it as the actor's abilities by their
+ids in the served ruleset, says that `use_ability` refuses the actor any
+ability not named there, so one that names none can use none, and that with
+a ruleset served an id the ruleset does not hold refuses the whole command
+(VTT-700, VTT-703). `use_ability`'s tool says it uses an ability the acting
+actor's sheet names, and that a use of any other is refused whatever the
+caller's role (VTT-701).
 
 ### Whom a line speaks as
 
@@ -382,4 +409,5 @@ Those readers are not reading this record.
 ## Requirements
 
 VTT-184, VTT-232, VTT-473, VTT-479, VTT-480, VTT-505, VTT-559, VTT-560,
-VTT-561, VTT-562, VTT-563, VTT-567, VTT-591, VTT-674.
+VTT-561, VTT-562, VTT-563, VTT-567, VTT-591, VTT-674, VTT-700, VTT-701,
+VTT-703.

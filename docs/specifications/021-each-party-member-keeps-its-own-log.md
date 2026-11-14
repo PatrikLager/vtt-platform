@@ -102,8 +102,8 @@ by id. Its decision starts from nothing seen, so the frames for the resuming
 event place what it sees on its present square and correct each held actor in
 sight, or withdraw and introduce afresh one that is reshaped (SPEC-016). A
 new actor added under an old id continues that id's log, and is withdrawn and
-introduced afresh, or corrected, by the comparison SPEC-016 states (VTT-470,
-VTT-661).
+introduced afresh, or corrected, by the comparison SPEC-016 states (VTT-707,
+VTT-708).
 
 **A creature a player runs.** By the owner's rulings, of 2026-08-23 for a
 creature charmed into a player's service and of 2026-10-19 for one they

@@ -3,35 +3,45 @@
 ## Status
 
 Accepted. Implemented by `internal/gateway/metadata.go` (`authed`,
-`writeJSON`, `handleMe`, `handleRuleset`, `handleRulesetGuide`,
-`handleAdventures`, `handleAdventureGuide`, `handleMaps`, `handleArtFile`,
-`adventureGuideRoles`, `artContentTypes`, `DefaultCellPx`,
-`WithAdventureGuides`), `internal/gateway/ruleset.go` (`handleUseAbility`),
+`writeJSON`, `handleMe`, `handleRuleset`, `abilitiesReadBy`,
+`handleRulesetGuide`, `handleAdventures`, `handleAdventureGuide`,
+`handleMaps`, `handleArtFile`, `adventureGuideRoles`, `rulesetGuideRoles`,
+`artContentTypes`, `DefaultCellPx`, `WithAdventureGuides`),
+`internal/gateway/ruleset.go` (`handleUseAbility`),
 `internal/gateway/adventure.go` (`handleLoadAdventure`) and
 `internal/gateway/server.go` (the `ruleset`, `roller`, `adventures` and
 `adventureGuides` fields of `Server`, `WithRuleset`, `WithAdventures`;
-`Handler` registers the routes, SPEC-011), fed by `cmd/vtt/serve_compose.go`'s
+`Handler` registers the routes, SPEC-011), with `rules.Offers` for what a
+sheet names (SPEC-025), fed by `cmd/vtt/serve_compose.go`'s
 `composeServer`, and read for the agent by `internal/mcp/ruleset_tool.go`
-(`registerRulesetTool`, `handleGetRuleset`) through `readMetadata` in
-`internal/mcp/door_tools.go`; pinned by `internal/gateway/metadata_test.go`,
-`qa_me_503_test.go`, `adventure_test.go`, `ruleset_test.go`,
-`ruleset_properties_test.go`, `qa_ruleset_route_test.go`,
-`artfile_internal_test.go`, `qa_art_root_test.go`,
-`internal/mcp/ruleset_tool_test.go`, `cmd/vtt/qa_get_ruleset_test.go` and,
+(`registerRulesetTool`, `handleGetRuleset`, `getRulesetDescription`)
+through `readMetadata` in `internal/mcp/door_tools.go`; pinned by
+`internal/gateway/metadata_test.go`, `qa_me_503_test.go`,
+`adventure_test.go`, `ruleset_test.go`, `ruleset_properties_test.go`,
+`qa_ruleset_route_test.go`, `ruleset_by_role_test.go`,
+`qa_ruleset_by_role_test.go`, `use_ability_sheet_test.go`,
+`qa_use_unnamed_test.go`, `artfile_internal_test.go`,
+`qa_art_root_test.go`, `internal/mcp/ruleset_tool_test.go`,
+`cmd/vtt/qa_get_ruleset_test.go`, `cmd/vtt/qa_ruleset_by_role_test.go` and,
 for the default cell size, `cmd/vtt/art_test.go`.
 
 ## Principles served
 
-Principles 6, 15 and 35 of `docs/blueprint.md`:
+Principles 6, 7, 15 and 35 of `docs/blueprint.md`:
 
 - **6.** What a seat may read over HTTP is decided on the server, on every
   request, and never by a client hiding what it was sent.
+- **7.** Which abilities a participant reads is decided against their role
+  and the fold as they stand at each request, so a grant, a revocation or a
+  change of role reaches their next read.
 - **15.** A piece of art is opened from the art directory on every request,
   and nothing is cached.
-- **35.** Every participant, whatever the role, is served the ruleset's guide,
-  a summary of its abilities and conditions, and every property it declares
-  with its display name and explanation; how an ability resolves, and what a
-  resource carries beyond its words, is not served.
+- **35.** A ruleset is served as data to whoever may see each part of it: a
+  summary of every ability to the DM and the agent, and to a player of each
+  ability named by the sheets of the actors they control; its conditions,
+  and every property it declares with its display name and explanation, to
+  every role; its guide to the DM and the agent. How an ability resolves,
+  and what a resource carries beyond its words, is not served.
 
 ## How it works
 
@@ -51,33 +61,44 @@ exception, because a browser sets no header on that handshake (SPEC-011). What
 `identity.Verify` promises, and that an unknown and a revoked credential are
 answered alike, is SPEC-009's.
 
-**The routes, and their gates.** `Handler` registers nine `GET /api/*` patterns
-(SPEC-011 lists them beside `/healthz`, `/ws`, `POST /join` and the static
-route). Seven are this record's: `/api/me` (`handleMe`), `/api/ruleset`
+**The routes, and their gates.** `Handler` registers the `GET /api/*`
+patterns SPEC-011 lists beside `/healthz`, `/ws`, `POST /join` and the
+static route. This record's are `/api/me` (`handleMe`), `/api/ruleset`
 (`handleRuleset`), `/api/ruleset/guide` (`handleRulesetGuide`),
 `/api/adventures` (`handleAdventures`), `/api/adventures/{id}/guide`
 (`handleAdventureGuide`), `/api/maps` (`handleMaps`) and `/api/art/{file}`
 (`handleArtFile`). `/api/join-link` and `/api/participants`, the DM's console
 routes, are SPEC-009's, with their role maps `joinLinkRoles` and
-`participantRoles`. Of the seven, one is gated by role: `handleAdventureGuide`
-answers the roles in `adventureGuideRoles`, the DM and the agent, and refuses a
-player or a spectator with status 403 and the body `gateway: not authorized`,
-because an adventure guide holds the DM's secrets. The other six answer any
-participant `authed` returns, whatever the role, and `handleRuleset` and
-`handleRulesetGuide` consult no role at all. The HTTP role maps are not cells
-of `commandRoles` in `authz.go`: that table's keys are the `ClientCommand`
-oneof's fields, and `TestEveryClientCommandHasRoleCells` walks that oneof.
+`participantRoles`. Of this record's routes, the guides are gated by role:
+`handleAdventureGuide` answers the roles in `adventureGuideRoles` and
+`handleRulesetGuide` those in `rulesetGuideRoles`, each the DM and the
+agent, and each refuses a player or a spectator with status 403 and the body
+`gateway: not authorized`, a refusal carrying no guide (VTT-116, VTT-702).
+An adventure guide holds the DM's secrets, and a ruleset guide is the DM's
+and the agent's material and can name in prose the abilities `/api/ruleset`
+withholds from a player. `adventureGuideRoles` and `rulesetGuideRoles` are
+kept apart, so widening one does not widen the other. `handleRuleset`
+answers every participant `authed` returns, and decides by the role which
+abilities it writes (below).
+`handleAdventures`, `handleMaps` and `handleArtFile` answer any participant
+`authed` returns alike, whatever the role (VTT-709), and so does `handleMe`,
+of the caller itself. The HTTP role maps are not cells of `commandRoles` in
+`authz.go`: that table's keys are the `ClientCommand` oneof's fields, and
+`TestEveryClientCommandHasRoleCells` walks that oneof.
 
 **Empty is not an error, and a missing guide is.** `handleRuleset` builds its
 answer with every slice non-nil (`Abilities`, `Conditions`, `Resources` and
 `Properties` start as empty slices), and `handleAdventures` and `handleMaps`
 start from an empty slice, so a server with nothing loaded answers
 `/api/ruleset`, `/api/adventures` and `/api/maps` with status 200 and `[]`
-where a client expects an array, never `null`. A guide is different:
+where a client expects an array, never `null`. A guide is different. Each
+guide route asks the role right after `authed`, so a player and a spectator
+are answered 403 whether or not the guide exists; to the DM and the agent,
 `handleRulesetGuide` answers 404 with `gateway: no ruleset guide available`
 when there is no ruleset or its `Guide` is empty, and `handleAdventureGuide`
 answers 404 with `gateway: no guide for that adventure` when the id names no
-guide or an empty one, because an empty document would read as a broken one.
+guide or an empty one, because an empty document would read as a broken one
+(VTT-711).
 
 **What `/api/me` answers.** `handleMe` writes `meJSON`: the `participantId`,
 `name` and `role` of the `identity.Participant` `authed` returned, and
@@ -94,21 +115,40 @@ or `kind` `resource` with `resource` and `cost`), `conditions` as
 the ruleset's resource properties (VTT-631), and `properties` as
 `propertyJSON`, each property's `key`, `type`, `name` and `description`
 (VTT-619, SPEC-024); a resource's `default_max_expr` and thresholds are not
-served. Abilities and conditions are sorted by id with `slices.SortFunc`,
-because `rules.Ruleset.Compiled` and `Conditions` are maps and Go randomises
-map iteration; `resources` and `properties` are built from
-`rules.Ruleset.Properties`, a slice, and keep the ruleset's declared order.
-`handleRulesetGuide` writes `{"guide": ...}` with the ruleset's `Guide`
-markdown.
+served. Which abilities it writes is decided on every request by
+`abilitiesReadBy`, from the participant `authed` returned: for the DM and
+the agent, every ability `rules.Ruleset.Compiled` holds (VTT-693); for a
+player, each ability that `rules.Offers` finds named by the sheet of an
+actor of `campaign.State()` whose controllers include them (`controls`),
+whatever the actor's kind, so none when they control none, and none, with
+status 200, when the state is nil, as it is for a poisoned campaign
+(VTT-691); for a spectator, the role left of those `identity.ParseRole`
+accepts, none (VTT-692). An id a sheet names that `Compiled` does not hold
+is not written. `conditions`, `resources` and `properties` are every role's
+(VTT-710, VTT-619, VTT-631). The abilities are filtered as they are read
+from `Compiled`, and then they and the conditions are sorted by id with
+`slices.SortFunc`, because `rules.Ruleset.Compiled` and `Conditions` are
+maps and Go randomises map iteration; `resources` and `properties` are built
+from `rules.Ruleset.Properties`, a slice, and keep the ruleset's declared
+order. `handleRulesetGuide` writes `{"guide": ...}` with the ruleset's
+`Guide` markdown, to the DM and the agent.
 
 **The agent's reader.** The MCP tool `get_ruleset`, which
 `registerRulesetTool` adds and `GoRegisteredToolNames` lists, takes no
 arguments: `handleGetRuleset` runs `readMetadata` on `/api/ruleset` with the
-MCP server's own token. A 200 whose body is JSON is returned verbatim as the
-tool's text content (VTT-621); any other final status is returned as an
-error naming the route, never as content (VTT-633). `readMetadata` sends
-through `http.DefaultClient`, which follows a redirect. `get_ruleset_guide`'s
-description points to `get_ruleset` for what a property means.
+MCP server's own token, so it reads what `/api/ruleset` answers that
+token's participant.
+A 200 whose body is JSON is returned verbatim as the tool's text content
+(VTT-621); any other final status is returned as an error naming the route,
+never as content (VTT-633). `readMetadata` sends through
+`http.DefaultClient`, which follows a redirect. `getRulesetDescription` says
+that the DM and the agent read every ability and a player only the
+abilities named by the sheets of the actors they control (VTT-694).
+`get_ruleset_guide`'s description points to `get_ruleset` for what a
+property means. `get_ruleset_guide` (`handleGetRulesetGuide`) reads no
+route: it answers with the guide `vtt mcp --ruleset` loaded from its own
+directory, whatever its token's role, so `rulesetGuideRoles` does not reach
+it.
 
 **Adventures, and the guide.** `handleAdventures` writes
 `{"adventures": [...]}` with an `adventureJSON` (`id`, `name`) per adventure
@@ -199,20 +239,26 @@ called only in `handleArtFile`, and of its calls into `mapdef`, `adventure`,
 
 **The two commands that spend it.** `handleCommand` runs `authorize`, which
 takes `st := s.campaign.State()`, and passes that snapshot to
-`handleUseAbility` (`rules.Resolve(s.ruleset, st, cmd, s.roller)`) or
-`handleLoadAdventure` (`adventure.Compile(adv, st)`). Each stamps the four
-fields the compile leaves zero, `EventId` from `newEventID`, `ParticipantId`,
-`ActorRole` and `OccurredAt`, because `store.AppendBatch` requires an
-`EventId`, and appends the whole batch with `campaign.AppendBatch`, which
-persists all of it or none. The result carries the first sequence of the
-batch, the convention SPEC-007 states for every command, and
-`handleLoadAdventure`'s carries the compile's `Warnings` for the issuer;
-nothing broadcasts a warning. Every failure is an ok=false `CommandResult` on
-a connection that stays open: no ruleset (`gateway: no ruleset loaded`), no
-adventures (`gateway: no adventures available`), an unknown adventure id, a
-command `rules.Resolve` refuses, a compile collision, an `AppendBatch`
-refusal. Authorization ran in `handleCommand` before either handler, so
-nothing from here on is an authorization question.
+`handleUseAbility` (`rules.Resolve(s.ruleset, st, cmd, s.roller)`, once the
+sheet's refusal below has passed) or `handleLoadAdventure`
+(`adventure.Compile(adv, st)`). Each stamps the fields the compile leaves
+zero, `EventId` from `newEventID`, `ParticipantId`, `ActorRole` and
+`OccurredAt`, because `store.AppendBatch` requires an `EventId`, and appends
+the whole batch with `campaign.AppendBatch`, which persists all of it or
+none. The result carries the first sequence of the batch, the convention
+SPEC-007 states for every command, and `handleLoadAdventure`'s carries the
+compile's `Warnings` for the issuer; nothing broadcasts a warning. Every
+failure is an ok=false `CommandResult` on a connection that stays open: no
+ruleset (`gateway: no ruleset loaded`), the sheet's refusal of a use
+(SPEC-013), no adventures (`gateway: no adventures available`), an unknown
+adventure id, a command `rules.Resolve` refuses, a compile collision, an
+`AppendBatch` refusal. That the sheet's refusal leaves the connection
+usable is held by
+`TestAUseTheCastersSheetDoesNotNameIsRefusedForEveryRole`, whose next
+command is answered at the next sequence, and by `qaUseStillUsable` in
+`internal/gateway/qa_use_unnamed_test.go`. Authorization ran in
+`handleCommand` before either handler, so nothing from here on is an
+authorization question.
 
 **The note-key residue.** `adventure.Compile` runs `checkCollisions` against
 the snapshot `authorize` took, and `campaign.AppendBatch` re-folds the batch
@@ -235,8 +281,13 @@ A client author is bound by these:
   could not answer, and the token may still be good. Of this surface's
   answers, the browser client forgets its credential only on a 401 to the
   reads it makes at load (SPEC-022).
-- `[]` is an empty table and a 404 on a guide is "no guide"; neither is an
-  error the UI should raise.
+- `[]` is an empty table, a 403 on a guide says the caller's role does not
+  read it, and a 404 on a guide, which only the DM and the agent are
+  answered, is "no guide"; none is an error the UI should raise.
+- A player reads only the abilities named by the sheets of the actors they
+  control, and a spectator none, so what a player reads can change with a
+  grant or a revocation; when the browser client reads it again is
+  SPEC-022's.
 - What a property means is read from `/api/ruleset`'s `properties`, or
   `get_ruleset`, and not from a guide (SPEC-024).
 - Who the caller is comes from `/api/me`; what they control comes from the
@@ -248,13 +299,15 @@ A client author is bound by these:
   reload.
 - A refused `use_ability` or `load_adventure` leaves the connection usable,
   and a bundle's warnings arrive on the issuer's result.
-- Nothing this surface answers is filtered per seat beyond the role gate; what
-  a connection is sent of the campaign is SPEC-015's, not this record's.
+- Nothing this surface answers is filtered per seat beyond the guides' role
+  gates and `/api/ruleset`'s abilities; what a connection is sent of the
+  campaign is SPEC-015's, not this record's.
 
 ## Requirements
 
-VTT-112, VTT-113, VTT-114, VTT-115, VTT-116, VTT-117, VTT-118,
-VTT-119, VTT-120, VTT-121, VTT-122, VTT-123, VTT-124, VTT-125, VTT-126,
-VTT-127, VTT-128, VTT-129, VTT-130, VTT-131, VTT-132, VTT-133, VTT-134,
-VTT-135, VTT-136, VTT-137, VTT-578, VTT-581, VTT-619, VTT-620, VTT-621,
-VTT-631, VTT-632, VTT-633, VTT-682.
+VTT-112, VTT-113, VTT-114, VTT-116, VTT-118, VTT-119, VTT-120,
+VTT-121, VTT-122, VTT-123, VTT-124, VTT-125, VTT-126, VTT-127, VTT-128,
+VTT-129, VTT-130, VTT-131, VTT-132, VTT-133, VTT-134, VTT-135, VTT-136,
+VTT-137, VTT-578, VTT-581, VTT-619, VTT-620, VTT-621, VTT-631, VTT-632,
+VTT-633, VTT-682, VTT-691, VTT-692, VTT-693, VTT-694, VTT-702, VTT-709,
+VTT-710, VTT-711.
