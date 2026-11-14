@@ -279,7 +279,7 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full matrix (spec §4/§7): every command against
+// authzCases is the full 88-cell matrix (spec §4/§7): every command against
 // every one of the four roles. It came DOWN to 88 on 2026-09-02, from 92, when
 // create_scene left the platform (Patrik's ruling, 2026-09-01) — the third
 // arrival at 88 and the second by subtraction. It reached 92 with
@@ -1299,7 +1299,7 @@ func refuseRoleFields(t *testing.T, md protoreflect.MessageDescriptor, seen map[
 //
 // THE ARM THAT NOW REFUSES IS THE FIX. This test is the consistency half, and
 // measured, it is not the only thing that would catch a forgotten rule — the
-// matrix beside it catches one too, by flipping that cell to denied.
+// 88-cell matrix beside it catches one too, by flipping that cell to denied.
 // What this adds is the two cases the matrix cannot reach: a player cell with
 // no matrix row, and a rule outliving the cell it was written for.
 //
