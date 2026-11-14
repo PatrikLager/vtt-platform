@@ -164,11 +164,11 @@ func (pr *Projection) recall(shown, st *engine.State) {
 		pr.actors[id] = true
 		pr.belief[id] = beliefOf(a, shown.Conditions[id])
 		// Mark gone only an actor matching neither the world's as its held kind shows
-		// it nor unseenAs: the world added it again as another (VTT-707, VTT-708).
+		// it nor unseenAs: the world added it again as another (VTT-739, VTT-740).
 		if w, ok := st.Actors[id]; ok {
 			if !sameIncarnation(a, shownWith(w, engine.IsPartyMember(a))) && !sameIncarnation(a, unseenAs(w)) {
 				pr.gone[id] = true
-			} else if !sameIncarnation(a, shownAs(w)) {
+			} else if !sameIncarnation(a, shownAs(w)) || kindMovesList(a, w) {
 				pr.reshaped[id] = true
 			}
 		}
@@ -193,10 +193,10 @@ func trueKeys(m map[string]bool) map[string]bool {
 }
 
 // sameIncarnation reports whether a and b agree on every field only
-// ActorAdded writes, so that one may stand for the other (VTT-707).
+// ActorAdded writes, so that one may stand for the other (VTT-739).
 func sameIncarnation(a, b *vttv1.Actor) bool {
 	if a.GetName() != b.GetName() || a.GetModuleId() != b.GetModuleId() ||
-		!proto.Equal(a.GetModuleData(), b.GetModuleData()) || !slices.Equal(a.GetAbilityIds(), b.GetAbilityIds()) ||
+		!proto.Equal(a.GetModuleData(), b.GetModuleData()) ||
 		len(a.GetAttributes()) != len(b.GetAttributes()) || len(a.GetResources()) != len(b.GetResources()) {
 		return false
 	}
@@ -211,6 +211,10 @@ func sameIncarnation(a, b *vttv1.Actor) bool {
 		}
 	}
 	return true
+}
+
+func kindMovesList(a, w *vttv1.Actor) bool {
+	return engine.IsPartyMember(a) != engine.IsPartyMember(w) && len(a.GetAbilityIds())+len(shownAs(w).GetAbilityIds()) > 0
 }
 
 // shownAs is what a log may hold of a once seen: a party member whole,
@@ -832,11 +836,12 @@ func (pr *Projection) withdraw(id string, seq int64) *vttv1.Envelope {
 }
 
 // actorBelief is what the viewer's fold holds of an actor that an event can
-// change: each resource's current value, its conditions, its controllers and
-// its kind (SPEC-016).
+// change: each resource's current value, its conditions, its ability ids, its
+// controllers and its kind (SPEC-016).
 type actorBelief struct {
 	resources   map[string]int32
 	conditions  []string
+	abilities   []string
 	controllers []string
 	kind        vttv1.ActorKind
 }
@@ -849,6 +854,7 @@ func beliefOf(a *vttv1.Actor, conditions []engine.ActorCondition) actorBelief {
 	for _, c := range conditions {
 		b.conditions = append(b.conditions, c.ID)
 	}
+	b.abilities = append(b.abilities, a.GetAbilityIds()...)
 	b.controllers = append(b.controllers, a.GetControllerIds()...)
 	return b
 }
@@ -921,6 +927,26 @@ func statusFrames(id string, seq int64, b actorBelief, a *vttv1.Actor, condition
 		if !believed[c.ID] {
 			frame(&vttv1.Envelope{Payload: &vttv1.Envelope_ConditionApplied{ConditionApplied: &vttv1.ConditionApplied{
 				ActorId: id, ConditionId: c.ID}}})
+		}
+	}
+
+	sheet := map[string]bool{}
+	for _, ab := range a.GetAbilityIds() {
+		sheet[ab] = true
+	}
+	listed := map[string]bool{}
+	for _, ab := range b.abilities {
+		if !sheet[ab] && !listed[ab] {
+			frame(&vttv1.Envelope{Payload: &vttv1.Envelope_AbilityTaken{AbilityTaken: &vttv1.AbilityTaken{
+				ActorId: id, AbilityId: ab}}})
+		}
+		listed[ab] = true
+	}
+	for _, ab := range a.GetAbilityIds() {
+		if !listed[ab] {
+			frame(&vttv1.Envelope{Payload: &vttv1.Envelope_AbilityGiven{AbilityGiven: &vttv1.AbilityGiven{
+				ActorId: id, AbilityId: ab}}})
+			listed[ab] = true
 		}
 	}
 

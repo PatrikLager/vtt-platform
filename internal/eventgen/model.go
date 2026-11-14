@@ -62,6 +62,7 @@ type Model struct {
 	openDoors  map[string]map[[2]int32]bool
 	grants     map[string][]string
 	conditions map[string][]string
+	abilities  map[string][]string
 
 	// allSeqs is the pool narration anchors are drawn from, and it can only be
 	// filled by the caller: a sequence is assigned by whatever APPLIES an event,
@@ -90,6 +91,7 @@ func New() *Model {
 		openDoors:  map[string]map[[2]int32]bool{},
 		grants:     map[string][]string{},
 		conditions: map[string][]string{},
+		abilities:  map[string][]string{},
 	}
 }
 
@@ -149,6 +151,10 @@ func (m *Model) env(payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_ConditionApplied{ConditionApplied: p}
 	case *vttv1.ConditionRemoved:
 		e.Payload = &vttv1.Envelope_ConditionRemoved{ConditionRemoved: p}
+	case *vttv1.AbilityGiven:
+		e.Payload = &vttv1.Envelope_AbilityGiven{AbilityGiven: p}
+	case *vttv1.AbilityTaken:
+		e.Payload = &vttv1.Envelope_AbilityTaken{AbilityTaken: p}
 	default:
 		// A NIL-PAYLOAD ENVELOPE FAILS TWO LAYERS AWAY as "unknown event
 		// variant", which reads as a missing arm in the fold rather than a
@@ -181,8 +187,10 @@ func (m *Model) Step(rng *rand.Rand, idx int) Action {
 		return m.addActor()
 	case r < 0.28 && m.canPlaceToken():
 		return m.placeToken(rng)
-	case r < 0.48 && m.canMoveToken():
+	case r < 0.42 && m.canMoveToken():
 		return m.moveToken(rng, idx)
+	case r < 0.48 && len(m.actors) > 0:
+		return m.changeAbility(rng, idx, r < 0.45)
 	case r < 0.52 && m.canMoveToken():
 		return m.describeToken(rng, idx)
 	case r < 0.60:
@@ -208,14 +216,18 @@ func (m *Model) Step(rng *rand.Rand, idx int) Action {
 	case r < 0.96 && len(m.actors) > 0:
 		return m.removeActor(rng)
 	default:
-		switch {
-		case !m.sessionOpen:
-			return m.startSession()
-		case rng.Float64() < 0.15:
-			return m.endSession()
-		default:
-			return m.addActor()
-		}
+		return m.sessionOrActor(rng)
+	}
+}
+
+func (m *Model) sessionOrActor(rng *rand.Rand) Action {
+	switch {
+	case !m.sessionOpen:
+		return m.startSession()
+	case rng.Float64() < 0.15:
+		return m.endSession()
+	default:
+		return m.addActor()
 	}
 }
 
@@ -561,7 +573,58 @@ func (m *Model) removeActor(rng *rand.Rand) Action {
 		m.actors = slices.DeleteFunc(slices.Clone(m.actors), func(a string) bool { return a == id })
 		delete(m.grants, id)
 		delete(m.conditions, id)
+		delete(m.abilities, id)
 	}
 	return Action{Env: m.env(&vttv1.ActorRemoved{ActorId: id}),
 		Kind: "removeActor", MustFail: blocked, Anchors: !blocked}
+}
+
+// Draw the list refusal each fold makes, a give of an id the actor names and a
+// take of one it does not, beside the legal draw (engine.Apply).
+func (m *Model) changeAbility(rng *rand.Rand, idx int, give bool) Action {
+	if give {
+		return m.giveAbility(rng)
+	}
+	return m.takeAbility(rng, idx)
+}
+
+func (m *Model) giveAbility(rng *rand.Rand) Action {
+	actor := m.actors[rng.Intn(len(m.actors))]
+	held := m.abilities[actor]
+	duplicate := len(held) > 0 && rng.Float64() < 0.2
+	id := fmt.Sprintf("prop-ability-%d", rng.Intn(5))
+	if duplicate {
+		id = held[rng.Intn(len(held))]
+	} else if slices.Contains(held, id) {
+		duplicate = true
+	}
+	if !duplicate {
+		m.abilities[actor] = append(slices.Clone(held), id)
+	}
+	return Action{Env: m.env(&vttv1.AbilityGiven{ActorId: actor, AbilityId: id}),
+		Kind: "giveAbility", MustFail: duplicate, Anchors: !duplicate}
+}
+
+func (m *Model) takeAbility(rng *rand.Rand, idx int) Action {
+	pool := make([]string, 0, len(m.abilities))
+	for a, named := range m.abilities {
+		if len(named) > 0 {
+			pool = append(pool, a)
+		}
+	}
+	slices.Sort(pool)
+	if len(pool) == 0 {
+		pool = m.actors
+	}
+	actor := pool[rng.Intn(len(pool))]
+	held := m.abilities[actor]
+	absent := len(held) == 0 || rng.Float64() < 0.25
+	id := fmt.Sprintf("prop-ability-absent-%d", idx)
+	if !absent {
+		pick := rng.Intn(len(held))
+		id = held[pick]
+		m.abilities[actor] = slices.Delete(slices.Clone(held), pick, pick+1)
+	}
+	return Action{Env: m.env(&vttv1.AbilityTaken{ActorId: actor, AbilityId: id}),
+		Kind: "takeAbility", MustFail: absent, Anchors: !absent}
 }

@@ -97,7 +97,7 @@ func changesOf(seq int64, actor, given, taken string) map[string]*vttv1.Envelope
 	return map[string]*vttv1.Envelope{"a give": giveTo(seq, actor, given), "a take": takeFrom(seq, actor, taken)}
 }
 
-// VTT-723
+// VTT-741
 func TestAPartyMembersOwnLogIsSentItsGiveAndTake(t *testing.T) {
 	for _, log := range map[string][]*vttv1.Envelope{
 		"beside the hero": abilityLog(),
@@ -111,7 +111,7 @@ func TestAPartyMembersOwnLogIsSentItsGiveAndTake(t *testing.T) {
 	}
 }
 
-// VTT-723
+// VTT-741
 func TestALogWhoseEyesSawAPartyMemberIsSentItsGiveAndTake(t *testing.T) {
 	for _, eyes := range []Eyes{{Shoulder: "hero"}, {Controller: "p-1"}} {
 		for name, change := range changesOf(20, "rogue", "dodge", "lunge") {
@@ -122,7 +122,7 @@ func TestALogWhoseEyesSawAPartyMemberIsSentItsGiveAndTake(t *testing.T) {
 	}
 }
 
-// VTT-723
+// VTT-741
 func TestALogWhoseEyesDidNotSeeAPartyMemberIsSentNoGiveOrTake(t *testing.T) {
 	log := append(abilityLog(), rogueGoesFar(13)...)
 	for _, eyes := range []Eyes{{Shoulder: "hero"}, {Controller: "p-1"}} {
@@ -134,7 +134,7 @@ func TestALogWhoseEyesDidNotSeeAPartyMemberIsSentNoGiveOrTake(t *testing.T) {
 	}
 }
 
-// VTT-723
+// VTT-741
 func TestNoLogIsSentACreaturesGiveOrTake(t *testing.T) {
 	for _, eyes := range []Eyes{{Shoulder: "hero"}, {Shoulder: "rogue"}, {Controller: "p-1"}} {
 		for name, change := range changesOf(20, "goblin", "dodge", "scimitar") {

@@ -88,7 +88,16 @@ func sheetAbout(out []*vttv1.Envelope) []*vttv1.Envelope {
 
 func sheetHeldAsTheWorldHoldsIt(t *testing.T, tb *sheetTable) {
 	t.Helper()
-	if held, w := tb.v.shown.Actors["ally"], tb.st.Actors["ally"]; !proto.Equal(held, w) {
+	held, w := tb.v.shown.Actors["ally"], tb.st.Actors["ally"]
+	bare := func(a *vttv1.Actor) *vttv1.Actor {
+		c := &vttv1.Actor{}
+		if a != nil {
+			c = proto.Clone(a).(*vttv1.Actor)
+		}
+		c.AbilityIds = nil
+		return c
+	}
+	if !proto.Equal(bare(held), bare(w)) || !sameIDSet(held.GetAbilityIds(), w.GetAbilityIds()) {
 		t.Errorf("the player holds the ally as\n  %v\nthe world as\n  %v", held, w)
 	}
 	if held, w := qacsConds(tb.v.shown, "ally"), qacsConds(tb.st, "ally"); !qacsSame(held, w) {
@@ -96,7 +105,7 @@ func sheetHeldAsTheWorldHoldsIt(t *testing.T, tb *sheetTable) {
 	}
 }
 
-// VTT-658 VTT-660 VTT-708
+// VTT-658 VTT-660 VTT-740
 func TestACompanionItsCharacterHasNotSeenArrivesWithoutItsSheet(t *testing.T) {
 	tb := newSheetTable(t, sheetAlly(t, true, true))
 	about := sheetAbout(tb.step(&vttv1.NarrationAdded{Text: "look"}))

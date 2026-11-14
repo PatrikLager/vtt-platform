@@ -387,7 +387,7 @@ func TestQAAblALogsOpeningIntroducesEveryPartyMemberWithNoAbilityIds(t *testing.
 	}
 }
 
-// VTT-699
+// VTT-738
 func TestQAAblACompanionSeenFromItsIntroductionIsHeldWithItsAbilityIds(t *testing.T) {
 	w := qaAblNewWorld(t)
 	qaAblHall(w)
@@ -410,7 +410,7 @@ func TestQAAblACompanionSeenFromItsIntroductionIsHeldWithItsAbilityIds(t *testin
 	}
 }
 
-// VTT-699
+// VTT-738
 func TestQAAblACompanionWithASheetFirstIntroducedUnseenIsBroughtItsAbilityIdsAtFirstSight(t *testing.T) {
 	w := qaAblNewWorld(t)
 	l := qaAblFreshLog(t, qaAblHeroEyes)
@@ -423,7 +423,7 @@ func TestQAAblACompanionWithASheetFirstIntroducedUnseenIsBroughtItsAbilityIdsAtF
 	qaAblSame(t, "the companion at first sight", l.held("ally"), w.st.Actors["ally"])
 }
 
-// VTT-699
+// VTT-738
 func TestQAAblACompanionWhoseSheetNamesOnlyAbilitiesIsBroughtThemAtFirstSight(t *testing.T) {
 	w := qaAblNewWorld(t)
 	l := qaAblFreshLog(t, qaAblHeroEyes)
@@ -443,7 +443,7 @@ func TestQAAblACompanionWhoseSheetNamesOnlyAbilitiesIsBroughtThemAtFirstSight(t 
 	qaAblSame(t, "the list-only companion at first sight", l.held("bare"), w.st.Actors["bare"])
 }
 
-// VTT-699
+// VTT-738
 func TestQAAblAnOwnCharacterWhoseSheetNamesOnlyAbilitiesIsBroughtThemAfterTheOpening(t *testing.T) {
 	w := qaAblNewWorld(t)
 	qaAblHall(w)
@@ -503,7 +503,7 @@ func TestQAAblACompanionOutOfSightIsHeldWithItsAbilityIdsAsLastSeen(t *testing.T
 	}
 }
 
-// VTT-699
+// VTT-738
 func TestQAAblAResumeOfALogHoldingAListOnlyCompanionUnseenBringsItsAbilityIds(t *testing.T) {
 	w := qaAblNewWorld(t)
 	lagging := qaAblFreshLog(t, qaAblHeroEyes)
@@ -530,7 +530,7 @@ func TestQAAblAResumeOfALogHoldingAListOnlyCompanionUnseenBringsItsAbilityIds(t 
 	}
 }
 
-// VTT-699
+// VTT-738
 func TestQAAblAResumeOfALogHoldingACompanionWholeWithoutItsListBringsIt(t *testing.T) {
 	without := qaAblNewWorld(t)
 	with := qaAblNewWorld(t)
@@ -562,7 +562,7 @@ func TestQAAblAResumeOfALogHoldingACompanionWholeWithoutItsListBringsIt(t *testi
 	}
 }
 
-// VTT-699
+// VTT-738
 func TestQAAblACreatureMadeAPartyMemberInSightIsHeldWithItsAbilityIds(t *testing.T) {
 	w := qaAblNewWorld(t)
 	l := qaAblFreshLog(t, qaAblHeroEyes)
@@ -611,7 +611,7 @@ func TestQAAblAPartyMemberMadeACreatureOutOfSightLosesItsAbilityIdsAtSight(t *te
 	qaAblSame(t, "the creature it became, at sight", l.held("ally"), qaAblCreatureForm(w.st.Actors["ally"]))
 }
 
-// VTT-699
+// VTT-738
 func TestQAAblACompanionAddedAgainWithAbilityIdsIsHeldWithThemAtSight(t *testing.T) {
 	w := qaAblNewWorld(t)
 	l := qaAblFreshLog(t, qaAblHeroEyes)

@@ -54,22 +54,21 @@ func TestAnUnseenCompanionIsIntroducedWithoutItsAbilities(t *testing.T) {
 	}
 }
 
-// VTT-699
+// VTT-738 VTT-724 VTT-744
 func TestACompanionNamingOnlyAbilitiesIsBroughtWholeAtItsFirstSight(t *testing.T) {
 	tb := newSheetTable(t, abilityAlly())
 	tb.step(&vttv1.NarrationAdded{Text: "look"})
-	about := sheetAbout(tb.step(&vttv1.DoorOpened{SceneId: "s", At: sheetDoor}))
-	added := qacsFind(about, qacsAddedOf("ally"))
-	if len(added) != 1 || about[0].GetActorRemoved() == nil {
-		t.Fatalf("at its first sight the ally was sent %v, want it withdrawn and introduced again", shapes(about))
+	out := tb.step(&vttv1.DoorOpened{SceneId: "s", At: sheetDoor})
+	if n := arrivals(out, "ally"); n != 0 {
+		t.Fatalf("at its first sight the ally was sent %v, want its list given, not it withdrawn and introduced again", shapes(out))
 	}
-	if a := about[added[0]].GetActorAdded().GetActor(); !proto.Equal(a, qacsWhole(tb.st.Actors["ally"])) {
-		t.Errorf("at its first sight the ally was introduced as %v, want it whole", a)
+	if got := abilityChanges(out, "ally"); !sameStrings(got, []string{"given rally", "given fists"}) {
+		t.Errorf("at its first sight the ally was sent %q, want a give of each id its sheet names, in its order", got)
 	}
 	sheetHeldAsTheWorldHoldsIt(t, tb)
 }
 
-// VTT-699
+// VTT-738
 func TestACompanionInSightIsIntroducedWithItsAbilities(t *testing.T) {
 	tb := newSheetTable(t, abilityAlly())
 	tb.step(&vttv1.DoorOpened{SceneId: "s", At: sheetDoor})
@@ -79,7 +78,7 @@ func TestACompanionInSightIsIntroducedWithItsAbilities(t *testing.T) {
 	}
 }
 
-// VTT-699
+// VTT-738
 func TestAResumedLogHoldingACompanionWithoutItsAbilitiesIsBroughtToThem(t *testing.T) {
 	tb := newSheetTable(t, abilityAlly())
 	tb.step(&vttv1.NarrationAdded{Text: "look"})
@@ -106,7 +105,7 @@ func TestAResumedLogHoldingACompanionWithoutItsAbilitiesIsBroughtToThem(t *testi
 	}
 }
 
-// VTT-699 VTT-707
+// VTT-738 VTT-739 VTT-724
 func TestACompanionAddedAgainWithAnotherListOfItsLengthIsSeenWithIt(t *testing.T) {
 	for _, list := range [][]string{{"shove", "dodge"}, {"fists", "rally"}} {
 		t.Run(list[0], func(t *testing.T) {
@@ -129,8 +128,8 @@ func TestACompanionAddedAgainWithAnotherListOfItsLengthIsSeenWithIt(t *testing.T
 			} {
 				tb.step(p)
 			}
-			if ids := tb.v.shown.Actors["ally"].GetAbilityIds(); !sameStrings(ids, list) {
-				t.Errorf("the player holds the ally added again naming %q, want %q", ids, list)
+			if ids := tb.v.shown.Actors["ally"].GetAbilityIds(); !sameIDSet(ids, list) {
+				t.Errorf("the player holds the ally added again naming %q, want the ids of %q", ids, list)
 			}
 			sheetHeldAsTheWorldHoldsIt(t, tb)
 		})

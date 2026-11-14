@@ -97,6 +97,10 @@ func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
 		env.Payload = &vttv1.Envelope_AttackRolled{AttackRolled: p}
 	case *vttv1.AbilityUsed:
 		env.Payload = &vttv1.Envelope_AbilityUsed{AbilityUsed: p}
+	case *vttv1.AbilityGiven:
+		env.Payload = &vttv1.Envelope_AbilityGiven{AbilityGiven: p}
+	case *vttv1.AbilityTaken:
+		env.Payload = &vttv1.Envelope_AbilityTaken{AbilityTaken: p}
 	default:
 		panic(fmt.Sprintf("envelope: no oneof arm wired for %T", payload))
 	}

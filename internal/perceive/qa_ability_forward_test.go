@@ -166,7 +166,7 @@ func qaFwSight(t *testing.T, tb *qaFwTable, viewer, actor string, want bool) {
 	}
 }
 
-// VTT-723
+// VTT-741
 func TestQAAPartyMembersChangeReachesTheLogsThatSeeIt(t *testing.T) {
 	for _, give := range []bool{true, false} {
 		ability := "dash"
@@ -178,7 +178,7 @@ func TestQAAPartyMembersChangeReachesTheLogsThatSeeIt(t *testing.T) {
 		qaFwSight(t, tb, "act-d", "act-a", false)
 		env := qaFwChange(give, "act-a", ability)
 		pristine := proto.Clone(env)
-		sent := tb.step(t, env, false)
+		sent := tb.step(t, env, true)
 		qaFwCheckSent(t, "act-a", sent["act-a"], env)
 		qaFwCheckSent(t, "act-b", sent["act-b"], env)
 		qaFwCheckNone(t, "act-d", sent["act-d"])
@@ -188,7 +188,7 @@ func TestQAAPartyMembersChangeReachesTheLogsThatSeeIt(t *testing.T) {
 	}
 }
 
-// VTT-723
+// VTT-741
 func TestQAACreaturesChangeReachesNoLogThatSeesIt(t *testing.T) {
 	for _, give := range []bool{true, false} {
 		ability := "claw"
@@ -198,14 +198,14 @@ func TestQAACreaturesChangeReachesNoLogThatSeesIt(t *testing.T) {
 		tb := qaFwOpen(t, qaFwWorld)
 		qaFwSight(t, tb, "act-a", "act-c", true)
 		qaFwSight(t, tb, "act-b", "act-c", true)
-		sent := tb.step(t, qaFwChange(give, "act-c", ability), false)
+		sent := tb.step(t, qaFwChange(give, "act-c", ability), true)
 		for _, id := range []string{"act-a", "act-b", "act-d"} {
 			qaFwCheckNone(t, id, sent[id])
 		}
 	}
 }
 
-// VTT-723
+// VTT-741
 func TestQAAChangeOutOfSightReachesOnlyTheMembersOwnLog(t *testing.T) {
 	for _, give := range []bool{true, false} {
 		ability := "parry"
@@ -216,14 +216,14 @@ func TestQAAChangeOutOfSightReachesOnlyTheMembersOwnLog(t *testing.T) {
 		qaFwSight(t, tb, "act-b", "act-a", false)
 		qaFwSight(t, tb, "act-a", "act-a", true)
 		env := qaFwChange(give, "act-a", ability)
-		sent := tb.step(t, env, false)
+		sent := tb.step(t, env, true)
 		qaFwCheckSent(t, "act-a", sent["act-a"], env)
 		qaFwCheckNone(t, "act-b", sent["act-b"])
 		qaFwCheckNone(t, "act-d", sent["act-d"])
 	}
 }
 
-// VTT-723
+// VTT-741
 func TestQAAChangeOfAnotherMemberReachesTheLogThatSeesIt(t *testing.T) {
 	for _, give := range []bool{true, false} {
 		ability := "parry"
@@ -233,7 +233,7 @@ func TestQAAChangeOfAnotherMemberReachesTheLogThatSeesIt(t *testing.T) {
 		tb := qaFwOpen(t, qaFwWorld)
 		qaFwSight(t, tb, "act-a", "act-b", true)
 		env := qaFwChange(give, "act-b", ability)
-		sent := tb.step(t, env, false)
+		sent := tb.step(t, env, true)
 		qaFwCheckSent(t, "act-a", sent["act-a"], env)
 		qaFwCheckSent(t, "act-b", sent["act-b"], env)
 		qaFwCheckNone(t, "act-d", sent["act-d"])

@@ -72,6 +72,7 @@ func TestAWalkDrawsEveryKind(t *testing.T) {
 		"addNarration", "upsertNote", "deleteNote",
 		"openDoor", "closeDoor", "grantControl", "revokeControl",
 		"applyCondition", "removeCondition", "removeToken", "removeActor",
+		"giveAbility", "takeAbility",
 	}
 	seen := map[string]int{}
 	for seed := int64(1); seed <= 5; seed++ {
@@ -130,7 +131,7 @@ func TestBothSidesOfEveryRefusalAreDrawn(t *testing.T) {
 	// door and re-granting held control are documented no-ops, so drawing a
 	// "must fail" there would assert a rule the engine does not have.
 	want := []string{"deleteNote", "openDoor", "applyCondition", "removeCondition",
-		"removeToken", "removeActor"}
+		"removeToken", "removeActor", "giveAbility", "takeAbility"}
 	got := map[string]map[bool]int{}
 	for seed := int64(1); seed <= 5; seed++ {
 		kinds, _ := walk(t, seed, 400)
