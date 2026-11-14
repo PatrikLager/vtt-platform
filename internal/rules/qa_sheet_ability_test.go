@@ -36,7 +36,7 @@ func qaAbWantFault(t *testing.T, got *rules.SheetFault, key string) {
 	}
 }
 
-// VTT-685
+// VTT-750
 func TestQAAbAnEmptyOrAbsentListHasNoFault(t *testing.T) {
 	rs := qaAbLoadTavern(t)
 	if f := rs.SheetAbilityFault(nil); f != nil {
@@ -47,7 +47,7 @@ func TestQAAbAnEmptyOrAbsentListHasNoFault(t *testing.T) {
 	}
 }
 
-// VTT-685
+// VTT-750
 func TestQAAbEveryHeldIdInAnyOrderHasNoFault(t *testing.T) {
 	rs := qaAbLoadTavern(t)
 	if f := rs.SheetAbilityFault([]string{"sober-up", "fists", "splash-of-water", "chair-swing"}); f != nil {
@@ -55,7 +55,7 @@ func TestQAAbEveryHeldIdInAnyOrderHasNoFault(t *testing.T) {
 	}
 }
 
-// VTT-685
+// VTT-750
 func TestQAAbARepeatedHeldIdHasNoFault(t *testing.T) {
 	rs := qaAbLoadTavern(t)
 	if f := rs.SheetAbilityFault([]string{"fists", "chair-swing", "fists"}); f != nil {
@@ -63,31 +63,31 @@ func TestQAAbARepeatedHeldIdHasNoFault(t *testing.T) {
 	}
 }
 
-// VTT-685
+// VTT-750
 func TestQAAbTheFirstUnheldIdInByteOrderIsNamed(t *testing.T) {
 	rs := qaAbLoadTavern(t)
 	qaAbWantFault(t, rs.SheetAbilityFault([]string{"zz-unheld", "beta-unheld", "fists", "Zed-unheld"}), "Zed-unheld")
 }
 
-// VTT-685
+// VTT-750
 func TestQAAbAHeldIdFirstInByteOrderIsPassedOver(t *testing.T) {
 	rs := qaAbLoadTavern(t)
 	qaAbWantFault(t, rs.SheetAbilityFault([]string{"splash-of-water", "zz-unheld", "chair-swing"}), "zz-unheld")
 }
 
-// VTT-685
+// VTT-750
 func TestQAAbAnIdDifferingOnlyInCaseIsNotHeld(t *testing.T) {
 	rs := qaAbLoadTavern(t)
 	qaAbWantFault(t, rs.SheetAbilityFault([]string{"fists", "Fists"}), "Fists")
 }
 
-// VTT-685
+// VTT-688
 func TestQAAbAnEmptyIdIsNotHeld(t *testing.T) {
 	rs := qaAbLoadTavern(t)
 	qaAbWantFault(t, rs.SheetAbilityFault([]string{"fists", ""}), "")
 }
 
-// VTT-685
+// VTT-750
 func TestQAAbHeldMeansHeldInCompiled(t *testing.T) {
 	rs := qaAbLoadTavern(t)
 	qaAbWantFault(t, rs.SheetAbilityFault([]string{"qa-extra"}), "qa-extra")

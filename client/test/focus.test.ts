@@ -17,6 +17,7 @@ function dmConsole(): HTMLElement {
     participants: [],
     adventures: [],
     maps: [],
+    abilities: [],
     guideFor: async () => null,
     joinLink: null,
     roster: null,

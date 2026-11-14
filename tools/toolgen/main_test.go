@@ -670,13 +670,56 @@ func TestUseAbilitySaysAUseTheSheetDoesNotNameIsRefused(t *testing.T) {
 	}
 }
 
-// VTT-703
+// VTT-729
 func TestAddActorSaysAnActorUsesOnlyTheAbilitiesItNames(t *testing.T) {
 	actor := findTool(t, "add_actor")["inputSchema"].(map[string]any)["properties"].(map[string]any)["actor"].(map[string]any)
 	desc, _ := actor["properties"].(map[string]any)["abilityIds"].(map[string]any)["description"].(string)
-	for _, want := range []string{"use_ability refuses this actor any ability not named here", "names none can use none"} {
+	for _, want := range []string{"use_ability refuses this actor any ability its sheet does not name",
+		"names none can use none until give_ability gives it one", "give_ability and take_ability change the list in play"} {
 		if !strings.Contains(desc, want) {
 			t.Errorf("add_actor's abilityIds description = %q, want it to say %q", desc, want)
+		}
+	}
+}
+
+// VTT-749
+func TestAddActorSaysAnEmptyAbilityIdRefusesTheCommand(t *testing.T) {
+	actor := findTool(t, "add_actor")["inputSchema"].(map[string]any)["properties"].(map[string]any)["actor"].(map[string]any)
+	desc, _ := actor["properties"].(map[string]any)["abilityIds"].(map[string]any)["description"].(string)
+	if want := "an empty id refuses it with or without one"; !strings.Contains(desc, want) {
+		t.Errorf("add_actor's abilityIds description = %q, want it to say %q", desc, want)
+	}
+}
+
+// VTT-728
+func TestGiveAndTakeAbilitySayWhoMayWhatEachRefusesAndThatNothingElseChanges(t *testing.T) {
+	for name, wants := range map[string][]string{
+		"give_ability": {"DM/agent only", "Only its ability list changes",
+			"its tokens, controllers, conditions and resources stay as they are", "Refused, appending nothing",
+			"an actor the campaign does not hold", "an ability its sheet already names", "an empty ability id",
+			"with a ruleset served, an id the ruleset does not hold"},
+		"take_ability": {"DM/agent only", "Only its ability list changes", "Refused, appending nothing",
+			"an actor the campaign does not hold", "an ability its sheet does not name"},
+	} {
+		tool := findTool(t, name)
+		desc, _ := tool["description"].(string)
+		for _, want := range wants {
+			if !strings.Contains(desc, want) {
+				t.Errorf("%s's description = %q, want it to say %q", name, desc, want)
+			}
+		}
+		schema := tool["inputSchema"].(map[string]any)
+		if got, want := schema["required"], []any{"actorId", "abilityId"}; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s required = %v, want %v", name, got, want)
+		}
+		props := schema["properties"].(map[string]any)
+		for field, want := range map[string]string{
+			"actorId":   "The id of the actor whose sheet changes.",
+			"abilityId": "The ability's id in the served ruleset.",
+		} {
+			if desc, _ := props[field].(map[string]any)["description"].(string); desc != want {
+				t.Errorf("%s's %s description = %q, want %q", name, field, desc, want)
+			}
 		}
 	}
 }

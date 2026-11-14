@@ -737,22 +737,8 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	// Keep the validators here, for every role, before anything is written: not
 	// in Authorize, since they refuse a form and not an issuer; not in ToEvent
 	// (TestEveryClientCommandConverts); not in the fold (SPEC-013).
-	if g, ok := cmd.GetCommand().(*vttv1.ClientCommand_GrantActorControl); ok {
-		if err := validateGrantActorControl(g.GrantActorControl); err != nil {
-			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
-		}
-	}
-
-	if aa, ok := cmd.GetCommand().(*vttv1.ClientCommand_AddActor); ok {
-		if err := validateAddActorWith(aa.AddActor, s.ruleset); err != nil {
-			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
-		}
-	}
-
-	if un, ok := cmd.GetCommand().(*vttv1.ClientCommand_UpsertNote); ok {
-		if err := validateUpsertNote(un.UpsertNote); err != nil {
-			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
-		}
+	if err := validateForm(cmd, s.ruleset); err != nil {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 
 	// Dispatch these five before ToEvent: each appends a batch or nothing, never one
@@ -804,6 +790,21 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: seq}
+}
+
+// Add each command's form validator here, for every role (SPEC-013).
+func validateForm(cmd *vttv1.ClientCommand, rs *rules.Ruleset) error {
+	switch c := cmd.GetCommand().(type) {
+	case *vttv1.ClientCommand_GrantActorControl:
+		return validateGrantActorControl(c.GrantActorControl)
+	case *vttv1.ClientCommand_AddActor:
+		return validateAddActorWith(c.AddActor, rs)
+	case *vttv1.ClientCommand_GiveAbility:
+		return validateGiveAbility(c.GiveAbility, rs)
+	case *vttv1.ClientCommand_UpsertNote:
+		return validateUpsertNote(c.UpsertNote)
+	}
+	return nil
 }
 
 func doorSquare(cmd *vttv1.ClientCommand) (string, *vttv1.GridPosition, bool) {

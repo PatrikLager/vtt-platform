@@ -117,6 +117,18 @@ message RemoveCondition {
   string condition_id = 2;
 }
 
+// GiveAbility gives an actor's sheet one ability (SPEC-025).
+message GiveAbility {
+  string actor_id = 1;
+  string ability_id = 2;
+}
+
+// TakeAbility takes an ability off an actor's sheet (SPEC-025).
+message TakeAbility {
+  string actor_id = 1;
+  string ability_id = 2;
+}
+
 message AddNarration {
   string text = 1;
   string as = 2;
@@ -202,6 +214,9 @@ message ClientCommand {
     DescribeToken describe_token = 34;
     RemoveParticipant remove_participant = 35;
     AddWhisper add_whisper = 36;
+    // A sheet's ability list changes in play (SPEC-007).
+    GiveAbility give_ability = 37;
+    TakeAbility take_ability = 38;
   }
 }
 

@@ -335,6 +335,7 @@ function harness(): Harness {
       participants: [],
       adventures: [],
       maps: [],
+      abilities: [],
       guideFor: async () => null,
       joinLink: null,
       roster: null,

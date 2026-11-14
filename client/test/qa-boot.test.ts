@@ -37,6 +37,7 @@ function mount(answer: boolean, roster: Roster[] = ROSTER): { root: HTMLElement;
     participants: [],
     adventures: [],
     maps: [],
+    abilities: [],
     guideFor: async () => null,
     joinLink: null,
     roster,

@@ -86,7 +86,7 @@ func TestAnActorFileWhoseAbilityIdsAreNullNamesNone(t *testing.T) {
 	}
 }
 
-// VTT-687
+// VTT-751
 func TestAnActorFileNamingAnAbilityTheRulesetDoesNotHoldIsRefused(t *testing.T) {
 	cases := []struct{ name, ids, key string }{
 		{"an id the ruleset does not hold", `["fists", "nope"]`, "nope"},
@@ -109,7 +109,7 @@ func TestAnActorFileNamingAnAbilityTheRulesetDoesNotHoldIsRefused(t *testing.T) 
 	}
 }
 
-// VTT-687
+// VTT-751
 func TestAnActorFilesKeysAreReadBeforeItsAbilities(t *testing.T) {
 	_, err := adventure.Load(writeBraceGuardSheet(t, `{"vim": 10, "vigor": 10, "nope": 1}`,
 		`, "ability_ids": ["missing"]`), abilityRuleset(t))

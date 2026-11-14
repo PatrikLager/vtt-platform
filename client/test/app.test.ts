@@ -247,6 +247,44 @@ test("a DM identity gets the console, and its actions reach the socket", async (
   session?.close();
 });
 
+// VTT-730
+test("a DM's console offers to give the abilities its ruleset read answered, and sends the give", async () => {
+  localStorage.setItem("vtt.token", "tok-dm");
+  stubMetadata({
+    "/api/me": { participantId: "p-dm", name: "DM", role: "dm" },
+    "/api/ruleset": {
+      id: "r", name: "R", conditions: [], resources: [],
+      abilities: [
+        { id: "poke", name: "Poke", range: 1, maxTargets: 1, usage: { kind: "atWill" } },
+        { id: "shove", name: "Shove", range: 1, maxTargets: 1, usage: { kind: "atWill" } },
+      ],
+    },
+    "/api/adventures": { adventures: [] },
+  });
+  useFakeSocket();
+
+  const r = root();
+  const session = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver(envelope(1, { actorAdded: { actor: {
+    actorId: "app-give", name: "Lera", kind: "ACTOR_KIND_PARTY_MEMBER", abilityIds: ["poke"],
+  } } }));
+  await settle();
+
+  const row = r.querySelector('.ability-actor[data-actor="app-give"]')!;
+  const pick = row.querySelector<HTMLSelectElement>("select.give-ability")!;
+  expect(Array.from(pick.options).map((o) => o.textContent)).toEqual(["choose an ability", "Shove"]);
+  pick.value = "shove";
+  pick.dispatchEvent(new Event("change"));
+  row.querySelector<HTMLButtonElement>('[data-action="give-ability"]')!.click();
+  await settle();
+
+  expect(sock.sent).toHaveLength(1);
+  expect(JSON.parse(sock.sent[0]!).giveAbility).toEqual({ actorId: "app-give", abilityId: "shove" });
+  session?.close();
+});
+
 // VTT-604
 test("a refused command is reported verbatim rather than silently doing nothing", async () => {
   localStorage.setItem("vtt.token", "tok-dm");

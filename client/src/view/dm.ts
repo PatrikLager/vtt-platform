@@ -6,12 +6,13 @@
 
 import type { State } from "../state";
 import type { Participant } from "../session";
-import type { AdventureMeta, JoinLink, MapMeta, Roster } from "../metadata";
+import type { Ability, AdventureMeta, JoinLink, MapMeta, Roster } from "../metadata";
 import { ActorKind, NoteVisibility } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
   startSession, endSession, placeToken, describeToken, removeToken, loadAdventure, loadMap,
   upsertNote, deleteNote, removeCondition, parseActorJSON, addActor, removeActor,
+  giveAbility, takeAbility,
   grantActorControl, revokeActorControl, addNarration, speakOutOfCharacter, addWhisper,
   setJoinDoor,
   rotateJoinLink,
@@ -232,6 +233,8 @@ export interface DMDeps {
    * is a different and false story from "this table has none configured".
    */
   maps: MapMeta[];
+  /** The abilities the Abilities group offers to give (VTT-730). */
+  abilities: readonly Ability[];
   guideFor: (id: string) => Promise<string | null>;
   /**
    * The shared join link, or null when there is none to show.
@@ -550,6 +553,38 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     }
   }
   if (condRow.length > 0) wrap.appendChild(group("Remove condition", ...condRow));
+
+  // --- abilities: what each sheet names, given and taken (VTT-730) ---
+  const abilityRows: HTMLElement[] = [];
+  for (const a of Object.values(d.st.Actors).sort((x, y) => (x.actorId < y.actorId ? -1 : 1))) {
+    const row = el("div", "ability-actor");
+    row.dataset["actor"] = a.actorId;
+    row.appendChild(el("span", "ability-name", a.name !== "" ? a.name : a.actorId));
+    for (const id of new Set(a.abilityIds)) {
+      const label = d.abilities.find((ab) => ab.id === id)?.name || id;
+      const take = button(`${label} ✕`, sending(d, `take-ability:${a.actorId}:${id}`, () => ({
+        command: takeAbility(a.actorId, id), clears: [],
+      })), "take-ability");
+      take.dataset["ability"] = id;
+      row.appendChild(take);
+    }
+    const offered = d.abilities.filter((ab) => !a.abilityIds.includes(ab.id));
+    if (offered.length > 0) {
+      const field = `give-ability-${a.actorId}`;
+      const pick = choiceSelect("give-ability", field,
+        [["", "choose an ability"], ...offered.map((ab) => [ab.id, ab.name || ab.id] as const)]);
+      row.appendChild(pick);
+      row.appendChild(button("Give", () => {
+        const chosen = pick.value;
+        if (chosen === "") return void d.notify("Choose an ability to give first.");
+        sending(d, `give-ability:${a.actorId}:${chosen}`, () => ({
+          command: giveAbility(a.actorId, chosen), clears: [field],
+        }))();
+      }, "give-ability"));
+    }
+    abilityRows.push(row);
+  }
+  if (abilityRows.length > 0) wrap.appendChild(group("Abilities", ...abilityRows));
 
   // --- who controls what -------------------------------------------------
   //

@@ -55,6 +55,7 @@ function draw(t: Table): HTMLElement {
     participants: t.participants,
     adventures: [],
     maps: [],
+    abilities: [],
     guideFor: () => Promise.resolve(null),
     joinLink: null,
     roster: null,

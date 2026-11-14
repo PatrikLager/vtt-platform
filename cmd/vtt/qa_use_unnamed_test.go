@@ -335,7 +335,7 @@ func TestQAUseTheServedUseAbilityDescriptionSaysAnUnnamedUseIsRefusedForEveryRol
 	}
 }
 
-// VTT-703
+// VTT-729
 func TestQAUseTheServedAddActorSchemaSaysAnActorUsesOnlyWhatItsAbilityIdsName(t *testing.T) {
 	tb := qaUseMCPBoot(t)
 	tool, ok := qaUseServedTools(t, tb.cs)["add_actor"]
@@ -343,14 +343,15 @@ func TestQAUseTheServedAddActorSchemaSaysAnActorUsesOnlyWhatItsAbilityIdsName(t 
 		t.Fatalf("add_actor is not served")
 	}
 	d := qaUseAbilityIdsDoc(t, tool.InputSchema)
-	for _, frag := range []string{"use_ability", "not named here", "names none can use none"} {
+	for _, frag := range []string{"use_ability", "its sheet does not name", "names none can use none until give_ability gives it one",
+		"give_ability and take_ability change the list in play"} {
 		if !strings.Contains(d, frag) {
 			t.Errorf("abilityIds description lacks %q: %q", frag, d)
 		}
 	}
 }
 
-// VTT-701 VTT-703
+// VTT-701 VTT-729
 func TestQAUseTheCommittedToolTextsAreTheServedOnes(t *testing.T) {
 	tb := qaUseMCPBoot(t)
 	served := qaUseServedTools(t, tb.cs)

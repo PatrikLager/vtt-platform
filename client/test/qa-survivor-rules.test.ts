@@ -380,7 +380,7 @@ async function boot(
   const node = renderDMConsole({
     st: newState(),
     participants: [{ participantId: row.participantId, displayName: row.name }],
-    adventures: [], maps: [], guideFor: async () => null,
+    adventures: [], maps: [], abilities: [], guideFor: async () => null,
     joinLink, roster: [dmRow, row], origin: "https://table.example",
     refreshSharing: () => {},
     send: async (c) => { sent.push(c); return ok(); },

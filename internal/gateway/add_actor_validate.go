@@ -37,8 +37,8 @@ func validateAddActor(cmd *vttv1.AddActor) error {
 	return nil
 }
 
-// validateAddActorWith answers validateAddActor's refusals, then a sheet that
-// does not fit rs, or none without rs (VTT-675, VTT-677, VTT-685, VTT-686).
+// validateAddActorWith answers validateAddActor's refusals, then the sheet's
+// (VTT-675, VTT-677, VTT-746, VTT-747, VTT-750).
 func validateAddActorWith(cmd *vttv1.AddActor, rs *rules.Ruleset) error {
 	if err := validateAddActor(cmd); err != nil {
 		return err
@@ -48,15 +48,28 @@ func validateAddActorWith(cmd *vttv1.AddActor, rs *rules.Ruleset) error {
 
 func validateAddActorSheet(cmd *vttv1.AddActor, rs *rules.Ruleset) error {
 	a := cmd.GetActor()
-	if rs == nil || a.GetActorId() == "" {
+	if a.GetActorId() == "" {
 		return nil
 	}
-	f := rs.SheetKeyFault(slices.Collect(maps.Keys(a.GetAttributes())), slices.Collect(maps.Keys(a.GetResources())))
-	if f == nil {
-		f = rs.SheetAbilityFault(a.GetAbilityIds())
-	}
+	f := sheetFault(a, rs)
 	if f == nil {
 		return nil
 	}
 	return fmt.Errorf("gateway: add_actor: actor %q: %s: %s", a.GetActorId(), f.Field, f.Reason)
+}
+
+// Refuse an empty ability id with or without rs (VTT-747).
+func sheetFault(a *vttv1.Actor, rs *rules.Ruleset) *rules.SheetFault {
+	if rs != nil {
+		if f := rs.SheetKeyFault(slices.Collect(maps.Keys(a.GetAttributes())), slices.Collect(maps.Keys(a.GetResources()))); f != nil {
+			return f
+		}
+	}
+	if slices.Contains(a.GetAbilityIds(), "") {
+		return &rules.SheetFault{Field: "ability_ids", Reason: "must not hold an empty id"}
+	}
+	if rs == nil {
+		return nil
+	}
+	return rs.SheetAbilityFault(a.GetAbilityIds())
 }

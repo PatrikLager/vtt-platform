@@ -26,6 +26,8 @@ var commandRoles = map[string]map[identity.Role]bool{
 	"end_session":          {identity.RoleDM: true, identity.RoleAgent: true},
 	"use_ability":          {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"remove_condition":     {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
+	"give_ability":         {identity.RoleDM: true, identity.RoleAgent: true},
+	"take_ability":         {identity.RoleDM: true, identity.RoleAgent: true},
 	"add_narration":        {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"add_whisper":          {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"upsert_note":          {identity.RoleDM: true, identity.RoleAgent: true},
@@ -317,6 +319,10 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "use_ability"
 	case *vttv1.ClientCommand_RemoveCondition:
 		return "remove_condition"
+	case *vttv1.ClientCommand_GiveAbility:
+		return "give_ability"
+	case *vttv1.ClientCommand_TakeAbility:
+		return "take_ability"
 	case *vttv1.ClientCommand_AddNarration:
 		return "add_narration"
 	case *vttv1.ClientCommand_AddWhisper:

@@ -13,7 +13,7 @@ export function sayConsole(
   rerender: () => void,
 ): HTMLElement {
   return renderDMConsole({
-    st, participants: [], adventures: [], maps: [],
+    st, participants: [], adventures: [], maps: [], abilities: [],
     guideFor: async () => null, joinLink: null, roster: null, origin: "",
     refreshSharing: () => {}, send, rerender,
     notify: () => {}, confirm: () => false, doorsArmed: false, toggleDoors: () => {},

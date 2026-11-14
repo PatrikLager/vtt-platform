@@ -79,7 +79,7 @@ func TestSheetKeyFaultLeavesItsCallersKeysInTheirOrder(t *testing.T) {
 	}
 }
 
-// VTT-685 VTT-687 VTT-688
+// VTT-750 VTT-751 VTT-688
 func TestSheetAbilityFaultNamesTheFirstIdTheRulesetDoesNotHold(t *testing.T) {
 	rs := &rules.Ruleset{Compiled: map[string]*rules.CompiledPower{"fists": {}, "rally": {}}}
 	cases := []struct {

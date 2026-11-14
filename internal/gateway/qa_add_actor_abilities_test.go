@@ -234,7 +234,7 @@ func TestQAAbARepeatedHeldIdIsAcceptedAndAppendedAsSent(t *testing.T) {
 	qaAbWantAppended(t, tb, qc, seq, "qa-repeat", want)
 }
 
-// VTT-685
+// VTT-750
 func TestQAAbAnUnheldIdIsRefusedNamingTheActorAndFirstUnheldIdInByteOrder(t *testing.T) {
 	tb := qaAbNewTable(t, qaAbTavern(t))
 	for _, who := range []struct{ name, token string }{{"dm", tb.dm}, {"agent", tb.agent}} {
@@ -257,7 +257,7 @@ func TestQAAbAnUnheldIdIsRefusedNamingTheActorAndFirstUnheldIdInByteOrder(t *tes
 	}
 }
 
-// VTT-685
+// VTT-750
 func TestQAAbAHeldIdFirstInByteOrderDoesNotHideAnUnheldOne(t *testing.T) {
 	tb := qaAbNewTable(t, qaAbTavern(t))
 	qc := tb.dial(t, tb.dm)
@@ -271,7 +271,7 @@ func TestQAAbAHeldIdFirstInByteOrderDoesNotHideAnUnheldOne(t *testing.T) {
 	}
 }
 
-// VTT-685
+// VTT-750
 func TestQAAbTheControllerKindAndKeyRefusalsComeFirst(t *testing.T) {
 	cases := []struct {
 		name string
@@ -334,13 +334,13 @@ func TestQAAbAnActorWithNoIdIsNotReadForItsAbilities(t *testing.T) {
 	qaAbWantNothingAppended(t, tb, qc, before, "", "qa-noid-probe")
 }
 
-// VTT-686
-func TestQAAbWithNoRulesetServedNoAbilityIdIsRefused(t *testing.T) {
+// VTT-746
+func TestQAAbWithNoRulesetServedNoNonEmptyAbilityIdIsRefused(t *testing.T) {
 	tb := qaAbNewTable(t, nil)
 	for _, who := range []struct{ name, token string }{{"dm", tb.dm}, {"agent", tb.agent}} {
 		t.Run(who.name, func(t *testing.T) {
 			qc := tb.dial(t, who.token)
-			want := []string{"zz-unheld", "fists", "Zed-unheld", "", "zz-unheld"}
+			want := []string{"zz-unheld", "fists", "Zed-unheld", "zz-unheld"}
 			id := "qa-free-" + who.name
 			a := qaAbPC(id, want...)
 			a.Attributes["qa-undeclared"] = 7

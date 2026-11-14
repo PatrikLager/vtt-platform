@@ -285,6 +285,28 @@ func qaRuleBoard(t *testing.T, dm *qaRuleConn, resources map[string]*vttv1.Resou
 	}}, 3)
 }
 
+// VTT-747
+func qaRuleBoardWritten(t *testing.T, tb *qaRuleTable, dm *qaRuleConn, abilityIDs ...string) {
+	t.Helper()
+	res := qaRuleOK(t, dm, &vttv1.ClientCommand{RequestId: "board", Command: &vttv1.ClientCommand_LoadMap{
+		LoadMap: &vttv1.LoadMap{MapId: "qa-board"},
+	}}, 1)
+	scene := dm.event(res.GetSequence()).GetSceneCreated()
+	if _, err := tb.camp.Append(&vttv1.Envelope{EventId: "qa-hero", Payload: &vttv1.Envelope_ActorAdded{
+		ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
+			ActorId: qaRuleHero, Name: "qa", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY, AbilityIds: abilityIDs,
+		}},
+	}}); err != nil {
+		t.Fatalf("append the hero: %v", err)
+	}
+	dm.event(2)
+	qaRuleOK(t, dm, &vttv1.ClientCommand{RequestId: "place", Command: &vttv1.ClientCommand_PlaceToken{
+		PlaceToken: &vttv1.PlaceToken{
+			TokenId: "qa-tok", SceneId: scene.GetSceneId(), ActorId: qaRuleHero, Position: &vttv1.GridPosition{X: 1, Y: 1},
+		},
+	}}, 3)
+}
+
 func qaRuleStillOpenNothingAppended(t *testing.T, tb *qaRuleTable, issuer, observer *qaRuleConn, h0 int64) {
 	t.Helper()
 	follow := qaRuleAdd("follow", &vttv1.Actor{ActorId: "qa-follow", Name: "qa", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
@@ -370,7 +392,11 @@ func TestQARuleAUseWhoseAbilityIDCrossesTheBoundIsRefusedWithTheFoldsText(t *tes
 			tb := qaRuleServe(t, rs)
 			issuer := qaRuleDial(t, tb, tb.dmToken)
 			observer := qaRuleDial(t, tb, tb.obsToken)
-			qaRuleBoard(t, issuer, nil, c.id)
+			if c.id == "" {
+				qaRuleBoardWritten(t, tb, issuer, c.id)
+			} else {
+				qaRuleBoard(t, issuer, nil, c.id)
+			}
 			cmd := qaRuleUse("use", c.id)
 			want := qaRuleLocalRefusal(t, tb, cmd)
 			res := issuer.send(cmd)

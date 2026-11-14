@@ -41,7 +41,7 @@
         "actor": {
           "properties": {
             "abilityIds": {
-              "description": "Optional. The abilities this actor has, each by its id in the served ruleset (get_ruleset lists them). use_ability refuses this actor any ability not named here, so an actor that names none can use none. With a ruleset served, an id the ruleset does not hold refuses the whole command.",
+              "description": "Optional. The abilities this actor has, each by its id in the served ruleset (get_ruleset lists them). use_ability refuses this actor any ability its sheet does not name, so an actor that names none can use none until give_ability gives it one; give_ability and take_ability change the list in play. With a ruleset served, an id the ruleset does not hold refuses the whole command, and an empty id refuses it with or without one.",
               "items": {
                 "type": "string"
               },
@@ -311,6 +311,48 @@
       "type": "object"
     },
     "name": "remove_condition"
+  },
+  {
+    "description": "Give an actor one ability of the served ruleset (get_ruleset lists them): afterwards its sheet names the ability and use_ability resolves it for that actor. Only its ability list changes: its tokens, controllers, conditions and resources stay as they are, so use this, not remove_actor and add_actor, to change what a character can do. Refused, appending nothing: an actor the campaign does not hold, an ability its sheet already names, an empty ability id, and, with a ruleset served, an id the ruleset does not hold. DM/agent only.",
+    "inputSchema": {
+      "properties": {
+        "abilityId": {
+          "description": "The ability's id in the served ruleset.",
+          "type": "string"
+        },
+        "actorId": {
+          "description": "The id of the actor whose sheet changes.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "actorId",
+        "abilityId"
+      ],
+      "type": "object"
+    },
+    "name": "give_ability"
+  },
+  {
+    "description": "Take one ability from an actor's sheet: afterwards its sheet does not name it and use_ability refuses that actor the ability, whoever asks. Only its ability list changes. Refused, appending nothing: an actor the campaign does not hold, and an ability its sheet does not name. DM/agent only.",
+    "inputSchema": {
+      "properties": {
+        "abilityId": {
+          "description": "The ability's id in the served ruleset.",
+          "type": "string"
+        },
+        "actorId": {
+          "description": "The id of the actor whose sheet changes.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "actorId",
+        "abilityId"
+      ],
+      "type": "object"
+    },
+    "name": "take_ability"
   },
   {
     "description": "Add a story entry to the table's shared narrative — narration, in-character speech, or out-of-character table talk; optionally anchored to the event sequences it narrates. The DM and the agent voice anyone with `as`; a player speaks as a party member they control by `actorId`; `outOfCharacter` speaks as yourself, under the name the server writes.",

@@ -115,7 +115,7 @@ type Placement struct {
 
 // AdventureActor is one actors/*.json file, its statblock checked at Load
 // against the ruleset's properties by type (VTT-617, VTT-618) and its ability
-// ids against the ruleset's abilities (VTT-687). It has no controller: who
+// ids against the ruleset's abilities (VTT-751). It has no controller: who
 // drives a character is the table's to decide, later. Its Kind is the
 // author's, required at load (actorKinds in load.go), and is carried as the
 // wire enum so nothing downstream re-parses the name.

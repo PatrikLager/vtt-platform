@@ -96,6 +96,8 @@ export const COMMAND_SURFACE: Record<
   // /dm in the panel).
   addWhisper: { surface: "dm-console", action: "add-narration" },
   removeCondition: { surface: "dm-console", action: "remove-condition" },
+  giveAbility: { surface: "dm-console", action: "give-ability" },
+  takeAbility: { surface: "dm-console", action: "take-ability" },
   grantActorControl: { surface: "dm-console", action: "grant-actor-control" },
   revokeActorControl: { surface: "dm-console", action: "revoke-actor-control" },
   promoteParticipant: { surface: "dm-console", action: "promote-", dynamic: true },
@@ -267,6 +269,11 @@ function dmFixture(open: boolean): HTMLElement {
     st,
     adventures: [{ id: "adv-1", name: "Adventure" }],
     maps: [{ id: "map-1", name: "Map", gridWidth: 4, gridHeight: 4, cellPx: 64 }],
+    // "shove" is one a1's sheet does not name, so the give control renders.
+    abilities: [
+      { id: "poke", name: "Poke", range: 1, maxTargets: 1, usage: { kind: "atWill" } },
+      { id: "shove", name: "Shove", range: 1, maxTargets: 1, usage: { kind: "atWill" } },
+    ],
     guideFor: async () => null,
     participants: [{ participantId: "p-me", displayName: "Hero's Player" }],
     joinLink: { open: false, secret: "s3cret" },

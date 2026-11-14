@@ -75,6 +75,16 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 			ConditionId: c.RemoveCondition.GetConditionId(),
 			Reason:      "manual",
 		}}
+	case *vttv1.ClientCommand_GiveAbility:
+		env.Payload = &vttv1.Envelope_AbilityGiven{AbilityGiven: &vttv1.AbilityGiven{
+			ActorId:   c.GiveAbility.GetActorId(),
+			AbilityId: c.GiveAbility.GetAbilityId(),
+		}}
+	case *vttv1.ClientCommand_TakeAbility:
+		env.Payload = &vttv1.Envelope_AbilityTaken{AbilityTaken: &vttv1.AbilityTaken{
+			ActorId:   c.TakeAbility.GetActorId(),
+			AbilityId: c.TakeAbility.GetAbilityId(),
+		}}
 	case *vttv1.ClientCommand_AddNarration:
 		env.Payload = &vttv1.Envelope_NarrationAdded{NarrationAdded: &vttv1.NarrationAdded{
 			Text:           c.AddNarration.GetText(),

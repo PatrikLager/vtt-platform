@@ -39,6 +39,8 @@ var theCommandTools = []string{
 	"end_session",
 	"use_ability",
 	"remove_condition",
+	"give_ability",
+	"take_ability",
 	"add_narration",
 	"add_whisper",
 	"upsert_note",

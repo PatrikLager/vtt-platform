@@ -234,6 +234,22 @@ export function removeCondition(actorId: string, conditionId: string): ClientCom
   });
 }
 
+/** Give an actor's sheet one ability, by its id in the ruleset (SPEC-025). */
+export function giveAbility(actorId: string, abilityId: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "giveAbility", value: { actorId, abilityId } },
+  });
+}
+
+/** Take an ability off an actor's sheet (SPEC-025). */
+export function takeAbility(actorId: string, abilityId: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "takeAbility", value: { actorId, abilityId } },
+  });
+}
+
 /**
  * parseActorJSON turns a DM's pasted actor into an addActor command.
  *

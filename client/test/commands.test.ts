@@ -7,7 +7,7 @@ import { join } from "node:path";
 import {
   moveToken, useAbility, addNarration, upsertNote,
   setJoinDoor, rotateJoinLink, promoteParticipant, removeParticipant, setViewpoint,
-  speakAs, speakOutOfCharacter, addWhisper,
+  speakAs, speakOutOfCharacter, addWhisper, giveAbility, takeAbility,
 } from "../src/commands";
 
 // Commands are asserted against the COMMITTED protojson fixtures in
@@ -53,6 +53,13 @@ test("addWhisper matches the committed add_whisper fixture", () => {
   sameShape(toJson(ClientCommandSchema, cmd) as Record<string, unknown>, f as never);
   const toDM = toJson(ClientCommandSchema, addWhisper("I saw it", [], "act-tobbe")) as Record<string, any>;
   expect(toDM["addWhisper"]).toEqual({ text: "I saw it", fromActorId: "act-tobbe" });
+});
+
+test("giveAbility and takeAbility match the committed give_ability and take_ability fixtures", () => {
+  sameShape(toJson(ClientCommandSchema, giveAbility("act-fighter", "rally")) as Record<string, unknown>,
+    fixture("give_ability_command.json"));
+  sameShape(toJson(ClientCommandSchema, takeAbility("act-fighter", "rally")) as Record<string, unknown>,
+    fixture("take_ability_command.json"));
 });
 
 test("an omitted move reason is absent from the wire, not an empty string", () => {

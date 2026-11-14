@@ -108,6 +108,7 @@ function deps(st: State): DMDeps {
     participants: [],
     adventures: [],
     maps: [],
+    abilities: [],
     guideFor: async () => null,
     joinLink: null,
     roster: null,

@@ -43,6 +43,8 @@ const cases = [
   ["add_narration_command.json", ClientCommandSchema],
   ["add_narration_out_of_character_command.json", ClientCommandSchema],
   ["narration_out_of_character_envelope.json", EnvelopeSchema],
+  ["give_ability_command.json", ClientCommandSchema],
+  ["take_ability_command.json", ClientCommandSchema],
 ] as const;
 
 for (const [fixture, schema] of cases) {

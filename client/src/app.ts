@@ -400,6 +400,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
             participants: session.participants,
             adventures,
             maps,
+            abilities,
             guideFor: (id) => fetchAdventureGuide(location.origin, token, id),
             joinLink,
             roster,

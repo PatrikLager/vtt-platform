@@ -92,7 +92,7 @@ var manifest = []toolSpec{
 					"attributes":    "The actor's numbers, each under a key the served ruleset declares as a number property (get_ruleset lists them); a sheet holds only the properties this actor has. With a ruleset served, a key it does not declare, or one it declares as a resource, refuses the whole command. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
 					"resources":     "The actor's resources, each under a key the served ruleset declares as a resource property (get_ruleset lists them), each giving its current, 0 included, and its max if it has one; a sheet holds only the properties this actor has. A resource whose current is null or left out refuses the whole command, and with a ruleset served so does a key it does not declare, or one it declares as a number. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
 					"moduleData":    "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
-					"abilityIds":    "Optional. The abilities this actor has, each by its id in the served ruleset (get_ruleset lists them). use_ability refuses this actor any ability not named here, so an actor that names none can use none. With a ruleset served, an id the ruleset does not hold refuses the whole command.",
+					"abilityIds":    "Optional. The abilities this actor has, each by its id in the served ruleset (get_ruleset lists them). use_ability refuses this actor any ability its sheet does not name, so an actor that names none can use none until give_ability gives it one; give_ability and take_ability change the list in play. With a ruleset served, an id the ruleset does not hold refuses the whole command, and an empty id refuses it with or without one.",
 				},
 			},
 			// A resource's max may be left out for none, so only current is required.
@@ -191,6 +191,34 @@ var manifest = []toolSpec{
 		name:        "remove_condition",
 		description: "Remove a named condition from an actor (DM-ended durations).",
 		descriptor:  (&vttv1.RemoveCondition{}).ProtoReflect().Descriptor(),
+	},
+	{
+		message:     "vtt.v1.GiveAbility",
+		name:        "give_ability",
+		description: "Give an actor one ability of the served ruleset (get_ruleset lists them): afterwards its sheet names the ability and use_ability resolves it for that actor. Only its ability list changes: its tokens, controllers, conditions and resources stay as they are, so use this, not remove_actor and add_actor, to change what a character can do. Refused, appending nothing: an actor the campaign does not hold, an ability its sheet already names, an empty ability id, and, with a ruleset served, an id the ruleset does not hold. DM/agent only.",
+		descriptor:  (&vttv1.GiveAbility{}).ProtoReflect().Descriptor(),
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.GiveAbility": {
+				fieldDocs: map[string]string{
+					"actorId":   "The id of the actor whose sheet changes.",
+					"abilityId": "The ability's id in the served ruleset.",
+				},
+			},
+		},
+	},
+	{
+		message:     "vtt.v1.TakeAbility",
+		name:        "take_ability",
+		description: "Take one ability from an actor's sheet: afterwards its sheet does not name it and use_ability refuses that actor the ability, whoever asks. Only its ability list changes. Refused, appending nothing: an actor the campaign does not hold, and an ability its sheet does not name. DM/agent only.",
+		descriptor:  (&vttv1.TakeAbility{}).ProtoReflect().Descriptor(),
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.TakeAbility": {
+				fieldDocs: map[string]string{
+					"actorId":   "The id of the actor whose sheet changes.",
+					"abilityId": "The ability's id in the served ruleset.",
+				},
+			},
+		},
 	},
 	{
 		message:     "vtt.v1.AddNarration",

@@ -37,7 +37,7 @@ func TestAddActorAppendsTheAbilityIdsItNamesInTheirOrder(t *testing.T) {
 	}
 }
 
-// VTT-685
+// VTT-750
 func TestAddActorWithARulesetRefusesAnAbilityTheRulesetDoesNotHold(t *testing.T) {
 	cases := []struct {
 		name string
@@ -65,7 +65,7 @@ func TestAddActorWithARulesetRefusesAnAbilityTheRulesetDoesNotHold(t *testing.T)
 	}
 }
 
-// VTT-685
+// VTT-750
 func TestAddActorReadsAnActorsKeysBeforeItsAbilities(t *testing.T) {
 	s, _, dm := fitServer(t, abilityFitRuleset())
 	r := s.handleCommand(dm, abilityAddActor("fit", map[string]int32{"nope": 1}, "missing"), nil)
@@ -78,7 +78,7 @@ func TestAddActorReadsAnActorsKeysBeforeItsAbilities(t *testing.T) {
 	}
 }
 
-// VTT-686
+// VTT-746
 func TestAddActorWithNoRulesetReadsNoAbilityAgainstOne(t *testing.T) {
 	s, camp, dm := fitServer(t, nil)
 	r := s.handleCommand(dm, abilityAddActor("fit", nil, "nope", "fists"), nil)

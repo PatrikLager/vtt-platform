@@ -275,7 +275,7 @@ func TestQAAbTheMCPToolAppendsAnActorNamingItsAbilityIdsInTheirOrder(t *testing.
 	}
 }
 
-// VTT-685
+// VTT-750
 func TestQAAbTheMCPToolIsRefusedForAnUnheldIdAndAppendsNothing(t *testing.T) {
 	m := qaAbMCP(t)
 	before := len(m.c.State().Actors)

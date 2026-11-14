@@ -50,6 +50,7 @@ function harness(
     st,
     adventures: opts.adventures ?? [{ id: "adv-1", name: "Goblin Ambush" }],
     maps: opts.maps ?? [],
+    abilities: [],
     guideFor: async () => (opts.guide === undefined ? "# guide" : opts.guide),
     participants: opts.participants ?? [],
     // The sharing panel is exercised by its own tests below; these existing
@@ -1398,6 +1399,7 @@ function shareConsole(opts: {
     st: emptyState(),
     adventures: [],
     maps: [],
+    abilities: [],
     guideFor: async () => null,
     doorsArmed: false,
     toggleDoors: () => {},
@@ -1473,7 +1475,7 @@ test("rotating asks first, because it locks out a link already sent", () => {
   const sent: ClientCommand[] = [];
   let asked = 0;
   const node = renderDMConsole({
-    st: emptyState(), adventures: [], maps: [], guideFor: async () => null,
+    st: emptyState(), adventures: [], maps: [], abilities: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s3cret" }, roster: [],
     origin: "https://table.example", refreshSharing: () => {},
     send: async (c) => { sent.push(c); return ok(); }, rerender: () => {}, notify: () => {},
@@ -1538,7 +1540,7 @@ test("ending a session is addressable, not just clickable by its label", () => {
   st.Sessions = [{ ID: "s1", Name: "Open Table", StartSeq: 1, EndSeq: 0 }];
   const sent: ClientCommand[] = [];
   const node = renderDMConsole({
-    st, adventures: [], maps: [], guideFor: async () => null,
+    st, adventures: [], maps: [], abilities: [], guideFor: async () => null,
     participants: [], joinLink: null, roster: [], origin: "https://table.example",
     refreshSharing: () => {}, send: async (c) => { sent.push(c); return ok(); }, notify: () => {}, confirm: () => true,
     rerender: () => {},
@@ -1555,7 +1557,7 @@ test("rotating goes through once the DM says yes", async () => {
   const sent: ClientCommand[] = [];
   let refreshes = 0;
   const node = renderDMConsole({
-    st: newState(), adventures: [], maps: [], guideFor: async () => null,
+    st: newState(), adventures: [], maps: [], abilities: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s3cret" }, roster: [],
     origin: "https://table.example", refreshSharing: () => refreshes++,
     send: async (c) => { sent.push(c); return ok(); }, notify: () => {}, confirm: () => true,
@@ -1644,7 +1646,7 @@ test("the rotate confirmation says what is lost, not just 'are you sure'", () =>
   // "Are you sure?" gives them nothing to be sure ABOUT.
   let asked = "";
   const node = renderDMConsole({
-    st: newState(), adventures: [], maps: [], guideFor: async () => null,
+    st: newState(), adventures: [], maps: [], abilities: [], guideFor: async () => null,
     participants: [], joinLink: { open: true, secret: "s" }, roster: [],
     origin: "https://table.example", refreshSharing: () => {},
     send: async () => ok(), rerender: () => {}, notify: () => {},
@@ -2557,7 +2559,7 @@ function bootConsole(answer: boolean) {
   let refreshes = 0;
   let release: (r: CommandResult) => void = () => {};
   const node = renderDMConsole({
-    st: emptyState(), adventures: [], maps: [], guideFor: async () => null,
+    st: emptyState(), adventures: [], maps: [], abilities: [], guideFor: async () => null,
     doorsArmed: false, toggleDoors: () => {}, participants: [],
     joinLink: { open: false, secret: "s3cret" },
     roster: [

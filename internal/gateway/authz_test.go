@@ -92,6 +92,10 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return useAbilityCmd("a1")
 	case "remove_condition":
 		return removeConditionCmd("a1")
+	case "give_ability":
+		return giveAbilityCmd("a1", "jab")
+	case "take_ability":
+		return takeAbilityCmd("a1", "jab")
 	case "add_narration":
 		return addNarrationCmd()
 	case "add_whisper":
@@ -275,7 +279,7 @@ type authzCase struct {
 	want    bool
 }
 
-// authzCases is the full 88-cell matrix (spec §4/§7): every command against
+// authzCases is the full matrix (spec §4/§7): every command against
 // every one of the four roles. It came DOWN to 88 on 2026-09-02, from 92, when
 // create_scene left the platform (Patrik's ruling, 2026-09-01) — the third
 // arrival at 88 and the second by subtraction. It reached 92 with
@@ -383,6 +387,16 @@ var authzCases = []authzCase{
 	{"remove_condition", identity.RoleAgent, true},
 	{"remove_condition", identity.RolePlayer, true},
 	{"remove_condition", identity.RoleSpectator, false},
+
+	{"give_ability", identity.RoleDM, true},
+	{"give_ability", identity.RoleAgent, true},
+	{"give_ability", identity.RolePlayer, false},
+	{"give_ability", identity.RoleSpectator, false},
+
+	{"take_ability", identity.RoleDM, true},
+	{"take_ability", identity.RoleAgent, true},
+	{"take_ability", identity.RolePlayer, false},
+	{"take_ability", identity.RoleSpectator, false},
 
 	{"add_narration", identity.RoleDM, true},
 	{"add_narration", identity.RoleAgent, true},
@@ -538,8 +552,8 @@ func ownershipFixture() *engine.State {
 
 // VTT-028 VTT-139 VTT-140 VTT-450 VTT-344 VTT-565 VTT-590
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 100 {
-		t.Fatalf("authzCases has %d entries, want 100 (25 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 108 {
+		t.Fatalf("authzCases has %d entries, want 108 (27 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {
@@ -1285,7 +1299,7 @@ func refuseRoleFields(t *testing.T, md protoreflect.MessageDescriptor, seen map[
 //
 // THE ARM THAT NOW REFUSES IS THE FIX. This test is the consistency half, and
 // measured, it is not the only thing that would catch a forgotten rule — the
-// 88-cell matrix beside it catches one too, by flipping that cell to denied.
+// matrix beside it catches one too, by flipping that cell to denied.
 // What this adds is the two cases the matrix cannot reach: a player cell with
 // no matrix row, and a rule outliving the cell it was written for.
 //

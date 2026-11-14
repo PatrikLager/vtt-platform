@@ -27,7 +27,7 @@ func (rs *Ruleset) SheetKeyFault(attributes, resources []string) *SheetFault {
 }
 
 // SheetAbilityFault answers the first of ids, in byte order, that rs does not
-// hold as an ability, or nil (VTT-685, VTT-687, VTT-688).
+// hold as an ability, or nil (VTT-688, VTT-750, VTT-751).
 func (rs *Ruleset) SheetAbilityFault(ids []string) *SheetFault {
 	for _, id := range slices.Sorted(slices.Values(ids)) {
 		if _, held := rs.Compiled[id]; !held {

@@ -63,7 +63,7 @@ function dmConsole(
   return renderDMConsole({
     st,
     participants: people.map((p) => ({ participantId: p.id, displayName: p.name })),
-    adventures: [], maps: [], guideFor: async () => null, joinLink: null,
+    adventures: [], maps: [], abilities: [], guideFor: async () => null, joinLink: null,
     roster: people.map((p) => ({ participantId: p.id, name: p.name, role: p.role })),
     origin: "", refreshSharing: () => {}, send,
     rerender: () => { repaints.n++; },

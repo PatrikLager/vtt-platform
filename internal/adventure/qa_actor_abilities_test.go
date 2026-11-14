@@ -179,7 +179,7 @@ func TestQAAbAListWrittenNullLoadsAsNone(t *testing.T) {
 	}
 }
 
-// VTT-687
+// VTT-751
 func TestQAAbAnUnheldIdIsRefusedNamingTheFileFieldAndFirstIdInByteOrder(t *testing.T) {
 	rs := qaAbRuleset(t)
 	dir := qaAbCopyValid(t)
@@ -191,7 +191,7 @@ func TestQAAbAnUnheldIdIsRefusedNamingTheFileFieldAndFirstIdInByteOrder(t *testi
 	}
 }
 
-// VTT-687
+// VTT-751
 func TestQAAbAHeldIdBesideAnUnheldOneIsNotNamed(t *testing.T) {
 	rs := qaAbRuleset(t)
 	dir := qaAbCopyValid(t)
@@ -200,7 +200,7 @@ func TestQAAbAHeldIdBesideAnUnheldOneIsNotNamed(t *testing.T) {
 	qaAbWantRefusal(t, err, "grit-scout.json", "delta")
 }
 
-// VTT-687
+// VTT-751
 func TestQAAbAnIdDifferingFromAHeldOneOnlyInCaseIsRefused(t *testing.T) {
 	rs := qaAbRuleset(t)
 	dir := qaAbCopyValid(t)
@@ -209,7 +209,7 @@ func TestQAAbAnIdDifferingFromAHeldOneOnlyInCaseIsRefused(t *testing.T) {
 	qaAbWantRefusal(t, err, "brace-guard.json", "alpha")
 }
 
-// VTT-687
+// VTT-751
 func TestQAAbTheEarlierRefusalsOfAnActorComeBeforeItsAbilities(t *testing.T) {
 	longName := strings.Repeat("n", 300)
 	cases := []struct {

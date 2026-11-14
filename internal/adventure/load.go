@@ -292,6 +292,10 @@ func loadActors(dir string, rs *rules.Ruleset) ([]AdventureActor, map[string]boo
 		if err != nil {
 			return nil, nil, err
 		}
+		// Refuse an empty id before rs reads the list (VTT-748).
+		if slices.Contains(raw.AbilityIDs, "") {
+			return nil, nil, fieldErr(path, "ability_ids", "must not hold an empty id")
+		}
 		if f := rs.SheetAbilityFault(raw.AbilityIDs); f != nil {
 			return nil, nil, fieldErr(path, f.Field, f.Reason)
 		}
