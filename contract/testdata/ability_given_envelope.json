@@ -1,0 +1,12 @@
+{
+  "eventId": "evt-ability-given-1",
+  "sequence": "51",
+  "occurredAt": "2026-11-14T10:00:00Z",
+  "sessionId": "sess-1",
+  "actorRole": "dm",
+  "participantId": "p-dm",
+  "abilityGiven": {
+    "actorId": "act-fighter",
+    "abilityId": "rally"
+  }
+}

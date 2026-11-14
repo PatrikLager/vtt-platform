@@ -546,6 +546,19 @@ message WhisperAdded {
   repeated string to_actor_ids = 2;
   string from_actor_id = 3;
 }
+
+// AbilityGiven adds one ability to an actor's sheet (SPEC-025).
+message AbilityGiven {
+  string actor_id = 1;
+  string ability_id = 2;
+}
+
+// AbilityTaken takes an ability off an actor's sheet (SPEC-025).
+message AbilityTaken {
+  string actor_id = 1;
+  string ability_id = 2;
+}
+
 // NoteVisibility says who may read a note. An enum rather than a bool:
 // protojson omits a false bool, so a secret note would travel as an absent
 // field, indistinguishable from a writer who said nothing. A note recorded
@@ -622,5 +635,8 @@ message Envelope {
     ActorRemoved actor_removed = 33;
     TokenDescribed token_described = 34;
     WhisperAdded whisper_added = 35;
+    // A sheet's ability list changes in play (SPEC-007).
+    AbilityGiven ability_given = 36;
+    AbilityTaken ability_taken = 37;
   }
 }

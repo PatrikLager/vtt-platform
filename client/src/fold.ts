@@ -202,6 +202,27 @@ function apply(st: State, env: Envelope): void {
       Object.assign(a, mirrorControl(a.controllerIds.filter((id) => id !== v.participantId)));
       return;
     }
+    case "abilityGiven": {
+      const v = p.value;
+      if (v.abilityId === "") throw new FoldError("ability given with an empty ability id");
+      const a = st.Actors[v.actorId];
+      if (!a) throw new FoldError(`ability given to unknown actor "${v.actorId}"`);
+      if (a.abilityIds.includes(v.abilityId)) {
+        throw new FoldError(`ability "${v.abilityId}" already named on actor "${v.actorId}"`);
+      }
+      a.abilityIds = [...a.abilityIds, v.abilityId];
+      return;
+    }
+    case "abilityTaken": {
+      const v = p.value;
+      const a = st.Actors[v.actorId];
+      if (!a) throw new FoldError(`ability taken from unknown actor "${v.actorId}"`);
+      if (!a.abilityIds.includes(v.abilityId)) {
+        throw new FoldError(`ability "${v.abilityId}" not named on actor "${v.actorId}"`);
+      }
+      a.abilityIds = a.abilityIds.filter((id) => id !== v.abilityId);
+      return;
+    }
     case "tokenPlaced": {
       const v = p.value;
       // Error ORDER matters: Go checks the id, duplicate, scene, actor, position.

@@ -59,7 +59,7 @@ test("an actor's module_id is emitted when set and omitted when empty", () => {
   expect(parsed.Actors.a2).not.toHaveProperty("module_id");
 });
 
-// VTT-704 VTT-706
+// VTT-704 VTT-737
 test("an actor's ability_ids follow its kind in their order, and are omitted when empty", () => {
   const log = [
     started,

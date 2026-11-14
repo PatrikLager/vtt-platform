@@ -159,7 +159,7 @@ func TestQAAWireActorAddedWrittenByHandDecodesItsAbilityIdsInOrder(t *testing.T)
 	}
 }
 
-// VTT-706
+// VTT-737
 func TestQATheGoFoldHoldsAnAddedActorsAbilityIdsAsTheEventGaveThem(t *testing.T) {
 	st := qaAblFold(t,
 		qaAblEnv(1, qaAblRichActor()),

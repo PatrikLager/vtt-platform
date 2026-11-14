@@ -1,0 +1,21 @@
+[
+  { "eventId": "evt-1", "sequence": "1", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "sessionStarted": { "name": "Night" } },
+  { "eventId": "evt-2", "sequence": "2", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "actorAdded": { "actor": { "actorId": "act-lera", "name": "Lera", "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "abilityIds": ["rally", "fists", "rally", "lunge"] } } },
+  { "eventId": "evt-3", "sequence": "3", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "actorAdded": { "actor": { "actorId": "act-gob", "name": "Goblin", "kind": "ACTOR_KIND_NON_PARTY" } } },
+  { "eventId": "evt-4", "sequence": "4", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "abilityTaken": { "actorId": "act-lera", "abilityId": "rally" } },
+  { "eventId": "evt-5", "sequence": "5", "sessionId": "sess-1", "actorRole": "agent", "participantId": "p-agent",
+    "abilityGiven": { "actorId": "act-lera", "abilityId": "dodge" } },
+  { "eventId": "evt-6", "sequence": "6", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "abilityGiven": { "actorId": "act-lera", "abilityId": "rally" } },
+  { "eventId": "evt-7", "sequence": "7", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "abilityGiven": { "actorId": "act-gob", "abilityId": "scimitar" } },
+  { "eventId": "evt-8", "sequence": "8", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "abilityTaken": { "actorId": "act-gob", "abilityId": "scimitar" } },
+  { "eventId": "evt-9", "sequence": "9", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "abilityTaken": { "actorId": "act-lera", "abilityId": "fists" } }
+]

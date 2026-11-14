@@ -1,0 +1,32 @@
+{
+  "Actors": {
+    "act-gob": {
+      "actor_id": "act-gob",
+      "name": "Goblin",
+      "kind": 2
+    },
+    "act-lera": {
+      "actor_id": "act-lera",
+      "name": "Lera",
+      "kind": 1,
+      "ability_ids": [
+        "lunge",
+        "dodge",
+        "rally"
+      ]
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "Scenes": {},
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Night",
+      "StartSeq": 1,
+      "EndSeq": 0
+    }
+  ],
+  "Tokens": {},
+  "headSequence": 9
+}

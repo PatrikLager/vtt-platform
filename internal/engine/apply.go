@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"google.golang.org/protobuf/proto"
 
@@ -229,6 +230,42 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		}
 		actor.ControllerIds = kept
 		mirrorControl(actor)
+		return nil
+
+	case *vttv1.Envelope_AbilityGiven:
+		g := p.AbilityGiven
+		if g.GetAbilityId() == "" {
+			return fmt.Errorf("engine: ability_given requires an ability id")
+		}
+		actor, ok := st.Actors[g.GetActorId()]
+		if !ok {
+			return fmt.Errorf("engine: ability_given names unknown actor %q", g.GetActorId())
+		}
+		if slices.Contains(actor.GetAbilityIds(), g.GetAbilityId()) {
+			return fmt.Errorf("engine: actor %q already names ability %q", g.GetActorId(), g.GetAbilityId())
+		}
+		// Write a fresh slice, as the ActorControlRevoked arm does: a caller may
+		// hold the old one.
+		actor.AbilityIds = append(slices.Clone(actor.GetAbilityIds()), g.GetAbilityId())
+		return nil
+
+	case *vttv1.Envelope_AbilityTaken:
+		tk := p.AbilityTaken
+		actor, ok := st.Actors[tk.GetActorId()]
+		if !ok {
+			return fmt.Errorf("engine: ability_taken names unknown actor %q", tk.GetActorId())
+		}
+		if !slices.Contains(actor.GetAbilityIds(), tk.GetAbilityId()) {
+			return fmt.Errorf("engine: actor %q does not name ability %q", tk.GetActorId(), tk.GetAbilityId())
+		}
+		// Filter into a fresh slice, never in place: a caller may hold the old one.
+		kept := make([]string, 0, len(actor.GetAbilityIds()))
+		for _, id := range actor.GetAbilityIds() {
+			if id != tk.GetAbilityId() {
+				kept = append(kept, id)
+			}
+		}
+		actor.AbilityIds = kept
 		return nil
 
 	case *vttv1.Envelope_TokenPlaced:

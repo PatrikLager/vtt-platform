@@ -1,0 +1,12 @@
+{
+  "eventId": "evt-ability-taken-1",
+  "sequence": "52",
+  "occurredAt": "2026-11-14T10:01:00Z",
+  "sessionId": "sess-1",
+  "actorRole": "agent",
+  "participantId": "p-agent",
+  "abilityTaken": {
+    "actorId": "act-fighter",
+    "abilityId": "staggering-blow"
+  }
+}

@@ -43,7 +43,7 @@ function compactDump(envs: Envelope[]): string {
   return foldToDumpJSON(envs).replace(/\s+/g, "");
 }
 
-// VTT-706
+// VTT-737
 test("the client fold holds an added actor's ability ids in the event's order, duplicates and all", () => {
   const st = fold([
     added(1, richActor),
@@ -54,7 +54,7 @@ test("the client fold holds an added actor's ability ids in the event's order, d
   expect(st.Actors["a3"]?.abilityIds).toEqual(["goblin-scimitar", "fists"]);
 });
 
-// VTT-706
+// VTT-737
 test("the client fold holds an empty list for an actor added with none, beside one with a list", () => {
   const st = fold([
     added(1, richActor),

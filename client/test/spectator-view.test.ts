@@ -10,7 +10,7 @@ import {
   AttackRolledSchema, AdventureLoadedSchema, SceneSeenSchema,
   TokenRemovedSchema, ActorRemovedSchema, TokenHiddenSchema, TokenDescribedSchema,
   ActorControlGrantedSchema, ActorControlRevokedSchema, DoorOpenedSchema, DoorClosedSchema,
-  WhisperAddedSchema, type Envelope,
+  WhisperAddedSchema, AbilityGivenSchema, AbilityTakenSchema, type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderSpectator, describe as describeEvent, CELL, boardCamera, paneSize,
   DEFAULT_PANE_W, DEFAULT_PANE_H, type ViewExtras } from "../src/view/spectator";
@@ -201,7 +201,7 @@ function storyWorld(): State {
 }
 const STORY = namer(storyWorld(), [], false, [{ id: "cleave", name: "Cleave" }]);
 
-// VTT-476 VTT-475 VTT-477 VTT-623
+// VTT-476 VTT-475 VTT-477 VTT-623 VTT-736
 test("describe renders a real label for every event kind, not the fallback", () => {
   const gob = { actorId: "act-gob" };
   const cases: [Envelope, string][] = [
@@ -273,6 +273,10 @@ test("describe renders a real label for every event kind, not the fallback", () 
       "The DM whispers to Ama: psst"],
     [env(31, { case: "whisperAdded", value: create(WhisperAddedSchema, { text: "I saw it", fromActorId: "act-ama" }) }),
       "Ama whispers to the DM: I saw it"],
+    [env(32, { case: "abilityGiven", value: create(AbilityGivenSchema, { actorId: "act-ama", abilityId: "cleave" }) }),
+      "Ama can now use Cleave"],
+    [env(33, { case: "abilityTaken", value: create(AbilityTakenSchema, { actorId: "act-gob", abilityId: "rally" }) }),
+      "a hunched goblin can no longer use rally"],
   ];
 
   for (const [e, want] of cases) {

@@ -1,0 +1,14 @@
+[
+  { "eventId": "evt-10", "sequence": "10", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "abilityGiven": { "actorId": "act-lera", "abilityId": "" } },
+  { "eventId": "evt-10", "sequence": "10", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "abilityGiven": { "actorId": "act-ghost", "abilityId": "dodge" } },
+  { "eventId": "evt-10", "sequence": "10", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "abilityGiven": { "actorId": "act-lera", "abilityId": "dodge" } },
+  { "eventId": "evt-10", "sequence": "10", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "abilityTaken": { "actorId": "act-ghost", "abilityId": "dodge" } },
+  { "eventId": "evt-10", "sequence": "10", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "abilityTaken": { "actorId": "act-lera", "abilityId": "fists" } },
+  { "eventId": "evt-10", "sequence": "10", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "abilityTaken": { "actorId": "act-gob", "abilityId": "scimitar" } }
+]

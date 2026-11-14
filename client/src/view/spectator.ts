@@ -139,6 +139,10 @@ export function describe(e: Envelope, names: Namer): string {
       return `${names.actor(p.value.actorId)} ${names.resource(p.value.resource)} → ${p.value.newValue}`;
     case "abilityUsed":
       return abilityLine(p.value, names);
+    case "abilityGiven":
+      return `${names.actor(p.value.actorId)} can now use ${names.ability(p.value.abilityId)}`;
+    case "abilityTaken":
+      return `${names.actor(p.value.actorId)} can no longer use ${names.ability(p.value.abilityId)}`;
     case "actorControlGranted":
       return `control of ${names.actor(p.value.actorId)} given`;
     case "actorControlRevoked":

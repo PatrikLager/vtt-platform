@@ -593,8 +593,10 @@ func (pr *Projection) classify(env *vttv1.Envelope, now sightView) verdict {
 	case *vttv1.Envelope_ActorControlRevoked:
 		return passIf(saw(p.ActorControlRevoked.GetActorId()))
 
-	case *vttv1.Envelope_ResourceChanged:
-		return passIf(now.party[p.ResourceChanged.GetActorId()] && saw(p.ResourceChanged.GetActorId()))
+	// Forward only a party member's: a log is written no creature's sheet (SPEC-016).
+	case *vttv1.Envelope_ResourceChanged, *vttv1.Envelope_AbilityGiven, *vttv1.Envelope_AbilityTaken:
+		id := sheetActor(env)
+		return passIf(now.party[id] && saw(id))
 
 	case *vttv1.Envelope_ConditionApplied:
 		return passIf(saw(p.ConditionApplied.GetActorId()))
@@ -610,6 +612,16 @@ func (pr *Projection) classify(env *vttv1.Envelope, now sightView) verdict {
 	default:
 		return unrecognised
 	}
+}
+
+func sheetActor(env *vttv1.Envelope) string {
+	if g := env.GetAbilityGiven(); g != nil {
+		return g.GetActorId()
+	}
+	if tk := env.GetAbilityTaken(); tk != nil {
+		return tk.GetActorId()
+	}
+	return env.GetResourceChanged().GetActorId()
 }
 
 func (pr *Projection) canSeeSquare(now sightView, sceneID string, at *vttv1.GridPosition) bool {
