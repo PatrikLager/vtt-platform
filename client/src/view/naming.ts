@@ -1,4 +1,5 @@
 import { ActorKind, type Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
+import type { SheetChange } from "../session";
 import type { State } from "../state";
 
 /** UNNAMED is what a window calls a token or an actor it has no name for. */
@@ -20,6 +21,10 @@ interface Known {
   name: string;
   gmName: string;
 }
+
+type Named = readonly { id: string; name: string }[] | undefined;
+
+const abilityName = (abilities: Named, id: string): string => abilities?.find((a) => a.id === id)?.name || id;
 
 /** namer builds a window's Namer from its fold, log, role, abilities and properties. */
 export function namer(
@@ -68,9 +73,21 @@ export function namer(
     token: (id) => tokenBy(id, dm),
     shown: (id) => tokenBy(id, false),
     actor: (id) => firstNamed.get(id!) ?? actorName(id, dm),
-    ability: (id) => abilities?.find((a) => a.id === id)?.name || id,
+    ability: (id) => abilityName(abilities, id),
     resource: (key) => properties?.find((p) => p.key === key && p.type === "resource")?.name || key,
   };
+}
+
+/** sheetNews is a player's toast for what sets changed of their party members' ability ids (VTT-733, VTT-734). */
+export function sheetNews(changes: readonly SheetChange[], abilities: readonly { id: string; name: string }[]): string {
+  const named = (ids: readonly string[]) => ids.map((id) => abilityName(abilities, id)).join(" and ");
+  const sentences: string[] = [];
+  for (const c of changes) {
+    const who = c.name || "An unnamed character";
+    if (c.given.length > 0) sentences.push(`${who} can now use ${named(c.given)}.`);
+    if (c.taken.length > 0) sentences.push(`${who} can no longer use ${named(c.taken)}.`);
+  }
+  return sentences.join(" ");
 }
 
 /** initialOf is a disc's initial: the name's first character, or "?" for UNNAMED. */

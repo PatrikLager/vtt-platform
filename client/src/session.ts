@@ -17,12 +17,34 @@ export interface Participant {
   displayName: string;
 }
 
+/** The ability ids one set gave a party member that the previous set named, and those it took (VTT-733). */
+export interface SheetChange {
+  actorId: string;
+  name: string;
+  given: string[];
+  taken: string[];
+}
+
+function sheetChanges(before: readonly WatchableActor[], after: readonly WatchableActor[]): SheetChange[] {
+  const held = new Map(before.map((a) => [a.actorId, a.abilityIds]));
+  const out: SheetChange[] = [];
+  for (const a of after) {
+    const was = held.get(a.actorId);
+    if (was === undefined) continue;
+    const given = [...new Set(a.abilityIds.filter((id) => !was.includes(id)))];
+    const taken = [...new Set(was.filter((id) => !a.abilityIds.includes(id)))];
+    if (given.length + taken.length > 0) out.push({ actorId: a.actorId, name: a.name, given, taken });
+  }
+  return out;
+}
+
 export class Session {
   private readonly wire: Wire;
   private log: Envelope[] = [];
   private derived: State = newState();
   private changeHandlers: (() => void)[] = [];
   private leftHandlers: ((left: readonly WatchableActor[]) => void)[] = [];
+  private sheetHandlers: ((changes: readonly SheetChange[]) => void)[] = [];
   // Keyed by participant id, NOT a list: a client that reconnects receives a
   // fresh snapshot on top of whatever it already had, and the server announces
   // an arrival only on a participant's FIRST connection. Appending would list
@@ -43,6 +65,8 @@ export class Session {
       const kept = new Set(none ? [] : actors.map((a) => a.actorId));
       const left = (this.none ? [] : this.set).filter((a) => !kept.has(a.actorId));
       if (left.length > 0) for (const fn of this.leftHandlers) fn(left);
+      const changed = none || this.none ? [] : sheetChanges(this.set, actors);
+      if (changed.length > 0) for (const fn of this.sheetHandlers) fn(changed);
       this.set = actors;
       this.none = none;
       for (const fn of this.changeHandlers) fn();
@@ -114,6 +138,11 @@ export class Session {
   /** Called with the party members a set stops naming as controlled, in the previous set's order (VTT-605). */
   onPartyMembersLeft(fn: (left: readonly WatchableActor[]) => void): void {
     this.leftHandlers.push(fn);
+  }
+
+  /** Called with each party member's ability ids a set changed, in its order, unless either set says it controls none (VTT-733). */
+  onSheetChanged(fn: (changes: readonly SheetChange[]) => void): void {
+    this.sheetHandlers.push(fn);
   }
 
   /** Called with the actor each ViewpointChanged names, "" for nobody (VTT-579). */

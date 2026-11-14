@@ -5,7 +5,7 @@ import {
   TokenHiddenSchema, TokenPlacedSchema, type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { newState, type State } from "../src/state";
-import { UNNAMED, initialOf, namer } from "../src/view/naming";
+import { UNNAMED, initialOf, namer, sheetNews } from "../src/view/naming";
 
 const env = (seq: number, payload: Envelope["payload"]): Envelope =>
   create(EnvelopeSchema, { sequence: BigInt(seq), payload });
@@ -130,6 +130,21 @@ test("an ability is named by the ruleset's display name, else its id", () => {
   const n = namer(newState(), [], false, [{ id: "longsword-strike", name: "Longsword Strike" }]);
   expect(n.ability("longsword-strike")).toBe("Longsword Strike");
   expect(n.ability("rally")).toBe("rally");
+});
+
+// VTT-733 VTT-734
+test("a sheet's news names each character and each ability given and taken, by the list's display name, else its id", () => {
+  const list = [{ id: "heal", name: "Heal" }, { id: "slash", name: "Slash" }, { id: "bolt", name: "Bolt" }];
+  expect(sheetNews([{ actorId: "a", name: "Ayla", given: ["heal"], taken: [] }], list)).toBe("Ayla can now use Heal.");
+  expect(sheetNews([{ actorId: "a", name: "Ayla", given: [], taken: ["slash"] }], list))
+    .toBe("Ayla can no longer use Slash.");
+  expect(sheetNews([{ actorId: "a", name: "Ayla", given: ["heal", "bolt", "rally"], taken: ["slash", "dart"] }], list))
+    .toBe("Ayla can now use Heal and Bolt and rally. Ayla can no longer use Slash and dart.");
+  expect(sheetNews([
+    { actorId: "b", name: "", given: ["heal"], taken: [] },
+    { actorId: "a", name: "Ayla", given: [], taken: ["bolt"] },
+  ], list)).toBe("An unnamed character can now use Heal. Ayla can no longer use Bolt.");
+  expect(sheetNews([{ actorId: "a", name: "Ayla", given: ["heal"], taken: [] }], [])).toBe("Ayla can now use heal.");
 });
 
 // VTT-622 VTT-623

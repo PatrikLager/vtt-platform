@@ -724,6 +724,16 @@ func TestGiveAndTakeAbilitySayWhoMayWhatEachRefusesAndThatNothingElseChanges(t *
 	}
 }
 
+// VTT-735
+func TestGiveAndTakeAbilitySayEachControllingPlayerIsTold(t *testing.T) {
+	for _, name := range []string{"give_ability", "take_ability"} {
+		desc, _ := findTool(t, name)["description"].(string)
+		if want := "Each player who controls the actor while it is a party member is told."; !strings.Contains(desc, want) {
+			t.Errorf("%s's description = %q, want it to say %q", name, desc, want)
+		}
+	}
+}
+
 // TestPlaceTokenOffersTheFourTextsAsOptional pins place_token's required list
 // to the four of a bare placement, and has each text say who is sent it.
 func TestPlaceTokenOffersTheFourTextsAsOptional(t *testing.T) {

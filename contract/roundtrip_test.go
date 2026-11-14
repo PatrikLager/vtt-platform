@@ -218,6 +218,13 @@ func TestServerFrameWatchableChangedControlsNoneRoundTrip(t *testing.T) {
 	roundTrip(t, "server_frame_watchable_changed_controls_none.json", &vttv1.ServerFrame{})
 }
 
+// Keep one party member naming no ability: a set carries ids beside an actor
+// that has none.
+// VTT-731
+func TestServerFrameWatchableChangedWithAbilityIdsRoundTrip(t *testing.T) {
+	roundTrip(t, "server_frame_watchable_changed_abilities.json", &vttv1.ServerFrame{})
+}
+
 // protojson omits empty fields, so an empty message serializes as
 // {"watchableChanged":{}}; a reader that takes the absent "actors" key for no
 // frame keeps the last set it was told (VTT-399).

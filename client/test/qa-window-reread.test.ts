@@ -403,7 +403,7 @@ describe("a player's window reads /api/ruleset again when its set's key changes"
 });
 
 describe("a player's window draws from its newest read's answer", () => {
-  // VTT-697
+  // VTT-753
   test("the newest answer wins when the older one arrives after it", async () => {
     const w = await qaWinPlayerOn([["a", "Ayla", ["p1"], ["slash", "bolt"]]], [["a", "Ayla"]], "a", qaWinList("slash", "bolt"));
     expect(qaWinOffered(w.root)).toEqual(["Slash", "Bolt"]);
@@ -422,7 +422,7 @@ describe("a player's window draws from its newest read's answer", () => {
     expect(qaWinOffered(w.root)).toEqual(["Bolt"]);
   });
 
-  // VTT-697
+  // VTT-753
   test("an older answer arriving while the newest read is pending is dropped", async () => {
     const w = await qaWinPlayerOn([["a", "Ayla", ["p1"], ["slash", "bolt"]]], [["a", "Ayla"]], "a", qaWinList("slash", "bolt"));
     w.socket.qaWinFrame(qaWinSet([["a", "Ayla"], ["b", "Bo"]]));
@@ -440,7 +440,7 @@ describe("a player's window draws from its newest read's answer", () => {
     expect(qaWinOffered(w.root)).toEqual(["Slash"]);
   });
 
-  // VTT-697
+  // VTT-753
   test("the start-up read's answer arriving after a re-read's is dropped", async () => {
     const w = qaWinBoot("player", "p1");
     qaWinOpening(w.socket, qaWinSet([["a", "Ayla"]]), "a");

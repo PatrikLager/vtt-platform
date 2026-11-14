@@ -10,7 +10,7 @@
 // the user sees before any of them have anything to show.
 
 import { Auth } from "./auth";
-import { Session } from "./session";
+import { Session, type SheetChange } from "./session";
 import type { WireStatus } from "./wire";
 import { renderSpectator } from "./view/spectator";
 import { renderPlayerPanel, moveCommandFor, playerClickFor, type PlayerUIState } from "./view/player";
@@ -21,6 +21,7 @@ import {
   type Ability, type AdventureMeta, type Me, type JoinLink, type Roster, type MapMeta, type Property,
 } from "./metadata";
 import { renderDMConsole } from "./view/dm";
+import { sheetNews } from "./view/naming";
 import { setViewpoint } from "./commands";
 import { joinSecretFrom, requestJoin } from "./join";
 import { renderJoinView, type JoinViewState } from "./view/join";
@@ -160,6 +161,9 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
   let me: Me | null = null;
 
   let abilities: Ability[] = [];
+  // Keep every answer's abilities apart from the newest answer's: the Story and
+  // the sheet's toast name what an earlier answer named (VTT-734).
+  const everRead = new Map<string, Ability>();
   let properties: Property[] | undefined;
   let adventures: AdventureMeta[] = [];
   let maps: MapMeta[] = [];
@@ -443,7 +447,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
       removed,
       images,
       dm: isDM,
-      abilities,
+      abilities: [...everRead.values()],
       properties,
       pinnedCard,
       onCardPin: (id) => {
@@ -531,13 +535,19 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     toast = `You no longer play ${left.map((a) => a.name || "an unnamed character").join(" and ")}.`;
   });
 
-  // Keep the ticket: two reads can be in flight, and only the newest may be
-  // drawn (VTT-696, VTT-697).
+  // Hold each change until the read its set issues has answered or failed (VTT-733).
+  let news: SheetChange[] = [];
+  session.onSheetChanged((changes) => {
+    if (me?.role === "player") news.push(...changes);
+  });
+
+  // Keep the ticket: two reads can be in flight, and only the newest may set
+  // the abilities the panel offers (VTT-696, VTT-753).
   let rulesetKey = "";
   let newestRuleset: object = {};
   // Key a window that is not a player's as "": its read does not follow its set.
   const watchKey = () => me?.role === "player"
-    ? JSON.stringify([session.watchable.map((a) => a.actorId), session.controlsNoPartyMember])
+    ? JSON.stringify([session.watchable.map((a) => [a.actorId, a.abilityIds]), session.controlsNoPartyMember])
     : "";
   const rereadIfStale = () => {
     if (watchKey() !== rulesetKey) void readRuleset().catch(() => undefined);
@@ -546,11 +556,24 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     const ticket = {};
     newestRuleset = ticket;
     rulesetKey = watchKey();
+    const told = news;
+    news = [];
+    const tell = (): boolean => {
+      if (told.length === 0) return false;
+      toast = sheetNews(told, [...everRead.values()]);
+      return true;
+    };
     return fetchRuleset(location.origin, token).then((rs) => {
-      if (ticket !== newestRuleset) return;
-      abilities = rs.abilities;
-      properties = rs.properties;
-      paint();
+      for (const a of rs.abilities) everRead.set(a.id, a);
+      const newest = ticket === newestRuleset;
+      if (newest) {
+        abilities = rs.abilities;
+        properties = rs.properties;
+      }
+      if (tell() || newest) paint();
+    }, (e: unknown) => {
+      if (tell()) paint();
+      throw e;
     });
   };
 

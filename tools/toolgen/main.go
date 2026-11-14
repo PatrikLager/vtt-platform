@@ -195,7 +195,7 @@ var manifest = []toolSpec{
 	{
 		message:     "vtt.v1.GiveAbility",
 		name:        "give_ability",
-		description: "Give an actor one ability of the served ruleset (get_ruleset lists them): afterwards its sheet names the ability and use_ability resolves it for that actor. Only its ability list changes: its tokens, controllers, conditions and resources stay as they are, so use this, not remove_actor and add_actor, to change what a character can do. Refused, appending nothing: an actor the campaign does not hold, an ability its sheet already names, an empty ability id, and, with a ruleset served, an id the ruleset does not hold. DM/agent only.",
+		description: "Give an actor one ability of the served ruleset (get_ruleset lists them): afterwards its sheet names the ability and use_ability resolves it for that actor. Only its ability list changes: its tokens, controllers, conditions and resources stay as they are, so use this, not remove_actor and add_actor, to change what a character can do. Refused, appending nothing: an actor the campaign does not hold, an ability its sheet already names, an empty ability id, and, with a ruleset served, an id the ruleset does not hold. Each player who controls the actor while it is a party member is told. DM/agent only.",
 		descriptor:  (&vttv1.GiveAbility{}).ProtoReflect().Descriptor(),
 		overrides: map[protoreflect.FullName]fieldOverride{
 			"vtt.v1.GiveAbility": {
@@ -209,7 +209,7 @@ var manifest = []toolSpec{
 	{
 		message:     "vtt.v1.TakeAbility",
 		name:        "take_ability",
-		description: "Take one ability from an actor's sheet: afterwards its sheet does not name it and use_ability refuses that actor the ability, whoever asks. Only its ability list changes. Refused, appending nothing: an actor the campaign does not hold, and an ability its sheet does not name. DM/agent only.",
+		description: "Take one ability from an actor's sheet: afterwards its sheet does not name it and use_ability refuses that actor the ability, whoever asks. Only its ability list changes. Refused, appending nothing: an actor the campaign does not hold, and an ability its sheet does not name. Each player who controls the actor while it is a party member is told. DM/agent only.",
 		descriptor:  (&vttv1.TakeAbility{}).ProtoReflect().Descriptor(),
 		overrides: map[protoreflect.FullName]fieldOverride{
 			"vtt.v1.TakeAbility": {

@@ -1,0 +1,18 @@
+{
+  "watchableChanged": {
+    "actors": [
+      {
+        "actorId": "act-hero",
+        "name": "Hero",
+        "abilityIds": [
+          "longsword-strike",
+          "crossbow-shot"
+        ]
+      },
+      {
+        "actorId": "act-quill",
+        "name": "Quill"
+      }
+    ]
+  }
+}

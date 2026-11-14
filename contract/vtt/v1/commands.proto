@@ -386,7 +386,7 @@ message ViewpointChanged {
 
 // WatchableChanged names every party member this connection may watch and
 // whether its participant controls none, sent at its opening and again
-// whenever either changes; never to a DM or an agent, and never in a log
+// whenever it changes; never to a DM or an agent, and never in a log
 // (SPEC-007, SPEC-015).
 message WatchableChanged {
   repeated WatchableActor actors = 1;
@@ -398,6 +398,9 @@ message WatchableChanged {
 message WatchableActor {
   string actor_id = 1;
   string name = 2;
+  // Fill for a party member the participant controls, and for no other
+  // (SPEC-015).
+  repeated string ability_ids = 3;
 }
 
 // The server->client frame; the oneof key is the frame discriminator.

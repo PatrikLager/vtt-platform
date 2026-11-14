@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
@@ -73,7 +74,11 @@ func watchable(p *identity.Participant, actors map[string]*vttv1.Actor) *vttv1.W
 	set := &vttv1.WatchableChanged{ControlsNoPartyMember: !controlsAPartyMember(p.ID, actors)}
 	for id, a := range actors {
 		if MayWatch(p, id, actors) == nil {
-			set.Actors = append(set.Actors, &vttv1.WatchableActor{ActorId: id, Name: a.GetName()})
+			w := &vttv1.WatchableActor{ActorId: id, Name: a.GetName()}
+			if controls(a, p.ID) {
+				w.AbilityIds = slices.Clone(a.GetAbilityIds())
+			}
+			set.Actors = append(set.Actors, w)
 		}
 	}
 	sort.Slice(set.Actors, func(i, j int) bool { return set.Actors[i].GetActorId() < set.Actors[j].GetActorId() })

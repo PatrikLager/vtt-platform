@@ -1435,7 +1435,7 @@ test("a player made a spectator reads the ruleset again", async () => {
   s?.close();
 });
 
-// VTT-697
+// VTT-753
 test("an older ruleset read answering after a newer one is not drawn", async () => {
   const { r, s, sock, reads } = await playerAwaitingReads();
   reads[0]!([]);

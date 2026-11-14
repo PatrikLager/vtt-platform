@@ -601,3 +601,50 @@ test("a reset clears the fold failure", async () => {
     gw.stop();
   }
 });
+
+const sheets = (none: boolean, ...actors: [string, string, string[]][]) => ({
+  watchableChanged: {
+    actors: actors.map(([actorId, name, abilityIds]) => ({ actorId, name, abilityIds })),
+    controlsNoPartyMember: none,
+  },
+});
+
+// VTT-733
+test("a set that changes a party member's ability ids hands over what each gained and lost before it replaces the set", async () => {
+  const gw = gatewayServing([
+    sheets(false, ["a1", "Ama", ["slash"]], ["a2", "Bo", ["heal"]]),
+    sheets(false, ["a1", "Ama", ["slash"]], ["a2", "Bo", ["heal"]]),
+    sheets(false, ["a1", "Ama Stone", ["slash"]], ["a2", "Bo", ["heal"]]),
+    sheets(false, ["a1", "Ama Stone", ["slash", "bolt"]], ["a2", "Bo", ["heal"]]),
+    sheets(false, ["a2", "Bo", ["heal", "dart"]], ["a1", "Ama Stone", ["bolt"]]),
+    sheets(true, ["a1", "Ama Stone", ["x"]], ["a2", "Bo", ["y"]]),
+    sheets(false, ["a1", "Ama Stone", ["z"]], ["a2", "Bo", ["heal", "dart"]]),
+    sheets(false, ["a1", "Ama Stone", ["z", "w"]], ["a3", "Cy", ["q"]]),
+    sheets(false, ["a1", "", ["m", "z", "n"]]),
+    sheets(false, ["a1", "", ["k", "k", "m"]]),
+    sheets(false, ["a1", "", ["m"]]),
+  ]);
+  try {
+    const s = new Session(gw.url, "tok");
+    const told: string[][] = [];
+    const before: string[] = [];
+    s.onSheetChanged((changes) => {
+      told.push(changes.map((c) => `${c.actorId}:${c.name}+${c.given.join(",")}-${c.taken.join(",")}`));
+      before.push(s.watchable.find((a) => a.actorId === "a1")!.abilityIds.join(","));
+    });
+    await s.start();
+    await until(() => s.watchable[0]?.abilityIds.join(",") === "m", "the last set");
+    expect(told).toEqual([
+      ["a1:Ama Stone+bolt-"],
+      ["a2:Bo+dart-", "a1:Ama Stone+-slash"],
+      ["a1:Ama Stone+w-"],
+      ["a1:+m,n-w"],
+      ["a1:+k-z,n"],
+      ["a1:+-k"],
+    ]);
+    expect(before).toEqual(["slash", "slash,bolt", "z", "z,w", "m,z,n", "k,k,m"]);
+    s.close();
+  } finally {
+    gw.stop();
+  }
+});

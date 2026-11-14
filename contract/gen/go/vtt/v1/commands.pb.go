@@ -2484,7 +2484,7 @@ func (x *ViewpointChanged) GetActorId() string {
 
 // WatchableChanged names every party member this connection may watch and
 // whether its participant controls none, sent at its opening and again
-// whenever either changes; never to a DM or an agent, and never in a log
+// whenever it changes; never to a DM or an agent, and never in a log
 // (SPEC-007, SPEC-015).
 type WatchableChanged struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
@@ -2541,9 +2541,12 @@ func (x *WatchableChanged) GetControlsNoPartyMember() bool {
 }
 
 type WatchableActor struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	ActorId string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	Name    string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// Fill for a party member the participant controls, and for no other
+	// (SPEC-015).
+	AbilityIds    []string `protobuf:"bytes,3,rep,name=ability_ids,json=abilityIds,proto3" json:"ability_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2590,6 +2593,13 @@ func (x *WatchableActor) GetName() string {
 		return x.Name
 	}
 	return ""
+}
+
+func (x *WatchableActor) GetAbilityIds() []string {
+	if x != nil {
+		return x.AbilityIds
+	}
+	return nil
 }
 
 // The server->client frame; the oneof key is the frame discriminator.
@@ -3079,10 +3089,12 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\"{\n" +
 	"\x10WatchableChanged\x12.\n" +
 	"\x06actors\x18\x01 \x03(\v2\x16.vtt.v1.WatchableActorR\x06actors\x127\n" +
-	"\x18controls_no_party_member\x18\x02 \x01(\bR\x15controlsNoPartyMember\"?\n" +
+	"\x18controls_no_party_member\x18\x02 \x01(\bR\x15controlsNoPartyMember\"`\n" +
 	"\x0eWatchableActor\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\xcd\x03\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1f\n" +
+	"\vability_ids\x18\x03 \x03(\tR\n" +
+	"abilityIds\"\xcd\x03\n" +
 	"\vServerFrame\x12/\n" +
 	"\x06result\x18\x01 \x01(\v2\x15.vtt.v1.CommandResultH\x00R\x06result\x12(\n" +
 	"\x05event\x18\x02 \x01(\v2\x10.vtt.v1.EnvelopeH\x00R\x05event\x129\n" +
