@@ -54,8 +54,8 @@
       "ability_ids": [
         "chair-swing",
         "fists",
-        "sober-up",
-        "splash-of-water"
+        "splash-of-water",
+        "sober-up"
       ]
     }
   },
@@ -205,7 +205,7 @@
       "ID": "sess-1",
       "Name": "Toy Brawl",
       "StartSeq": 1,
-      "EndSeq": 13
+      "EndSeq": 15
     }
   ],
   "Tokens": {
@@ -224,5 +224,5 @@
       "Y": 0
     }
   },
-  "headSequence": 13
+  "headSequence": 15
 }

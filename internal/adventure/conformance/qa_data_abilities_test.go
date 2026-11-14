@@ -561,6 +561,10 @@ func qaDataGoldenProblems(root string) []string {
 			probs = append(probs, err.Error())
 			continue
 		}
+		type abilityChange struct {
+			ActorID   string `json:"actorId"`
+			AbilityID string `json:"abilityId"`
+		}
 		var stream []struct {
 			ActorAdded *struct {
 				Actor struct {
@@ -568,20 +572,29 @@ func qaDataGoldenProblems(root string) []string {
 					AbilityIDs []string `json:"abilityIds"`
 				} `json:"actor"`
 			} `json:"actorAdded"`
+			AbilityGiven *abilityChange `json:"abilityGiven"`
+			AbilityTaken *abilityChange `json:"abilityTaken"`
 		}
 		if err := json.Unmarshal(sb, &stream); err != nil {
 			probs = append(probs, name+" stream: "+err.Error())
 			continue
 		}
-		added := map[string][]string{}
+		reached := map[string][]string{}
 		for _, e := range stream {
-			if e.ActorAdded != nil {
-				added[e.ActorAdded.Actor.ActorID] = e.ActorAdded.Actor.AbilityIDs
+			switch {
+			case e.ActorAdded != nil:
+				reached[e.ActorAdded.Actor.ActorID] = e.ActorAdded.Actor.AbilityIDs
+			case e.AbilityGiven != nil:
+				g := e.AbilityGiven
+				reached[g.ActorID] = append(slices.Clone(reached[g.ActorID]), g.AbilityID)
+			case e.AbilityTaken != nil:
+				tk := e.AbilityTaken
+				reached[tk.ActorID] = slices.DeleteFunc(slices.Clone(reached[tk.ActorID]), func(id string) bool { return id == tk.AbilityID })
 			}
 		}
 		for _, a := range actors {
-			if got, want := added[a.key], held[a.key]; !slices.Equal(got, want) {
-				probs = append(probs, fmt.Sprintf("%s stream actorAdded %s carries %q, its state holds %q", name, a.key, got, want))
+			if got, want := reached[a.key], held[a.key]; !slices.Equal(got, want) {
+				probs = append(probs, fmt.Sprintf("%s stream actorAdded %s, its gives and takes applied, reaches %q; its state holds %q", name, a.key, got, want))
 			}
 		}
 	}
@@ -775,8 +788,8 @@ func TestQADataGuideStatblocksNameAbilities(t *testing.T) {
 	qaDataReport(t, probs)
 }
 
-// Keep each scenario golden's state.json holding an actor's ability_ids right
-// after kind, and its stream.json's actorAdded carrying the list state holds.
+// Keep each golden's state.json holding an actor's ability_ids right after kind,
+// and its stream.json's actorAdded list reaching them as its gives and takes apply.
 func TestQADataScenarioGoldensCarryAbilityIDs(t *testing.T) {
 	qaDataReport(t, qaDataGoldenProblems(qaDataRoot(t)))
 }

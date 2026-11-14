@@ -42,6 +42,16 @@
     {"by": "patron", "command": {"removeCondition": {"actorId": "act-brawler", "conditionId": "dazed-by-ale"}}, "expect": {"deniedContaining": "not authorized"}},
     {"by": "spectator", "command": {"removeCondition": {"actorId": "act-patron", "conditionId": "dazed-by-ale"}}, "expect": {"deniedContaining": "not authorized"}},
 
+    {"by": "dm", "command": {"takeAbility": {"actorId": "act-patron", "abilityId": "sober-up"}}, "expect": {"ok": true}},
+
+    {"by": "patron", "command": {"giveAbility": {"actorId": "act-patron", "abilityId": "sober-up"}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "spectator", "command": {"takeAbility": {"actorId": "act-patron", "abilityId": "fists"}}, "expect": {"deniedContaining": "not authorized"}},
+
+    {"by": "dm", "command": {"giveAbility": {"actorId": "act-patron", "abilityId": "no-such-move"}}, "expect": {"deniedContaining": "names ability \"no-such-move\", which the ruleset does not hold"}},
+    {"by": "dm", "command": {"takeAbility": {"actorId": "act-patron", "abilityId": "sober-up"}}, "expect": {"deniedContaining": "does not name ability \"sober-up\""}},
+
+    {"by": "dm", "command": {"giveAbility": {"actorId": "act-patron", "abilityId": "sober-up"}}, "expect": {"ok": true}},
+
     {"by": "dm", "command": {"endSession": {}}, "expect": {"ok": true}}
   ],
   "probes": [

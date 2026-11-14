@@ -318,6 +318,28 @@
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
+    "abilityTaken": {
+      "actorId": "act-patron",
+      "abilityId": "sober-up"
+    }
+  },
+  {
+    "eventId": "evt-14",
+    "sequence": "14",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "abilityGiven": {
+      "actorId": "act-patron",
+      "abilityId": "sober-up"
+    }
+  },
+  {
+    "eventId": "evt-15",
+    "sequence": "15",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
     "sessionEnded": {}
   }
 ]
