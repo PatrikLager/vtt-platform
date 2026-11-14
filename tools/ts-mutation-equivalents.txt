@@ -561,8 +561,8 @@ client/src/view/feed.ts  EqualityOperator  offset=39  span=13  nth=1  copies=1  
 
 # --- client/src/app.ts ------------------------------------------------------
 #
-# No entries. The two that stood here, on history.replaceState's title argument,
-# were killed, as recorded below. A third, on boot's `let status = "connecting"`
+# The two entries that stood here on history.replaceState's title argument were
+# killed, as recorded below. A third, on boot's `let status = "connecting"`
 # initializer, was withdrawn and is killed instead; client/test/app.test.ts says
 # why.
 #
@@ -570,6 +570,42 @@ client/src/view/feed.ts  EqualityOperator  offset=39  span=13  nth=1  copies=1  
 # here: it was untestable because of the HARNESS rather than because its
 # mutants were unobservable, so claiming equivalence would have been a lie.
 # It moved to client/src/main.ts, which is excluded from `mutate`.
+#
+client/src/app.ts  ArrayDeclaration  offset=28  span=2  nth=1  copies=1  ["Stryker was here"]
+    code: let abilities: Ability[] = [];
+    boot's ability list until the first /api/ruleset answer is drawn, and for good when that answer never comes: the read fails, or /api/me fails and the read is never issued. A server with no ruleset answers an empty list (handleRuleset in internal/gateway/metadata.go), which replaces it. The mutant's element is a STRING, and both readers of the list only match an element's `id` against a string, and `id` on a string is undefined. offered (client/src/player.ts) keeps an element only when `sheetNames(actor, a.id)`, and no sheet's abilityIds holds undefined: copyActor copies them from the decoded contract's list, whose items protobuf-es refuses to leave null. namer's `ability` (client/src/view/naming.ts) compares `a.id === id` with `id` an event's ability id, a string, so it falls back to the id as it does on []. Not a claim that the initializer is idle: a reader that uses an element any other way than matching its `id` (its length, a map over names, drawing each element) reaches the string and makes this entry wrong.
+
+# THE ENTRIES BELOW ON `ui` SHARE ONE PREMISE, and are wrong the day it breaks:
+# a selected ability the acting actor's sheet does not name is inert (VTT-695).
+# The panel offers only `offered(abilities, actor)` and draws a chip selected
+# only on `ui.selectedAbilityId === ab.id`; the targets follow
+# `offers.find((a) => a.id === ui.selectedAbilityId)`; moveCommandFor counts a
+# selection as armed only when `sheetNames(actor, ui.selectedAbilityId)`; a
+# chip's click sets `ab.id` from any selection but its own.
+#
+# ONE DISTINGUISHER SERVES ALL OF THEM and is recorded rather than hidden.
+# `""` means "nothing selected" and is also a possible id: given a window list
+# holding an ability whose id is `""`, named by the acting actor's sheet, the
+# original arms it with no click (its chip drawn selected, its Targets shown),
+# and undefined or the sentinel does not. The client checks neither half
+# (fetchRuleset checks no ability's id, and the fold's actorAdded arm checks
+# no abilityIds entry), so the bound is the server's: the list
+# /api/ruleset answers holds only the served ruleset's compositions (`ID: ca.ID`
+# in internal/rules/compile.go), and loadCompositions in internal/rules/load.go
+# refuses a composition with an empty id. Do not kill these mutants with that
+# input: a test that did would pin the arming without a click.
+
+client/src/app.ts  ObjectLiteral  offset=27  span=65  nth=1  copies=1  {}
+    code: const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "", doorsArmed: false };
+    Its fields start undefined instead of "", "" and false, and short of the distinguisher above every reader treats undefined as it treats the original. doorsArmed is read only for truth: `ui.doorsArmed ? ...`, `!ui.doorsArmed`, doorCommandFor's `if (!armed)`, renderDMConsole's `d.doorsArmed ? ...`, and `canAct && ui.doorsArmed` reaches renderSpectator, which reads `extras.doorsArmed ?? false`. selectedActorId: a player's window overwrites it, and resets selectedAbilityId to "", on its first paint with `me` known, because `undefined !== session.viewpoint` and session.viewpoint is always a string; a DM's and an agent's window read it through `ui.selectedActorId || mine[0]!.actorId`, where undefined and "" are both falsy, and `ui.selectedActorId === a.actorId`, false for both because no folded actor's id is empty (the fold's actorAdded arm throws on one, as engine.Apply refuses one). selectedAbilityId undefined is inert by the premise above, short of the distinguisher above: no chip or target matches it, a chip's click sets `ab.id`, and `sheetNames(actor, undefined)` is false, so a board click moves.
+
+client/src/app.ts  StringLiteral  offset=69  span=2  nth=1  copies=1  "Stryker was here!"
+    code: const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "", doorsArmed: false };
+    The window starts with the sentinel selected. Short of the distinguisher above, it is inert by the premise above exactly as "" is, while no sheet names the sentinel: no chip is drawn selected, no Targets heading appears, a board click moves, and the next chip click selects that chip. A player's window also overwrites it with "" on its first paint whenever its viewpoint is not "". A sheet naming the sentinel string itself tells the two apart too, through moveCommandFor alone, whether or not the ruleset holds it; that is an input built from the mutant's own value.
+
+client/src/app.ts  StringLiteral  offset=24  span=2  nth=1  copies=1  "Stryker was here!"
+    code: ui.selectedAbilityId = "";
+    paint's viewpoint-following reset, `""` -> the sentinel. Inert by the premise above, short of the distinguisher above and of a sheet naming the sentinel, as the initializer's entry says. What the reset is FOR, dropping an ability armed as one character when the new viewpoint's sheet names the same id, holds under the mutant too, because the sentinel is not that id. Deleting the line is what breaks it, and `a player's armed ability stays armed, and a switch disarms it` in client/test/app.test.ts goes red when the line is deleted by hand.
 
 # KILLED 2026-08-25, entries removed rather than re-keyed. The two app.ts
 # entries (the ignored TITLE argument of history.replaceState, on the invite and
