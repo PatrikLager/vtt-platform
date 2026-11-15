@@ -146,6 +146,24 @@ func TestAPlayersReadFollowsAGrantAndARevocation(t *testing.T) {
 	}
 }
 
+// VTT-691
+func TestAPlayersReadFollowsAGiveAndATake(t *testing.T) {
+	tb := newByRoleTable(t)
+	if got := abilityIDsOf(tb.read("bo")); len(got) != 0 {
+		t.Errorf("before the give bo reads %q, want none", got)
+	}
+	tb.append(&vttv1.Envelope{Payload: &vttv1.Envelope_AbilityGiven{AbilityGiven: &vttv1.AbilityGiven{
+		ActorId: "bare", AbilityId: "rally"}}})
+	if got, want := abilityIDsOf(tb.read("bo")), []string{"rally"}; !slices.Equal(got, want) {
+		t.Errorf("after the give bo reads %q, want %q", got, want)
+	}
+	tb.append(&vttv1.Envelope{Payload: &vttv1.Envelope_AbilityTaken{AbilityTaken: &vttv1.AbilityTaken{
+		ActorId: "bare", AbilityId: "rally"}}})
+	if got := abilityIDsOf(tb.read("bo")); len(got) != 0 {
+		t.Errorf("after the take bo reads %q", got)
+	}
+}
+
 // VTT-692
 func TestASpectatorReadsNoAbility(t *testing.T) {
 	tb := newByRoleTable(t)
