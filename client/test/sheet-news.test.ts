@@ -282,6 +282,29 @@ test("a read that fails still tells the change, naming an ability no answer has 
   expect(toast(w)).toBe("Ayla can now use heal.");
 });
 
+// VTT-734 VTT-758
+test("an older read's answer arriving after the newest names an ability in the Story at once, and leaves the message standing", async () => {
+  const ayla: Member = ["a", "Ayla", ["slash"]];
+  const w = await playerOn([ayla], ayla, [SLASH]);
+  w.socket.frame(set([ayla, ["b", "Bo", []]]));
+  await flush();
+  w.socket.frame(set([ayla]));
+  await flush();
+  expect(w.reads.length).toBe(3);
+  w.reads[2]!([SLASH]);
+  await flush();
+  w.socket.frame(given("a", "heal"));
+  await flush();
+  const story = () => w.root.querySelector(".feed")?.textContent ?? "";
+  expect(story()).toContain("Ayla can now use heal");
+  expect(toast(w)).toBe("You no longer play Bo.");
+  w.reads[1]!([SLASH, HEAL]);
+  await flush();
+  expect(story()).toContain("Ayla can now use Heal");
+  expect(story()).not.toContain("Ayla can now use heal");
+  expect(toast(w)).toBe("You no longer play Bo.");
+});
+
 // VTT-733
 test("a redial sent a set that changed meanwhile tells the change", async () => {
   const w = await playerOn([["a", "Ayla", ["slash"]]], ["a", "Ayla", ["slash"]], [SLASH]);

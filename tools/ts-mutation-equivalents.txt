@@ -181,9 +181,10 @@ client/src/fold.ts  ConditionalExpression  offset=5  span=9  nth=1  copies=1  fa
 # input()'s `if (cls) i.className = cls` -> true, was killed rather than
 # excused: under it a box built with no class carries an empty class
 # attribute, which "an input created without a class carries no class at all"
-# asserts away. dm.ts's four other entries, three on its two sort comparators
-# and one on the grant target's draft fallback, sit under the client/src/app.ts
-# header, after client/src/session.ts's two. Two further mutants, el()'s
+# asserts away. dm.ts's other entries, on renderDMConsole's `known`
+# comparator, on the control panel's actorId comparator and on the grant
+# target's draft fallback, sit under the client/src/app.ts header, after
+# client/src/session.ts's. Two further mutants, el()'s
 # `text !== undefined` guard forced either way, stay disabled in the SOURCE
 # with a `// Stryker disable` rather than adjudicated here, by the owner's
 # ruling of 2026-10-29. Forced true is equivalent: an undefined textContent
@@ -220,35 +221,49 @@ client/src/fold.ts  ConditionalExpression  offset=5  span=9  nth=1  copies=1  fa
 
 client/src/view/dm.ts  StringLiteral  offset=24  span=15  nth=1  copies=1  ""
     code: const say = sending(d, "add-narration", () => {
-    The console's Say. Send and Enter in `say-text` both call the one `say`, so they stay one control under the mutant too. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and both template keys open with a non-empty prefix. So the Say still holds back itself (VTT-535) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
+    The console's Say. Send and Enter in `say-text` both call the one `say`, so they stay one control under the mutant too. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and every template key opens with a non-empty prefix. So the Say still holds back itself (VTT-535) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
 
 client/src/view/dm.ts  StringLiteral  offset=36  span=15  nth=1  copies=1  ""
     code: button("Start session", sending(d, "start-session", () => {
-    Start session. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and both template keys open with a non-empty prefix. So Start session still holds back itself (VTT-523) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
+    Start session. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and every template key opens with a non-empty prefix. So Start session still holds back itself (VTT-523) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
 
 client/src/view/dm.ts  StringLiteral  offset=26  span=11  nth=1  copies=1  ""
     code: button("Add", sending(d, "add-actor", () => {
-    Add actor. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and both template keys open with a non-empty prefix. So Add actor still holds back itself (VTT-523) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
+    Add actor. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and every template key opens with a non-empty prefix. So Add actor still holds back itself (VTT-523) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
 
 client/src/view/dm.ts  StringLiteral  offset=29  span=14  nth=1  copies=1  ""
     code: button("Remove", sending(d, "remove-actor", () => {
-    Remove actor. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and both template keys open with a non-empty prefix. So Remove actor still holds back itself (VTT-523) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
+    Remove actor. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and every template key opens with a non-empty prefix. So Remove actor still holds back itself (VTT-523) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
 
 client/src/view/dm.ts  StringLiteral  offset=36  span=12  nth=1  copies=1  ""
     code: button("Add from JSON", sending(d, "actor-json", () => {
-    Add from JSON. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and both template keys open with a non-empty prefix. So Add from JSON still holds back itself (VTT-523) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
+    Add from JSON. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and every template key opens with a non-empty prefix. So Add from JSON still holds back itself (VTT-523) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
 
 client/src/view/dm.ts  StringLiteral  offset=28  span=13  nth=1  copies=1  ""
     code: button("Place", sending(d, "place-token", () => {
-    Place token. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and both template keys open with a non-empty prefix. So Place token still holds back itself (VTT-523) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
+    Place token. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and every template key opens with a non-empty prefix. So Place token still holds back itself (VTT-523) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
 
 client/src/view/dm.ts  StringLiteral  offset=29  span=14  nth=1  copies=1  ""
     code: button("Remove", sending(d, "remove-token", () => {
-    Remove token. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and both template keys open with a non-empty prefix. So Remove token still holds back itself (VTT-523) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
+    Remove token. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and every template key opens with a non-empty prefix. So Remove token still holds back itself (VTT-523) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
 
 client/src/view/dm.ts  StringLiteral  offset=27  span=13  nth=1  copies=1  ""
     code: button("Save", sending(d, "upsert-note", () => {
-    Save note. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and both template keys open with a non-empty prefix. So Save note still holds back itself (VTT-523) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
+    Save note. `sending` uses this key only as the member `unanswered.has`, `.add` and `.delete` name, and `unanswered` is private to dm.ts, never iterated and never sized. `""` is no other call's key: the seven other literal keys are non-empty and differ from each other, and every template key opens with a non-empty prefix. So Save note still holds back itself (VTT-523) and no other control (VTT-541), as under the original. What the eight share, and the reflective distinguishers, are in the block at the head of this section's entries.
+
+# The full run of 2026-11-15 on 184d917 found the entries below, on the
+# console's Abilities group (VTT-730). The same run found the Give button's
+# label emptied surviving; an assertion in "each actor's row offers a give of
+# each listed ability its sheet does not name, in the list's order" in
+# client/test/dm-abilities.test.ts kills it, so it has no entry.
+
+client/src/view/dm.ts  EqualityOperator  offset=60  span=21  nth=1  copies=2  x.actorId <= y.actorId
+    code: for (const a of Object.values(d.st.Actors).sort((x, y) => (x.actorId < y.actorId ? -1 : 1))) {
+    Ordering the Abilities group by actorId. `<` -> `<=` differs ONLY when the two ids are equal, and they cannot be: actorId is the key of State.Actors (a Record), so two entries never carry the same one. That sort never compares an element with itself is no ECMAScript guarantee; the `ai <= bi` entry under the client/src/app.ts header records the probe that found no such comparison in bun or node. The premise of the entry on the control panel's copy of this code, nth=2, under that header.
+
+client/src/view/dm.ts  ArrayDeclaration  offset=46  span=2  nth=1  copies=1  ["Stryker was here"]
+    code: command: takeAbility(a.actorId, id), clears: [],
+    The draft fields a Take empties once the server accepts it, `[]` -> `["Stryker was here"]`. `sending` hands the list to clearDraft, whose only act is `delete draft[f]`, and `draft` is private to dm.ts. No control keys a draft "Stryker was here": every key the console reads or writes is a lower-case word followed by a hyphen and more, the literal keys (`say-as`, `actor-json`, `note-visibility` and the rest) as much as the built ones (`describe-name:`, `give-ability-`, `grant-`, `grant-kind-` and the like, each followed by an id), and the mutant's key opens with a capital and holds spaces. So the delete removes nothing, and every box and choice the console draws holds what it held under the original. A spy on the delete, or a Proxy around `draft`, sees the extra key; neither is an input to the console. WHOEVER ADDS OR RENAMES A DRAFT KEY IN dm.ts RE-JUDGES THIS ENTRY: its premise is the spelling of every key, and no gate asks.
 
 # --- client/src/player.ts ----------------------------------------------------
 #

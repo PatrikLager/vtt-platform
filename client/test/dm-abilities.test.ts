@@ -84,6 +84,7 @@ test("each actor's row offers a give of each listed ability its sheet does not n
   const pick = c.pick("ab-give")!;
   expect(Array.from(pick.options).map((o) => o.value)).toEqual(["", "fists", "chair-swing"]);
   expect(Array.from(pick.options).map((o) => o.textContent)).toEqual(["choose an ability", "Fists", "Chair Swing"]);
+  expect(c.give("ab-give")!.textContent).toBe("Give");
   pick.value = "chair-swing";
   pick.dispatchEvent(new Event("change"));
   c.give("ab-give")!.click();

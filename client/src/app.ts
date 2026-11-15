@@ -558,21 +558,21 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     rulesetKey = watchKey();
     const told = news;
     news = [];
-    const tell = (): boolean => {
-      if (told.length === 0) return false;
+    const tell = () => {
+      if (told.length === 0) return;
       toast = sheetNews(told, [...everRead.values()]);
-      return true;
     };
     return fetchRuleset(location.origin, token).then((rs) => {
       for (const a of rs.abilities) everRead.set(a.id, a);
-      const newest = ticket === newestRuleset;
-      if (newest) {
+      if (ticket === newestRuleset) {
         abilities = rs.abilities;
         properties = rs.properties;
       }
-      if (tell() || newest) paint();
+      tell();
+      paint();
     }, (e: unknown) => {
-      if (tell()) paint();
+      tell();
+      paint();
       throw e;
     });
   };
