@@ -155,7 +155,12 @@ and tells the player what changed, naming each ability by every list read
 since load, while no other window does either, by
 `client/test/sheet-news.test.ts`, `client/test/qa-sheet-news.test.ts`,
 `client/test/session.test.ts` and `client/test/naming.test.ts` (VTT-732 to
-VTT-734, VTT-752). That a window names
+VTT-734, VTT-752). That an older read's answer arriving after the newest's
+names an ability in the Story at once, by the name it gives, while a
+resource keeps the name the newest gave it, and that a read with no change to
+tell leaves the message standing, is held by `client/test/sheet-news.test.ts`
+and `client/test/qa-older-answer.test.ts` (VTT-734, VTT-756, VTT-758, VTT-759).
+That a window names
 a resource its ruleset declares by the property's display name and any other
 by its key is held by `client/test/naming.test.ts`,
 `client/test/spectator-view.test.ts`, `client/test/app.test.ts` and
@@ -414,10 +419,10 @@ agent's window alike, by principle 27 and the owner's ruling of 2026-11-05
 (VTT-695). With none offered it draws no "Abilities" heading. It draws
 target buttons only for a selection it offers, and a board click counts a
 selection as armed only when the acting actor's sheet names it
-(`moveCommandFor`). The window's list is the newest answer `/api/ruleset`
-gave the window's participant (SPEC-012): every ability for a DM and an
-agent, and for a player those named by the sheets of the actors they
-control.
+(`moveCommandFor`). The window's list is the last one `/api/ruleset` gave
+the window's participant in answer to what was then the window's newest read
+(SPEC-012): every ability for a DM and an agent, and for a player those named
+by the sheets of the actors they control.
 
 `startSession` reads `/api/ruleset` in its start-up chain, after `/api/me`
 (`readRuleset`), and again through `rereadIfStale`, which it runs at every
@@ -447,7 +452,15 @@ properties, and an answer to an older read arriving after it sets neither
 (VTT-753). Every answer, an older read's included, adds the abilities it gives
 to `everRead` in `client/src/app.ts`, kept by id, an answer arriving later
 replacing an earlier one's entry, by which the Story, the Events panel and the
-toast name an ability (below); a reload forgets it. A read `rereadIfStale`
+toast name an ability (below); a reload forgets it. So an older read's
+answer arriving after the newest's replaces, in the Story, the name the newest
+gave an ability both name (VTT-759), and leaves the window's properties, by
+which the Story names a resource, as the newest set them (VTT-756). The window
+draws itself again at every answer and every failure of a read, so a name an
+older read's answer adds reaches the Story at once (VTT-734). A read the window
+issued for no change of ability ids has nothing to tell and sets no message,
+so its answer or failure leaves the message the window shows standing
+(VTT-758). A read `rereadIfStale`
 issued that fails keeps the window's lists and forgets nothing, a 401
 included, and no read is issued again until the key changes; of the ruleset's
 reads, only the start-up chain's, through that chain's catch, forgets the
@@ -973,4 +986,4 @@ VTT-595, VTT-596, VTT-597, VTT-599, VTT-600, VTT-604, VTT-605, VTT-606,
 VTT-607, VTT-622, VTT-623, VTT-662, VTT-666, VTT-668, VTT-672, VTT-679,
 VTT-695, VTT-696, VTT-704, VTT-705, VTT-712, VTT-715, VTT-717, VTT-720,
 VTT-721, VTT-722, VTT-727, VTT-730, VTT-732, VTT-733, VTT-734, VTT-736,
-VTT-737, VTT-752, VTT-753.
+VTT-737, VTT-752, VTT-753, VTT-756, VTT-758, VTT-759.
