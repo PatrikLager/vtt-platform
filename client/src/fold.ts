@@ -223,6 +223,28 @@ function apply(st: State, env: Envelope): void {
       a.abilityIds = a.abilityIds.filter((id) => id !== v.abilityId);
       return;
     }
+    case "resourceAdded": {
+      const v = p.value;
+      checkLen("resource name", v.resource, 1, 128);
+      if (!v.value) throw new FoldError("resource added with no value");
+      const a = st.Actors[v.actorId];
+      if (!a) throw new FoldError(`resource added to unknown actor "${v.actorId}"`);
+      if (a.resources[v.resource] !== undefined) {
+        throw new FoldError(`resource "${v.resource}" already held by actor "${v.actorId}"`);
+      }
+      a.resources = withResources(a.resources, v.resource, { current: v.value.current, max: v.value.max });
+      return;
+    }
+    case "resourceRemoved": {
+      const v = p.value;
+      const a = st.Actors[v.actorId];
+      if (!a) throw new FoldError(`resource removed from unknown actor "${v.actorId}"`);
+      if (a.resources[v.resource] === undefined) {
+        throw new FoldError(`resource "${v.resource}" not held by actor "${v.actorId}"`);
+      }
+      a.resources = withResources(a.resources, v.resource, undefined);
+      return;
+    }
     case "tokenPlaced": {
       const v = p.value;
       // Error ORDER matters: Go checks the id, duplicate, scene, actor, position.
@@ -537,6 +559,18 @@ function checkLen(what: string, s: string, min: number, max: number): void {
   const n = new TextEncoder().encode(s).length; // BYTE length, as Go measures
   if (n < min) throw new FoldError(`${what} is shorter than ${min} bytes`);
   if (n > max) throw new FoldError(`${what} exceeds ${max} bytes`);
+}
+
+// Return a fresh map, never write the held one: a caller may hold it.
+function withResources(
+  held: Record<string, Resource>, name: string, value: Resource | undefined,
+): Record<string, Resource> {
+  const out = emptyMap<Resource>();
+  for (const [k, r] of Object.entries(held)) {
+    if (k !== name) out[k] = r;
+  }
+  if (value !== undefined) out[name] = value;
+  return out;
 }
 
 function copyActor(a: {

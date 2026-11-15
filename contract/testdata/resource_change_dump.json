@@ -1,0 +1,39 @@
+{
+  "Actors": {
+    "act-gob": {
+      "actor_id": "act-gob",
+      "name": "Goblin",
+      "resources": {
+        "nerve": {}
+      },
+      "kind": 2
+    },
+    "act-lera": {
+      "actor_id": "act-lera",
+      "name": "Lera",
+      "resources": {
+        "focus": {
+          "max": 3
+        },
+        "stamina": {
+          "current": 1,
+          "max": 1
+        }
+      },
+      "kind": 1
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "Scenes": {},
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Night",
+      "StartSeq": 1,
+      "EndSeq": 0
+    }
+  ],
+  "Tokens": {},
+  "headSequence": 9
+}

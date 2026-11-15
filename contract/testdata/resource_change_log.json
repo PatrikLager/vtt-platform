@@ -1,0 +1,21 @@
+[
+  { "eventId": "evt-1", "sequence": "1", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "sessionStarted": { "name": "Night" } },
+  { "eventId": "evt-2", "sequence": "2", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "actorAdded": { "actor": { "actorId": "act-lera", "name": "Lera", "kind": "ACTOR_KIND_PARTY_MEMBER",
+      "resources": { "stamina": { "current": 2, "max": 2 } } } } },
+  { "eventId": "evt-3", "sequence": "3", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "actorAdded": { "actor": { "actorId": "act-gob", "name": "Goblin", "kind": "ACTOR_KIND_NON_PARTY" } } },
+  { "eventId": "evt-4", "sequence": "4", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "resourceAdded": { "actorId": "act-lera", "resource": "focus", "value": { "current": 0, "max": 3 } } },
+  { "eventId": "evt-5", "sequence": "5", "sessionId": "sess-1", "actorRole": "agent", "participantId": "p-agent",
+    "resourceRemoved": { "actorId": "act-lera", "resource": "stamina" } },
+  { "eventId": "evt-6", "sequence": "6", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "resourceAdded": { "actorId": "act-gob", "resource": "pool", "value": { "current": 5 } } },
+  { "eventId": "evt-7", "sequence": "7", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "resourceAdded": { "actorId": "act-lera", "resource": "stamina", "value": { "current": 1, "max": 1 } } },
+  { "eventId": "evt-8", "sequence": "8", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "resourceRemoved": { "actorId": "act-gob", "resource": "pool" } },
+  { "eventId": "evt-9", "sequence": "9", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "resourceAdded": { "actorId": "act-gob", "resource": "nerve", "value": {} } }
+]

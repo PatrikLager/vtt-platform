@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 
 	"google.golang.org/protobuf/proto"
@@ -266,6 +267,45 @@ func Apply(st *State, env *vttv1.Envelope) error {
 			}
 		}
 		actor.AbilityIds = kept
+		return nil
+
+	case *vttv1.Envelope_ResourceAdded:
+		ra := p.ResourceAdded
+		if n := len(ra.GetResource()); n == 0 || n > maxIDBytes {
+			return fmt.Errorf("engine: resource name must be 1-%d bytes, got %d", maxIDBytes, n)
+		}
+		if ra.GetValue() == nil {
+			return fmt.Errorf("engine: resource_added requires a value")
+		}
+		actor, ok := st.Actors[ra.GetActorId()]
+		if !ok {
+			return fmt.Errorf("engine: resource_added names unknown actor %q", ra.GetActorId())
+		}
+		if _, held := actor.GetResources()[ra.GetResource()]; held {
+			return fmt.Errorf("engine: actor %q already holds resource %q", ra.GetActorId(), ra.GetResource())
+		}
+		// Write a fresh map, as the ability arms write a fresh slice: a caller may
+		// hold the old one.
+		res := maps.Clone(actor.GetResources())
+		if res == nil {
+			res = map[string]*vttv1.Resource{}
+		}
+		res[ra.GetResource()] = &vttv1.Resource{Current: ra.GetValue().GetCurrent(), Max: ra.GetValue().GetMax()}
+		actor.Resources = res
+		return nil
+
+	case *vttv1.Envelope_ResourceRemoved:
+		rr := p.ResourceRemoved
+		actor, ok := st.Actors[rr.GetActorId()]
+		if !ok {
+			return fmt.Errorf("engine: resource_removed names unknown actor %q", rr.GetActorId())
+		}
+		if _, held := actor.GetResources()[rr.GetResource()]; !held {
+			return fmt.Errorf("engine: actor %q does not hold resource %q", rr.GetActorId(), rr.GetResource())
+		}
+		res := maps.Clone(actor.GetResources())
+		delete(res, rr.GetResource())
+		actor.Resources = res
 		return nil
 
 	case *vttv1.Envelope_TokenPlaced:

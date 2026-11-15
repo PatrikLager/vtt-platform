@@ -1,0 +1,16 @@
+{
+  "eventId": "evt-resource-added-1",
+  "sequence": "52",
+  "occurredAt": "2026-11-15T10:00:00Z",
+  "sessionId": "sess-1",
+  "actorRole": "dm",
+  "participantId": "p-dm",
+  "resourceAdded": {
+    "actorId": "act-fighter",
+    "resource": "flurry_uses",
+    "value": {
+      "current": 1,
+      "max": 1
+    }
+  }
+}

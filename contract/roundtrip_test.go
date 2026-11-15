@@ -104,6 +104,12 @@ func TestAbilityGivenEnvelopeRoundTrip(t *testing.T) {
 func TestAbilityTakenEnvelopeRoundTrip(t *testing.T) {
 	roundTrip(t, "ability_taken_envelope.json", &vttv1.Envelope{})
 }
+func TestResourceAddedEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "resource_added_envelope.json", &vttv1.Envelope{})
+}
+func TestResourceRemovedEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "resource_removed_envelope.json", &vttv1.Envelope{})
+}
 func TestUpsertNoteCommandRoundTrip(t *testing.T) {
 	roundTrip(t, "upsert_note_command.json", &vttv1.ClientCommand{})
 }

@@ -1,0 +1,16 @@
+[
+  { "eventId": "evt-10", "sequence": "10", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "resourceAdded": { "actorId": "act-lera", "resource": "", "value": { "current": 1 } } },
+  { "eventId": "evt-10", "sequence": "10", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "resourceAdded": { "actorId": "act-lera", "resource": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr", "value": { "current": 1 } } },
+  { "eventId": "evt-10", "sequence": "10", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "resourceAdded": { "actorId": "act-lera", "resource": "grit" } },
+  { "eventId": "evt-10", "sequence": "10", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "resourceAdded": { "actorId": "act-ghost", "resource": "grit", "value": { "current": 1 } } },
+  { "eventId": "evt-10", "sequence": "10", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "resourceAdded": { "actorId": "act-lera", "resource": "focus", "value": { "current": 1 } } },
+  { "eventId": "evt-10", "sequence": "10", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "resourceRemoved": { "actorId": "act-ghost", "resource": "focus" } },
+  { "eventId": "evt-10", "sequence": "10", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "resourceRemoved": { "actorId": "act-gob", "resource": "pool" } }
+]

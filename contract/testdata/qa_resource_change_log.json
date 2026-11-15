@@ -1,0 +1,14 @@
+[
+  {"eventId": "qa-rc-1", "sequence": "1", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "sessionStarted": {"name": "Evening"}},
+  {"eventId": "qa-rc-2", "sequence": "2", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "actorAdded": {"actor": {"actorId": "act-lera", "name": "Lera", "kind": "ACTOR_KIND_PARTY_MEMBER", "attributes": {"nerve": 2, "focus": 7}, "resources": {"pool": {"current": 4, "max": 6}, "grit": {"current": 1, "max": 3}}, "abilityIds": ["rally"]}}},
+  {"eventId": "qa-rc-3", "sequence": "3", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "actorAdded": {"actor": {"actorId": "act-gob", "name": "Goblin", "kind": "ACTOR_KIND_NON_PARTY", "resources": {"pool": {"current": 2, "max": 2}, "focus": {"current": 5, "max": 8}}}}},
+  {"eventId": "qa-rc-4", "sequence": "4", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceAdded": {"actorId": "act-lera", "resource": "focus", "value": {"current": 3, "max": 5}}},
+  {"eventId": "qa-rc-5", "sequence": "5", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceAdded": {"actorId": "act-lera", "resource": "spark", "value": {"max": 2}}},
+  {"eventId": "qa-rc-6", "sequence": "6", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceAdded": {"actorId": "act-gob", "resource": "spark", "value": {}}},
+  {"eventId": "qa-rc-7", "sequence": "7", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceRemoved": {"actorId": "act-lera", "resource": "grit"}},
+  {"eventId": "qa-rc-8", "sequence": "8", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceChanged": {"actorId": "act-lera", "resource": "focus", "delta": -1, "newValue": 2}},
+  {"eventId": "qa-rc-9", "sequence": "9", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceRemoved": {"actorId": "act-gob", "resource": "pool"}},
+  {"eventId": "qa-rc-10", "sequence": "10", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceAdded": {"actorId": "act-lera", "resource": "grit", "value": {"current": 9, "max": 4}}},
+  {"eventId": "qa-rc-11", "sequence": "11", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceAdded": {"actorId": "act-gob", "resource": "öööööööööööööööööööööööööööööööööööööööööööööööööööööööööööööööö", "value": {"current": 1, "max": 1}}},
+  {"eventId": "qa-rc-12", "sequence": "12", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceAdded": {"actorId": "act-lera", "resource": "ember", "value": {"current": -2}}}
+]

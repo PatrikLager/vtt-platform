@@ -1,0 +1,14 @@
+[
+  {"eventId": "qa-rc-13", "sequence": "13", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceAdded": {"actorId": "act-ghost", "resource": "focus", "value": {"current": 1, "max": 1}}},
+  {"eventId": "qa-rc-13", "sequence": "13", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceAdded": {"actorId": "act-lera", "resource": "pool", "value": {"current": 1, "max": 1}}},
+  {"eventId": "qa-rc-13", "sequence": "13", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceAdded": {"actorId": "act-gob", "resource": "spark", "value": {"current": 1, "max": 1}}},
+  {"eventId": "qa-rc-13", "sequence": "13", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceAdded": {"actorId": "act-lera", "resource": "dust"}},
+  {"eventId": "qa-rc-13", "sequence": "13", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceAdded": {"actorId": "act-lera", "resource": "", "value": {"current": 1, "max": 1}}},
+  {"eventId": "qa-rc-13", "sequence": "13", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceAdded": {"actorId": "act-lera", "resource": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "value": {"current": 1, "max": 1}}},
+  {"eventId": "qa-rc-13", "sequence": "13", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceAdded": {"actorId": "act-lera", "resource": "ööööööööööööööööööööööööööööööööööööööööööööööööööööööööööööööööö", "value": {"current": 1, "max": 1}}},
+  {"eventId": "qa-rc-13", "sequence": "13", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceRemoved": {"actorId": "act-ghost", "resource": "pool"}},
+  {"eventId": "qa-rc-13", "sequence": "13", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceRemoved": {"actorId": "act-lera", "resource": "dust"}},
+  {"eventId": "qa-rc-13", "sequence": "13", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceRemoved": {"actorId": "act-gob", "resource": "pool"}},
+  {"eventId": "qa-rc-13", "sequence": "13", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceRemoved": {"actorId": "act-lera", "resource": "nerve"}},
+  {"eventId": "qa-rc-13", "sequence": "13", "sessionId": "sess-qa", "actorRole": "dm", "participantId": "p-dm", "resourceRemoved": {"actorId": "act-lera", "resource": ""}}
+]

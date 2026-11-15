@@ -1,0 +1,12 @@
+{
+  "eventId": "evt-resource-removed-1",
+  "sequence": "53",
+  "occurredAt": "2026-11-15T10:00:00Z",
+  "sessionId": "sess-1",
+  "actorRole": "dm",
+  "participantId": "p-dm",
+  "resourceRemoved": {
+    "actorId": "act-fighter",
+    "resource": "flurry_uses"
+  }
+}

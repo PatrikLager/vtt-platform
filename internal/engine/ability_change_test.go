@@ -52,14 +52,19 @@ func abilityTable(t *testing.T) *engine.State {
 	return st
 }
 
-// sameExceptAbilities fails unless the snapshot after is the snapshot before
-// with a1's ability_ids replaced by want, walking every field of every actor
-// and of the state. Compare snapshots alone: Snapshot makes a nil map empty.
+// sameExceptAbilities is sameExcept with a1's ability_ids replaced by want.
 func sameExceptAbilities(t *testing.T, before, after *engine.State, want []string) {
 	t.Helper()
 	if got := after.Actors["a1"].GetAbilityIds(); !slices.Equal(got, want) {
 		t.Errorf("a1 names %q, want %q", got, want)
 	}
+	sameExcept(t, before, after, "ability_ids")
+}
+
+// sameExcept fails unless after is before but for a1's field skip, in every
+// actor field and state map. Compare snapshots alone: they make nil maps empty.
+func sameExcept(t *testing.T, before, after *engine.State, skip protoreflect.Name) {
+	t.Helper()
 	if len(after.Actors) != len(before.Actors) {
 		t.Fatalf("the state holds %d actors, want the %d it held", len(after.Actors), len(before.Actors))
 	}
@@ -71,7 +76,7 @@ func sameExceptAbilities(t *testing.T, before, after *engine.State, want []strin
 		fields := was.ProtoReflect().Descriptor().Fields()
 		for i := range fields.Len() {
 			fd := fields.Get(i)
-			if id == "a1" && fd.Name() == "ability_ids" {
+			if id == "a1" && fd.Name() == skip {
 				continue
 			}
 			if !proto.Equal(only(was, fd), only(now, fd)) {

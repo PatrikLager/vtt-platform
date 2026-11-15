@@ -143,6 +143,10 @@ export function describe(e: Envelope, names: Namer): string {
       return `${names.actor(p.value.actorId)} can now use ${names.ability(p.value.abilityId)}`;
     case "abilityTaken":
       return `${names.actor(p.value.actorId)} can no longer use ${names.ability(p.value.abilityId)}`;
+    case "resourceAdded":
+      return `${names.actor(p.value.actorId)} now has ${names.resource(p.value.resource)} at ${p.value.value?.current ?? 0}`;
+    case "resourceRemoved":
+      return `${names.actor(p.value.actorId)} no longer has ${names.resource(p.value.resource)}`;
     case "actorControlGranted":
       return `control of ${names.actor(p.value.actorId)} given`;
     case "actorControlRevoked":

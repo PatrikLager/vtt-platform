@@ -559,6 +559,19 @@ message AbilityTaken {
   string ability_id = 2;
 }
 
+// ResourceAdded adds one resource to an actor's sheet (SPEC-025).
+message ResourceAdded {
+  string actor_id = 1;
+  string resource = 2;
+  Resource value = 3;
+}
+
+// ResourceRemoved takes a resource off an actor's sheet (SPEC-025).
+message ResourceRemoved {
+  string actor_id = 1;
+  string resource = 2;
+}
+
 // NoteVisibility says who may read a note. An enum rather than a bool:
 // protojson omits a false bool, so a secret note would travel as an absent
 // field, indistinguishable from a writer who said nothing. A note recorded
@@ -638,5 +651,8 @@ message Envelope {
     // A sheet's ability list changes in play (SPEC-007).
     AbilityGiven ability_given = 36;
     AbilityTaken ability_taken = 37;
+    // A sheet's resources change in play (SPEC-007).
+    ResourceAdded resource_added = 38;
+    ResourceRemoved resource_removed = 39;
   }
 }
