@@ -11,21 +11,27 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `internal/gateway/viewpoint.go` (`ownPartyMember`),
 `internal/gateway/grant_validate.go`
 (`validateGrantActorControl`), `internal/gateway/add_actor_validate.go`
-(`validateAddActor`, `validateAddActorWith`, `validateAddActorSheet`),
+(`validateAddActor`, `validateAddActorWith`, `validateAddActorSheet`,
+`sheetFault`), `internal/gateway/ability_validate.go`
+(`validateGiveAbility`),
 `internal/gateway/note_validate.go` (`validateUpsertNote`),
 `internal/gateway/convert.go` (`ToEvent`, `voice`),
 `internal/gateway/ruleset.go` (`handleUseAbility`'s refusal of a use the
 sheet does not name) and
 `internal/gateway/server.go` (`answerCommand`, `authorize`,
-`handleSetViewpoint`, `handleCommand`, `describeBlockage`, `doorSquare`),
+`handleSetViewpoint`, `handleCommand`, `validateForm`, `describeBlockage`,
+`doorSquare`),
 with `perceive.SeesActor` and `rules.UnknownTarget` for the sight gate,
 `rules.Ruleset.SheetKeyFault` and `rules.Ruleset.SheetAbilityFault` for
-`add_actor`'s sheet, `rules.Offers` for the sheet's refusal of a use and
+`add_actor`'s sheet and `rules.Ruleset.SheetAbilityFault` for a give,
+`rules.Offers` for the sheet's refusal of a use and
 `engine.State.IsDoor` for the door gate, against `internal/engine`'s
 `State`; pinned by `internal/gateway/authz_test.go`,
 `grant_validate_test.go`, `add_actor_validate_test.go`,
 `add_actor_fit_internal_test.go`, `qa_add_actor_keys_test.go`,
 `add_actor_abilities_internal_test.go`, `qa_add_actor_abilities_test.go`,
+`ability_change_authz_test.go`, `ability_change_internal_test.go`,
+`ability_change_command_test.go`, `qa_ability_change_command_test.go`,
 `use_ability_sheet_test.go`, `qa_use_unnamed_test.go`,
 `note_validate_test.go`, `convert_test.go`, `server_test.go`,
 `server_visibility_test.go`, `server_internal_test.go`, `watch_test.go`,
@@ -79,6 +85,8 @@ may issue it:
 | `end_session` | yes | yes | no | no |
 | `use_ability` | yes | yes | `authorizeActorOwnership` | no |
 | `remove_condition` | yes | yes | `authorizeActorOwnership` | no |
+| `give_ability` | yes | yes | no | no |
+| `take_ability` | yes | yes | no | no |
 | `add_narration` | yes | yes | `unrestricted` | no |
 | `add_whisper` | yes | yes | `unrestricted` | no |
 | `upsert_note` | yes | yes | no | no |
@@ -104,7 +112,11 @@ one of the player's. Removal authors the board and the cast, so
 `add_actor`'s: a player may remove neither a token nor an actor they control.
 `describe_token` holds `place_token`'s cells too: what a token is called and
 what its notes say are the DM's and the agent's to write (VTT-463; "Ja, ett
-eget kommando", the owner's ruling of 2026-10-24).
+eget kommando", the owner's ruling of 2026-10-24). `give_ability` and
+`take_ability` change which abilities a sheet names, so what a character can
+do, and are the DM's and the agent's alone: a player is refused either, an
+actor they control included, by the table before any player rule is asked,
+and `playerRules` holds no entry for either (VTT-716).
 Granting control, promotion, removing a participant and the join door are
 the DM's and the agent's alone, since each confers or takes away standing at
 a table whose shared link admits spectators (SPEC-009, VTT-028, VTT-565).
@@ -241,27 +253,31 @@ runs, in this order, and stops at the first refusal:
    below;
 2. for a player's `use_ability`, the sight gate below;
 3. for an `open_door` or a `close_door`, from any role, the door gate below;
-4. `validateGrantActorControl`, for a `grant_actor_control`;
-5. `validateAddActorWith`, for an `add_actor`: `validateAddActor`, then,
-   in `validateAddActorSheet`, the actor's keys and then its ability ids
-   against the served ruleset;
-6. `validateUpsertNote`, for an `upsert_note`;
-7. the dispatch of `use_ability`, `load_adventure`, `load_map`,
+4. `validateForm`, the validators below, one switch on the command's arm:
+   `validateGrantActorControl` for a `grant_actor_control`;
+   `validateAddActorWith` for an `add_actor`, which runs `validateAddActor`
+   and then, in `validateAddActorSheet`, the actor's keys against the served
+   ruleset, an empty ability id with a ruleset served or none, and its
+   ability ids against the served ruleset; `validateGiveAbility` for a
+   `give_ability`, its ability id against the served ruleset;
+   `validateUpsertNote` for an `upsert_note`; and nothing for any other
+   command;
+5. the dispatch of `use_ability`, `load_adventure`, `load_map`,
    `remove_actor`, `remove_participant`, `promote_participant`,
    `set_join_door` and `rotate_join_link` to their handlers, where
    `handleUseAbility` refuses a use with no ruleset served and then the
    sheet's refusal below runs;
-8. `ToEvent`, which makes every other command one envelope stamped with the
+6. `ToEvent`, which makes every other command one envelope stamped with the
    participant's id and role;
-9. for a `TokenMoved`, the backfill of `SceneId` and `From` from the
+7. for a `TokenMoved`, the backfill of `SceneId` and `From` from the
    snapshot's token; for a `NarrationAdded`, `voice`, which writes `as`: the
    named actor's name from the same snapshot for a player's line in character
    (VTT-496), and the sender's display name for any line out of character
    (VTT-497); otherwise it leaves the `as` the DM or the agent gave
    (VTT-498);
-10. `campaign.Append`, which folds a clone of the envelope and returns the
+8. `campaign.Append`, which folds a clone of the envelope and returns the
    fold's refusal before anything is persisted;
-11. an ok=true result carrying the sequence `campaign.Append` assigned.
+9. an ok=true result carrying the sequence `campaign.Append` assigned.
 
 Every refusal is an ok=false `CommandResult` whose `Error` is the refusal's
 text. The read loop queues it on the issuing connection and reads the next
@@ -366,21 +382,48 @@ the id is missing; then refuses a `kind` of `ACTOR_KIND_UNSPECIFIED` and
 accepts every other value, so an `add_actor` may declare a party member that
 nobody controls yet. A command wrong in both the controller and the kind is
 told about the controller. `validateAddActorWith` runs `validateAddActor`
-and then `validateAddActorSheet`, which, with a ruleset served, reads an
-actor with an id against it, refusing a key the ruleset does not declare,
-or declares as the other type, naming the actor, the map and the key
-(VTT-677), and then, when every key fits, an `ability_ids` holding an id the
+and then `validateAddActorSheet`, which reads an actor with an id: with a
+ruleset served, it refuses a key the ruleset does not declare, or declares
+as the other type, naming the actor, the map and the key (VTT-677); then,
+with a ruleset served or none, an `ability_ids` holding an empty id, as
+`gateway: add_actor: actor "<id>": ability_ids: must not hold an empty id`
+(VTT-747); then, with a ruleset served, an `ability_ids` holding an id the
 ruleset does not hold, naming the actor and the first such id in byte order
-(VTT-685, SPEC-025); with none served it reads no key and no ability id
-(VTT-675, VTT-686). `engine.Apply` refuses an `ActorAdded` that names
-a controller as well, and accepts one with no kind, which on a recorded event
-reads as not a party member; the kind refusal exists at the command boundary
-alone. `validateUpsertNote` refuses an `upsert_note` whose `visibility` is
+(VTT-750, SPEC-025). With none served it reads no key and refuses no
+non-empty ability id (VTT-675, VTT-746). `engine.Apply` refuses an
+`ActorAdded` that names a controller as well, and accepts one with no kind,
+which on a recorded event reads as not a party member; the kind refusal exists
+at the command boundary alone, and so does the refusal of an empty ability id
+in an `add_actor`, since `engine.Apply` accepts an `ActorAdded` whose list
+holds one. `validateUpsertNote` refuses an `upsert_note` whose `visibility` is
 `NOTE_VISIBILITY_UNSPECIFIED`, with a message naming `visibility`, and accepts
 every other value, so the enum may grow without a note being refused.
 `engine.Apply` accepts a `NoteUpserted` with no visibility, which the
 projection writes to no character log (SPEC-016), so this refusal too
 exists at the command boundary alone.
+
+**The give's validator.** `validateGiveAbility` runs where the three do, and
+its refusal does not wrap `ErrUnauthorized` either. With a ruleset served,
+it asks `SheetAbilityFault` of the give's one ability id and refuses an id
+the ruleset does not hold as `gateway: give_ability: actor "<actor>":
+ability_ids: names ability "<id>", which the ruleset does not hold`
+(VTT-718), an empty id among
+them, since a loaded ruleset holds none (SPEC-025). It reads nothing of the
+snapshot, so it refuses such an id whether or not the campaign holds the
+actor, before the fold is asked. With none served it reads nothing, and a give
+to an actor the campaign holds of any non-empty id its sheet does not name is
+appended (VTT-745). A `take_ability` has no validator: with a ruleset served
+no sheet names an id the ruleset does not hold (SPEC-025), and the fold
+refuses an id the sheet does not name.
+
+**A give and a take.** A `give_ability` or a `take_ability` that
+`Authorize` and `validateForm` accept reaches `ToEvent` and becomes one
+`AbilityGiven` or `AbilityTaken` carrying the command's actor and ability
+(SPEC-007), which `campaign.Append` folds. The fold's refusals, of an actor
+the campaign does not hold, of a give of an id the sheet already names or of
+an empty id, and of a take of an id the sheet does not name (SPEC-025),
+reach the issuer as an ok=false result carrying the fold's text, and append
+nothing (VTT-717, VTT-720, VTT-721, VTT-722); the connection stays open.
 
 **What is dispatched, and what becomes one envelope.** `use_ability`
 (`handleUseAbility`), the sheet's refusal above aside, and `load_adventure`
@@ -440,7 +483,15 @@ A client or tool author is bound by these:
   does not see is answered as a target that names no actor.
 - An actor uses only the abilities its sheet names: a `use_ability` naming
   any other is refused for every role, the DM's and the agent's included,
-  and an actor whose sheet names none can use none.
+  and an actor whose sheet names none can use none until it is given one.
+- Only the DM and the agent change which abilities a sheet names: an
+  `AbilityGiven` or an `AbilityTaken` alone changes the list (SPEC-025),
+  and `give_ability` and `take_ability`, which write them, hold `no` in the
+  player and spectator cells above. With a ruleset served, a give of an id the
+  ruleset does not hold is refused, and with none, a give to an actor the
+  campaign holds of any non-empty id its sheet does not name is appended.
+- An `add_actor` whose `ability_ids` holds an empty id is refused, with a
+  ruleset served or none.
 - A token's texts are written by the DM and the agent alone.
 - A player speaks as a named party member they control, or out of
   character; the server writes the name either line is shown under. The DM
@@ -489,4 +540,5 @@ VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161, VTT-162, VTT-231,
 VTT-261, VTT-344, VTT-379, VTT-463, VTT-472, VTT-482, VTT-487, VTT-495,
 VTT-496, VTT-497, VTT-498, VTT-499, VTT-503, VTT-506, VTT-565, VTT-587,
 VTT-588, VTT-589, VTT-590, VTT-601, VTT-602, VTT-603, VTT-608, VTT-609,
-VTT-675, VTT-677, VTT-685, VTT-686, VTT-690.
+VTT-675, VTT-677, VTT-690, VTT-716, VTT-718, VTT-745, VTT-746, VTT-747,
+VTT-750.

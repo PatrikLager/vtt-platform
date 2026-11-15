@@ -19,6 +19,7 @@ called from `internal/gateway/server.go` (`serve`, `pump`, `pumpState` with
 `server_visibility_test.go`, `qa_seat_test.go`, `qa_move_gate_test.go`,
 `qa_promotion_rejudge_test.go`, `qa_promotion_opening_test.go`,
 `qa_promotion_queued_test.go`, `watchable_test.go`, `qa_watchable_test.go`,
+`watchable_abilities_test.go`, `qa_watchable_abilities_test.go`,
 `qa_player_perch_test.go`, `qa_controls_none_test.go` and `authz_test.go`.
 
 ## Principles served
@@ -78,22 +79,36 @@ whenever they control one, from the next time the pump re-judges the seat.
 **Whom a seat is told it may watch.** `watchable` is every party member
 `MayWatch` accepts for the participant, sorted by id, each with its name: for
 a spectator and for a player who controls none, every party member; for a
-player who controls one, those they control; for any other role, none. Its
+player who controls one, those they control; for any other role, none. Each
+party member of the set that the participant controls (`controls`) carries
+a copy of the ability ids its sheet names, in the sheet's order, whatever
+the participant's role, and every other carries none (VTT-731, by the
+owner's ruling OD-3 of 2026-11-14): a player who controls a party member is
+sent the ids of each party member of the set, a spectator who controls any
+is sent the ids of each it controls, and the set of a player who controls
+none carries none. What a window does with the ids is SPEC-022's: a window
+that is not a player's shows nothing for them and reads nothing (VTT-752). Its
 `controls_no_party_member` is true when the participant controls no party
 member, whatever their role (VTT-454). `openSeat` records the set for a log
 seat, and `resolve` records it again each time it judges the seat, by the
 participant's role then. `tell` queues it as a `WatchableChanged` unless it
 equals the last one the pump queued (`proto.Equal`), and never on a world
-seat, so a set whose flag alone has changed is sent again (VTT-455). The pump
-calls `tell` at the opening, after its credential lookup and before the
-opening `ViewpointChanged`, and in `moved`, after every judgment and, on a
-switch, after the credential is re-resolved, before the judgment's
-`ViewpointChanged`. So a seat is sent the set at its opening (VTT-399) and
-again at each judgment that finds it changed (VTT-400, VTT-455), before any
-entry of the append that changed it, since `admit` takes a waiting wake
-before it sends an entry; appends whose wakes the pump takes as one are
-judged once, so a grant and its revocation judged together send no set. A
-DM's or an agent's connection is sent none (VTT-401).
+seat, so a set whose flag alone has changed is sent again (VTT-455), and so is
+one whose only change is a controlled party member's ability ids, as at a give
+or a take (VTT-731). The pump calls `tell` at the opening, after its
+credential lookup and before the opening `ViewpointChanged`, and in `moved`,
+after every judgment and, on a switch, after the credential is re-resolved,
+before the judgment's `ViewpointChanged`. So a seat is sent the set at its
+opening (VTT-399) and again at each judgment that finds it changed (VTT-400,
+VTT-455), before any entry of the append that changed it, since `admit` takes
+a waiting wake before it sends an entry; appends whose wakes the pump takes as
+one are judged once, so a grant and its revocation judged together send no
+set, and neither do a give of an id and then its take. Otherwise a give or a
+take to a party member the participant controls sends each of their log seats a
+new set, whichever character the seat watches, before any
+entry of that append, and one to any other actor, a creature they control
+included, sends them none (VTT-731). A DM's or an agent's connection is sent
+none (VTT-401).
 
 **The open.** `openSeat` registers the append watch before it reads the actors,
 so an append that lands while the seat opens wakes it. When `log` names an
@@ -245,10 +260,11 @@ A client author, and whoever changes the code, are bound by these:
 - A promotion re-judges the promoted participant's seats with nothing
   appended and moves each one the new role may not watch; a client learns of
   a move by its `ViewpointChanged`.
-- A client learns whom it may watch, and whether its participant controls a
-  party member, by `WatchableChanged`, never from its log's roster. A set
-  that has not changed, in its actors or its flag, is not sent again, a
-  switch included.
+- A client learns whom it may watch, whether its participant controls a
+  party member, and which abilities each party member it controls names, by
+  `WatchableChanged`, never from its log's roster. A set that has not
+  changed, in its actors, their ability ids or its flag, is not sent again,
+  a switch included.
 
 ## Requirements
 
@@ -256,4 +272,5 @@ VTT-176, VTT-181, VTT-182, VTT-188, VTT-189, VTT-192, VTT-193, VTT-306,
 VTT-338, VTT-339, VTT-340, VTT-341, VTT-342, VTT-345, VTT-347, VTT-348,
 VTT-349, VTT-350, VTT-366, VTT-367, VTT-368, VTT-369, VTT-370, VTT-374,
 VTT-375, VTT-377, VTT-385, VTT-386, VTT-387, VTT-388, VTT-399, VTT-400,
-VTT-401, VTT-450, VTT-451, VTT-452, VTT-453, VTT-454, VTT-455, VTT-456.
+VTT-401, VTT-450, VTT-451, VTT-452, VTT-453, VTT-454, VTT-455, VTT-456,
+VTT-731.

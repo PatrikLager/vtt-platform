@@ -128,14 +128,34 @@ is held by `client/test/panel-offers.test.ts`,
 `client/test/qa-ability-target.test.ts`, `client/test/qa-panel-say.test.ts`
 and `client/test/spectator-view.test.ts` (VTT-695); that a window reads
 `/api/ruleset` again when a player's set or its flag changes, or when a
-change of role makes it a player's window or stops it being one, and draws
-its newest read's answer, by `client/test/app.test.ts` and
-`client/test/qa-window-reread.test.ts` (VTT-696, VTT-697, VTT-712); and
-that the fold holds an actor's ability ids as its `actorAdded` gave them and
-its dump writes them as `vtt state dump` does, by
-`client/test/fold-dump.test.ts` and `client/test/qa-actor-ability-ids.test.ts`,
-and the server's fold by `internal/engine/qa_actor_ability_ids_test.go`
-(VTT-704 to VTT-706). That a window names
+change of role makes it a player's window or stops it being one, and that
+its panel offers from its newest read's answer, by `client/test/app.test.ts`
+and `client/test/qa-window-reread.test.ts` (VTT-696, VTT-712, VTT-753); and
+that the fold holds an actor's ability ids as its `actorAdded` gave them
+until a give or a take changes them and its dump writes them as
+`vtt state dump` does, by `client/test/fold-dump.test.ts` and
+`client/test/qa-actor-ability-ids.test.ts`, and the server's fold by
+`internal/engine/qa_actor_ability_ids_test.go` (VTT-704, VTT-705,
+VTT-737). That the fold gives and takes an ability as `engine.Apply` does,
+refusals included, and that a log of gives and takes dumps as
+`vtt state dump` prints it, is held by `client/test/fold-abilities.test.ts`,
+`client/test/qa-ability-change.test.ts` and `client/test/fold-parity.test.ts`,
+beside `internal/engine/ability_change_test.go`,
+`internal/engine/qa_ability_change_test.go`,
+`cmd/vtt/ability_change_dump_test.go` and
+`internal/harness/fold_golden_test.go` (VTT-715, VTT-717, VTT-720 to
+VTT-722, VTT-727); that the Story words a give and a take, by
+`client/test/spectator-view.test.ts` and
+`client/test/qa-ability-change.test.ts` (VTT-736); that the DM console
+offers and sends both, by `client/test/dm-abilities.test.ts`,
+`client/test/qa-dm-abilities.test.ts`, `client/test/app.test.ts` and
+`client/test/command-surface.test.ts` (VTT-730); and that a player's window
+reads `/api/ruleset` again when a set changes a party member's ability ids
+and tells the player what changed, naming each ability by every list read
+since load, while no other window does either, by
+`client/test/sheet-news.test.ts`, `client/test/qa-sheet-news.test.ts`,
+`client/test/session.test.ts` and `client/test/naming.test.ts` (VTT-732 to
+VTT-734, VTT-752). That a window names
 a resource its ruleset declares by the property's display name and any other
 by its key is held by `client/test/naming.test.ts`,
 `client/test/spectator-view.test.ts`, `client/test/app.test.ts` and
@@ -170,10 +190,11 @@ VTT-435). That `vtt events tail` prints no switch is held by no row.
 
 Principles 7, 11, 12, 13, 14, 22 and 27 of `docs/blueprint.md`:
 
-- **7.** A grant, a revocation or a change of role reaches the abilities a
-  player's window offers without a reload.
+- **7.** A grant, a revocation, a change of role, a give or a take reaches
+  the abilities a player's window offers without a reload.
 - **11.** A reader folds one log, from its first entry, and never splices two.
-- **12.** A player is told when a party member stops being theirs, and a
+- **12.** A player is told when a party member stops being theirs, when an
+  ability is given to or taken from a party member they control, and a
   perching player that they play no character.
 - **13.** `namer` never shows a token or an actor by its id, names a resource
   its ruleset declares by its display name, and `describe` words every
@@ -341,13 +362,48 @@ longer play " and their names joined by " and ", each "an unnamed character"
 when its name is empty, and "." (VTT-605, VTT-606; the owner's ruling "Toast +
 rad i perch-vyn" of 2026-11-02). Any other window is told nothing.
 
+When a `WatchableChanged` changes the ability ids of party members the
+previous set also names, the `Session` hands each handler `onSheetChanged`
+registered one `SheetChange` per such party member, in the new set's order
+(`sheetChanges`): its id, the name the new set gives it, the ids the new set
+names that the previous did not, in the new set's order, and those the
+previous named that the new does not, in the previous set's order, each id
+once. It hands them after `onPartyMembersLeft`'s handlers and before the
+set is replaced, and hands nothing when either set says the participant
+controls no party member. So a page's first set, an equal set, a renamed
+one, a set whose ids differ from the last only in their order and a set
+beside a true flag hand over nothing, and, since a discard keeps the last
+set, a redial sent a set that changed meanwhile hands over the change
+(VTT-733). A window whose role the page last read is `player` keeps each
+change until the `/api/ruleset` read the set issues (below) has answered or
+failed, and then shows as the toast what `sheetNews` in
+`client/src/view/naming.ts` writes of them: per change, in order, "<Name>
+can now use <A>." for the ids given and "<Name> can no longer use <B>."
+for the ids taken, several abilities joined by " and " and the sentences by
+a space, the name the new set gives, else "An unnamed character", and each
+ability by the display name some answer since the page loaded gave it,
+else by its id (VTT-733, VTT-734; the owner's rulings OD-3 and OD-5 of
+2026-11-14). Any other window shows nothing for such a set and issues no
+read for it (VTT-752).
+
 The fold, `client/src/fold.ts`, holds an actor's `abilityIds` as its
 `actorAdded` gave them, in their order, repeats included, and an empty list
-for an actor added with none (`copyActor`, into the state's `Actor`); a
-control grant, a control revoke and a resource change leave the list
-unchanged, as `engine.Apply` does (VTT-705, VTT-706). `foldToDumpJSON`
+for an actor added with none (`copyActor`, into the state's `Actor`), until
+an `abilityGiven` or an `abilityTaken` changes them; a control grant, a
+control revoke and a resource change leave the list unchanged, as
+`engine.Apply` does (VTT-705, VTT-737). Its `abilityGiven` arm refuses an
+empty ability id, then an actor the fold does not hold, then an id the
+actor's list names, and otherwise sets the list to a new array ending with
+the id; its `abilityTaken` arm refuses an actor the fold does not hold, then
+an id the list does not name, and otherwise sets it to a new array holding
+no occurrence of the id, the others in their order. Each refusal is a
+`FoldError` in the client's own words, and the two arms refuse and change
+what `engine.Apply`'s do (SPEC-025), nothing else of the actor or the state
+included (VTT-715, VTT-717, VTT-720, VTT-721, VTT-722). `foldToDumpJSON`
 writes the list as `ability_ids`, after the actor's `kind`, in its order,
-and not at all when it is empty, as `vtt state dump` does (VTT-704).
+and not at all when it is empty, as `vtt state dump` does (VTT-704), so the
+client's fold of a log of gives and takes dumps as `vtt state dump` prints
+it, its refusals included (VTT-727).
 
 The panel offers abilities for the actor it acts as: a player's the party
 member they watch, a DM's and an agent's the actor its chip selects. It
@@ -368,25 +424,34 @@ control.
 change of its session's state and after each read of `/api/me` that a
 presence frame naming its participant starts. `rereadIfStale` reads again
 when the window's key differs from the key it held when it issued its
-newest read: for a window whose role the page last read is `player`, the
-ids of the last `WatchableChanged` set, in its order, and whether the set
-says the participant controls no party member; for any other window, the
-empty key.
+newest read: for a window whose role the page last read is `player`, each
+actor of the last `WatchableChanged` set, in its order, by its id and the
+ability ids the set gives it, in their order, and whether the set says the
+participant controls no party member; for any other window, the empty key.
 So a player's window reads again when a set changes which party members it
-names or its flag (VTT-696), and a window reads again when the role
-`/api/me` answers makes it a player's window or stops it being one
-(VTT-712); an equal set, a renamed set and a redial sent the same set issue
-no read, and a window that is not a player's reads once, at start-up, until
-a promotion makes it one. A grant or a revocation that leaves its actor not
-a party member changes neither the set nor its flag, so it issues no read,
-and the window's list keeps, or lacks, the abilities that actor's sheet
-alone names until a change of the key or a reload reads again; a player's
-panel never acts as such an actor. The newest read's answer is drawn, the
-window's abilities and properties both, and an answer to an older read
-arriving after it is dropped (VTT-697). A read `rereadIfStale` issued that
-fails keeps the window's lists and forgets nothing, a 401 included, and no read
-is issued again until the key changes; of the ruleset's reads, only the
-start-up chain's, through that chain's catch, forgets the credential on a
+names or its flag (VTT-696), or the ability ids of a party member it names
+(VTT-732), as at a give or a take to a party member the player controls
+(SPEC-015), and a window reads again when the role `/api/me` answers makes
+it a player's window or stops it being one (VTT-712); an equal set, a
+renamed set and a redial sent the same set issue no read, a set whose ids
+differ from the last only in their order issues one, and a window that is
+not a player's reads once, at start-up, until a promotion makes it one, a
+set that changes ability ids included (VTT-752). A grant or a revocation
+that leaves its actor not a party member, and a give or a take to an actor
+that is not one, change neither the set nor its flag, so they issue no read
+and tell nothing, and the window's list keeps, or lacks, the abilities that
+actor's sheet alone names until a change of the key or a reload reads again; a
+player's panel never acts as such an actor. The newest read's answer sets the
+window's abilities, from which the panel offers and the console gives, and its
+properties, and an answer to an older read arriving after it sets neither
+(VTT-753). Every answer, an older read's included, adds the abilities it gives
+to `everRead` in `client/src/app.ts`, kept by id, an answer arriving later
+replacing an earlier one's entry, by which the Story, the Events panel and the
+toast name an ability (below); a reload forgets it. A read `rereadIfStale`
+issued that fails keeps the window's lists and forgets nothing, a 401
+included, and no read is issued again until the key changes; of the ruleset's
+reads, only the start-up chain's, through that chain's catch, forgets the
+credential on a
 401 (above), since `grep -n 'readRuleset()' client/src/app.ts` finds the
 chain's call and `rereadIfStale`'s, which catches every failure.
 
@@ -521,9 +586,10 @@ out or written `null` is no maximum (VTT-679).
 **What a command's answer leaves typed** (the owner's rulings "Ja, Say och
 alla formulär" and "Töm ändå", 2026-10-29). The console's controls that
 clear a field, Start session, Add actor, Remove actor, Add from JSON, Place
-token, Remove token, a row's Describe, Save note, a row's Grant, and the
-Say's Send and Enter in its `say-text`, each send through `sending` in
-`client/src/view/dm.ts`. A player's panel's Send, and Enter in its
+token, Remove token, a row's Describe, Save note, a row's Grant, a row's
+Give, and the Say's Send and Enter in its `say-text`, each send through
+`sending` in `client/src/view/dm.ts`, and so does an ability's take chip,
+which clears nothing. A player's panel's Send, and Enter in its
 `say-text`, send through `submit` in `renderPlayerPanel`. Both are handed
 `act` from `client/src/app.ts` as `send`: it resolves to the command's
 `CommandResult`, shows a refusal as the toast of its error, with nothing
@@ -557,11 +623,13 @@ nothing; while a line the console's Say or a player's panel sent is
 unanswered, its Send and Enter in its `say-text` send nothing. The console
 keeps its locks in `unanswered`, beside `draft`, so they last across paints,
 one per control: keyed by the control's action, by the action and the row's
-token or actor id for a Describe or a Grant, and by `actor-json` for Add
+token or actor id for a Describe or a Grant, by the action, the row's actor
+id and the ability's id for a Give or a take, and by `actor-json` for Add
 from JSON; the Say's Send and Enter share one, keyed `add-narration`. So a
 command one of them sent holds back no other, another row's Describe or
 Grant and Remove actor beside Add actor included, though those share
-`actor-id`; the Say's Send and Enter count as one (VTT-541). The
+`actor-id`, and a give unanswered holds back only that actor's give of that
+ability; the Say's Send and Enter count as one (VTT-541). The
 panel's lock is `PlayerUIState.saying`, one for Send and Enter. A press the
 console's own checks refuse, or a line in which `readLine` finds nothing to
 send, in the console's Say or a player's panel, sends nothing and takes no
@@ -588,8 +656,9 @@ as below. `renderSpectator` builds one per paint, from the fold, the log,
 `ViewExtras.dm`, `ViewExtras.abilities` and `ViewExtras.properties`, for a
 disc's initial, its native `title` and its resource chips, its card, and the
 Story and the Events panel; `paint` in `startSession` sets `dm` to `isDM`,
-and `abilities` and `properties` to the lists the newest `/api/ruleset`
-read answered (above), for every role. `renderPlayerPanel` builds its own
+`properties` to the list the newest `/api/ruleset` read answered, and
+`abilities` to every ability `everRead` holds, those every answer since the
+page loaded gave (above), for every role. `renderPlayerPanel` builds its own
 for its target buttons and its abilities' costs, from the fold, the
 abilities and the properties with no log, by the role `/api/me` last gave
 (VTT-475, VTT-484, by the owner's rulings A-6 and K-1 of 2026-10-22).
@@ -605,9 +674,12 @@ abilities and the properties with no log, by the role `/api/me` last gave
   `tokenDescribed` or `actorAdded` entry of the log that named it, so a Story
   line keeps naming what the window was told (VTT-489).
 - **The initial** is the naming's first character in upper case, and `?` for
-  `a creature`. An ability is named by the display name the window's
-  ability list gives it, else by its id, so a window names by its id an
-  ability its list does not hold, by the owner's ruling OD-5 of 2026-11-13.
+  `a creature`. An ability is named by the display name the abilities the
+  namer is handed give it, else by its id: for the Story and the Events panel,
+  every ability an answer since the page loaded gave, so a window names by its
+  id an ability no answer since it loaded held, and by its name one that a
+  later answer does not hold (VTT-734; the owner's ruling OD-5 of
+  2026-11-14).
 - **A resource** is named by `Namer.resource`: by the display name of the
   property `/api/ruleset` gives under its key as a `resource`, else by its
   key, and by its key while the window has no properties; a `number`
@@ -648,7 +720,11 @@ and its reason when it has one. An ability's line is "<actor> used
 <result>, rolled <total>", joined by ";", and with no outcomes " on " and its
 targets joined by ", ". It never reads `outcome_summary` or `rolls`, so it
 shows what was rolled and never the total that roll was compared with (VTT-477,
-by the owner's ruling of 2026-10-24 on the ability's line). A whisper reads
+by the owner's ruling of 2026-10-24 on the ability's line). A give reads
+"<actor> can now use <ability>" and a take "<actor> can no longer use
+<ability>", the actor and the ability as the window names them (VTT-736),
+in every window whose log holds the entry, a correction's included, by the
+owner's ruling OD-4 of 2026-11-14. A whisper reads
 "The DM whispers to ", its `to_actor_ids` named as the window names actors
 and joined by ", ", then ": " and its text, or its `from_actor_id` so named,
 " whispers to the DM: " and its text, and the Story draws it with the class
@@ -664,6 +740,26 @@ typed, empty ones included (VTT-464; "Ja, en kontroll i konsolen", the owner's
 ruling of 2026-10-24). Once the server accepts it, the console clears that
 row's drafts and no other row's, so the row's boxes are drawn as with no
 draft (VTT-533).
+
+**The console's abilities.** `renderDMConsole` draws, after "Remove condition"
+and before "Who controls what", an "Abilities" group whenever the world holds
+an actor: one row per actor of the world, by id compared with `<`
+(`data-actor`), headed by its name, else its id. A row holds one chip per
+distinct id the actor's sheet names, in the sheet's order, labelled the
+display name `DMDeps.abilities` gives it, else its id, and " ✕" (`data-action`
+`take-ability`, `data-ability` the id), which sends `takeAbility`. When
+`DMDeps.abilities` holds abilities the sheet does not name, the row then holds
+a select of those, in the list's order, each labelled its display name, else
+its id, after a first option of no value labelled "choose an ability", the
+choice kept in `draft` under `give-ability-` and the actor's id, and a Give
+button (`data-action` `give-ability`) that sends `giveAbility` of the chosen
+ability, or, with none chosen, tells "Choose an ability to give first."
+through `DMDeps.notify` and sends nothing (VTT-730). Neither the select nor a
+button carries a `data-field`. `app.ts` hands `DMDeps.abilities` the abilities
+of the newest `/api/ruleset` answer, every ability the served ruleset holds
+for the DM and the agent (SPEC-012), so with no ruleset served the console
+offers no give and still offers a take of each id a sheet names. Whether the
+server accepts either is SPEC-013's.
 
 ### What a Go reader holds
 
@@ -792,8 +888,20 @@ each entry it is sent, and no switch.
 - A correction's grants and applied conditions of a run's actor, written
   directly behind the run at a later event with nothing between, are left out
   with it, as when the world adds an id again as another, out of sight, as a
-  party member with no attributes, resources, module data or ability ids,
-  which `add_actor`'s description tells the agent never to do (VTT-390).
+  party member with no attributes, resources or module data, which
+  `add_actor`'s description tells the agent never to do (VTT-390). An
+  `abilityGiven` or an `abilityTaken` is no part of a run, so where such a
+  correction sends some, they and the grants behind them are drawn.
+- The Story draws a correction's `abilityGiven` frames as it draws a
+  forwarded give, so a party member whose sheet names abilities and holds no
+  attributes, resources or module data is drawn "<actor> can now use
+  <ability>" for each at its first sight in a log that held it unseen,
+  whether its `actorAdded` named the ability or a give added it, and so is
+  such a character in its own log when that log opens for it already a
+  party member (SPEC-021, SPEC-016).
+- A page opened after a give or a take is told nothing of it, since its first
+  set hands over nothing (VTT-733), and a reload forgets the names earlier
+  answers gave.
 - A creature made a party member in a character log's sight is drawn no
   "<actor> is in the party" line, though the log held it as a creature until
   then: the run that introduces it whole is left out, and the forwarded grant
@@ -863,4 +971,6 @@ VTT-535, VTT-536, VTT-537, VTT-538, VTT-540, VTT-541, VTT-572, VTT-573,
 VTT-574, VTT-575, VTT-576, VTT-577, VTT-579, VTT-580, VTT-593, VTT-594,
 VTT-595, VTT-596, VTT-597, VTT-599, VTT-600, VTT-604, VTT-605, VTT-606,
 VTT-607, VTT-622, VTT-623, VTT-662, VTT-666, VTT-668, VTT-672, VTT-679,
-VTT-695, VTT-696, VTT-697, VTT-704, VTT-705, VTT-706, VTT-712.
+VTT-695, VTT-696, VTT-704, VTT-705, VTT-712, VTT-715, VTT-717, VTT-720,
+VTT-721, VTT-722, VTT-727, VTT-730, VTT-732, VTT-733, VTT-734, VTT-736,
+VTT-737, VTT-752, VTT-753.

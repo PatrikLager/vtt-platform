@@ -4,9 +4,10 @@
 
 Accepted. Implemented by `internal/perceive/projection.go` (`Eyes`,
 `Projection`, `New`, `Resume`, `Event`, `Perch`, `CanSee`, `SeesActor`,
-`recall`, `sameIncarnation`, `shownAs`, `unseenAs`, `shownWith`, `trueKeys`,
-`sightView`, `look`, `eyes`, `transitions`, `sceneSeenFor`, `objectInSight`,
-`verdict`, `passIf`, `classify`, `canSeeSquare`, `doorTransitions`,
+`recall`, `sameIncarnation`, `kindMovesList`, `shownAs`, `unseenAs`,
+`shownWith`, `trueKeys`, `sightView`, `look`, `eyes`, `transitions`,
+`sceneSeenFor`, `objectInSight`, `verdict`, `passIf`, `classify`,
+`sheetActor`, `canSeeSquare`, `doorTransitions`,
 `doorSubject`, `squareAt`, `squareKey`, `sortedSet`, `sortedSceneIDs`,
 `sortedSceneIDsUnion`, `noteTransitions`, `introduce`, `hideTokensOf`,
 `withdraw`, `actorBelief`, `beliefOf`, `correct`, `statusFrames`, `sameSet`,
@@ -20,14 +21,17 @@ pinned by `internal/perceive/board_test.go`, `roster_test.go`,
 `status_test.go`, `history_test.go`, `unseen_test.go`,
 `resume_from_fold_test.go`, `deps_test.go`, `projection_internal_test.go`,
 `whisper_internal_test.go`, `companion_sheet_test.go`,
-`companion_abilities_test.go`, `qa_testimony_eyes_test.go`,
+`companion_abilities_test.go`, `ability_internal_test.go`,
+`ability_correction_test.go`, `qa_testimony_eyes_test.go`,
 `qa_creature_shown_test.go`, `qa_companion_sheet_test.go`,
-`qa_actor_abilities_shown_test.go` and `qa_sees_actor_test.go`, through the
+`qa_actor_abilities_shown_test.go`, `qa_ability_forward_test.go`,
+`qa_ability_correction_test.go` and `qa_sees_actor_test.go`, through the
 harness in `viewer_test.go`, by
 `internal/campaign/character_log_oracle_test.go`, `every_log_told_test.go`,
 `whisper_test.go`, `qa_whisper_test.go`, `qa_append_watch_test.go`,
-`qa_character_log_test.go`, `qa_creature_shown_test.go` and
-`qa_companion_sheet_test.go`, and by
+`qa_character_log_test.go`, `qa_creature_shown_test.go`,
+`qa_companion_sheet_test.go`, `ability_reopen_test.go` and
+`qa_ability_reopen_test.go`, and by
 `internal/gateway/server_visibility_test.go`, `qa_move_reason_test.go`,
 `qa_issuer_test.go`, `token_text_test.go`, `qa_creature_shown_test.go` and
 `companion_sheet_test.go`.
@@ -41,7 +45,8 @@ Principles 16, 17 and 19 of `docs/blueprint.md`:
   seen it, and what the table is told, decided on the server.
 - **17.** An ability reaches a character's log only when the character saw
   every actor it names; a change to a party member's resource reaches it on
-  the same test, without its reason.
+  the same test, without its reason, and so does an ability given to or
+  taken from a party member.
 - **19.** An event `classify` answers `unrecognised` sends nothing at all, and
   `TestEveryEnvelopePayloadArmHasAnExplicitRuling` fails on a payload it
   answers so.
@@ -115,7 +120,7 @@ creature, with its name: its id, name, module id, kind, `controller_id` and
 `controller_ids`. `introduce` sends an actor the look `sees` as `shownAs`
 gives it, and one the look does not see as `unseenAs` gives it, with no
 condition behind it. So a party member is introduced whole, its ability ids
-included, when the log's eyes see it (VTT-657, VTT-699), and otherwise
+included, when the log's eyes see it (VTT-657, VTT-738), and otherwise
 without its sheet: its attributes, resources, module data, ability ids and
 conditions (VTT-658, VTT-698), by the owner's ruling of 2026-11-06 that a
 player whose character does not see a companion cannot see its character
@@ -134,53 +139,60 @@ a scene with none left out; `doors`, per scene, the squares its `OpenDoors`
 marks open; `tokens` its tokens, with each one's actor (`tokenActor`) and its
 name and notes (`tokenText`); `notes` its notes' keys; `actors` its actors;
 and `belief`, per actor, `beliefOf`'s `actorBelief`: the current value of each
-resource, its condition ids and its controllers in the order the fold holds
-them, and its kind: what an event can change of an actor, since `ActorAdded`
-alone writes its name, module id, attributes, module data, its resources'
-names and maxima, and its ability ids. `recall` marks `gone` each actor the
-fold holds that `st` holds as another: one that differs, in a field only
-`ActorAdded` writes, both from `st`'s actor shown under the held actor's own
-kind (`shownWith`) and from `unseenAs` of it; the viewer never saw it
-removed. `sameIncarnation` is that comparison: name, module id, module data,
-ability ids in their order (`slices.Equal`), attribute keys and values, and
-resource names and maxima. `recall` marks `reshaped` each other held actor
-that differs from `shownAs` of `st`'s: a kind change altered what the log
-may hold of it (VTT-468), or the fold holds a party member with no
-attributes, resources, module data or ability ids while `st`'s has some, as
-`introduce` leaves one its eyes did not see. A reshaped actor is withdrawn
-and introduced afresh only in sight (`transitions`), so a party member held
-so stays reshaped until the first event since the world last added it at
-which the log's eyes see it, and that event's frames bring it to what
-`shownAs` gives of the world's: its sheet while it is a party member
-(VTT-664, VTT-699, VTT-708), a creature's form once it has been made one
-(VTT-481). Within one call,
-`transitions` forgets an actor the fold holds and `st` does not when `sighted`
-holds it, since `classify` forwarded its `ActorRemoved`, and marks every other
-such actor gone; `withdraw` takes an actor out of `actors`, `belief` and
-`gone`, and `introduce` puts one into `actors`, as each sends. So an actor no
-eye sees keeps, in the fold, the status it had when the viewer last saw it,
-or, never seen, the one it was introduced with (VTT-660), and an actor
-removed while the viewer did not see it stays there until `withdraw` sends
-its bare `ActorRemoved`, which happens only before its id is introduced
-again; when `st` adds it again as the same actor, it is not gone, and when it
-comes into sight it is corrected, or, reshaped, withdrawn and introduced
-afresh. `sighted` alone is carried from
-call to call: the look's `sees` as the last `transitions` left it, by an event
-or by a perch. `New` starts it empty, or, handed a world, with the `sees` of a
-look at that world. `Resume`, handed the viewer's fold and a world, starts it
-as `New` does with that world when the fold holds every actor in that look's
-`sees` as `shownAs` makes it of the world, the same incarnation and one for
-which `statusFrames` answers no frame and true, and empty otherwise: a fold
-that lags the world for an actor in sight is then corrected, or, reshaped,
-withdrawn and introduced afresh, rather than forwarded what it would refuse,
-which a character log relies on after a
-dropped frame set, a failed write and a reopen (SPEC-021). So what a
-projection sends is a function of the viewer's fold, the world, the eyes and
-the last look's `sees`, and a `Projection` built by `New` from the world at
-any prefix of the log, and handed the fold of the frames sent to that point,
-sends from then on what one fed from the first event sends (VTT-312). When a
-character log's decision starts with `New` and when with `Resume` is
-SPEC-021's.
+resource, its condition ids, its ability ids and its controllers in the
+order the fold holds them, and its kind: what an event can change of an
+actor, since `ActorAdded` alone writes its name, module id, attributes,
+module data and its resources' names and maxima. `recall` marks `gone` each
+actor the fold holds that `st` holds as another: one that differs, in a
+field only `ActorAdded` writes, both from `st`'s actor shown under the held
+actor's own kind (`shownWith`) and from `unseenAs` of it; the viewer never
+saw it removed. `sameIncarnation` is that comparison: name, module id,
+module data, attribute keys and values, and resource names and maxima; it
+compares no ability ids, which an `AbilityGiven` and an `AbilityTaken`
+change (VTT-739, VTT-744). `recall` marks `reshaped` each other held actor
+that `sameIncarnation` does not match with `shownAs` of `st`'s, or whose
+kind differs from `st`'s while it or `shownAs` of `st`'s names an ability
+(`kindMovesList`): a kind change altered what the log may hold of it
+(VTT-468), or the fold holds a party member with no attributes, resources
+or module data while `st`'s has some, as `introduce` leaves one its eyes did
+not see. A reshaped actor is withdrawn and introduced afresh only in sight
+(`transitions`), so a party member held so stays reshaped until the first
+event since the world last added it at which the log's eyes see it, and
+that event's frames bring it to what `shownAs` gives of the world's: its
+sheet while it is a party member (VTT-664, VTT-740), a creature's form once
+it has been made one (VTT-481). A party member held with no attributes,
+resources or module data whose world's sheet names abilities and holds none
+of those either is the same incarnation and is not reshaped: at its first
+sight `correct` brings it its ability ids as `AbilityGiven` frames
+(VTT-738, VTT-740). Within one call, `transitions` forgets an actor the
+fold holds and `st` does not when `sighted` holds it, since `classify`
+forwarded its `ActorRemoved`, and marks every other such actor gone;
+`withdraw` takes an actor out of `actors`, `belief` and `gone`, and
+`introduce` puts one into `actors`, as each sends. So an actor no eye sees
+keeps, in the fold, the status it had when the viewer last saw it, or, never
+seen, the one it was introduced with (VTT-660), and an actor removed while the
+viewer did not see it stays there until `withdraw` sends its bare
+`ActorRemoved`, which happens only before its id is introduced again; when
+`st` adds it again as the same actor, it is not gone, and when it comes into
+sight it is corrected, or, reshaped, withdrawn and introduced afresh.
+`sighted` alone is carried from call to call: the look's `sees` as the last
+`transitions` left it, by an event or by a perch. `New` starts it empty, or,
+handed a world, with the `sees` of a look at that world. `Resume`, handed the
+viewer's fold and a world, starts it as `New` does with that world when the
+fold holds every actor in that look's `sees` as `shownAs` makes it of the
+world, the same incarnation and one for which `statusFrames` answers no frame
+and true, and empty otherwise, so a fold that holds each party member in sight
+with the ability ids the world's sheet names, in any order, resumes, and one
+that lacks such an id or names one the sheet does not starts empty (VTT-742):
+a fold that lags the world for an actor in sight is then corrected, or,
+reshaped, withdrawn and introduced afresh, rather than forwarded what it would
+refuse, which a character log relies on after a dropped frame set, a failed
+write and a reopen (SPEC-021). So what a projection sends is a function of the
+viewer's fold, the world, the eyes and the last look's `sees`, and a
+`Projection` built by `New` from the world at any prefix of the log, and
+handed the fold of the frames sent to that point, sends from then on what one
+fed from the first event sends (VTT-312). When a character log's decision
+starts with `New` and when with `Resume` is SPEC-021's.
 
 **When a log's frames do not fold.** `perceive` folds nothing it returns;
 what its caller writes when they do not fold is SPEC-021's (VTT-320).
@@ -239,21 +251,27 @@ where the difference does not fit `int32`, first one with `delta` 0 and
 one `ConditionRemoved` per condition the belief holds and `st` does not, in
 the order the viewer's fold holds them. Then one `ConditionApplied` per
 condition `st` holds and the belief does not, in `st`'s order. Then one
-`ActorControlGranted` per controller `st` holds and the belief does not, in
-`st`'s order, carrying the present kind, and, when the kind differs and no
-such grant is sent, one re-stating the first controller the viewer's fold
-holds, with the present kind. Then one `ActorControlRevoked` per controller
-the belief holds and `st` does not, in the fold's order. Conditions and
-controllers are compared as sets, so a change undone while the viewer did not
-see it sends nothing, and the viewer's fold can hold an actor's conditions and
-controllers, and so the first controller `engine.Apply` mirrors into
-`controller_id`, in another order than `st` holds them. When the belief's
-resources are not the actor's, or the kind differs, no grant carries it, and
-the belief holds no controller or the present kind is unspecified, `correct`
-sends `hideTokensOf`'s frames, `withdraw`'s bare `ActorRemoved` and then
-`introduce`'s frames instead, those of an actor the look sees, since
-`correct` runs only in sight; both folds accept the removal, since
-`hideTokensOf` has taken the actor's tokens off the board first.
+`AbilityTaken` per ability id the belief holds and the sheet `shownAs`
+gives does not name, in the order the viewer's fold holds them, and then one
+`AbilityGiven` per id that sheet names and the belief does not, in the
+sheet's order, each id once however often either list holds it (VTT-724,
+VTT-743), by the owner's ruling OD-2 of 2026-11-14; a creature's form names
+none. Then one `ActorControlGranted` per controller `st` holds and the belief
+does not, in `st`'s order, carrying the present kind, and, when the kind
+differs and no such grant is sent, one re-stating the first controller the
+viewer's fold holds, with the present kind. Then one `ActorControlRevoked` per
+controller the belief holds and `st` does not, in the fold's order.
+Conditions, ability ids and controllers are compared as sets, so a change
+undone while the viewer did not see it sends nothing, a take and a give back
+of one id included, and the viewer's fold can hold an actor's conditions,
+ability ids and controllers, and so the first controller `engine.Apply`
+mirrors into `controller_id`, in another order than `st` holds them (VTT-738).
+When the belief's resources are not the actor's, or the kind differs, no grant
+carries it, and the belief holds no controller or the present kind is
+unspecified, `correct` sends `hideTokensOf`'s frames, `withdraw`'s bare
+`ActorRemoved` and then `introduce`'s frames instead, those of an actor the
+look sees, since `correct` runs only in sight; both folds accept the removal,
+since `hideTokensOf` has taken the actor's tokens off the board first.
 
 **Doors.** For each scene in the look, by id, and each visible square, by key,
 where `OpenDoors` in `st` differs from the viewer's belief, `doorTransitions`
@@ -306,8 +324,14 @@ and targets), `ActorControlGranted`, `ActorControlRevoked`, `ConditionApplied`
 and `ConditionRemoved` when every non-empty actor id named is in `sighted`, so
 when the viewer saw each of them before the event; what an event brings into
 sight arrives by introduction or by correction instead. It forwards a
-`ResourceChanged` on that test only when the look's `party` holds its actor,
-so a log is written no creature's (VTT-466, VTT-486). It forwards a
+`ResourceChanged`, an `AbilityGiven` and an `AbilityTaken` on that test only
+when the look's `party` holds the actor it names (`sheetActor`), so a log is
+written no creature's sheet change, a log whose eyes see the creature
+included (VTT-466, VTT-486, VTT-741). So the changed party member's own log
+is forwarded its give or take, as is a log whose eyes saw it before the
+event, unless that log's decision starts empty at the event, and a log that
+did not see it is forwarded neither and is brought to its list by a
+correction at its next sight (VTT-741, VTT-724). It forwards a
 `TokenDescribed` when the token was on the board before the event, is in the
 look after it, and its name or notes differ from what the viewer's fold holds
 of it (`tokenText`); a rewrite of a token out of sight reaches the viewer as
@@ -340,11 +364,12 @@ fold at sequence 0 and so introduces exactly the party, each party member as
 party member before its event holds its own character, until that event's
 frames, as it holds a party member its eyes do not see, and those frames,
 through the log's own eyes, bring it whole: by a withdrawal and an
-introduction when it has attributes, resources, module data or ability ids,
-and by a correction otherwise. When a log opens so is SPEC-021's. In every
-other opening (SPEC-021) the actor becomes a party member at that event,
-whose frames introduce it whole as its own eye. A connection's switch calls
-no `Perch`: it is sent the new log from its first entry (SPEC-015).
+introduction when it has attributes, resources or module data, and by a
+correction otherwise, which brings its ability ids as `AbilityGiven` frames.
+When a log opens so is SPEC-021's. In every other opening (SPEC-021) the actor
+becomes a party member at that event, whose frames introduce it whole as its
+own eye. A connection's switch calls no `Perch`: it is sent the new log from
+its first entry (SPEC-015).
 
 **The sequence every frame carries.** `Event` hands `transitions` the
 event's sequence, and every frame it builds carries it, as the forwarded event
@@ -377,30 +402,30 @@ A client author, and whoever changes the code, are bound by these:
 - An actor the world adds again is introduced afresh when the viewer no longer
   holds its id, or holds one that differs from what it may be sent of the new
   actor in a field only `ActorAdded` writes: of a party member its name,
-  module id, attributes, module data, resource names and maxima, or ability
-  ids, of any other actor its module id alone, and, against a party member
-  the viewer holds with no attributes, resources, module data or ability
-  ids, its name and module id alone (VTT-708). It is corrected otherwise
-  (VTT-707), save a party member held so while the world's is a party member
-  with attributes, resources, module data or ability ids, which is withdrawn
-  and introduced whole at its first sight (VTT-664, VTT-699). An id the world
-  adds again as another is an actor the viewer never saw: a party member so
-  added is introduced at once, without its sheet while no eye sees it,
-  whatever the viewer saw of the actor that held the id before (VTT-658). A
-  new party member is introduced at once, seen or not, since it is on every
-  roster, without its sheet while no eye sees it, and a new creature when the
-  viewer sees it. An id added again under the other
-  kind with the same module id differs only as a kind change does, in either
-  direction, so a new party member over a creature the viewer holds under that
-  module id waits for sight like one (VTT-481).
+  module id, attributes, module data, resource names or maxima, and not its
+  ability ids, which are corrected, of any other actor its module id alone,
+  and, against a party member the viewer holds with no attributes,
+  resources or module data, whatever ability ids it holds, its name and
+  module id alone (VTT-740). It is corrected otherwise (VTT-739), save a
+  party member held so while the world's is a party member with attributes,
+  resources or module data, which is withdrawn and introduced whole at its
+  first sight (VTT-664). An id the world adds again as another is an actor the
+  viewer never saw: a party member so added is introduced at once, without its
+  sheet while no eye sees it, whatever the viewer saw of the actor that held
+  the id before (VTT-658). A new party member is introduced at once, seen or
+  not, since it is on every roster, without its sheet while no eye sees it,
+  and a new creature when the viewer sees it. An id added again under the
+  other kind with the same module id differs only as a kind change does, in
+  either direction, so a new party member over a creature the viewer holds
+  under that module id waits for sight like one (VTT-481).
 - A character log holds a creature it has seen as one as its id, module id
   and kind, its controllers and its conditions, and is written no
-  `ResourceChanged` of it; a party member made a creature out of its sight is
-  held as the log held it, whole when the log saw it and without its sheet
-  when it never did, until the log next sees it (VTT-481, VTT-660).
-  A token reaches it with its name and notes, and never its GM name or GM
-  notes; a rewrite reaches it only in sight and only when the name or notes
-  changed.
+  `ResourceChanged`, `AbilityGiven` or `AbilityTaken` of it; a party member
+  made a creature out of its sight is held as the log held it, whole when the
+  log saw it and without its sheet when it never did, until the log next sees
+  it (VTT-481, VTT-660). A token reaches it with its name and notes, and never
+  its GM name or GM notes; a rewrite reaches it only in sight and only when
+  the name or notes changed.
 - A scene once introduced is never withdrawn, and its terrain arrives only as
   it is seen.
 - The newest `SceneSeen` of a scene is the viewer's visible set there; an
@@ -417,6 +442,13 @@ A client author, and whoever changes the code, are bound by these:
   last saw it, or as it was introduced when it never saw it, and the
   re-introduction waits until it next comes into sight (VTT-468, VTT-481, by
   the owner's ruling B-1 of 2026-10-22: event data follows sight strictly).
+  What a log may hold of a party member includes its ability ids, which a
+  creature's form lacks, so a kind change re-introduces an actor whose held
+  form, or whose form at its new kind, names an ability (`kindMovesList`);
+  a log that saw, before the event, an actor with no name, attributes,
+  resources, module data or ability ids is sent no withdrawal or
+  introduction of it when the event changes its kind, and holds it at its
+  new kind by the forwarded grant alone (VTT-755).
   Any other kind change is status like the rest, corrected on sight, while an
   actor that becomes a party member is introduced to every viewer that does
   not hold it: with its present status and controllers when the viewer's eyes
@@ -424,10 +456,18 @@ A client author, and whoever changes the code, are bound by these:
   (VTT-658). Two viewers' rosters can therefore differ; whom a
   connection may watch is not a roster's but `WatchableChanged`'s (SPEC-015).
 - A condition an introduction carries bears the introduction's sequence.
-- A viewer hears of a resource, a condition, a control change, an attack or
-  an ability only while it sees every actor it names, and of a resource only
-  of a party member; what changed meanwhile arrives as one correction when the
+- A viewer hears of a resource, a condition, a control change, an attack,
+  an ability's use or an ability given or taken only while it sees every
+  actor it names, and of a resource or an ability given or taken only of a
+  party member; what changed meanwhile arrives as one correction when the
   actor comes into sight, or in its re-introduction when it is reshaped.
+- No character log is sent an `ActorRemoved` or an `ActorAdded` of an actor
+  because its ability ids differ from the world's while its kind does not
+  change (VTT-744): a give or a take reaches a log forwarded, as a
+  correction's `AbilityTaken` and `AbilityGiven` frames at sight, or in the
+  list an introduction made for another cause carries, and a party member a
+  log holds without its sheet, whose world's sheet differs only by its
+  ability ids, is brought to them by a correction.
 - In a character log, an entry with no event id is the projection's own (an
   introduction and the bare `ActorRemoved` before one, a correction, a
   token's departure or arrival, a door's correction, a `SceneSeen` or a
@@ -453,13 +493,12 @@ A client author, and whoever changes the code, are bound by these:
   introduction, before a correction's re-introduction and before a reshaped
   actor's re-introduction (`withdraw`'s callers are `transitions`' actor walk
   and `correct`), which is also how a party member held with no attributes,
-  resources, module data or ability ids while the world's has some is
-  brought at its first sight to the world's as `shownAs` gives it (VTT-699,
-  VTT-708); each time a `TokenHidden` for each of the actor's tokens on the
-  board precedes it.
-- A viewer's fold need not hold an actor's conditions and controllers, nor so
-  its `controller_id`, in the server's order, and a corrected condition
-  carries no source.
+  resources or module data while the world's has some is brought at its
+  first sight to the world's as `shownAs` gives it (VTT-740); each time a
+  `TokenHidden` for each of the actor's tokens on the board precedes it.
+- A viewer's fold need not hold an actor's conditions, ability ids and
+  controllers, nor so its `controller_id`, in the server's order, and a
+  corrected condition carries no source.
 - A character log's fold holds no note whose visibility is not
   `NOTE_VISIBILITY_PUBLIC`; a public note made or changed while the log was
   paused is held as the log last had it, or not at all (SPEC-021). A note
@@ -503,4 +542,5 @@ VTT-242, VTT-243, VTT-244, VTT-245, VTT-249, VTT-250, VTT-251, VTT-252,
 VTT-262, VTT-272, VTT-273, VTT-311, VTT-312, VTT-361, VTT-362, VTT-363,
 VTT-364, VTT-365, VTT-462, VTT-465, VTT-466, VTT-467, VTT-468, VTT-469,
 VTT-478, VTT-481, VTT-486, VTT-488, VTT-582, VTT-583, VTT-584, VTT-657,
-VTT-658, VTT-660, VTT-664, VTT-698, VTT-699, VTT-707, VTT-708.
+VTT-658, VTT-660, VTT-664, VTT-698, VTT-724, VTT-738, VTT-739, VTT-740,
+VTT-741, VTT-742, VTT-743, VTT-744, VTT-755.

@@ -32,8 +32,8 @@ Principles 6, 7, 15 and 35 of `docs/blueprint.md`:
 - **6.** What a seat may read over HTTP is decided on the server, on every
   request, and never by a client hiding what it was sent.
 - **7.** Which abilities a participant reads is decided against their role
-  and the fold as they stand at each request, so a grant, a revocation or a
-  change of role reaches their next read.
+  and the fold as they stand at each request, so a grant, a revocation, a
+  change of role, a give or a take reaches their next read.
 - **15.** A piece of art is opened from the art directory on every request,
   and nothing is cached.
 - **35.** A ruleset is served as data to whoever may see each part of it: a
@@ -123,15 +123,19 @@ actor of `campaign.State()` whose controllers include them (`controls`),
 whatever the actor's kind, so none when they control none, and none, with
 status 200, when the state is nil, as it is for a poisoned campaign
 (VTT-691); for a spectator, the role left of those `identity.ParseRole`
-accepts, none (VTT-692). An id a sheet names that `Compiled` does not hold
-is not written. `conditions`, `resources` and `properties` are every role's
-(VTT-710, VTT-619, VTT-631). The abilities are filtered as they are read
-from `Compiled`, and then they and the conditions are sorted by id with
-`slices.SortFunc`, because `rules.Ruleset.Compiled` and `Conditions` are
-maps and Go randomises map iteration; `resources` and `properties` are built
-from `rules.Ruleset.Properties`, a slice, and keep the ruleset's declared
-order. `handleRulesetGuide` writes `{"guide": ...}` with the ruleset's
-`Guide` markdown, to the DM and the agent.
+accepts, none (VTT-692). For a player it reads the sheets of
+`campaign.State()` at each request and keeps nothing between requests, so
+an ability given to or taken from an actor a player controls is in or out
+of that player's next answer, as a grant, a revocation or a change of role
+is (`TestAPlayersReadFollowsAGiveAndATake`). An id a sheet names that
+`Compiled` does not hold is not written. `conditions`, `resources` and
+`properties` are every role's (VTT-710, VTT-619, VTT-631). The abilities are
+filtered as they are read from `Compiled`, and then they and the conditions
+are sorted by id with `slices.SortFunc`, because `rules.Ruleset.Compiled` and
+`Conditions` are maps and Go randomises map iteration; `resources` and
+`properties` are built from `rules.Ruleset.Properties`, a slice, and keep the
+ruleset's declared order. `handleRulesetGuide` writes `{"guide": ...}` with
+the ruleset's `Guide` markdown, to the DM and the agent.
 
 **The agent's reader.** The MCP tool `get_ruleset`, which
 `registerRulesetTool` adds and `GoRegisteredToolNames` lists, takes no
@@ -286,8 +290,8 @@ A client author is bound by these:
   answered, is "no guide"; none is an error the UI should raise.
 - A player reads only the abilities named by the sheets of the actors they
   control, and a spectator none, so what a player reads can change with a
-  grant or a revocation; when the browser client reads it again is
-  SPEC-022's.
+  grant, a revocation, a give or a take; when the browser client reads it
+  again is SPEC-022's.
 - What a property means is read from `/api/ruleset`'s `properties`, or
   `get_ruleset`, and not from a guide (SPEC-024).
 - Who the caller is comes from `/api/me`; what they control comes from the

@@ -23,12 +23,27 @@ sheet names, by `TestActorAddedWithAbilityIdsRoundTripsInItsOrder` and
 `TestAnActorsAbilityIdsAreAPlainListOfStrings` in
 `contract/roundtrip_test.go`, and their tools by
 `TestAddActorDocumentsTheAbilitiesItsSheetNames`,
-`TestAddActorSaysAnActorUsesOnlyTheAbilitiesItNames` and
+`TestAddActorSaysAnActorUsesOnlyTheAbilitiesItNames`,
+`TestAddActorSaysAnEmptyAbilityIdRefusesTheCommand` and
 `TestUseAbilitySaysAUseTheSheetDoesNotNameIsRefused` in
 `tools/toolgen/main_test.go`, by
 `tools/toolgen/qa_add_actor_abilities_doc_test.go`, and, for the texts
 `vtt mcp` serves, by `cmd/vtt/qa_campaign_abilities_fit_test.go` and
-`cmd/vtt/qa_use_unnamed_test.go` (VTT-700, VTT-701, VTT-703); a token's
+`cmd/vtt/qa_use_unnamed_test.go` (VTT-700, VTT-701, VTT-729, VTT-749); a
+give and a take, by `TestGiveAbilityCommandRoundTrip`,
+`TestTakeAbilityCommandRoundTrip`, `TestAbilityGivenEnvelopeRoundTrip` and
+`TestAbilityTakenEnvelopeRoundTrip` in `contract/roundtrip_test.go`, their
+conversion by `internal/gateway/ability_change_internal_test.go`, their
+tools' texts by
+`TestGiveAndTakeAbilitySayWhoMayWhatEachRefusesAndThatNothingElseChanges`
+and `TestGiveAndTakeAbilitySayEachControllingPlayerIsTold` in
+`tools/toolgen/main_test.go`, by
+`internal/gateway/qa_ability_change_command_test.go` and by
+`internal/gateway/qa_watchable_abilities_test.go` (VTT-728, VTT-735), and
+what the tools send by `internal/mcp/ability_change_tools_test.go`;
+the ability ids a set carries, by
+`TestServerFrameWatchableChangedWithAbilityIdsRoundTrip` in
+`contract/roundtrip_test.go`; a token's
 texts, the rewrite and an ability's outcomes, by
 `TestTokenPlacedWithTextEnvelopeRoundTrip`,
 `TestTokenDescribedEnvelopeRoundTrip`, `TestDescribeTokenCommandRoundTrip` and
@@ -154,11 +169,40 @@ use, a read of the ruleset and the panel make of them is SPEC-013's,
 SPEC-012's and SPEC-022's. `add_actor`'s tool keeps `abilityIds` out of the
 actor's required fields and documents it as the actor's abilities by their
 ids in the served ruleset, says that `use_ability` refuses the actor any
-ability not named there, so one that names none can use none, and that with
-a ruleset served an id the ruleset does not hold refuses the whole command
-(VTT-700, VTT-703). `use_ability`'s tool says it uses an ability the acting
-actor's sheet names, and that a use of any other is refused whatever the
-caller's role (VTT-701).
+ability its sheet does not name, so one that names none can use none until
+`give_ability` gives it one, and that `give_ability` and `take_ability`
+change the list in play (VTT-729), that with a ruleset served an id the
+ruleset does not hold refuses the whole command (VTT-700), and that an
+empty id refuses it with or without one (VTT-749). `use_ability`'s tool
+says it uses an ability the acting actor's sheet names, and that a use of
+any other is refused whatever the caller's role (VTT-701).
+
+### Giving and taking an ability
+
+`GiveAbility` and `TakeAbility`, arms 37 and 38 of `ClientCommand.command`,
+and `AbilityGiven` and `AbilityTaken`, arms 36 and 37 of `Envelope.payload`,
+each carry an `actor_id` (field 1) and an `ability_id` (field 2): one actor
+and one ability, by the owner's ruling OD-1 of 2026-11-14. `ToEvent`
+(`internal/gateway/convert.go`) makes a `give_ability` an `AbilityGiven`
+and a `take_ability` an `AbilityTaken`, copying both fields. What each event
+does to a sheet is SPEC-025's; who may send each command and what the
+gateway refuses, SPEC-013's; what a character log is sent of either,
+SPEC-016's.
+
+The `give_ability` and `take_ability` tools require `actorId` and
+`abilityId`, documented as the id of the actor whose sheet changes and the
+ability's id in the served ruleset. Each says it is the DM's and the
+agent's alone, that only the actor's ability list changes, and what it
+refuses, appending nothing (VTT-728): `give_ability` an actor the campaign
+does not hold, an ability its sheet already names, an empty ability id
+and, with a ruleset served, an id the ruleset does not hold;
+`take_ability` an actor the campaign does not hold and an ability its sheet
+does not name. `give_ability` adds that its tokens, controllers, conditions
+and resources stay as they are, so the agent changes what a character can
+do by it and not by `remove_actor` and `add_actor`. Each says that each
+player who controls the actor while it is a party member is told
+(VTT-735), which `WatchableChanged` carries (below) and SPEC-022's window
+shows.
 
 ### Whom a line speaks as
 
@@ -262,19 +306,22 @@ are sent none.
 
 `WatchableChanged` names whom a player or a spectator may watch: one
 `WatchableActor` for each party member `MayWatch` accepts for the participant,
-carrying the actor's id and name, in id order (SPEC-015). Its
+carrying the actor's id and name, in id order (SPEC-015), and, for a party
+member the participant controls, the ability ids its sheet names, in the
+sheet's order, as `ability_ids` (field 3), which is empty for every other
+actor, by the owner's ruling OD-3 of 2026-11-14. Its
 `controls_no_party_member` says whether the participant controls no party
 member, by the owner's ruling "Field on the list" of 2026-10-23, and a client
 draws a player the perch by a true one (SPEC-022). It comes after the
 `PresenceSnapshot` and before the opening `ViewpointChanged`, including when it
-names none. protojson omits an empty list and a false flag. A list is empty
-only with the flag true, since a party member the participant controls is one
-`MayWatch` accepts for them, so an empty set arrives as
-`{"watchableChanged":{"controlsNoPartyMember":true}}`. Each later one replaces
-the last whole, is sent when SPEC-015 says, and comes before the
+names none. protojson omits an empty list, an actor's empty `ability_ids` and
+a false flag. A list is empty only with the flag true, since a party member
+the participant controls is one `MayWatch` accepts for them, so an empty set
+arrives as `{"watchableChanged":{"controlsNoPartyMember":true}}`. Each later
+one replaces the last whole, is sent when SPEC-015 says, and comes before the
 `ViewpointChanged` of the same change, if it moves the seat, and before any
-entry of the append that changed it. It is a frame, never an
-`Envelope`, and the DM and the agent are sent none.
+entry of the append that changed it. It is a frame, never an `Envelope`, and
+the DM and the agent are sent none.
 
 ### What appends to the log, and what does not
 
@@ -410,4 +457,4 @@ Those readers are not reading this record.
 
 VTT-184, VTT-232, VTT-473, VTT-479, VTT-480, VTT-505, VTT-559, VTT-560,
 VTT-561, VTT-562, VTT-563, VTT-567, VTT-591, VTT-674, VTT-700, VTT-701,
-VTT-703.
+VTT-728, VTT-729, VTT-735, VTT-749.
