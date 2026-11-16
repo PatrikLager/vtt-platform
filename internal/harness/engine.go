@@ -539,16 +539,6 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 		return sr
 	}
 
-	// use_ability and load_adventure are BATCH-aware (ruleset-interpreter
-	// Task 6, binding; extended to load_adventure by adventure-format Task
-	// 4 — both commands' CommandResult carries only the FIRST sequence of a
-	// campaign.AppendBatch batch): rules.Resolve can emit anywhere from one
-	// (AbilityUsed alone, e.g. a miss with no on-miss outcomes) to several
-	// events per use, and adventure.Compile emits one envelope per scene/
-	// actor/placement/note plus a leading AdventureLoaded and trailing
-	// NarrationAdded — neither step has any way to know its batch's length
-	// in advance. Every other accepted command still produces exactly ONE
-	// event, matched by observeOnAll below.
 	if isBatchCommand(&cmd) {
 		sr.firstSeq = result.Sequence
 		missing, detail := observeBatchOnAll(conns, logSeats, history, result.Sequence, observeTimeout, denialAbsenceWindow)
@@ -581,31 +571,16 @@ func runCommandStep(ctx context.Context, idx int, st Step, conns map[string]Conn
 	return sr
 }
 
-// isBatchCommand reports whether cmd's oneof case produces a whole
-// campaign.AppendBatch batch (result.Sequence names only the batch's FIRST
-// sequence) rather than a single Envelope via campaign.Append — the set of
-// commands runCommandStep must route to observeBatchOnAll instead of
-// observeOnAll. Grows as new batch-producing commands are added (use_ability
-// — ruleset-interpreter Task 6; load_adventure — adventure-format Task 4;
-// load_map — 2026-09-01-create-scene-leaves Task 8, fix round 1).
-//
-// load_map WAS MISSING HERE AND THE CORPUS COULD NOT SHOW IT. mapdef.Compile
-// emits 1 + len(m.Placements) envelopes and internal/gateway/map.go appends
-// them as one batch, so a map declaring placements has always belonged in this
-// set — but all ten scenarios/maps/*.json declare none, which makes every
-// committed loadMap step the one-envelope case that observeOnAll happens to
-// handle correctly. campaigns/example/maps/cellar.json declares one, and so
-// may any map an operator installs.
-//
-// The set is deliberately NOT derived from anything: there is no wire-visible
-// mark on a batch-producing command, so this list and internal/gateway's
-// dispatch are two hand-kept halves of one fact. The load_map half is driven
-// through both failure modes a missing arm produces by
-// TestRunScenarioLoadMapWithAPlacementObservesTheWholeBatch (engine_test.go).
+// Add a command here when its handler appends a batch: the result names only
+// the batch's first sequence, and nothing on the wire marks one. Held by
+// TestRunScenarioLoadMapWithAPlacementObservesTheWholeBatch, and for
+// give_ability and take_ability by toy-brawl in
+// TestScenarioGoldenStreamsHaveNotDrifted.
 func isBatchCommand(cmd *vttv1.ClientCommand) bool {
 	switch cmd.GetCommand().(type) {
 	case *vttv1.ClientCommand_UseAbility, *vttv1.ClientCommand_LoadAdventure,
-		*vttv1.ClientCommand_LoadMap:
+		*vttv1.ClientCommand_LoadMap, *vttv1.ClientCommand_GiveAbility,
+		*vttv1.ClientCommand_TakeAbility:
 		return true
 	default:
 		return false

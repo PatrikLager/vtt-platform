@@ -695,7 +695,45 @@ missing`.
 
 **Closed by** the correction removing and adding such a resource (VTT-796).
 
+## 2026-11-16 — the scenario runner read a give's or a take's second event as a leak
+
+**After a give or a take that appends two events, the next denied step failed as
+a leak.** Since Task 3 of
+`docs/superpowers/plans/2026-11-15-an-ability-is-given-with-its-value.md`,
+`handleGiveAbility` appends an `AbilityGiven` and a `ResourceAdded` as one
+batch, and `handleTakeAbility` an `AbilityTaken` and a `ResourceRemoved`; the
+`CommandResult` carries the first sequence. `isBatchCommand` in
+`internal/harness/engine.go` did not name `give_ability` and `take_ability`, so
+`runCommandStep` sent them to `observeOnAll`, which reads one event, so the
+second stayed unread until the next denied step's absence proof found it:
+"unexpected broadcast observed by dm after a denied command". Task 6 of that
+plan found it, when `toy-brawl` first took and gave an ability that spends a
+resource. It never reached `main`.
+
+Recipe: drop the `ClientCommand_GiveAbility` and `ClientCommand_TakeAbility`
+arms from `isBatchCommand`. `toy-brawl` fails at the denied give after the take
+of `chair-swing` (`cmd/vtt.TestScenarioGoldenStreamsHaveNotDrifted`).
+
+The check that should have caught it is the scenario corpus: at Task 3 no
+scenario gave or took an ability that spends a resource, and `isBatchCommand`
+and the gateway's handlers are two hand-kept halves of one fact. Labels: `test
+data missing`.
+
+**Closed by** the two arms in `isBatchCommand`, held by `toy-brawl`'s golden.
+
 ## Open debt
+
+**`remove_actor` and `remove_participant` append a batch that `isBatchCommand`
+does not name.** `handleRemoveActor` in `internal/gateway/server.go` appends a
+`TokenRemoved` per token of the actor and the `ActorRemoved` as one batch, and
+`handleRemoval` an `ActorControlRevoked` per actor the participant controls.
+`isBatchCommand` in `internal/harness/engine.go` names neither, so after a step
+of either that appends more than one event, the next accepted step reads the
+rest in place of its own event: a denied step before it fails as a leak, and
+with none between, the accepted step fails as not observed. No scenario under
+`scenarios/` sends either command, so the corpus cannot show it. Labels: `test
+data missing`. Closing it needs a scenario step of each that appends two events,
+and the two arms.
 
 **`migrateLocked`'s re-read error arm is unreachable through `testdb`.**
 `migrateLocked` in `internal/identity` re-reads the table's shape under the

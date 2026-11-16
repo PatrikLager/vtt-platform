@@ -52,6 +52,11 @@
 
     {"by": "dm", "command": {"giveAbility": {"actorId": "act-patron", "abilityId": "sober-up"}}, "expect": {"ok": true}},
 
+    {"by": "dm", "command": {"takeAbility": {"actorId": "act-patron", "abilityId": "chair-swing"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"giveAbility": {"actorId": "act-patron", "abilityId": "chair-swing"}}, "expect": {"deniedContaining": "ability \"chair-swing\" spends resource \"stamina\", which the sheet does not hold"}},
+    {"by": "dm", "command": {"giveAbility": {"actorId": "act-patron", "abilityId": "chair-swing", "resources": {"stamina": {"current": 1, "max": 3}}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"giveAbility": {"actorId": "act-patron", "abilityId": "chair-swing", "resources": {"stamina": {"current": 2, "max": 2}}}}, "expect": {"deniedContaining": "the sheet holds resource \"stamina\" already"}},
+
     {"by": "dm", "command": {"endSession": {}}, "expect": {"ok": true}}
   ],
   "probes": [
@@ -61,6 +66,7 @@
     {"tokenAt": {"tokenId": "tok-patron", "x": 1, "y": 0}},
     {"sessionCount": {"open": 0, "total": 1}},
     {"resourceAt": {"actorId": "act-patron", "resource": "drink", "value": 1}},
-    {"hasCondition": {"actorId": "act-patron", "conditionId": "dazed-by-ale", "present": false}}
+    {"hasCondition": {"actorId": "act-patron", "conditionId": "dazed-by-ale", "present": false}},
+    {"resourceAt": {"actorId": "act-patron", "resource": "stamina", "value": 1}}
   ]
 }
