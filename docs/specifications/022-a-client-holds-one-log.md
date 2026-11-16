@@ -29,12 +29,17 @@ another token's or another tab's pages were sent, by
 `client/test/qa-reload-viewpoint.test.ts` (VTT-443, VTT-444, VTT-579); that only a
 DM's and an agent's window shows the Events panel, the newest entries of the
 log it holds, newest first and bounded, while every role's window shows in the
-Story each entry of the log it holds but the runs that withdraw and introduce
-again one actor, both outside the reason it gives for a log it cannot fold,
-by `client/test/app.test.ts`, `client/test/spectator-view.test.ts`,
-`client/test/feed.test.ts`, `client/test/qa-events-panel.test.ts` and
-`client/test/qa-companion-first-sight.test.ts` (VTT-445 to VTT-448,
-VTT-662); that a player and a spectator are offered the party
+Story the entries of the log it holds of the kinds `STORY` marks drawn, a
+door only with an event id, but the runs that withdraw and introduce again one
+actor, both outside the reason it gives for a log it cannot fold, by
+`client/test/app.test.ts`, `client/test/spectator-view.test.ts`,
+`client/test/feed.test.ts`, `client/test/qa-events-panel.test.ts`,
+`client/test/qa-companion-first-sight.test.ts` and
+`client/test/qa-story-mechanical.test.ts` (VTT-445 to VTT-448, VTT-809,
+VTT-810, VTT-812, VTT-818 to VTT-820, VTT-822, VTT-823), and that the Events
+panel labels a move with its reason, by `client/test/spectator-view.test.ts`,
+`client/test/qa-move-reason.test.ts` and `client/test/qa-events-panel.test.ts`
+(VTT-821); that a player and a spectator are offered the party
 members a `WatchableChanged` names and switch between them, by
 `client/test/app.test.ts`, `client/test/player.test.ts`,
 `client/test/spectator-view.test.ts` and `client/test/qa-switch.test.ts`
@@ -153,11 +158,11 @@ VTT-722, VTT-727); that the fold adds and removes a resource as
 `internal/engine/qa_resource_change_test.go`,
 `cmd/vtt/resource_change_dump_test.go` and
 `cmd/vtt/qa_resource_change_dump_test.go` (VTT-769 to VTT-774); that the
-Story words a give and a take, by
+Events panel words a give and a take, by
 `client/test/spectator-view.test.ts` and
-`client/test/qa-ability-change.test.ts` (VTT-736), and a resource added and
+`client/test/qa-ability-change.test.ts` (VTT-813), and a resource added and
 removed, by `client/test/spectator-view.test.ts` and
-`client/test/qa-resource-change.test.ts` (VTT-790); that the DM console
+`client/test/qa-resource-change.test.ts` (VTT-814); that the DM console
 offers and sends both, by `client/test/dm-abilities.test.ts`,
 `client/test/qa-dm-abilities.test.ts`, `client/test/app.test.ts` and
 `client/test/command-surface.test.ts` (VTT-730), and asks for and sends a
@@ -170,15 +175,16 @@ since load, while no other window does either, by
 `client/test/sheet-news.test.ts`, `client/test/qa-sheet-news.test.ts`,
 `client/test/session.test.ts` and `client/test/naming.test.ts` (VTT-732 to
 VTT-734, VTT-752). That an older read's answer arriving after the newest's
-names an ability in the Story at once, by the name it gives, while a
-resource keeps the name the newest gave it, and that a read with no change to
-tell leaves the message standing, is held by `client/test/sheet-news.test.ts`
-and `client/test/qa-older-answer.test.ts` (VTT-734, VTT-756, VTT-758, VTT-759).
+names an ability in the Story at once, by the name it gives, while the
+player panel's ability button keeps naming the resource it spends by the name
+the newest gave it, and that a read with no change to tell leaves the message
+standing, is held by `client/test/sheet-news.test.ts` and
+`client/test/qa-older-answer.test.ts` (VTT-734, VTT-758, VTT-759, VTT-817).
 That a window names
 a resource its ruleset declares by the property's display name and any other
 by its key is held by `client/test/naming.test.ts`,
 `client/test/spectator-view.test.ts`, `client/test/app.test.ts` and
-`client/test/qa-property-names.test.ts` (VTT-622, VTT-623). That the
+`client/test/qa-property-names.test.ts` (VTT-815, VTT-816). That the
 console's paste refuses a resource whose `current` has no value, and
 passes a `current` of `0` and a resource with no maximum, is held by
 `client/test/commands.test.ts` and `client/test/qa-add-actor-paste.test.ts`
@@ -217,7 +223,7 @@ Principles 7, 11, 12, 13, 14, 22 and 27 of `docs/blueprint.md`:
   perching player that they play no character.
 - **13.** `namer` never shows a token or an actor by its id, names a resource
   its ruleset declares by its display name, and `describe` words every
-  payload (VTT-474 to VTT-477, VTT-622).
+  payload (VTT-474 to VTT-477, VTT-815).
 - **14.** A player's click on a cell holding the watched one's token and no
   other listed member's sends nothing.
 - **22.** A reload keeps the viewpoint.
@@ -238,8 +244,9 @@ reason it gives for a log it cannot fold (VTT-393; the owner's rulings of
 2026-10-19). Why the wire carries sequences at all is SPEC-007's.
 
 Every role's window shows the Story, which `renderSpectator` draws with
-`renderFeed` from `buildFeed` (`client/src/view/feed.ts`): each entry of the
-log the window holds but the runs `reintroductions` names, below (VTT-662).
+`renderFeed` from `buildFeed` (`client/src/view/feed.ts`): the entries of the
+log the window holds that `told` keeps, but the runs `reintroductions` names,
+below (VTT-822).
 Only a DM's and an agent's window shows the
 Events panel, by the owner's ruling B-3 of 2026-10-22, and the agent counts as
 the DM there, as it does for the DM's console, by the owner's ruling "Ja, som
@@ -257,30 +264,54 @@ role when its session starts (`startSession`) and again at a presence frame
 naming its own participant, once a first read has answered; while a re-read is
 pending, and after one fails, it keeps the role last read. While the window
 gives the reason it cannot fold its log, that reason is all `paint` draws, so
-neither the Story nor the panel is shown (VTT-446, VTT-662).
+neither the Story nor the panel is shown (VTT-446, VTT-822).
 
-`buildFeed` leaves out, before it groups, each run `reintroductions` names.
-A run is an `actorRemoved` with no event id that the `actorAdded` of the same
-actor directly follows, that `actorAdded`, and each of that actor's
+The Story is the game's story, and what is mechanical goes to the Events
+panel, by the owner's rulings of 2026-11-16. `told` reads `STORY` in
+`client/src/view/feed.ts`, a table over every case of `Envelope.payload`, so
+a payload added to the contract fails `task client:typecheck` until the
+table says whether the Story draws it. The Story draws a `sessionStarted`, a
+`sessionEnded`, an `actorAdded`, an `actorRemoved`, a `conditionApplied`, a
+`conditionRemoved`, an `abilityUsed`, an `attackRolled`, a `narrationAdded`
+and a `whisperAdded` (VTT-822), and an envelope with no payload. It draws no
+`resourceChanged`, `abilityGiven`, `abilityTaken`, `resourceAdded` or
+`resourceRemoved` (VTT-809), no `actorControlGranted` or
+`actorControlRevoked` (VTT-810), no `tokenPlaced`, `tokenMoved`,
+`tokenRemoved`, `tokenDescribed`, `sceneCreated`, `sceneSeen`,
+`noteUpserted`, `noteDeleted` or `adventureLoaded` (VTT-818), and no
+`tokenHidden` (VTT-823), with an event id or none. It draws a `doorOpened`
+or a `doorClosed` only when the entry carries an event id (VTT-820): one with
+none is the projection's correction of a door the log believed otherwise
+(SPEC-016). Of the writers
+`git grep -n 'Envelope_DoorOpened{\|Envelope_DoorClosed{' -- internal cmd`
+finds, `doorTransitions` in `internal/perceive/projection.go` is the one that
+sets no event id.
+
+`buildFeed` leaves out, before it groups, each run `reintroductions` names,
+found in the whole log, and then each entry `told` refuses. A run is an
+`actorRemoved` with no event id that the `actorAdded` of the same actor
+directly follows, that `actorAdded`, and each of that actor's
 `actorControlGranted` and `conditionApplied` entries with no event id behind
 it, up to the first entry that is not one: the order in which `introduce`
 writes an introduction's grants and conditions (SPEC-016). In a character log
-such a run opens with the projection's own withdrawal and introduction again
-of one actor, never a removal the log's character saw: a bare `ActorRemoved`
-is sent only directly before an introduction of the same id (VTT-252), and no
+such a run opens with the projection's own withdrawal and introduction again of
+one actor, never a removal the log's character saw: a bare `ActorRemoved` is
+sent only directly before an introduction of the same id (VTT-252), and no
 character log is written a forwarded `ActorRemoved` (SPEC-016). So at a
 companion's first sight, at a kind change, at a correction that re-introduces
-and at an id the world adds again as another, the Story draws none of the
-run's lines: neither "<actor> left" nor "<actor> is in the party" nor
-"<actor> comes into sight" nor its grants' and conditions' lines. It draws
-the entries around it, a token's hiding or arrival and the event's own lines
-among them. Every entry of the world log carries an event id:
+and at an id the world adds again as another, the Story draws none of the run's
+lines: neither "<actor> left" nor "<actor> is in the party" nor "<actor> comes
+into sight" nor its conditions' lines. It draws the entries around it that
+`told` keeps. Since the runs are found before `told` leaves an entry out, a
+correction's sheet frames behind a run end it, and the bare conditions behind
+them are drawn. Every entry of the world log carries an event id:
 `Store.appendLocked` in `internal/store/store.go` is the only writer of the
 `events` table outside tests, only `Store.AppendBatch` calls it, and
 `AppendBatch` refuses an envelope without one. So the Story of a window that
-holds the world log leaves nothing out. A narration anchored only to
-entries of a run is drawn in a beat of its own. The fold, the namer and the
-Events panel are handed the whole log.
+holds the world log leaves out no run and no door, only the kinds `STORY`
+refuses. A narration anchored only to entries the Story leaves out is drawn in
+a beat of its own, at its own place in the log (VTT-812). The fold, the namer
+and the Events panel are handed the whole log.
 
 ### What the browser client holds, and what it offers
 
@@ -482,7 +513,8 @@ replacing an earlier one's entry, by which the Story, the Events panel and the
 toast name an ability (below); a reload forgets it. So an older read's
 answer arriving after the newest's replaces, in the Story, the name the newest
 gave an ability both name (VTT-759), and leaves the window's properties, by
-which the Story names a resource, as the newest set them (VTT-756). The window
+which the player panel's ability button names the resource it spends, as the
+newest set them (VTT-817). The window
 draws itself again at every answer and every failure of a read, so a name an
 older read's answer adds reaches the Story at once (VTT-734). A read the window
 issued for no change of ability ids has nothing to tell and sets no message,
@@ -724,13 +756,13 @@ abilities and the properties with no log, by the role `/api/me` last gave
 - **A resource** is named by `Namer.resource`: by the display name of the
   property `/api/ruleset` gives under its key as a `resource`, else by its
   key, and by its key while the window has no properties; a `number`
-  property names no resource (VTT-622, VTT-623). The console's value fields
+  property names no resource (VTT-815, VTT-816). The console's value fields
   of a give are named so, by a namer `renderDMConsole` builds from the
   fold, the abilities and the properties `DMDeps` hands it, with no log
   (VTT-806). A disc's resource chip
   shows `current/max` and is titled so (`ResourceChip.label`, which
-  `tokensOnScene` sets), and a token's chips stay sorted by key. The Story's
-  and the Events panel's line of a `resourceChanged` reads the actor, the
+  `tokensOnScene` sets), and a token's chips stay sorted by key. The Events
+  panel's line of a `resourceChanged` reads the actor, the
   resource so named, ` → ` and the new value. On the panel, a resource
   ability's button is titled the resource so named, a space and the cost,
   and ` — not enough` when the acting actor cannot afford it.
@@ -753,25 +785,30 @@ right-click on a disc is prevented and hands its token's id to
 `ViewExtras.onCardPin`; `paint` keeps the pinned id across paints, and a
 right-click on the pinned disc unpins it.
 
-**The Story's lines.** `describe` in `client/src/view/spectator.ts` words
-every case of `Envelope.payload`, and an envelope with none as "something
-happened"; it has no `default`, so a payload added to the contract fails
-`task client:typecheck` until it is worded (VTT-476). An actor's arrival
-reads "<actor> is in the party" or "<actor> comes into sight", a token's
-placement "<token> is at x,y", and a move "<token> moved to x,y", with " — "
-and its reason when it has one. An ability's line is "<actor> used
+**The lines.** `describe` in `client/src/view/spectator.ts` words every case
+of `Envelope.payload`, and an envelope with none as "something happened"; it
+has no `default`, so a payload added to the contract fails
+`task client:typecheck` until it is worded (VTT-476). The Events panel's rows
+are `describe`'s words. The Story draws each entry it keeps with
+`tell`, which words a door "a door opened" or "a door closed", naming no
+square (VTT-819), and every other entry as `describe` does. An actor's
+arrival reads "<actor> is in the party" or "<actor> comes into sight", and a
+door on the Events panel "a door opened at x,y" or "a door closed at x,y". A
+token's placement reads "<token> is at x,y", and a move "<token> moved to
+x,y", with " — " and its reason when it has one (VTT-821), on the Events
+panel alone. An ability's line is "<actor> used
 <ability>", then, for each of its `outcomes` in order, " on <target>:
 <result>, rolled <total>", joined by ";", and with no outcomes " on " and its
 targets joined by ", ". It never reads `outcome_summary` or `rolls`, so it
 shows what was rolled and never the total that roll was compared with (VTT-477,
-by the owner's ruling of 2026-10-24 on the ability's line). A give reads
-"<actor> can now use <ability>" and a take "<actor> can no longer use
-<ability>", the actor and the ability as the window names them (VTT-736),
-in every window whose log holds the entry, a correction's included, by the
-owner's ruling OD-4 of 2026-11-14. A resource added reads "<actor> now has
+by the owner's ruling of 2026-10-24 on the ability's line). On the Events
+panel alone, a give reads "<actor> can now use <ability>" and a take
+"<actor> can no longer use <ability>", the actor and the ability as the
+window names them (VTT-813), and a resource added reads "<actor> now has
 <resource> at <current>" and a resource removed "<actor> no longer has
-<resource>", the resource as `Namer.resource` names it (VTT-790), a
-correction's included. A whisper reads
+<resource>", the resource as `Namer.resource` names it (VTT-814): the Story
+writes nothing from a sheet, by the owner's rulings of 2026-11-16. A whisper
+reads
 "The DM whispers to ", its `to_actor_ids` named as the window names actors
 and joined by ", ", then ": " and its text, or its `from_actor_id` so named,
 " whispers to the DM: " and its text, and the Story draws it with the class
@@ -922,8 +959,8 @@ each entry it is sent, and no switch.
   on a disc, a card, a target button or a Story line; the chips and the perch
   name an unnamed party member by its id (VTT-404). The frames it is sent
   still carry the ids, and `outcome_summary` (SPEC-007).
-- A payload added to the contract needs a line in `describe` before the
-  client typechecks.
+- A payload added to the contract needs a line in `describe`, and an answer
+  in `STORY` whether the Story draws it, before the client typechecks.
 - An input or a textarea added to a view needs a `data-field` unique in the
   tree it is drawn in, or a repaint takes its focus, or hands the focus to the
   first box in tree order with the same field.
@@ -945,36 +982,41 @@ each entry it is sent, and no switch.
   nothing in `client/src` times a command out (`git grep -n
   'setTimeout\|setInterval' client/src` prints nothing).
 
-- The Events panel is no boundary and leaves out no run: it shows only
-  entries of the log the window holds, and the window's Story shows each of
-  them, since a window that draws the panel holds the world log (above). What
-  a connection is sent is SPEC-015's.
+- The Events panel is no boundary and leaves out no kind and no run: it
+  shows only entries of the log the window holds, the newest of them
+  (VTT-448), and a window that draws it holds the world log, which holds no
+  run, so that window's Story shows each entry `told` keeps. What a
+  connection is sent is SPEC-015's.
 - A correction's grants and applied conditions of a run's actor, written
   directly behind the run at a later event with nothing between, are left out
   with it, as when the world adds an id again as another, out of sight, as a
   party member with no attributes, resources or module data, which
   `add_actor`'s description tells the agent never to do (VTT-390). An
   `abilityGiven`, an `abilityTaken`, a `resourceAdded` or a `resourceRemoved`
-  is no part of a run, so where such a correction sends some, they and the
-  conditions and grants behind them are drawn.
-- The Story draws a correction's `resourceAdded` and `abilityGiven` frames
-  as it draws a forwarded one, so a party member whose sheet holds no
-  attributes or module data is drawn "<actor> now has <resource> at
-  <current>" for each resource it holds and "<actor> can now use <ability>"
-  for each ability it names at its first sight in a log that held it unseen,
-  whether its `actorAdded` named them or a give added them, and so is such a
-  character in its own log when that log opens for it already a party member
-  (SPEC-021, SPEC-016). A correction that renews a resource, removing and
-  adding it (SPEC-016), draws "<actor> no longer has <resource>" and then
-  "<actor> now has <resource> at <current>" for a resource the sheet never
-  lost.
+  is no part of a run, so where such a correction sends some, they end it:
+  the conditions behind them are drawn, and they and the grants are not.
+- A party member whose sheet holds no attributes or module data, corrected at
+  its first sight in a log that held it unseen, or in its own log when that
+  log opens for it already a party member (SPEC-021, SPEC-016), draws no line
+  of its resources, its abilities or its control; each condition it holds is
+  a bare `conditionApplied` and is drawn, unless the correction sits directly
+  behind a run of the same actor (above). A run at a companion's first sight
+  draws no line, and its token's arrival is a `tokenPlaced`: the board draws
+  it, and the Story does not.
+- A token going out of sight draws no line, nor do the `tokenHidden` entries
+  by which a log that resumes hides every token it holds before the
+  projection places what its character sees (SPEC-021).
+- A player learns of a grant of control by the window offering the
+  character: nothing in the Story says it (the owner's ruling of
+  2026-11-16). A taking back is told by the toast "You no longer play …"
+  (`onPartyMembersLeft` in `client/src/app.ts`).
 - A page opened after a give or a take is told nothing of it, since its first
   set hands over nothing (VTT-733), and a reload forgets the names earlier
   answers gave.
 - A creature made a party member in a character log's sight is drawn no
   "<actor> is in the party" line, though the log held it as a creature until
-  then: the run that introduces it whole is left out, and the forwarded grant
-  behind it still draws "control of <actor> given".
+  then: the run that introduces it whole is left out, and so is the
+  forwarded grant behind it.
 - A live window can draw "<actor> left" for a moment: it folds and paints
   each entry as it arrives (`Session.ingest`, then `paint`), and a bare
   `actorRemoved` that is the log's last entry is not yet a run, so it is drawn
@@ -1039,9 +1081,11 @@ VTT-526, VTT-527, VTT-528, VTT-530, VTT-531, VTT-532, VTT-533, VTT-534,
 VTT-535, VTT-536, VTT-537, VTT-538, VTT-540, VTT-541, VTT-572, VTT-573,
 VTT-574, VTT-575, VTT-576, VTT-577, VTT-579, VTT-580, VTT-593, VTT-594,
 VTT-595, VTT-596, VTT-597, VTT-599, VTT-600, VTT-604, VTT-605, VTT-606,
-VTT-607, VTT-622, VTT-623, VTT-662, VTT-666, VTT-668, VTT-672, VTT-679,
+VTT-607, VTT-666, VTT-668, VTT-672, VTT-679,
 VTT-695, VTT-696, VTT-704, VTT-705, VTT-712, VTT-715, VTT-717, VTT-720,
-VTT-721, VTT-722, VTT-727, VTT-730, VTT-732, VTT-733, VTT-734, VTT-736,
-VTT-737, VTT-752, VTT-753, VTT-756, VTT-758, VTT-759, VTT-769, VTT-770,
-VTT-771, VTT-772, VTT-773, VTT-774, VTT-788, VTT-789, VTT-790, VTT-805,
-VTT-806, VTT-807, VTT-808.
+VTT-721, VTT-722, VTT-727, VTT-730, VTT-732, VTT-733, VTT-734,
+VTT-737, VTT-752, VTT-753, VTT-758, VTT-759, VTT-769, VTT-770,
+VTT-771, VTT-772, VTT-773, VTT-774, VTT-788, VTT-789, VTT-805,
+VTT-806, VTT-807, VTT-808, VTT-809, VTT-810, VTT-812, VTT-813, VTT-814,
+VTT-815, VTT-816, VTT-817, VTT-818, VTT-819, VTT-820, VTT-821, VTT-822,
+VTT-823.
