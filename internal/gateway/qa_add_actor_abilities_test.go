@@ -156,7 +156,7 @@ func (qc *qaAbConn) event(seq int64) *vttv1.Envelope {
 }
 
 func qaAbPC(id string, abilities ...string) *vttv1.Actor {
-	return &vttv1.Actor{
+	a := &vttv1.Actor{
 		ActorId:    id,
 		Name:       "Qa " + id,
 		Kind:       vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
@@ -164,6 +164,10 @@ func qaAbPC(id string, abilities ...string) *vttv1.Actor {
 		Resources:  map[string]*vttv1.Resource{"drink": {Current: 0, Max: 4}},
 		AbilityIds: abilities,
 	}
+	if slices.Contains(abilities, "chair-swing") {
+		a.Resources["stamina"] = &vttv1.Resource{Current: 2, Max: 2}
+	}
+	return a
 }
 
 func qaAbUnheld(actor, id string) string {

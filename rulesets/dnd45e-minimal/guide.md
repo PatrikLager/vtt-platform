@@ -295,9 +295,11 @@ it.
 **Ability lists:** the statblock names crossbow-shot, hunters-flurry,
 longsword-strike, rally and staggering-blow; `use_ability` refuses it any
 other. The `flurry_uses` **resource** is what `hunters-flurry` actually
-spends. `give_ability` gives `hunters-flurry` to a sheet without
-`flurry_uses` only with its value under `resources`, and `take_ability`
-takes `flurry_uses` with it when no ability left on the sheet spends it.
+spends, and a sheet holds it exactly while it names `hunters-flurry`:
+`add_actor` refuses a sheet holding either without the other,
+`give_ability` gives `hunters-flurry` to a sheet without `flurry_uses`
+only with its value under `resources`, and `take_ability` takes
+`flurry_uses` with it.
 The Human Fighter above is the only statblock in this guide that needs
 it; neither goblin statblock carries `flurry_uses`.
 

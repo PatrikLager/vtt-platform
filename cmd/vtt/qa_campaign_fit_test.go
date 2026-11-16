@@ -13,6 +13,11 @@ import (
 
 const qaFitRulesetDir = "../../rulesets/tavern-brawl"
 
+func qaFitNaming(a *vttv1.Actor, ids ...string) *vttv1.Actor {
+	a.AbilityIds = ids
+	return a
+}
+
 func qaFitSheet(id string, attrs map[string]int32, res map[string]*vttv1.Resource) *vttv1.Actor {
 	return &vttv1.Actor{
 		ActorId:    id,
@@ -200,8 +205,8 @@ func qaFitSeveralMisfits(t *testing.T) string {
 	t.Helper()
 	return qaFitActors(t,
 		qaFitSheet("qa-mira", map[string]int32{"qaMiraLater": 1, "qaMiraFirst": 1, "grit": 1}, nil),
-		qaFitSheet("qa-fits", map[string]int32{"brawn": 3, "grit": 1, "footing": 2},
-			map[string]*vttv1.Resource{"drink": qaFitRes(0, 4), "stamina": qaFitRes(2, 2)}),
+		qaFitNaming(qaFitSheet("qa-fits", map[string]int32{"brawn": 3, "grit": 1, "footing": 2},
+			map[string]*vttv1.Resource{"drink": qaFitRes(0, 4), "stamina": qaFitRes(2, 2)}), "chair-swing"),
 		qaFitSheet("qa-Bram", map[string]int32{"footing": 1},
 			map[string]*vttv1.Resource{"qaBramRes": qaFitRes(1, 1), "qaBramZz": qaFitRes(1, 1)}),
 		qaFitSheet("qa-bare", nil, nil),
@@ -236,11 +241,11 @@ func TestQAFitMisfitActorsAreNamedInByteOrderOfTheirIds(t *testing.T) {
 // VTT-678
 func TestQAFitACampaignWhoseSheetsFitIsServed(t *testing.T) {
 	dir := qaFitActors(t,
-		qaFitSheet("qa-whole", map[string]int32{"brawn": 3, "grit": 1, "footing": 2},
-			map[string]*vttv1.Resource{"drink": qaFitRes(0, 4), "stamina": qaFitRes(2, 2)}),
+		qaFitNaming(qaFitSheet("qa-whole", map[string]int32{"brawn": 3, "grit": 1, "footing": 2},
+			map[string]*vttv1.Resource{"drink": qaFitRes(0, 4), "stamina": qaFitRes(2, 2)}), "chair-swing"),
 		qaFitSheet("qa-bare", nil, nil),
 		qaFitSheet("qa-numbers-only", map[string]int32{"grit": 0}, nil),
-		qaFitSheet("qa-resources-only", nil, map[string]*vttv1.Resource{"stamina": qaFitRes(0, 0)}),
+		qaFitSheet("qa-resources-only", nil, map[string]*vttv1.Resource{"drink": qaFitRes(0, 0)}),
 		qaFitSheet("qa-some-of-each", map[string]int32{"footing": 5},
 			map[string]*vttv1.Resource{"drink": qaFitRes(2, 3)}),
 	)

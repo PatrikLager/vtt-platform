@@ -642,6 +642,11 @@ func qaDataConformanceCopy(t *testing.T, name string) string {
 
 func qaDataEditGoldenActor(t *testing.T, dir, actorID string, fn func(json.RawMessage) (json.RawMessage, bool)) {
 	t.Helper()
+	qaDataEditGoldenActorAt(t, dir, actorID, []string{"ability_ids"}, fn)
+}
+
+func qaDataEditGoldenActorAt(t *testing.T, dir, actorID string, path []string, fn func(json.RawMessage) (json.RawMessage, bool)) {
+	t.Helper()
 	qaDataRewrite(t, filepath.Join(dir, "goldens", "compiled-batch.json"), func(b []byte) ([]byte, error) {
 		var batch []json.RawMessage
 		if err := json.Unmarshal(b, &batch); err != nil {
@@ -661,7 +666,7 @@ func qaDataEditGoldenActor(t *testing.T, dir, actorID string, fn func(json.RawMe
 			if head.Type != "actor_added" || head.Added.ActorID != actorID {
 				continue
 			}
-			out, err := qaDataEdit(e, []string{"actor_added", "ability_ids"}, fn)
+			out, err := qaDataEdit(e, append([]string{"actor_added"}, path...), fn)
 			if err != nil {
 				return nil, err
 			}
@@ -690,9 +695,10 @@ func TestQADataConformancePinsAbilityIDs(t *testing.T) {
 	cases := map[string]struct {
 		actor string
 		extra string
+		cost  string
 	}{
-		"goblin-ambush": {"act-fighter", "goblin-scimitar"},
-		"cellar-rats":   {"hollis", ""},
+		"goblin-ambush": {"act-fighter", "goblin-scimitar", "flurry_uses"},
+		"cellar-rats":   {"hollis", "", "stamina"},
 	}
 	for adv, c := range cases {
 		t.Run(adv+"/unchanged copy passes", func(t *testing.T) {
@@ -743,12 +749,23 @@ func TestQADataConformancePinsAbilityIDs(t *testing.T) {
 					qaDataEditGoldenActor(t, dir, c.actor, m.fn)
 				} else {
 					qaDataRewrite(t, filepath.Join(dir, "actors", c.actor+".json"), func(b []byte) ([]byte, error) {
-						return qaDataEdit(b, []string{"ability_ids"}, m.fn)
+						b, err := qaDataEdit(b, []string{"ability_ids"}, m.fn)
+						if err != nil || (m.name != "list removed" && m.name != "list emptied") {
+							return b, err
+						}
+						return qaDataEdit(b, []string{"resources", c.cost}, func(json.RawMessage) (json.RawMessage, bool) { return nil, false })
 					})
+					if m.name == "list removed" || m.name == "list emptied" {
+						qaDataEditGoldenActorAt(t, dir, c.actor, []string{"resources", c.cost},
+							func(json.RawMessage) (json.RawMessage, bool) { return nil, false })
+					}
 				}
 				err := conformance.Run(dir, rulesetsRoot)
 				if err == nil {
 					t.Fatalf("%s %s: conformance.Run accepted it", adv, m.name)
+				}
+				if strings.Contains(err.Error(), "spends resource") || strings.Contains(err.Error(), "no ability the sheet names spends") {
+					t.Fatalf("%s %s: refused by the sheet's spend rule, not the golden: %v", adv, m.name, err)
 				}
 				t.Logf("refused: %v", err)
 			})

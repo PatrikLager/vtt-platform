@@ -25,14 +25,17 @@ import (
 const qaAbTavernDir = "../../rulesets/tavern-brawl"
 
 func qaAbSheet(id string, abilities ...string) *vttv1.Actor {
-	return &vttv1.Actor{
+	a := &vttv1.Actor{
 		ActorId:    id,
 		Name:       "Qa " + id,
 		Kind:       vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
 		Attributes: map[string]int32{"brawn": 1, "footing": 2},
-		Resources:  map[string]*vttv1.Resource{"stamina": {Current: 2, Max: 2}},
 		AbilityIds: abilities,
 	}
+	if slices.Contains(abilities, "chair-swing") {
+		a.Resources = map[string]*vttv1.Resource{"stamina": {Current: 2, Max: 2}}
+	}
+	return a
 }
 
 func qaAbCampaign(t *testing.T, actors ...*vttv1.Actor) string {
@@ -260,6 +263,7 @@ func TestQAAbTheMCPToolAppendsAnActorNamingItsAbilityIdsInTheirOrder(t *testing.
 			"actorId":    tc.id,
 			"kind":       "ACTOR_KIND_PARTY_MEMBER",
 			"attributes": map[string]any{"brawn": 2},
+			"resources":  map[string]any{"stamina": map[string]any{"current": 2, "max": 2}},
 			"abilityIds": tc.want,
 		})
 		if res.IsError {

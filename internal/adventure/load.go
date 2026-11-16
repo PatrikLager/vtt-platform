@@ -215,9 +215,9 @@ type resourceValJSON struct {
 // loadActors decodes every actors/*.json file in file-name order, which
 // Compile keeps, checking each actor's required KIND (no default; the check
 // says why), its keys against rs (rules.Ruleset.SheetKeyFault), its values
-// (actorValues) and its ability ids (rules.Ruleset.SheetAbilityFault). It
-// also returns the set of actor ids, so loadScenes checks a placement's actor
-// without a second directory read.
+// (actorValues), its ability ids (SheetAbilityFault) and the spend rule
+// (VTT-776). It also returns the set of actor ids, so loadScenes checks a
+// placement's actor without a second directory read.
 func loadActors(dir string, rs *rules.Ruleset) ([]AdventureActor, map[string]bool, error) {
 	paths, err := jsonFilesIn(dir)
 	if err != nil {
@@ -297,6 +297,9 @@ func loadActors(dir string, rs *rules.Ruleset) ([]AdventureActor, map[string]boo
 			return nil, nil, fieldErr(path, "ability_ids", "must not hold an empty id")
 		}
 		if f := rs.SheetAbilityFault(raw.AbilityIDs); f != nil {
+			return nil, nil, fieldErr(path, f.Field, f.Reason)
+		}
+		if f := rs.SheetSpendFault(raw.AbilityIDs, slices.Collect(maps.Keys(raw.Resources))); f != nil {
 			return nil, nil, fieldErr(path, f.Field, f.Reason)
 		}
 

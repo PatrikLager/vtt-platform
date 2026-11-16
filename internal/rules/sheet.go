@@ -37,6 +37,41 @@ func (rs *Ruleset) SheetAbilityFault(ids []string) *SheetFault {
 	return nil
 }
 
+// SheetSpendFault answers the first of abilityIDs, in byte order, naming a
+// limited ability whose resource is not among resources, then the first of
+// resources some ability of rs spends and none of abilityIDs does, or nil
+// (VTT-775, VTT-776, VTT-777).
+func (rs *Ruleset) SheetSpendFault(abilityIDs, resources []string) *SheetFault {
+	spent := map[string]bool{}
+	for _, id := range slices.Sorted(slices.Values(abilityIDs)) {
+		r, limited := rs.Spends(id)
+		if !limited {
+			continue
+		}
+		spent[r] = true
+		if !slices.Contains(resources, r) {
+			return &SheetFault{Field: "ability_ids", Key: id,
+				Reason: fmt.Sprintf("names ability %q, which spends resource %q the sheet does not hold", id, r)}
+		}
+	}
+	for _, r := range slices.Sorted(slices.Values(resources)) {
+		if !spent[r] && rs.anySpends(r) {
+			return &SheetFault{Field: "resources", Key: r,
+				Reason: fmt.Sprintf("holds resource %q, which no ability the sheet names spends", r)}
+		}
+	}
+	return nil
+}
+
+func (rs *Ruleset) anySpends(resource string) bool {
+	for id := range rs.Compiled {
+		if r, ok := rs.Spends(id); ok && r == resource {
+			return true
+		}
+	}
+	return false
+}
+
 // Spends answers the resource rs's limited ability abilityID spends (VTT-767).
 func (rs *Ruleset) Spends(abilityID string) (string, bool) {
 	c, held := rs.Compiled[abilityID]

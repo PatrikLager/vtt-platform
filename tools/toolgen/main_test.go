@@ -800,3 +800,16 @@ func TestUseAbilitySaysAPlayersTargetMustBeSeen(t *testing.T) {
 		}
 	}
 }
+
+// VTT-786
+func TestAddActorSaysASpentResourceIsHeldExactlyWhileAnAbilitySpendingItIsNamed(t *testing.T) {
+	props := findTool(t, "add_actor")["inputSchema"].(map[string]any)["properties"].(map[string]any)["actor"].(map[string]any)["properties"].(map[string]any)
+	for field, want := range map[string]string{
+		"abilityIds": "With a ruleset served, an ability that spends a resource the actor does not hold refuses the whole command",
+		"resources":  "with a ruleset served, so does a resource some ability of the ruleset spends that no ability the actor names spends",
+	} {
+		if desc, _ := props[field].(map[string]any)["description"].(string); !strings.Contains(desc, want) {
+			t.Errorf("add_actor's %s description = %q, want it to say %q", field, desc, want)
+		}
+	}
+}

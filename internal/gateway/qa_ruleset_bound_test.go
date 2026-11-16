@@ -467,7 +467,7 @@ func TestQARuleAThresholdRefusalOnTheWireNamesTheResourceNotTheExpression(t *tes
 	tb := qaRuleServe(t, rs)
 	issuer := qaRuleDial(t, tb, tb.dmToken)
 	observer := qaRuleDial(t, tb, tb.obsToken)
-	qaRuleBoard(t, issuer, map[string]*vttv1.Resource{qaRulePool: {Current: 9, Max: 9}}, "qa-drain")
+	qaRuleBoard(t, issuer, map[string]*vttv1.Resource{qaRulePool: {Current: 9, Max: 9}}, "qa-drain", "qa-spend")
 	cmd := qaRuleUse("drain", "qa-drain")
 	want := qaRuleLocalRefusal(t, tb, cmd)
 	res := issuer.send(cmd)
@@ -494,13 +494,16 @@ func TestQARuleAUseRefusedForAResourceNameAtTheBoundIsAnsweredOnAnOpenConnection
 	tb := qaRuleServe(t, rs)
 	issuer := qaRuleDial(t, tb, tb.dmToken)
 	observer := qaRuleDial(t, tb, tb.obsToken)
-	qaRuleBoard(t, issuer, nil, "qa-spend")
-	cmd := qaRuleUse("spend", "qa-spend")
+	qaRuleBoard(t, issuer, nil, "qa-drain")
+	cmd := qaRuleUse("drain", "qa-drain")
 	want := qaRuleLocalRefusal(t, tb, cmd)
 	res := issuer.send(cmd)
 	t.Logf("refusal (%d bytes): %s", len(res.GetError()), qaRuleElide(res.GetError(), name))
 	if res.GetOk() {
-		t.Fatalf("use_ability spending a resource the actor lacks accepted at %d", res.GetSequence())
+		t.Fatalf("use_ability changing a resource the actor lacks accepted at %d", res.GetSequence())
+	}
+	if !strings.Contains(res.GetError(), name) {
+		t.Errorf("refusal %q does not name the resource", qaRuleElide(res.GetError(), name))
 	}
 	if !strings.Contains(res.GetError(), want) {
 		t.Errorf("refusal %q does not carry Resolve's %q", qaRuleElide(res.GetError(), name), qaRuleElide(want, name))

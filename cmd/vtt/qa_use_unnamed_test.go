@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -32,17 +33,18 @@ type qaUseMCPTable struct {
 }
 
 func qaUseMCPActor(id string, kind vttv1.ActorKind, abilities ...string) *vttv1.Actor {
-	return &vttv1.Actor{
+	a := &vttv1.Actor{
 		ActorId:    id,
 		Name:       id,
 		Kind:       kind,
 		Attributes: map[string]int32{"brawn": 3, "grit": 1, "footing": 10},
-		Resources: map[string]*vttv1.Resource{
-			"drink":   {Current: 0, Max: 100},
-			"stamina": {Current: 2, Max: 2},
-		},
+		Resources:  map[string]*vttv1.Resource{"drink": {Current: 0, Max: 100}},
 		AbilityIds: abilities,
 	}
+	if slices.Contains(abilities, "chair-swing") {
+		a.Resources["stamina"] = &vttv1.Resource{Current: 2, Max: 2}
+	}
+	return a
 }
 
 func qaUseMCPSeed(t *testing.T, dir string) (dmTok, agentTok string) {

@@ -38,7 +38,7 @@ func validateAddActor(cmd *vttv1.AddActor) error {
 }
 
 // validateAddActorWith answers validateAddActor's refusals, then the sheet's
-// (VTT-675, VTT-677, VTT-746, VTT-747, VTT-750).
+// (VTT-675, VTT-677, VTT-746, VTT-747, VTT-750, VTT-775).
 func validateAddActorWith(cmd *vttv1.AddActor, rs *rules.Ruleset) error {
 	if err := validateAddActor(cmd); err != nil {
 		return err
@@ -71,5 +71,8 @@ func sheetFault(a *vttv1.Actor, rs *rules.Ruleset) *rules.SheetFault {
 	if rs == nil {
 		return nil
 	}
-	return rs.SheetAbilityFault(a.GetAbilityIds())
+	if f := rs.SheetAbilityFault(a.GetAbilityIds()); f != nil {
+		return f
+	}
+	return rs.SheetSpendFault(a.GetAbilityIds(), slices.Collect(maps.Keys(a.GetResources())))
 }

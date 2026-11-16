@@ -12,7 +12,8 @@ func abilityMisfitCampaign(t *testing.T) string {
 	t.Helper()
 	return writeFitCampaign(t,
 		&vttv1.Actor{ActorId: "zed", AbilityIds: []string{"fists", "nope", "Bad"}},
-		&vttv1.Actor{ActorId: "fit", AbilityIds: []string{"fists", "chair-swing"}},
+		&vttv1.Actor{ActorId: "fit", AbilityIds: []string{"fists", "chair-swing"},
+			Resources: map[string]*vttv1.Resource{"stamina": {Current: 2, Max: 2}}},
 		&vttv1.Actor{ActorId: "abe", Attributes: map[string]int32{"zz": 1}, AbilityIds: []string{"missing"}},
 	)
 }
@@ -47,7 +48,8 @@ func TestACampaignWhoseActorsNameAbilitiesTheRulesetDoesNotHoldIsNotServed(t *te
 
 // VTT-688
 func TestACampaignWhoseActorsNameHeldAbilitiesIsServed(t *testing.T) {
-	dir := writeFitCampaign(t, &vttv1.Actor{ActorId: "fit", AbilityIds: []string{"fists", "chair-swing", "fists"}})
+	dir := writeFitCampaign(t, &vttv1.Actor{ActorId: "fit", AbilityIds: []string{"fists", "chair-swing", "fists"},
+		Resources: map[string]*vttv1.Resource{"stamina": {Current: 2, Max: 2}}})
 	_, closeFn, err := composeServer(dir, "127.0.0.1:0", fitRulesetDir, "")
 	if err != nil {
 		t.Fatalf("a campaign whose actors name held abilities was refused: %v", err)

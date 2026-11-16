@@ -366,9 +366,9 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 	return srv, closeFn, nil
 }
 
-// sheetsFit names, by id, every actor holding a key rs does not declare, or
-// declares as the other type, or naming an ability rs does not hold, each with
-// its first fault, keys before abilities (VTT-678, VTT-681, VTT-688).
+// sheetsFit names, by id, every actor whose sheet does not fit rs, each with its
+// first fault: keys, then ability ids, then the spend rule (VTT-678, VTT-681,
+// VTT-688, VTT-777).
 func sheetsFit(actors map[string]*vttv1.Actor, rs *rules.Ruleset) error {
 	var misfits []string
 	for _, id := range slices.Sorted(maps.Keys(actors)) {
@@ -376,6 +376,9 @@ func sheetsFit(actors map[string]*vttv1.Actor, rs *rules.Ruleset) error {
 		f := rs.SheetKeyFault(slices.Collect(maps.Keys(a.GetAttributes())), slices.Collect(maps.Keys(a.GetResources())))
 		if f == nil {
 			f = rs.SheetAbilityFault(a.GetAbilityIds())
+		}
+		if f == nil {
+			f = rs.SheetSpendFault(a.GetAbilityIds(), slices.Collect(maps.Keys(a.GetResources())))
 		}
 		if f != nil {
 			misfits = append(misfits, fmt.Sprintf("actor %q: %s: %s", id, f.Field, f.Reason))
