@@ -70,6 +70,9 @@ func TestAddWhisperCommandRoundTrip(t *testing.T) {
 func TestGiveAbilityCommandRoundTrip(t *testing.T) {
 	roundTrip(t, "give_ability_command.json", &vttv1.ClientCommand{})
 }
+func TestGiveAbilityWithAValueCommandRoundTrip(t *testing.T) {
+	roundTrip(t, "give_ability_with_value_command.json", &vttv1.ClientCommand{})
+}
 func TestTakeAbilityCommandRoundTrip(t *testing.T) {
 	roundTrip(t, "take_ability_command.json", &vttv1.ClientCommand{})
 }

@@ -76,6 +76,16 @@ const rfSeedHead int64 = 8
 
 func newRulesetFixture(t *testing.T, withRuleset bool) *rulesetFixture {
 	t.Helper()
+	var rs *rules.Ruleset
+	if withRuleset {
+		rs = loadTavernBrawl(t)
+	}
+	return newRulesetFixtureServing(t, rs)
+}
+
+// newRulesetFixtureServing is newRulesetFixture serving rs, or none when nil.
+func newRulesetFixtureServing(t *testing.T, rs *rules.Ruleset) *rulesetFixture {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "campaign.db")
 
 	c, err := campaign.Open(path)
@@ -151,8 +161,8 @@ func newRulesetFixture(t *testing.T, withRuleset bool) *rulesetFixture {
 	}})
 
 	srv := gateway.New(c, ids)
-	if withRuleset {
-		srv = srv.WithRuleset(loadTavernBrawl(t))
+	if rs != nil {
+		srv = srv.WithRuleset(rs)
 	}
 	httpSrv := httptest.NewServer(srv.Handler())
 	t.Cleanup(httpSrv.Close)

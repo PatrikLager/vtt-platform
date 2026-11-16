@@ -907,9 +907,11 @@ func (x *RemoveCondition) GetConditionId() string {
 
 // GiveAbility gives an actor's sheet one ability (SPEC-025).
 type GiveAbility struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActorId       string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
-	AbilityId     string                 `protobuf:"bytes,2,opt,name=ability_id,json=abilityId,proto3" json:"ability_id,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ActorId   string                 `protobuf:"bytes,1,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
+	AbilityId string                 `protobuf:"bytes,2,opt,name=ability_id,json=abilityId,proto3" json:"ability_id,omitempty"`
+	// The resources the give brings, keyed as Actor.resources is (SPEC-025).
+	Resources     map[string]*Resource `protobuf:"bytes,3,rep,name=resources,proto3" json:"resources,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -956,6 +958,13 @@ func (x *GiveAbility) GetAbilityId() string {
 		return x.AbilityId
 	}
 	return ""
+}
+
+func (x *GiveAbility) GetResources() map[string]*Resource {
+	if x != nil {
+		return x.Resources
+	}
+	return nil
 }
 
 // TakeAbility takes an ability off an actor's sheet (SPEC-025).
@@ -2980,11 +2989,15 @@ const file_vtt_v1_commands_proto_rawDesc = "" +
 	"target_ids\x18\x03 \x03(\tR\ttargetIds\"O\n" +
 	"\x0fRemoveCondition\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12!\n" +
-	"\fcondition_id\x18\x02 \x01(\tR\vconditionId\"G\n" +
+	"\fcondition_id\x18\x02 \x01(\tR\vconditionId\"\xd9\x01\n" +
 	"\vGiveAbility\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1d\n" +
 	"\n" +
-	"ability_id\x18\x02 \x01(\tR\tabilityId\"G\n" +
+	"ability_id\x18\x02 \x01(\tR\tabilityId\x12@\n" +
+	"\tresources\x18\x03 \x03(\v2\".vtt.v1.GiveAbility.ResourcesEntryR\tresources\x1aN\n" +
+	"\x0eResourcesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12&\n" +
+	"\x05value\x18\x02 \x01(\v2\x10.vtt.v1.ResourceR\x05value:\x028\x01\"G\n" +
 	"\vTakeAbility\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1d\n" +
 	"\n" +
@@ -3132,7 +3145,7 @@ func file_vtt_v1_commands_proto_rawDescGZIP() []byte {
 }
 
 var file_vtt_v1_commands_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_vtt_v1_commands_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
+var file_vtt_v1_commands_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_vtt_v1_commands_proto_goTypes = []any{
 	(JoinDoor)(0),              // 0: vtt.v1.JoinDoor
 	(PresenceState)(0),         // 1: vtt.v1.PresenceState
@@ -3173,65 +3186,69 @@ var file_vtt_v1_commands_proto_goTypes = []any{
 	(*ServerFrame)(nil),        // 36: vtt.v1.ServerFrame
 	(*PresenceChanged)(nil),    // 37: vtt.v1.PresenceChanged
 	(*PresenceSnapshot)(nil),   // 38: vtt.v1.PresenceSnapshot
-	(*GridPosition)(nil),       // 39: vtt.v1.GridPosition
-	(*TokenMoved)(nil),         // 40: vtt.v1.TokenMoved
-	(*Actor)(nil),              // 41: vtt.v1.Actor
-	(NoteVisibility)(0),        // 42: vtt.v1.NoteVisibility
-	(ActorKind)(0),             // 43: vtt.v1.ActorKind
-	(*Envelope)(nil),           // 44: vtt.v1.Envelope
+	nil,                        // 39: vtt.v1.GiveAbility.ResourcesEntry
+	(*GridPosition)(nil),       // 40: vtt.v1.GridPosition
+	(*TokenMoved)(nil),         // 41: vtt.v1.TokenMoved
+	(*Actor)(nil),              // 42: vtt.v1.Actor
+	(NoteVisibility)(0),        // 43: vtt.v1.NoteVisibility
+	(ActorKind)(0),             // 44: vtt.v1.ActorKind
+	(*Envelope)(nil),           // 45: vtt.v1.Envelope
+	(*Resource)(nil),           // 46: vtt.v1.Resource
 }
 var file_vtt_v1_commands_proto_depIdxs = []int32{
-	39, // 0: vtt.v1.MoveTokenRequest.to:type_name -> vtt.v1.GridPosition
-	40, // 1: vtt.v1.MoveTokenResponse.event:type_name -> vtt.v1.TokenMoved
-	39, // 2: vtt.v1.OpenDoor.at:type_name -> vtt.v1.GridPosition
-	39, // 3: vtt.v1.CloseDoor.at:type_name -> vtt.v1.GridPosition
-	41, // 4: vtt.v1.AddActor.actor:type_name -> vtt.v1.Actor
-	39, // 5: vtt.v1.PlaceToken.position:type_name -> vtt.v1.GridPosition
-	42, // 6: vtt.v1.UpsertNote.visibility:type_name -> vtt.v1.NoteVisibility
-	2,  // 7: vtt.v1.ClientCommand.move_token:type_name -> vtt.v1.MoveTokenRequest
-	6,  // 8: vtt.v1.ClientCommand.add_actor:type_name -> vtt.v1.AddActor
-	7,  // 9: vtt.v1.ClientCommand.place_token:type_name -> vtt.v1.PlaceToken
-	11, // 10: vtt.v1.ClientCommand.start_session:type_name -> vtt.v1.StartSession
-	12, // 11: vtt.v1.ClientCommand.end_session:type_name -> vtt.v1.EndSession
-	13, // 12: vtt.v1.ClientCommand.use_ability:type_name -> vtt.v1.UseAbility
-	14, // 13: vtt.v1.ClientCommand.remove_condition:type_name -> vtt.v1.RemoveCondition
-	17, // 14: vtt.v1.ClientCommand.add_narration:type_name -> vtt.v1.AddNarration
-	19, // 15: vtt.v1.ClientCommand.upsert_note:type_name -> vtt.v1.UpsertNote
-	20, // 16: vtt.v1.ClientCommand.delete_note:type_name -> vtt.v1.DeleteNote
-	21, // 17: vtt.v1.ClientCommand.load_adventure:type_name -> vtt.v1.LoadAdventure
-	27, // 18: vtt.v1.ClientCommand.grant_actor_control:type_name -> vtt.v1.GrantActorControl
-	28, // 19: vtt.v1.ClientCommand.revoke_actor_control:type_name -> vtt.v1.RevokeActorControl
-	29, // 20: vtt.v1.ClientCommand.promote_participant:type_name -> vtt.v1.PromoteParticipant
-	25, // 21: vtt.v1.ClientCommand.set_join_door:type_name -> vtt.v1.SetJoinDoor
-	26, // 22: vtt.v1.ClientCommand.rotate_join_link:type_name -> vtt.v1.RotateJoinLink
-	4,  // 23: vtt.v1.ClientCommand.open_door:type_name -> vtt.v1.OpenDoor
-	5,  // 24: vtt.v1.ClientCommand.close_door:type_name -> vtt.v1.CloseDoor
-	22, // 25: vtt.v1.ClientCommand.load_map:type_name -> vtt.v1.LoadMap
-	23, // 26: vtt.v1.ClientCommand.set_viewpoint:type_name -> vtt.v1.SetViewpoint
-	9,  // 27: vtt.v1.ClientCommand.remove_token:type_name -> vtt.v1.RemoveToken
-	10, // 28: vtt.v1.ClientCommand.remove_actor:type_name -> vtt.v1.RemoveActor
-	8,  // 29: vtt.v1.ClientCommand.describe_token:type_name -> vtt.v1.DescribeToken
-	30, // 30: vtt.v1.ClientCommand.remove_participant:type_name -> vtt.v1.RemoveParticipant
-	18, // 31: vtt.v1.ClientCommand.add_whisper:type_name -> vtt.v1.AddWhisper
-	15, // 32: vtt.v1.ClientCommand.give_ability:type_name -> vtt.v1.GiveAbility
-	16, // 33: vtt.v1.ClientCommand.take_ability:type_name -> vtt.v1.TakeAbility
-	0,  // 34: vtt.v1.SetJoinDoor.door:type_name -> vtt.v1.JoinDoor
-	43, // 35: vtt.v1.GrantActorControl.kind:type_name -> vtt.v1.ActorKind
-	35, // 36: vtt.v1.WatchableChanged.actors:type_name -> vtt.v1.WatchableActor
-	31, // 37: vtt.v1.ServerFrame.result:type_name -> vtt.v1.CommandResult
-	44, // 38: vtt.v1.ServerFrame.event:type_name -> vtt.v1.Envelope
-	32, // 39: vtt.v1.ServerFrame.catch_up_head:type_name -> vtt.v1.CatchUpHead
-	38, // 40: vtt.v1.ServerFrame.presence_snapshot:type_name -> vtt.v1.PresenceSnapshot
-	37, // 41: vtt.v1.ServerFrame.presence_changed:type_name -> vtt.v1.PresenceChanged
-	33, // 42: vtt.v1.ServerFrame.viewpoint_changed:type_name -> vtt.v1.ViewpointChanged
-	34, // 43: vtt.v1.ServerFrame.watchable_changed:type_name -> vtt.v1.WatchableChanged
-	1,  // 44: vtt.v1.PresenceChanged.state:type_name -> vtt.v1.PresenceState
-	37, // 45: vtt.v1.PresenceSnapshot.present:type_name -> vtt.v1.PresenceChanged
-	46, // [46:46] is the sub-list for method output_type
-	46, // [46:46] is the sub-list for method input_type
-	46, // [46:46] is the sub-list for extension type_name
-	46, // [46:46] is the sub-list for extension extendee
-	0,  // [0:46] is the sub-list for field type_name
+	40, // 0: vtt.v1.MoveTokenRequest.to:type_name -> vtt.v1.GridPosition
+	41, // 1: vtt.v1.MoveTokenResponse.event:type_name -> vtt.v1.TokenMoved
+	40, // 2: vtt.v1.OpenDoor.at:type_name -> vtt.v1.GridPosition
+	40, // 3: vtt.v1.CloseDoor.at:type_name -> vtt.v1.GridPosition
+	42, // 4: vtt.v1.AddActor.actor:type_name -> vtt.v1.Actor
+	40, // 5: vtt.v1.PlaceToken.position:type_name -> vtt.v1.GridPosition
+	39, // 6: vtt.v1.GiveAbility.resources:type_name -> vtt.v1.GiveAbility.ResourcesEntry
+	43, // 7: vtt.v1.UpsertNote.visibility:type_name -> vtt.v1.NoteVisibility
+	2,  // 8: vtt.v1.ClientCommand.move_token:type_name -> vtt.v1.MoveTokenRequest
+	6,  // 9: vtt.v1.ClientCommand.add_actor:type_name -> vtt.v1.AddActor
+	7,  // 10: vtt.v1.ClientCommand.place_token:type_name -> vtt.v1.PlaceToken
+	11, // 11: vtt.v1.ClientCommand.start_session:type_name -> vtt.v1.StartSession
+	12, // 12: vtt.v1.ClientCommand.end_session:type_name -> vtt.v1.EndSession
+	13, // 13: vtt.v1.ClientCommand.use_ability:type_name -> vtt.v1.UseAbility
+	14, // 14: vtt.v1.ClientCommand.remove_condition:type_name -> vtt.v1.RemoveCondition
+	17, // 15: vtt.v1.ClientCommand.add_narration:type_name -> vtt.v1.AddNarration
+	19, // 16: vtt.v1.ClientCommand.upsert_note:type_name -> vtt.v1.UpsertNote
+	20, // 17: vtt.v1.ClientCommand.delete_note:type_name -> vtt.v1.DeleteNote
+	21, // 18: vtt.v1.ClientCommand.load_adventure:type_name -> vtt.v1.LoadAdventure
+	27, // 19: vtt.v1.ClientCommand.grant_actor_control:type_name -> vtt.v1.GrantActorControl
+	28, // 20: vtt.v1.ClientCommand.revoke_actor_control:type_name -> vtt.v1.RevokeActorControl
+	29, // 21: vtt.v1.ClientCommand.promote_participant:type_name -> vtt.v1.PromoteParticipant
+	25, // 22: vtt.v1.ClientCommand.set_join_door:type_name -> vtt.v1.SetJoinDoor
+	26, // 23: vtt.v1.ClientCommand.rotate_join_link:type_name -> vtt.v1.RotateJoinLink
+	4,  // 24: vtt.v1.ClientCommand.open_door:type_name -> vtt.v1.OpenDoor
+	5,  // 25: vtt.v1.ClientCommand.close_door:type_name -> vtt.v1.CloseDoor
+	22, // 26: vtt.v1.ClientCommand.load_map:type_name -> vtt.v1.LoadMap
+	23, // 27: vtt.v1.ClientCommand.set_viewpoint:type_name -> vtt.v1.SetViewpoint
+	9,  // 28: vtt.v1.ClientCommand.remove_token:type_name -> vtt.v1.RemoveToken
+	10, // 29: vtt.v1.ClientCommand.remove_actor:type_name -> vtt.v1.RemoveActor
+	8,  // 30: vtt.v1.ClientCommand.describe_token:type_name -> vtt.v1.DescribeToken
+	30, // 31: vtt.v1.ClientCommand.remove_participant:type_name -> vtt.v1.RemoveParticipant
+	18, // 32: vtt.v1.ClientCommand.add_whisper:type_name -> vtt.v1.AddWhisper
+	15, // 33: vtt.v1.ClientCommand.give_ability:type_name -> vtt.v1.GiveAbility
+	16, // 34: vtt.v1.ClientCommand.take_ability:type_name -> vtt.v1.TakeAbility
+	0,  // 35: vtt.v1.SetJoinDoor.door:type_name -> vtt.v1.JoinDoor
+	44, // 36: vtt.v1.GrantActorControl.kind:type_name -> vtt.v1.ActorKind
+	35, // 37: vtt.v1.WatchableChanged.actors:type_name -> vtt.v1.WatchableActor
+	31, // 38: vtt.v1.ServerFrame.result:type_name -> vtt.v1.CommandResult
+	45, // 39: vtt.v1.ServerFrame.event:type_name -> vtt.v1.Envelope
+	32, // 40: vtt.v1.ServerFrame.catch_up_head:type_name -> vtt.v1.CatchUpHead
+	38, // 41: vtt.v1.ServerFrame.presence_snapshot:type_name -> vtt.v1.PresenceSnapshot
+	37, // 42: vtt.v1.ServerFrame.presence_changed:type_name -> vtt.v1.PresenceChanged
+	33, // 43: vtt.v1.ServerFrame.viewpoint_changed:type_name -> vtt.v1.ViewpointChanged
+	34, // 44: vtt.v1.ServerFrame.watchable_changed:type_name -> vtt.v1.WatchableChanged
+	1,  // 45: vtt.v1.PresenceChanged.state:type_name -> vtt.v1.PresenceState
+	37, // 46: vtt.v1.PresenceSnapshot.present:type_name -> vtt.v1.PresenceChanged
+	46, // 47: vtt.v1.GiveAbility.ResourcesEntry.value:type_name -> vtt.v1.Resource
+	48, // [48:48] is the sub-list for method output_type
+	48, // [48:48] is the sub-list for method input_type
+	48, // [48:48] is the sub-list for extension type_name
+	48, // [48:48] is the sub-list for extension extendee
+	0,  // [0:48] is the sub-list for field type_name
 }
 
 func init() { file_vtt_v1_commands_proto_init() }
@@ -3285,7 +3302,7 @@ func file_vtt_v1_commands_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vtt_v1_commands_proto_rawDesc), len(file_vtt_v1_commands_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   37,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

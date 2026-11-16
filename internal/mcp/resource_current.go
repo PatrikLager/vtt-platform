@@ -14,14 +14,15 @@ import (
 // per-command switch.
 const (
 	actorMessage    protoreflect.FullName = "vtt.v1.Actor"
+	giveMessage     protoreflect.FullName = "vtt.v1.GiveAbility"
 	resourceMessage protoreflect.FullName = "vtt.v1.Resource"
 	currentField    protoreflect.Name     = "current"
 )
 
 // refuseValuelessCurrent refuses arguments holding a vtt.v1.Resource whose
 // current is written null or left out, naming the enclosing actor and the
-// resource's key (VTT-671). Run it only on arguments protojson has accepted:
-// it reads them by their descriptor and trusts the shapes protojson checked.
+// resource's key (VTT-671, VTT-787). Run it only on arguments protojson has
+// accepted: it reads them by their descriptor and trusts the shapes it checked.
 func refuseValuelessCurrent(md protoreflect.MessageDescriptor, args []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(args))
 	dec.UseNumber()
@@ -38,7 +39,7 @@ func walkForCurrent(md protoreflect.MessageDescriptor, obj map[string]any, actor
 		return nil
 	}
 	switch md.FullName() {
-	case actorMessage:
+	case actorMessage, giveMessage:
 		actorID, path = stringOf(obj, md, "actor_id"), ""
 	case resourceMessage:
 		if cur, ok := valueOf(obj, md.Fields().ByName(currentField)); !ok || cur == nil {

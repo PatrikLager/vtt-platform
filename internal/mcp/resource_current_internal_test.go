@@ -66,3 +66,30 @@ func TestAddActorArgumentsPassACurrentOfZero(t *testing.T) {
 		})
 	}
 }
+
+// VTT-787
+func TestGiveAbilityArgumentsRefuseACurrentWithNoValueNamingTheActor(t *testing.T) {
+	fd := (&vttv1.ClientCommand{}).ProtoReflect().Descriptor().Fields().ByName("give_ability")
+	if fd == nil {
+		t.Fatal("ClientCommand has no give_ability arm")
+	}
+	for name, args := range map[string]string{
+		"a current written null": `{"actorId":"a1","abilityId":"chair-swing","resources":{"stamina":{"current":null,"max":2}}}`,
+		"a current left out":     `{"actor_id":"a1","abilityId":"chair-swing","resources":{"stamina":{"max":2}}}`,
+	} {
+		cmd, err := commandFromArgs(fd, []byte(args))
+		if err == nil {
+			t.Fatalf("%s: commandFromArgs accepted %s as %v", name, args, cmd)
+		}
+		if want := `actor "a1": resources.stamina.current`; !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: error = %q, want it to contain %q", name, err.Error(), want)
+		}
+	}
+	cmd, err := commandFromArgs(fd, []byte(`{"actorId":"a1","abilityId":"chair-swing","resources":{"stamina":{"current":0,"max":2}}}`))
+	if err != nil {
+		t.Fatalf("a current of 0 was refused: %v", err)
+	}
+	if r := cmd.GetGiveAbility().GetResources()["stamina"]; r == nil || r.GetMax() != 2 {
+		t.Errorf("command = %v, want stamina carried at 0 of 2", cmd)
+	}
+}

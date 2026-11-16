@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -41,11 +43,25 @@ func (s *mcpAbilitySession) mustSucceed(tool string, args map[string]any) {
 
 func (s *mcpAbilitySession) use(caster string) *mcpsdk.CallToolResult {
 	s.t.Helper()
-	return mustCallTool(s.t, s.cs, "use_ability", map[string]any{
-		"actorId": caster, "abilityId": "fists", "targetIds": []any{"patron"}})
+	return s.useAbility(caster, "fists")
 }
 
-// VTT-713
+func (s *mcpAbilitySession) useAbility(caster, ability string) *mcpsdk.CallToolResult {
+	s.t.Helper()
+	return mustCallTool(s.t, s.cs, "use_ability", map[string]any{
+		"actorId": caster, "abilityId": ability, "targetIds": []any{"patron"}})
+}
+
+// refused calls tool with args and wants a tool error holding want.
+func (s *mcpAbilitySession) refused(tool string, args map[string]any, want string) {
+	s.t.Helper()
+	res := mustCallTool(s.t, s.cs, tool, args)
+	if text := toolResultText(s.t, res); !res.IsError || !strings.Contains(text, want) {
+		s.t.Fatalf("%s %v answered isError=%v %s, want a tool error containing %s", tool, args, res.IsError, text, want)
+	}
+}
+
+// VTT-764
 func TestMCPGiveAbilityThenAUseResolves(t *testing.T) {
 	s := mcpAbilityFixture(t)
 	if res := s.use("rookie"); !res.IsError {
@@ -57,7 +73,7 @@ func TestMCPGiveAbilityThenAUseResolves(t *testing.T) {
 	}
 }
 
-// VTT-714
+// VTT-767
 func TestMCPTakeAbilityThenAUseIsAToolError(t *testing.T) {
 	s := mcpAbilityFixture(t)
 	s.mustSucceed("take_ability", map[string]any{"actorId": "brawler", "abilityId": "fists"})
@@ -66,4 +82,33 @@ func TestMCPTakeAbilityThenAUseIsAToolError(t *testing.T) {
 		t.Fatalf("a use after the take answered isError=%v %s, want a tool error containing %s",
 			res.IsError, toolResultText(t, res), want)
 	}
+}
+
+// VTT-760 VTT-761 VTT-787
+func TestMCPGiveAbilityWithItsResourcesValueThenAUseResolves(t *testing.T) {
+	s := mcpAbilityFixture(t)
+	s.refused("give_ability", map[string]any{"actorId": "rookie", "abilityId": "chair-swing"}, `\"stamina\"`)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := s.cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "give_ability", Arguments: map[string]any{
+		"actorId": "rookie", "abilityId": "chair-swing", "resources": map[string]any{"stamina": map[string]any{"max": 2}}}})
+	if want := `actor "rookie": resources.stamina.current`; err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("a give with its current left out answered %v, want an error containing %s", err, want)
+	}
+	s.mustSucceed("give_ability", map[string]any{"actorId": "rookie", "abilityId": "chair-swing",
+		"resources": map[string]any{"stamina": map[string]any{"current": 1, "max": 2}}})
+	if res := s.useAbility("rookie", "chair-swing"); res.IsError || toolCommandResult(t, res)["ok"] != true {
+		t.Fatalf("a use after the give answered isError=%v %s, want it resolved", res.IsError, toolResultText(t, res))
+	}
+}
+
+// VTT-767
+func TestMCPTakeAbilityTakesTheResourceItSpendsWithIt(t *testing.T) {
+	s := mcpAbilityFixture(t)
+	s.mustSucceed("give_ability", map[string]any{"actorId": "rookie", "abilityId": "chair-swing",
+		"resources": map[string]any{"stamina": map[string]any{"current": 2, "max": 2}}})
+	s.mustSucceed("take_ability", map[string]any{"actorId": "rookie", "abilityId": "chair-swing"})
+	s.refused("give_ability", map[string]any{"actorId": "rookie", "abilityId": "chair-swing"}, `\"stamina\"`)
+	s.mustSucceed("give_ability", map[string]any{"actorId": "rookie", "abilityId": "chair-swing",
+		"resources": map[string]any{"stamina": map[string]any{"current": 0, "max": 2}}})
 }

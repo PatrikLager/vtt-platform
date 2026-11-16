@@ -741,10 +741,16 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 
-	// Dispatch these five before ToEvent: each appends a batch or nothing, never one
-	// envelope (SPEC-012, SPEC-013).
+	// Dispatch these before ToEvent: each appends its events as one batch, or
+	// nothing (SPEC-012, SPEC-013).
 	if ua, ok := cmd.GetCommand().(*vttv1.ClientCommand_UseAbility); ok {
 		return s.handleUseAbility(requestID, ua.UseAbility, st, p)
+	}
+	if ga, ok := cmd.GetCommand().(*vttv1.ClientCommand_GiveAbility); ok {
+		return s.handleGiveAbility(requestID, cmd, ga.GiveAbility, st, p)
+	}
+	if ta, ok := cmd.GetCommand().(*vttv1.ClientCommand_TakeAbility); ok {
+		return s.handleTakeAbility(requestID, cmd, ta.TakeAbility, st, p)
 	}
 	if la, ok := cmd.GetCommand().(*vttv1.ClientCommand_LoadAdventure); ok {
 		return s.handleLoadAdventure(requestID, la.LoadAdventure, st, p)

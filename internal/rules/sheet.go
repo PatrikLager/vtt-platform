@@ -37,6 +37,15 @@ func (rs *Ruleset) SheetAbilityFault(ids []string) *SheetFault {
 	return nil
 }
 
+// Spends answers the resource rs's limited ability abilityID spends (VTT-767).
+func (rs *Ruleset) Spends(abilityID string) (string, bool) {
+	c, held := rs.Compiled[abilityID]
+	if !held || c.Usage.Limited == nil {
+		return "", false
+	}
+	return c.Usage.Limited.Resource, true
+}
+
 // Offers reports whether a's sheet names abilityID (VTT-690).
 func Offers(a *vttv1.Actor, abilityID string) bool {
 	return slices.Contains(a.GetAbilityIds(), abilityID)

@@ -42,7 +42,7 @@ func (f *rulesetFixture) tokenFor(role string) string {
 
 // Keep rookie naming no ability until the give: the give must be the only
 // reason its use resolves.
-// VTT-713
+// VTT-764
 func TestAGiveThenAUseResolvesForTheDMTheAgentAndThePlayer(t *testing.T) {
 	for _, giver := range []string{"dm", "agent"} {
 		t.Run(giver, func(t *testing.T) {
@@ -69,7 +69,7 @@ func TestAGiveThenAUseResolvesForTheDMTheAgentAndThePlayer(t *testing.T) {
 	}
 }
 
-// VTT-714
+// VTT-767
 func TestATakeThenAUseIsRefusedForTheDMTheAgentAndThePlayer(t *testing.T) {
 	for _, taker := range []string{"dm", "agent"} {
 		t.Run(taker, func(t *testing.T) {
@@ -118,7 +118,7 @@ func TestAGiveOrATakeFromAPlayerOrASpectatorIsRefusedAndAppendsNothing(t *testin
 	}
 }
 
-// VTT-718
+// VTT-718 VTT-800
 func TestWithARulesetAGiveOfAnIdItDoesNotHoldIsRefusedNamingTheActorAndTheId(t *testing.T) {
 	f := newRulesetFixture(t, true)
 	for _, c := range []struct{ giver, actor, id string }{
@@ -164,7 +164,7 @@ func TestAGiveOrATakeTheFoldRefusesReachesTheIssuerAndAppendsNothing(t *testing.
 	}
 }
 
-// VTT-722 VTT-745
+// VTT-722 VTT-766
 func TestWithNoRulesetAGiveOfAnyNonEmptyIdIsAcceptedAndAnEmptyOneRefused(t *testing.T) {
 	f := newRulesetFixture(t, false)
 	dm := f.dial(f.dmToken, 0)

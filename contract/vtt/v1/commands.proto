@@ -121,6 +121,8 @@ message RemoveCondition {
 message GiveAbility {
   string actor_id = 1;
   string ability_id = 2;
+  // The resources the give brings, keyed as Actor.resources is (SPEC-025).
+  map<string, Resource> resources = 3;
 }
 
 // TakeAbility takes an ability off an actor's sheet (SPEC-025).

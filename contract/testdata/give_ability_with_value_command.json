@@ -1,0 +1,13 @@
+{
+  "requestId": "req-01JC3G1VE0ABILITY0GIVE00002",
+  "giveAbility": {
+    "actorId": "act-fighter",
+    "abilityId": "hunters-flurry",
+    "resources": {
+      "flurry_uses": {
+        "current": 1,
+        "max": 1
+      }
+    }
+  }
+}

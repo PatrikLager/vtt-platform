@@ -35,6 +35,16 @@ type fieldOverride struct {
 	fieldDocs        map[string]string
 }
 
+// resourceOverride documents a vtt.v1.Resource wherever a tool takes one: its max
+// may be left out for none, so only current is required.
+var resourceOverride = fieldOverride{
+	requiredOverride: []string{"current"},
+	fieldDocs: map[string]string{
+		"current": "REQUIRED; the resource's present value, 0 included.",
+		"max":     "Optional; the resource's maximum. Left out or 0, it has none.",
+	},
+}
+
 type toolSpec struct {
 	message     string
 	name        string
@@ -95,14 +105,7 @@ var manifest = []toolSpec{
 					"abilityIds":    "Optional. The abilities this actor has, each by its id in the served ruleset (get_ruleset lists them). use_ability refuses this actor any ability its sheet does not name, so an actor that names none can use none until give_ability gives it one; give_ability and take_ability change the list in play. With a ruleset served, an id the ruleset does not hold refuses the whole command, and an empty id refuses it with or without one.",
 				},
 			},
-			// A resource's max may be left out for none, so only current is required.
-			"vtt.v1.Resource": {
-				requiredOverride: []string{"current"},
-				fieldDocs: map[string]string{
-					"current": "REQUIRED; the resource's present value, 0 included.",
-					"max":     "Optional; the resource's maximum. Left out or 0, it has none.",
-				},
-			},
+			"vtt.v1.Resource": resourceOverride,
 		},
 	},
 	{
@@ -195,21 +198,24 @@ var manifest = []toolSpec{
 	{
 		message:     "vtt.v1.GiveAbility",
 		name:        "give_ability",
-		description: "Give an actor one ability of the served ruleset (get_ruleset lists them): afterwards its sheet names the ability and use_ability resolves it for that actor. Only its ability list changes: its tokens, controllers, conditions and resources stay as they are, so use this, not remove_actor and add_actor, to change what a character can do. Refused, appending nothing: an actor the campaign does not hold, an ability its sheet already names, an empty ability id, and, with a ruleset served, an id the ruleset does not hold. Each player who controls the actor while it is a party member is told. DM/agent only.",
+		description: "Give an actor one ability of the served ruleset (get_ruleset lists them): afterwards its sheet names the ability and use_ability resolves it for that actor, while the resource it spends lasts. An ability that spends a resource the sheet does not hold is given with that resource's value under resources, its current required, 0 included, and its max optional: the sheet then holds that resource too. Only its ability list and that resource change: its tokens, controllers, conditions, attributes and other resources stay as they are, so use this, not remove_actor and add_actor, to change what a character can do. Refused, appending nothing: an actor the campaign does not hold, an ability its sheet already names, an empty ability id; with a ruleset served, an id the ruleset does not hold, an ability given without the value of a resource it spends that the sheet does not hold, a resource the sheet already holds, and a resource the ability does not spend; with no ruleset served, any resources. Each player who controls the actor while it is a party member is told. DM/agent only.",
 		descriptor:  (&vttv1.GiveAbility{}).ProtoReflect().Descriptor(),
 		overrides: map[protoreflect.FullName]fieldOverride{
 			"vtt.v1.GiveAbility": {
+				requiredOverride: []string{"actorId", "abilityId"},
 				fieldDocs: map[string]string{
 					"actorId":   "The id of the actor whose sheet changes.",
 					"abilityId": "The ability's id in the served ruleset.",
+					"resources": "Only for an ability that spends a resource the sheet does not hold, and then required: that resource, under its name, with its current, 0 included, and its max if it has one. Any other resource refuses the whole command, and so does a current null or left out.",
 				},
 			},
+			"vtt.v1.Resource": resourceOverride,
 		},
 	},
 	{
 		message:     "vtt.v1.TakeAbility",
 		name:        "take_ability",
-		description: "Take one ability from an actor's sheet: afterwards its sheet does not name it and use_ability refuses that actor the ability, whoever asks. Only its ability list changes. Refused, appending nothing: an actor the campaign does not hold, and an ability its sheet does not name. Each player who controls the actor while it is a party member is told. DM/agent only.",
+		description: "Take one ability from an actor's sheet: afterwards its sheet does not name it and use_ability refuses that actor the ability, whoever asks. With a ruleset served, the resource the ability spends leaves the sheet with it when no ability left on the sheet spends it; no other resource leaves. Nothing else about the actor changes. Refused, appending nothing: an actor the campaign does not hold, and an ability its sheet does not name. Each player who controls the actor while it is a party member is told. DM/agent only.",
 		descriptor:  (&vttv1.TakeAbility{}).ProtoReflect().Descriptor(),
 		overrides: map[protoreflect.FullName]fieldOverride{
 			"vtt.v1.TakeAbility": {

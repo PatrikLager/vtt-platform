@@ -416,7 +416,7 @@ func (tb *qaabTable) requireAppendsOne(qc *qaabConn, cmd *vttv1.ClientCommand) *
 	return last
 }
 
-// VTT-713
+// VTT-764 VTT-766
 func TestQAGiveAbilityFromTheDMAndTheAgentAppendsOneAbilityGivenAndEndsTheList(t *testing.T) {
 	for _, served := range []bool{true, false} {
 		t.Run(fmt.Sprintf("ruleset served %v", served), func(t *testing.T) {
@@ -455,7 +455,7 @@ func TestQAGiveAbilityFromTheDMAndTheAgentAppendsOneAbilityGivenAndEndsTheList(t
 	}
 }
 
-// VTT-714
+// VTT-767 VTT-768
 func TestQATakeAbilityFromTheDMAndTheAgentRemovesEveryOccurrenceAndKeepsTheOrder(t *testing.T) {
 	for _, served := range []bool{true, false} {
 		t.Run(fmt.Sprintf("ruleset served %v", served), func(t *testing.T) {
@@ -488,7 +488,7 @@ func TestQATakeAbilityFromTheDMAndTheAgentRemovesEveryOccurrenceAndKeepsTheOrder
 	}
 }
 
-// VTT-713, VTT-714: nothing else of the actor or of the world changes.
+// VTT-764, VTT-767: nothing else of the actor or of the world changes.
 func TestQAGiveAndTakeChangeNothingButTheActorsAbilityList(t *testing.T) {
 	rs := qaabRuleset(t)
 	tb := qaabNewTable(t, rs, true)
@@ -672,7 +672,7 @@ func TestQAEngineApplyRefusesAnAbilityGivenWithAnEmptyId(t *testing.T) {
 	}
 }
 
-// VTT-745
+// VTT-766
 func TestQAWithNoRulesetServedAGiveOfAnyNonEmptyIdIsAccepted(t *testing.T) {
 	tb := qaabNewTable(t, nil, false)
 	tb.mustOK(tb.dm, qaabAdd("a1", "Alpha", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER))
@@ -693,7 +693,7 @@ func TestQAWithNoRulesetServedAGiveOfAnyNonEmptyIdIsAccepted(t *testing.T) {
 	}
 }
 
-// VTT-713 VTT-718
+// VTT-764 VTT-718
 func TestQAAGiveRefusalReachesTheIssuerAndTheConnectionGoesOn(t *testing.T) {
 	tb := qaabNewTable(t, qaabRuleset(t), false)
 	added := tb.mustOK(tb.dm, qaabAdd("a1", "Alpha", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "rally"))
@@ -711,7 +711,7 @@ func TestQAAGiveRefusalReachesTheIssuerAndTheConnectionGoesOn(t *testing.T) {
 	}
 }
 
-// VTT-713 VTT-714
+// VTT-764 VTT-767
 func TestQAAUseFollowsTheSheetAfterAGiveAndATake(t *testing.T) {
 	rs := qaabRuleset(t)
 	tb := qaabNewTable(t, rs, true)
@@ -897,8 +897,8 @@ func qaabRequireAll(t *testing.T, what, text string, phrases ...string) {
 	}
 }
 
-// VTT-728
-func TestQAGiveAndTakeToolsSayWhoMayWhatEachRefusesAndThatNothingElseChanges(t *testing.T) {
+// VTT-785
+func TestQAGiveAndTakeToolsSayWhoMayWhatEachRefusesAndWhatChanges(t *testing.T) {
 	tools := qaabTools(t)
 	give, ok := tools["give_ability"]
 	if !ok {
@@ -910,8 +910,8 @@ func TestQAGiveAndTakeToolsSayWhoMayWhatEachRefusesAndThatNothingElseChanges(t *
 	}
 	qaabRequireAll(t, "give_ability", give.Description,
 		"DM/agent only",
-		"Only its ability list changes",
-		"tokens, controllers, conditions and resources stay as they are",
+		"Only its ability list and that resource change",
+		"tokens, controllers, conditions, attributes and other resources stay as they are",
 		"an actor the campaign does not hold",
 		"an ability its sheet already names",
 		"an empty ability id",
@@ -920,7 +920,7 @@ func TestQAGiveAndTakeToolsSayWhoMayWhatEachRefusesAndThatNothingElseChanges(t *
 	)
 	qaabRequireAll(t, "take_ability", take.Description,
 		"DM/agent only",
-		"Only its ability list changes",
+		"no other resource leaves",
 		"an actor the campaign does not hold",
 		"an ability its sheet does not name",
 		"Refused, appending nothing",

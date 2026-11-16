@@ -691,14 +691,20 @@ func TestAddActorSaysAnEmptyAbilityIdRefusesTheCommand(t *testing.T) {
 	}
 }
 
-// VTT-728
-func TestGiveAndTakeAbilitySayWhoMayWhatEachRefusesAndThatNothingElseChanges(t *testing.T) {
+// VTT-785
+func TestGiveAndTakeAbilitySayWhoMayWhatEachRefusesAndWhatChanges(t *testing.T) {
 	for name, wants := range map[string][]string{
-		"give_ability": {"DM/agent only", "Only its ability list changes",
-			"its tokens, controllers, conditions and resources stay as they are", "Refused, appending nothing",
-			"an actor the campaign does not hold", "an ability its sheet already names", "an empty ability id",
-			"with a ruleset served, an id the ruleset does not hold"},
-		"take_ability": {"DM/agent only", "Only its ability list changes", "Refused, appending nothing",
+		"give_ability": {"DM/agent only", "Only its ability list and that resource change",
+			"its tokens, controllers, conditions, attributes and other resources stay as they are",
+			"is given with that resource's value under resources", "its current required, 0 included",
+			"Refused, appending nothing", "an actor the campaign does not hold", "an ability its sheet already names",
+			"an empty ability id", "with a ruleset served, an id the ruleset does not hold",
+			"an ability given without the value of a resource it spends that the sheet does not hold",
+			"a resource the sheet already holds", "a resource the ability does not spend",
+			"with no ruleset served, any resources"},
+		"take_ability": {"DM/agent only", "Refused, appending nothing",
+			"the resource the ability spends leaves the sheet with it when no ability left on the sheet spends it",
+			"no other resource leaves", "Nothing else about the actor changes",
 			"an actor the campaign does not hold", "an ability its sheet does not name"},
 	} {
 		tool := findTool(t, name)
@@ -720,6 +726,11 @@ func TestGiveAndTakeAbilitySayWhoMayWhatEachRefusesAndThatNothingElseChanges(t *
 			if desc, _ := props[field].(map[string]any)["description"].(string); desc != want {
 				t.Errorf("%s's %s description = %q, want %q", name, field, desc, want)
 			}
+		}
+		if res, carries := props["resources"].(map[string]any); carries != (name == "give_ability") {
+			t.Errorf("%s carries resources: %v, want it on give_ability alone", name, carries)
+		} else if desc, _ := res["description"].(string); carries && !strings.Contains(desc, "0 included") {
+			t.Errorf("give_ability's resources description = %q, want it to say a current of 0 is a value", desc)
 		}
 	}
 }
