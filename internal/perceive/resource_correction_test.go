@@ -155,6 +155,22 @@ func TestACurrentNoResourceChangedCanLandOnIsCorrectedByARemovalAndAnAddition(t 
 	}
 }
 
+// VTT-796
+func TestACurrentAtItsMaxOrAtZeroIsCorrectedByOneResourceChanged(t *testing.T) {
+	tb := newSheetTable(t, sheetAlly(t, false, true))
+	tb.step(&vttv1.DoorOpened{SceneId: "s", At: sheetDoor})
+	tb.step(&vttv1.DoorClosed{SceneId: "s", At: sheetDoor})
+	for _, c := range []struct{ delta, to int32 }{{4, 9}, {-9, 0}} {
+		tb.step(&vttv1.ResourceChanged{ActorId: "ally", Resource: "pool", Delta: c.delta, NewValue: c.to})
+		out := tb.step(&vttv1.DoorOpened{SceneId: "s", At: sheetDoor})
+		if got, want := resourceLines(out, "ally"), []string{fmt.Sprintf("changed pool %d", c.to)}; !sameLines(got, want) {
+			t.Errorf("the ally's return with pool moved to %d of 9 sent %v, want %v", c.to, got, want)
+		}
+		sheetHeldAsTheWorldHoldsIt(t, tb)
+		tb.step(&vttv1.DoorClosed{SceneId: "s", At: sheetDoor})
+	}
+}
+
 // VTT-783
 func TestAPartyMemberAddedAgainWithOtherResourcesIsCorrectedNotIntroducedAfresh(t *testing.T) {
 	tb := newSheetTable(t, sheetAlly(t, false, true))
