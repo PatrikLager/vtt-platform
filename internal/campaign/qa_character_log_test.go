@@ -749,18 +749,18 @@ func qaLogHoldsItsOwnPool(t *testing.T, log []campaign.CharacterEntry, id string
 	t.Helper()
 	i := qaLogIndex(log, func(env *vttv1.Envelope) bool {
 		a := env.GetActorAdded().GetActor()
-		return a.GetActorId() == id && len(a.GetResources()) > 0
+		return (a.GetActorId() == id && len(a.GetResources()) > 0) || env.GetResourceAdded().GetActorId() == id
 	})
 	if i < 0 || log[i].WorldSeq == 0 {
-		t.Errorf("VTT-657: %q's own log is not introduced to %q whole in an event's frames\n%s", id, id, qaLogDescribe(log))
+		t.Errorf("VTT-793: %q's own log is not brought to %q's resources in an event's frames\n%s", id, id, qaLogDescribe(log))
 	}
 	if got := qaLogFold(t, log).Actors[id].GetResources()["pool"].GetCurrent(); got != pool {
-		t.Errorf("VTT-657: %q's own log holds its pool at %d, the world at %d", id, got, pool)
+		t.Errorf("VTT-793: %q's own log holds its pool at %d, the world at %d", id, got, pool)
 	}
 }
 
-// TestQALogALateLogOpensWithThePresent pins VTT-663 and VTT-657.
-// VTT-663 VTT-657
+// TestQALogALateLogOpensWithThePresent pins VTT-663 and VTT-793.
+// VTT-663 VTT-793
 func TestQALogALateLogOpensWithThePresent(t *testing.T) {
 	tb := qaLogNew(t, "p", "q", "x")
 	g := &qaLogGen{}
@@ -932,8 +932,8 @@ func TestQALogALogOpensWhenAGrantMakesAPartyMember(t *testing.T) {
 	}
 }
 
-// TestQALogALogOpensForAPartyMemberThatHadNone pins VTT-663, VTT-657 and VTT-324.
-// VTT-663 VTT-657 VTT-324
+// TestQALogALogOpensForAPartyMemberThatHadNone pins VTT-663, VTT-793 and VTT-324.
+// VTT-663 VTT-793 VTT-324
 func TestQALogALogOpensForAPartyMemberThatHadNone(t *testing.T) {
 	dir := t.TempDir()
 	if err := campaign.EnsureDir(dir); err != nil {

@@ -301,6 +301,10 @@ func qacsActorOf(f *vttv1.Envelope) string {
 		return p.ActorControlRevoked.GetActorId()
 	case *vttv1.Envelope_ResourceChanged:
 		return p.ResourceChanged.GetActorId()
+	case *vttv1.Envelope_ResourceAdded:
+		return p.ResourceAdded.GetActorId()
+	case *vttv1.Envelope_ResourceRemoved:
+		return p.ResourceRemoved.GetActorId()
 	case *vttv1.Envelope_ConditionApplied:
 		return p.ConditionApplied.GetActorId()
 	case *vttv1.Envelope_ConditionRemoved:
@@ -461,7 +465,7 @@ func TestQACSACreatureIsIntroducedByItsIdModuleAndKindWithItsGrantsAndConditions
 	v.noSecrets(qacsSecrets)
 }
 
-// VTT-657 VTT-658
+// VTT-793 VTT-658
 func TestQACSAPartyMemberIsIntroducedWholeOnlyInSight(t *testing.T) {
 	v := qacsTable(t)
 	for _, id := range []string{qacsHero, qacsFriend} {
@@ -474,10 +478,10 @@ func TestQACSAPartyMemberIsIntroducedWholeOnlyInSight(t *testing.T) {
 			}
 		}
 		if idx < 0 {
-			t.Fatalf("VTT-657 VTT-658: %s never introduced", id)
+			t.Fatalf("VTT-793 VTT-658: %s never introduced", id)
 		}
 		got := frames[idx].GetActorAdded().GetActor()
-		label, want := "VTT-657", qacsWhole(v.world.Actors[id])
+		label, want := "VTT-793", qacsWhole(v.world.Actors[id])
 		if id == qacsFriend {
 			label, want = "VTT-658", qacsUnseen(v.world.Actors[id])
 		}
@@ -635,7 +639,7 @@ func TestQACSARewriteOutOfSightIsNotSentAndTheTokenArrivesWithItsPresentTexts(t 
 	v.noSecrets(append(qacsSecrets, "wounded"))
 }
 
-// VTT-739
+// VTT-783
 func TestQACSACreatureHeldInSightDoesNotArriveAgainAtEachEvent(t *testing.T) {
 	v := qacsTable(t)
 	introduced := len(v.steps)
@@ -652,10 +656,10 @@ func TestQACSACreatureHeldInSightDoesNotArriveAgainAtEachEvent(t *testing.T) {
 	for n, s := range v.steps[introduced:] {
 		bad := append(qacsFind(s, qacsAddedOf(qacsBeast)), qacsFind(s, qacsRemovedOf(qacsBeast))...)
 		if len(bad) != 0 {
-			t.Errorf("VTT-739: event %d of the run sent %v", n+1, s)
+			t.Errorf("VTT-783: event %d of the run sent %v", n+1, s)
 		}
 		if len(qacsFind(s, qacsHiddenOf(qacsBeastTok))) != 0 {
-			t.Errorf("VTT-739: event %d of the run hid the creature's token: %v", n+1, s)
+			t.Errorf("VTT-783: event %d of the run hid the creature's token: %v", n+1, s)
 		}
 	}
 	held := v.shown.Actors[qacsBeast]
@@ -935,7 +939,7 @@ func TestQACSAPerchBringsACreatureToItsPresentAndIntroducesAnUnseenOneStripped(t
 	v.noSecrets(qacsSecrets)
 }
 
-// VTT-739
+// VTT-783
 func TestQACSACreatureAddedAgainWithItsModuleIsCorrectedNotReintroduced(t *testing.T) {
 	v := qacsTable(t)
 	v.step(qacsRemoveToken(qacsBeastTok))
@@ -949,21 +953,21 @@ func TestQACSACreatureAddedAgainWithItsModuleIsCorrectedNotReintroduced(t *testi
 		Kind:       vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
 	}
 	if frames := v.step(qacsAdd(again)); len(frames) != 0 {
-		t.Errorf("VTT-739: an unseen creature added again sent %v", frames)
+		t.Errorf("VTT-783: an unseen creature added again sent %v", frames)
 	}
 	frames := v.step(qacsPlace("tok-gob-2", qacsBeast, 2, 1, "a hunched figure", "", "", ""))
 	if bad := append(qacsFind(frames, qacsAddedOf(qacsBeast)), qacsFind(frames, qacsRemovedOf(qacsBeast))...); len(bad) != 0 {
-		t.Errorf("VTT-739: a creature added again under the same module was re-introduced: %v", frames)
+		t.Errorf("VTT-783: a creature added again under the same module was re-introduced: %v", frames)
 	}
 	held := v.shown.Actors[qacsBeast]
-	qacsHasNoStatblock(t, "VTT-739", held)
+	qacsHasNoStatblock(t, "VTT-783", held)
 	if len(qacsConds(v.shown, qacsBeast)) != 0 || len(held.GetControllerIds()) != 0 {
-		t.Errorf("VTT-739: the corrected creature holds %v and %v", qacsConds(v.shown, qacsBeast), held.GetControllerIds())
+		t.Errorf("VTT-783: the corrected creature holds %v and %v", qacsConds(v.shown, qacsBeast), held.GetControllerIds())
 	}
 	v.noSecrets(append(qacsSecrets, "Gorvash Reborn"))
 }
 
-// VTT-739 VTT-252
+// VTT-783 VTT-252
 func TestQACSACreatureAddedAgainWithAnotherModuleIsIntroducedAfresh(t *testing.T) {
 	v := qacsTable(t)
 	v.step(qacsRemoveToken(qacsBeastTok))
@@ -971,17 +975,17 @@ func TestQACSACreatureAddedAgainWithAnotherModuleIsIntroducedAfresh(t *testing.T
 	again := qacsBeastActor(t)
 	again.ModuleId = "mod-ogre"
 	if frames := v.step(qacsAdd(again)); len(frames) != 0 {
-		t.Errorf("VTT-739: an unseen creature added again sent %v", frames)
+		t.Errorf("VTT-783: an unseen creature added again sent %v", frames)
 	}
 	frames := v.step(qacsPlace("tok-gob-2", qacsBeast, 2, 1, "a looming shape", "", "", ""))
-	qacsCheckReintroduced(t, "VTT-739", frames, v.seq, qacsBeast, "tok-gob-2", qacsStripped(v.world.Actors[qacsBeast]))
+	qacsCheckReintroduced(t, "VTT-783", frames, v.seq, qacsBeast, "tok-gob-2", qacsStripped(v.world.Actors[qacsBeast]))
 	if got := v.shown.Actors[qacsBeast].GetModuleId(); got != "mod-ogre" {
-		t.Errorf("VTT-739: the fold holds module %q", got)
+		t.Errorf("VTT-783: the fold holds module %q", got)
 	}
 	v.noSecrets(qacsSecrets)
 }
 
-// VTT-739 VTT-664
+// VTT-783 VTT-664
 func TestQACSAPartyMemberAddedAgainIsIntroducedAfreshOrCorrected(t *testing.T) {
 	v := qacsTable(t)
 	v.move(qacsFriendTok, 0, 0)
@@ -993,10 +997,10 @@ func TestQACSAPartyMemberAddedAgainIsIntroducedAfreshOrCorrected(t *testing.T) {
 	frames := v.step(qacsPlace("tok-bram-2", qacsFriend, 0, 0, "Bram", "", "", ""))
 	all := append(append([]*vttv1.Envelope{}, v.steps[len(v.steps)-2]...), frames...)
 	if bad := append(qacsFind(all, qacsAddedOf(qacsFriend)), qacsFind(all, qacsRemovedOf(qacsFriend))...); len(bad) != 0 {
-		t.Errorf("VTT-739: a party member added again as the same was re-introduced: %v", all)
+		t.Errorf("VTT-783: a party member added again as the same was re-introduced: %v", all)
 	}
 	if got := v.shown.Actors[qacsFriend].GetResources()["vigor"].GetCurrent(); got != 2 {
-		t.Errorf("VTT-739: the corrected party member holds vigor %d, want 2", got)
+		t.Errorf("VTT-783: the corrected party member holds vigor %d, want 2", got)
 	}
 
 	v.step(qacsRemoveToken("tok-bram-2"))
@@ -1006,14 +1010,14 @@ func TestQACSAPartyMemberAddedAgainIsIntroducedAfreshOrCorrected(t *testing.T) {
 	v.step(qacsAdd(other))
 	addFrames := v.steps[len(v.steps)-1]
 	frames = v.step(qacsPlace("tok-bram-3", qacsFriend, 0, 0, "Bram", "", "", ""))
-	qacsCheckReintroduced(t, "VTT-739", addFrames, v.seq-1, qacsFriend, "", qacsUnseen(v.world.Actors[qacsFriend]))
+	qacsCheckReintroduced(t, "VTT-783", addFrames, v.seq-1, qacsFriend, "", qacsUnseen(v.world.Actors[qacsFriend]))
 	qacsCheckReintroduced(t, "VTT-664", frames, v.seq, qacsFriend, "tok-bram-3", qacsWhole(v.world.Actors[qacsFriend]))
 	if got := v.shown.Actors[qacsFriend].GetName(); got != "Bram the Second" {
-		t.Errorf("VTT-739: the fold holds %q", got)
+		t.Errorf("VTT-783: the fold holds %q", got)
 	}
 }
 
-// VTT-312 VTT-739
+// VTT-312 VTT-783
 func TestQACSAResumedProjectionHoldingACreatureSendsWhatTheFedOneSends(t *testing.T) {
 	v := qacsTable(t)
 	shown := v.shown.Snapshot()
@@ -1041,7 +1045,7 @@ func TestQACSAResumedProjectionHoldingACreatureSendsWhatTheFedOneSends(t *testin
 				}
 			}
 			if bad := append(qacsFind(pair.frames, qacsAddedOf(qacsBeast)), qacsFind(pair.frames, qacsRemovedOf(qacsBeast))...); len(bad) != 0 {
-				t.Errorf("%s, VTT-739: event %d sent %v", pair.label, n+1, pair.frames)
+				t.Errorf("%s, VTT-783: event %d sent %v", pair.label, n+1, pair.frames)
 			}
 			if len(pair.frames) != len(fed) {
 				t.Errorf("%s: event %d sent %d frames, the fed projection %d:\n%v\nvs\n%v", pair.label, n+1, len(pair.frames), len(fed), pair.frames, fed)
@@ -1119,7 +1123,7 @@ func TestQACSAPerchOntoACreatureWhoseKindChangedUnseenWithdrawsAndIntroducesIt(t
 	}
 }
 
-// VTT-739
+// VTT-783
 func TestQACSAnIdAddedAgainUnderTheOtherKindIsIntroducedAfreshWhenSeen(t *testing.T) {
 	v := qacsTable(t)
 	v.step(qacsRemoveToken(qacsBeastTok))
@@ -1129,9 +1133,9 @@ func TestQACSAnIdAddedAgainUnderTheOtherKindIsIntroducedAfreshWhenSeen(t *testin
 	addFrames := v.step(qacsAdd(again))
 	frames := v.step(qacsPlace("tok-gob-2", qacsBeast, 2, 1, "a hunched figure", "", "", ""))
 	both := append(append([]*vttv1.Envelope{}, addFrames...), frames...)
-	qacsCheckReintroduced(t, "VTT-739", both, 0, qacsBeast, "", qacsWhole(v.world.Actors[qacsBeast]))
+	qacsCheckReintroduced(t, "VTT-783", both, 0, qacsBeast, "", qacsWhole(v.world.Actors[qacsBeast]))
 	if got := v.shown.Actors[qacsBeast].GetName(); got != "Gorvash the Sly" {
-		t.Errorf("VTT-739: the fold names the party member added again %q", got)
+		t.Errorf("VTT-783: the fold names the party member added again %q", got)
 	}
 
 	v.move(qacsFriendTok, 0, 0)
@@ -1142,8 +1146,8 @@ func TestQACSAnIdAddedAgainUnderTheOtherKindIsIntroducedAfreshWhenSeen(t *testin
 	addFrames = v.step(qacsAdd(creature))
 	frames = v.step(qacsPlace("tok-bram-2", qacsFriend, 0, 0, "a tall shape", "", "", ""))
 	both = append(append([]*vttv1.Envelope{}, addFrames...), frames...)
-	qacsCheckReintroduced(t, "VTT-739", both, 0, qacsFriend, "", qacsStripped(v.world.Actors[qacsFriend]))
-	qacsHasNoStatblock(t, "VTT-739", v.shown.Actors[qacsFriend])
+	qacsCheckReintroduced(t, "VTT-783", both, 0, qacsFriend, "", qacsStripped(v.world.Actors[qacsFriend]))
+	qacsHasNoStatblock(t, "VTT-783", v.shown.Actors[qacsFriend])
 }
 
 // VTT-312 VTT-468

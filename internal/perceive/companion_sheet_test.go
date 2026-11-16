@@ -105,7 +105,7 @@ func sheetHeldAsTheWorldHoldsIt(t *testing.T, tb *sheetTable) {
 	}
 }
 
-// VTT-658 VTT-660 VTT-740
+// VTT-658 VTT-660 VTT-784
 func TestACompanionItsCharacterHasNotSeenArrivesWithoutItsSheet(t *testing.T) {
 	tb := newSheetTable(t, sheetAlly(t, true, true))
 	about := sheetAbout(tb.step(&vttv1.NarrationAdded{Text: "look"}))
@@ -149,7 +149,7 @@ func TestACompanionItsCharacterHasNotSeenArrivesWithoutItsSheet(t *testing.T) {
 	}
 }
 
-// VTT-664 VTT-657
+// VTT-664 VTT-793 VTT-784
 func TestACompanionsSheetArrivesWhenItsCharacterFirstSeesIt(t *testing.T) {
 	stripped := []string{
 		"*vttv1.Envelope_ActorRemoved ally",
@@ -166,15 +166,15 @@ func TestACompanionsSheetArrivesWhenItsCharacterFirstSeesIt(t *testing.T) {
 		"*vttv1.Envelope_ActorControlGranted ally",
 		"*vttv1.Envelope_TokenPlaced t-ally",
 	}
-	// Keep the case with no resource: a resource set the fold lacks makes
-	// correct re-introduce the ally, which hides a first sight left unmarked.
+	// Keep a case that corrects the ally: a re-introduction hides a first sight
+	// left unmarked.
 	for _, c := range []struct {
 		name                  string
 		attributes, resources bool
 		want                  []string
 	}{
 		{"attributes and module data, no resource", true, false, stripped},
-		{"resources", false, true, stripped},
+		{"resources alone, corrected", false, true, append([]string{"*vttv1.Envelope_ResourceAdded ally"}, corrected...)},
 		{"neither, so nothing to strip", false, false, corrected},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -196,7 +196,7 @@ func TestACompanionsSheetArrivesWhenItsCharacterFirstSeesIt(t *testing.T) {
 			if last := out[len(out)-1]; last.GetDoorOpened() == nil || last.GetEventId() == "" {
 				t.Errorf("the frames do not end with the door's own event: %v", last)
 			}
-			if c.attributes || c.resources {
+			if c.attributes {
 				bare := &vttv1.Envelope{Sequence: tb.seq,
 					Payload: &vttv1.Envelope_ActorRemoved{ActorRemoved: &vttv1.ActorRemoved{ActorId: "ally"}}}
 				if !proto.Equal(about[0], bare) {

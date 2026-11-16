@@ -369,7 +369,7 @@ func TestQASheetALogOpensWithEachCompanionWithoutItsSheet(t *testing.T) {
 	qaSheetAssertStripped(t, "VTT-658 in the opening", opened, worldA, []string{"p-a"})
 }
 
-// VTT-658 VTT-660 VTT-740 VTT-664 VTT-486
+// VTT-658 VTT-660 VTT-784 VTT-664 VTT-486
 func TestQASheetACampaignLogIsWrittenNoCompanionSheetBeforeSight(t *testing.T) {
 	l := qaSheetBuildUnseen(t)
 	c, seqs := qaSheetAppend(t, l.envs)
@@ -385,7 +385,7 @@ func TestQASheetACampaignLogIsWrittenNoCompanionSheetBeforeSight(t *testing.T) {
 			t.Errorf("entry %d (world sequence %d) carries A's values before B sees A: %v", i, e.WorldSeq, e.Env)
 		}
 		if e.Env.GetActorRemoved().GetActorId() == qaSheetA {
-			t.Errorf("VTT-740: entry %d (world sequence %d) is a bare ActorRemoved of A before B sees A", i, e.WorldSeq)
+			t.Errorf("VTT-784: entry %d (world sequence %d) is a bare ActorRemoved of A before B sees A", i, e.WorldSeq)
 		}
 	}
 	worldA := l.envs[4].GetActorAdded().GetActor()
@@ -401,7 +401,7 @@ func TestQASheetACampaignLogIsWrittenNoCompanionSheetBeforeSight(t *testing.T) {
 	qaSheetAssertWhole(t, "VTT-486 at the end", qaSheetFoldEntries(t, entries), c.State(), qaSheetA)
 }
 
-// VTT-663 VTT-658 VTT-664 VTT-657
+// VTT-663 VTT-658 VTT-664 VTT-793
 func TestQASheetALogOpenedInSightOfACompanionBringsItsSheetAtTheOpeningEvent(t *testing.T) {
 	l := &qaSheetLog{}
 	l.session()
@@ -429,8 +429,8 @@ func TestQASheetALogOpenedInSightOfACompanionBringsItsSheetAtTheOpeningEvent(t *
 	qaSheetAssertStripped(t, "VTT-663 in the opening", qaSheetFoldEntries(t, opening), worldA, []string{"p-a"})
 	// VTT-664
 	qaSheetAssertWhole(t, "VTT-664 at the event that opened the log", qaSheetFoldEntries(t, entries), c.State(), qaSheetA)
-	// VTT-657
-	qaSheetAssertWhole(t, "VTT-657 B's own sheet", qaSheetFoldEntries(t, entries), c.State(), qaSheetB)
+	// VTT-793
+	qaSheetAssertWhole(t, "VTT-793 B's own sheet", qaSheetFoldEntries(t, entries), c.State(), qaSheetB)
 }
 
 // VTT-176

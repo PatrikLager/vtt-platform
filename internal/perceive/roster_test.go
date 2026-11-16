@@ -447,7 +447,7 @@ func TestARemovedActorReachesOnlyTheSeatThatHeldIt(t *testing.T) {
 // TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh holds the case where
 // the seat saw the removal: the projector forgets the actor with its fold, so
 // the id used again is introduced in full (SPEC-016).
-// VTT-739
+// VTT-783
 func TestAnActorIdUsedAgainAfterRemovalIsIntroducedAfresh(t *testing.T) {
 	st := twoRooms()
 	pr := newViewer(t, player())
@@ -859,7 +859,7 @@ func TestARemovalBatchProjectsToTheBytesBothFoldsRead(t *testing.T) {
 	}
 }
 
-// VTT-465 VTT-657
+// VTT-465 VTT-793
 func TestACreatureIsIntroducedWithItsIdModuleKindAndConditionsAlone(t *testing.T) {
 	st := creatureWorld()
 	v := newViewer(t, heroEyes())

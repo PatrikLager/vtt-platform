@@ -289,7 +289,7 @@ func TestAKindChangedOutOfSightIsBroughtToItsPresentOnSight(t *testing.T) {
 	}
 }
 
-// VTT-469
+// VTT-469 VTT-796
 func TestAResourceStartedBelowZeroIsCorrectedOnSight(t *testing.T) {
 	frames := runTestimony(t, player(), testimonyLog(
 		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "wraith", Name: "Wraith",
@@ -353,7 +353,7 @@ func TestConditionsReorderedOutOfSightSendNothingOnSight(t *testing.T) {
 	}
 }
 
-// VTT-469
+// VTT-469 VTT-796
 func TestADifferenceOfExactlyMaxInt32IsOneCorrection(t *testing.T) {
 	frames := runTestimony(t, player(), testimonyLog(
 		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "wraith", Name: "Wraith",
@@ -397,7 +397,7 @@ func TestARemovalOutOfSightIsNotReported(t *testing.T) {
 	}
 }
 
-// VTT-252 VTT-739
+// VTT-252 VTT-783
 func TestAnIdReusedAfterAnUnseenRemovalFoldsAgain(t *testing.T) {
 	frames := runTestimony(t, player(), testimonyLog(
 		rogueLeaves,

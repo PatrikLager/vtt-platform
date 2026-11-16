@@ -3,6 +3,7 @@ package perceive
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -164,7 +165,7 @@ func (pr *Projection) recall(shown, st *engine.State) {
 		pr.actors[id] = true
 		pr.belief[id] = beliefOf(a, shown.Conditions[id])
 		// Mark gone only an actor matching neither the world's as its held kind shows
-		// it nor unseenAs: the world added it again as another (VTT-739, VTT-740).
+		// it nor unseenAs: the world added it again as another (VTT-783, VTT-784).
 		if w, ok := st.Actors[id]; ok {
 			if !sameIncarnation(a, shownWith(w, engine.IsPartyMember(a))) && !sameIncarnation(a, unseenAs(w)) {
 				pr.gone[id] = true
@@ -193,11 +194,11 @@ func trueKeys(m map[string]bool) map[string]bool {
 }
 
 // sameIncarnation reports whether a and b agree on every field only
-// ActorAdded writes, so that one may stand for the other (VTT-739).
+// ActorAdded writes, so that one may stand for the other (VTT-783).
 func sameIncarnation(a, b *vttv1.Actor) bool {
 	if a.GetName() != b.GetName() || a.GetModuleId() != b.GetModuleId() ||
 		!proto.Equal(a.GetModuleData(), b.GetModuleData()) ||
-		len(a.GetAttributes()) != len(b.GetAttributes()) || len(a.GetResources()) != len(b.GetResources()) {
+		len(a.GetAttributes()) != len(b.GetAttributes()) {
 		return false
 	}
 	for k, v := range a.GetAttributes() {
@@ -205,20 +206,17 @@ func sameIncarnation(a, b *vttv1.Actor) bool {
 			return false
 		}
 	}
-	for k, r := range a.GetResources() {
-		if w, ok := b.GetResources()[k]; !ok || w.GetMax() != r.GetMax() {
-			return false
-		}
-	}
 	return true
 }
 
 func kindMovesList(a, w *vttv1.Actor) bool {
-	return engine.IsPartyMember(a) != engine.IsPartyMember(w) && len(a.GetAbilityIds())+len(shownAs(w).GetAbilityIds()) > 0
+	shown := shownAs(w)
+	return engine.IsPartyMember(a) != engine.IsPartyMember(w) &&
+		len(a.GetAbilityIds())+len(shown.GetAbilityIds())+len(a.GetResources())+len(shown.GetResources()) > 0
 }
 
 // shownAs is what a log may hold of a once seen: a party member whole,
-// any other actor its id, module, kind and controllers alone (VTT-465, VTT-657).
+// any other actor its id, module, kind and controllers alone (VTT-465, VTT-793).
 func shownAs(a *vttv1.Actor) *vttv1.Actor { return shownWith(a, engine.IsPartyMember(a)) }
 
 // unseenAs is what a log may hold of a party member its eyes never saw (VTT-658).
@@ -781,7 +779,7 @@ func (pr *Projection) noteTransitions(seq int64, st *engine.State) []*vttv1.Enve
 }
 
 // introduce sends the viewer an actor it does not hold, shownAs's form if seen
-// and unseenAs's if not, its controllers as grants behind it (VTT-657, VTT-658).
+// and unseenAs's if not, its controllers as grants behind it (VTT-793, VTT-658).
 func (pr *Projection) introduce(id string, seq int64, a *vttv1.Actor, seen bool, st *engine.State) []*vttv1.Envelope {
 	held := shownAs(a)
 	if !seen {
@@ -843,20 +841,22 @@ func (pr *Projection) withdraw(id string, seq int64) *vttv1.Envelope {
 }
 
 // actorBelief is what the viewer's fold holds of an actor that an event can
-// change: each resource's current value, its conditions, its ability ids, its
-// controllers and its kind (SPEC-016).
+// change: its resources, its conditions, its ability ids, its controllers and
+// its kind (SPEC-016).
 type actorBelief struct {
-	resources   map[string]int32
+	resources   map[string]heldResource
 	conditions  []string
 	abilities   []string
 	controllers []string
 	kind        vttv1.ActorKind
 }
 
+type heldResource struct{ current, max int32 }
+
 func beliefOf(a *vttv1.Actor, conditions []engine.ActorCondition) actorBelief {
-	b := actorBelief{resources: map[string]int32{}, kind: a.GetKind()}
+	b := actorBelief{resources: map[string]heldResource{}, kind: a.GetKind()}
 	for name, r := range a.GetResources() {
-		b.resources[name] = r.GetCurrent()
+		b.resources[name] = heldResource{current: r.GetCurrent(), max: r.GetMax()}
 	}
 	for _, c := range conditions {
 		b.conditions = append(b.conditions, c.ID)
@@ -881,8 +881,7 @@ func (pr *Projection) correct(id string, seq int64, a *vttv1.Actor, st *engine.S
 }
 
 // statusFrames are the frames that bring belief b to actor a, or false when
-// none can: a resource set that differs, or a kind no held controller carries
-// (SPEC-016).
+// none can: a kind no held controller carries (SPEC-016).
 func statusFrames(id string, seq int64, b actorBelief, a *vttv1.Actor, conditions []engine.ActorCondition) ([]*vttv1.Envelope, bool) {
 	var out []*vttv1.Envelope
 	frame := func(e *vttv1.Envelope) {
@@ -890,32 +889,8 @@ func statusFrames(id string, seq int64, b actorBelief, a *vttv1.Actor, condition
 		out = append(out, e)
 	}
 
-	if len(a.GetResources()) != len(b.resources) {
-		return nil, false
-	}
-	names := make([]string, 0, len(a.GetResources()))
-	for name := range a.GetResources() {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		was, held := b.resources[name]
-		if !held {
-			return nil, false
-		}
-		cur := a.GetResources()[name].GetCurrent()
-		if cur == was {
-			continue
-		}
-		// Pass through zero when the difference does not fit int32: the fold floors
-		// a negative current at 0 (TestAResourceStartedBelowZeroIsCorrectedOnSight).
-		if d := int64(cur) - int64(was); d > math.MaxInt32 {
-			frame(&vttv1.Envelope{Payload: &vttv1.Envelope_ResourceChanged{ResourceChanged: &vttv1.ResourceChanged{
-				ActorId: id, Resource: name}}})
-			was = 0
-		}
-		frame(&vttv1.Envelope{Payload: &vttv1.Envelope_ResourceChanged{ResourceChanged: &vttv1.ResourceChanged{
-			ActorId: id, Resource: name, Delta: cur - was, NewValue: cur}}})
+	for _, f := range resourceFrames(id, b, a) {
+		frame(f)
 	}
 
 	present := map[string]bool{}
@@ -991,6 +966,50 @@ func statusFrames(id string, seq int64, b actorBelief, a *vttv1.Actor, condition
 		}
 	}
 	return out, true
+}
+
+// resourceFrames are the frames, in byte order of the names, that bring the
+// resources of belief b to actor a's (VTT-780, VTT-796).
+func resourceFrames(id string, b actorBelief, a *vttv1.Actor) []*vttv1.Envelope {
+	var out []*vttv1.Envelope
+	names := map[string]bool{}
+	for name := range a.GetResources() {
+		names[name] = true
+	}
+	for name := range b.resources {
+		names[name] = true
+	}
+	for _, name := range slices.Sorted(maps.Keys(names)) {
+		was, believed := b.resources[name]
+		r, present := a.GetResources()[name]
+		// Remove and add a current no ResourceChanged can land on: the fold floors at
+		// zero and caps at a max above zero (VTT-796).
+		unlandable := r.GetCurrent() < 0 || (r.GetMax() > 0 && r.GetCurrent() > r.GetMax())
+		renewed := believed && present && (was.max != r.GetMax() || (unlandable && r.GetCurrent() != was.current))
+		if believed && (!present || renewed) {
+			out = append(out, &vttv1.Envelope{Payload: &vttv1.Envelope_ResourceRemoved{ResourceRemoved: &vttv1.ResourceRemoved{
+				ActorId: id, Resource: name}}})
+		}
+		if present && (!believed || renewed) {
+			out = append(out, &vttv1.Envelope{Payload: &vttv1.Envelope_ResourceAdded{ResourceAdded: &vttv1.ResourceAdded{
+				ActorId: id, Resource: name, Value: &vttv1.Resource{Current: r.GetCurrent(), Max: r.GetMax()}}}})
+			continue
+		}
+		if !present || r.GetCurrent() == was.current {
+			continue
+		}
+		cur, from := r.GetCurrent(), was.current
+		// Pass through zero when the difference does not fit int32: the fold floors
+		// a negative current at 0 (TestAResourceStartedBelowZeroIsCorrectedOnSight).
+		if d := int64(cur) - int64(from); d > math.MaxInt32 {
+			out = append(out, &vttv1.Envelope{Payload: &vttv1.Envelope_ResourceChanged{ResourceChanged: &vttv1.ResourceChanged{
+				ActorId: id, Resource: name}}})
+			from = 0
+		}
+		out = append(out, &vttv1.Envelope{Payload: &vttv1.Envelope_ResourceChanged{ResourceChanged: &vttv1.ResourceChanged{
+			ActorId: id, Resource: name, Delta: cur - from, NewValue: cur}}})
+	}
+	return out
 }
 
 func sameSet(a, b map[string]bool) bool {

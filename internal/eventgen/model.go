@@ -63,6 +63,7 @@ type Model struct {
 	grants     map[string][]string
 	conditions map[string][]string
 	abilities  map[string][]string
+	resources  map[string][]string
 
 	// allSeqs is the pool narration anchors are drawn from, and it can only be
 	// filled by the caller: a sequence is assigned by whatever APPLIES an event,
@@ -92,6 +93,7 @@ func New() *Model {
 		grants:     map[string][]string{},
 		conditions: map[string][]string{},
 		abilities:  map[string][]string{},
+		resources:  map[string][]string{},
 	}
 }
 
@@ -155,6 +157,10 @@ func (m *Model) env(payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_AbilityGiven{AbilityGiven: p}
 	case *vttv1.AbilityTaken:
 		e.Payload = &vttv1.Envelope_AbilityTaken{AbilityTaken: p}
+	case *vttv1.ResourceAdded:
+		e.Payload = &vttv1.Envelope_ResourceAdded{ResourceAdded: p}
+	case *vttv1.ResourceRemoved:
+		e.Payload = &vttv1.Envelope_ResourceRemoved{ResourceRemoved: p}
 	default:
 		// A NIL-PAYLOAD ENVELOPE FAILS TWO LAYERS AWAY as "unknown event
 		// variant", which reads as a missing arm in the fold rather than a
@@ -190,7 +196,7 @@ func (m *Model) Step(rng *rand.Rand, idx int) Action {
 	case r < 0.42 && m.canMoveToken():
 		return m.moveToken(rng, idx)
 	case r < 0.48 && len(m.actors) > 0:
-		return m.changeAbility(rng, idx, r < 0.45)
+		return m.changeSheet(rng, idx, r)
 	case r < 0.52 && m.canMoveToken():
 		return m.describeToken(rng, idx)
 	case r < 0.60:
@@ -250,6 +256,7 @@ func (m *Model) addActor() Action {
 	m.actorN++
 	id := fmt.Sprintf("prop-actor-%d", m.actorN)
 	m.actors = append(m.actors, id)
+	m.resources[id] = []string{"pool"}
 	return Action{Env: m.env(&vttv1.ActorAdded{
 		Actor: &vttv1.Actor{ActorId: id, Name: id, ModuleId: "prop-module",
 			Resources: map[string]*vttv1.Resource{"pool": {Current: 3, Max: 5}}},
@@ -574,6 +581,7 @@ func (m *Model) removeActor(rng *rand.Rand) Action {
 		delete(m.grants, id)
 		delete(m.conditions, id)
 		delete(m.abilities, id)
+		delete(m.resources, id)
 	}
 	return Action{Env: m.env(&vttv1.ActorRemoved{ActorId: id}),
 		Kind: "removeActor", MustFail: blocked, Anchors: !blocked}
@@ -627,4 +635,59 @@ func (m *Model) takeAbility(rng *rand.Rand, idx int) Action {
 	}
 	return Action{Env: m.env(&vttv1.AbilityTaken{ActorId: actor, AbilityId: id}),
 		Kind: "takeAbility", MustFail: absent, Anchors: !absent}
+}
+
+func (m *Model) changeSheet(rng *rand.Rand, idx int, r float64) Action {
+	switch {
+	case r < 0.46:
+		return m.changeAbility(rng, idx, r < 0.44)
+	case r < 0.47:
+		return m.addResource(rng)
+	default:
+		return m.removeResource(rng, idx)
+	}
+}
+
+// Draw the refusal each fold makes, an addition of a resource the actor holds
+// and a removal of one it does not, beside the legal draw (engine.Apply).
+func (m *Model) addResource(rng *rand.Rand) Action {
+	actor := m.actors[rng.Intn(len(m.actors))]
+	held := m.resources[actor]
+	duplicate := len(held) > 0 && rng.Float64() < 0.2
+	name := fmt.Sprintf("prop-res-%d", rng.Intn(4))
+	if duplicate {
+		name = held[rng.Intn(len(held))]
+	} else if slices.Contains(held, name) {
+		duplicate = true
+	}
+	value := &vttv1.Resource{Current: rng.Int31n(5), Max: rng.Int31n(6)}
+	if !duplicate {
+		m.resources[actor] = append(slices.Clone(held), name)
+	}
+	return Action{Env: m.env(&vttv1.ResourceAdded{ActorId: actor, Resource: name, Value: value}),
+		Kind: "addResource", MustFail: duplicate, Anchors: !duplicate}
+}
+
+func (m *Model) removeResource(rng *rand.Rand, idx int) Action {
+	pool := make([]string, 0, len(m.resources))
+	for a, held := range m.resources {
+		if len(held) > 0 {
+			pool = append(pool, a)
+		}
+	}
+	slices.Sort(pool)
+	if len(pool) == 0 {
+		pool = m.actors
+	}
+	actor := pool[rng.Intn(len(pool))]
+	held := m.resources[actor]
+	absent := len(held) == 0 || rng.Float64() < 0.25
+	name := fmt.Sprintf("prop-res-absent-%d", idx)
+	if !absent {
+		pick := rng.Intn(len(held))
+		name = held[pick]
+		m.resources[actor] = slices.Delete(slices.Clone(held), pick, pick+1)
+	}
+	return Action{Env: m.env(&vttv1.ResourceRemoved{ActorId: actor, Resource: name}),
+		Kind: "removeResource", MustFail: absent, Anchors: !absent}
 }

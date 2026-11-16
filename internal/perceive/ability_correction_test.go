@@ -299,7 +299,7 @@ func TestAResumeHoldsTheWorldsAbilityIdsInAnyOrderAndStartsAfreshFromALaggingLis
 	}
 }
 
-// VTT-740 VTT-744
+// VTT-784 VTT-744
 func TestAListOnlyCompanionAddedAgainWithASheetUnderItsNameWaitsForSight(t *testing.T) {
 	tb := newSheetTable(t, abilityAlly())
 	tb.step(&vttv1.DoorOpened{SceneId: "s", At: sheetDoor})

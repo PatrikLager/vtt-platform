@@ -33,15 +33,10 @@ func walk(t *testing.T, seed int64, n int) (kinds []string, envs []*vttv1.Envelo
 	return kinds, envs
 }
 
-// TestTheSameSeedDrawsTheSameWalk is the contract every caller rests on: a
-// property test that reports "seed 37 failed" is only useful if seed 37 can be
-// re-run on its own and do the same thing.
-//
-// IT IS NOT A RESTATEMENT OF "rand is deterministic". The model reads its own
-// maps to choose targets, and ranging a Go map is deliberately unordered — this
-// package sorts in three places for exactly that reason (closeDoor's open set,
-// removeCondition's pool, and removeActor working from the actors slice rather
-// than the tokenActor map). Delete any one sort and this test is what notices.
+// TestTheSameSeedDrawsTheSameWalk: a failing seed must re-run alone and do the
+// same. Go leaves a map's range unordered, so the model sorts every pool it
+// draws from (closeDoor, removeCondition, takeAbility, removeResource; and
+// removeActor reads the actors slice). Delete any one sort and this notices.
 func TestTheSameSeedDrawsTheSameWalk(t *testing.T) {
 	for _, seed := range []int64{1, 7, 99} {
 		first, firstEnvs := walk(t, seed, 400)
@@ -72,7 +67,7 @@ func TestAWalkDrawsEveryKind(t *testing.T) {
 		"addNarration", "upsertNote", "deleteNote",
 		"openDoor", "closeDoor", "grantControl", "revokeControl",
 		"applyCondition", "removeCondition", "removeToken", "removeActor",
-		"giveAbility", "takeAbility",
+		"giveAbility", "takeAbility", "addResource", "removeResource",
 	}
 	seen := map[string]int{}
 	for seed := int64(1); seed <= 5; seed++ {
@@ -131,7 +126,7 @@ func TestBothSidesOfEveryRefusalAreDrawn(t *testing.T) {
 	// door and re-granting held control are documented no-ops, so drawing a
 	// "must fail" there would assert a rule the engine does not have.
 	want := []string{"deleteNote", "openDoor", "applyCondition", "removeCondition",
-		"removeToken", "removeActor", "giveAbility", "takeAbility"}
+		"removeToken", "removeActor", "giveAbility", "takeAbility", "addResource", "removeResource"}
 	got := map[string]map[bool]int{}
 	for seed := int64(1); seed <= 5; seed++ {
 		kinds, _ := walk(t, seed, 400)

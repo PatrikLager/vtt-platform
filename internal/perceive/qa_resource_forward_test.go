@@ -87,6 +87,8 @@ func (tb *qaRFTable) step(p any) *vttv1.Envelope {
 		for _, f := range frames {
 			if err := engine.Apply(v.log, f); err != nil {
 				v.foldFails = append(v.foldFails, fmt.Sprintf("%s at %s: frame %v: %v", v.name, e.GetEventId(), f, err))
+				// VTT-224: every frame a log is sent folds onto it.
+				tb.t.Errorf("a frame did not fold: %s", v.foldFails[len(v.foldFails)-1])
 			}
 		}
 	}
@@ -274,6 +276,38 @@ func qaRFHasTokenPlaced(frames []*vttv1.Envelope, token string) bool {
 		}
 	}
 	return false
+}
+
+// VTT-779 VTT-781 VTT-224: what hero's log is forwarded of mate's resource events
+// folds, with no withdrawal or introduction of mate, and the log then holds
+// mate's resources as the world does.
+// SPEC-016 "A character log folds in the order it is written".
+func TestQAForwardedResourceEventsFoldIntoTheLog(t *testing.T) {
+	tb := qaRFNewTable(t)
+	qaRFSetup(tb)
+	add := tb.step(&vttv1.ResourceAdded{ActorId: "mate", Resource: "focus", Value: &vttv1.Resource{Current: 3, Max: 5}})
+	remove := tb.step(&vttv1.ResourceRemoved{ActorId: "mate", Resource: "grit"})
+	tb.step(&vttv1.ResourceAdded{ActorId: "far", Resource: "focus", Value: &vttv1.Resource{Current: 1, Max: 4}})
+	if t.Failed() {
+		for _, e := range []*vttv1.Envelope{add, remove} {
+			for i, f := range tb.viewer("hero").frames[e.GetEventId()] {
+				t.Logf("hero's frame %d at %s: %v", i, e.GetEventId(), f)
+			}
+		}
+	}
+	for _, name := range []string{"hero", "mate"} {
+		got := tb.viewer(name).log.Actors["mate"].GetResources()
+		want := tb.world.Actors["mate"].GetResources()
+		if len(got) != len(want) {
+			t.Errorf("%s's log holds mate's resources %v, the world %v", name, got, want)
+			continue
+		}
+		for k, w := range want {
+			if !proto.Equal(got[k], w) {
+				t.Errorf("%s's log holds mate's %s as %v, the world as %v", name, k, got[k], w)
+			}
+		}
+	}
 }
 
 // VTT-779 ("its projection does not start afresh at that event"): the same

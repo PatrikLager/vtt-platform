@@ -105,7 +105,7 @@ func TestAResumedLogHoldingACompanionWithoutItsAbilitiesIsBroughtToThem(t *testi
 	}
 }
 
-// VTT-738 VTT-739 VTT-724
+// VTT-738 VTT-783 VTT-724
 func TestACompanionAddedAgainWithAnotherListOfItsLengthIsSeenWithIt(t *testing.T) {
 	for _, list := range [][]string{{"shove", "dodge"}, {"fists", "rally"}} {
 		t.Run(list[0], func(t *testing.T) {

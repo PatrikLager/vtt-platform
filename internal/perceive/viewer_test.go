@@ -101,6 +101,10 @@ func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
 		env.Payload = &vttv1.Envelope_AbilityGiven{AbilityGiven: p}
 	case *vttv1.AbilityTaken:
 		env.Payload = &vttv1.Envelope_AbilityTaken{AbilityTaken: p}
+	case *vttv1.ResourceAdded:
+		env.Payload = &vttv1.Envelope_ResourceAdded{ResourceAdded: p}
+	case *vttv1.ResourceRemoved:
+		env.Payload = &vttv1.Envelope_ResourceRemoved{ResourceRemoved: p}
 	default:
 		panic(fmt.Sprintf("envelope: no oneof arm wired for %T", payload))
 	}
@@ -216,6 +220,10 @@ func shapes(out []*vttv1.Envelope) []string {
 			id = e.GetActorControlGranted().GetActorId()
 		case e.GetConditionApplied() != nil:
 			id = e.GetConditionApplied().GetActorId()
+		case e.GetResourceAdded() != nil:
+			id = e.GetResourceAdded().GetActorId()
+		case e.GetResourceRemoved() != nil:
+			id = e.GetResourceRemoved().GetActorId()
 		case e.GetTokenPlaced() != nil:
 			id = e.GetTokenPlaced().GetTokenId()
 		case e.GetTokenHidden() != nil:

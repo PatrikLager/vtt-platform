@@ -668,6 +668,33 @@ Labels: `test data missing`.
 **Closed by** the fixture's narration: lines at the text bound, which reach
 every character log whatever its character sees (VTT-362).
 
+## 2026-11-16 — a sight correction sent a resource change the log refused
+
+**A sight correction of a party member's resource sent a `ResourceChanged` to
+a current the log's fold cannot reach.** `engine.Apply`'s `ResourceChanged` arm
+floors the result at zero and caps it at a max above zero, then refuses an event
+whose `new_value` differs. A party member added again at the same max with a
+current below zero or above that max, out of a log's sight, was corrected at the
+next sight by a `ResourceChanged` to that current; the log's fold refused it, the
+fan-out dropped the log's whole frame set for the event (VTT-320), and `Resume`
+sent the same refused frame at every later event while the party member stayed
+in sight. It was on `main` through an `ActorAdded` re-add; the reviewer of Task 2
+of `docs/superpowers/plans/2026-11-15-an-ability-is-given-with-its-value.md`
+found it, where a `ResourceAdded` can now write such a current.
+
+Recipe: in `resourceFrames` in `internal/perceive/projection.go`, drop the
+`unlandable` clause from `renewed`. A party member removed and added again at
+the same max with a current outside the range, out of sight, then seen, sends
+the refused frame (`TestACurrentNoResourceChangedCanLandOnIsCorrectedByARemovalAndAnAddition`).
+
+The checks that should have caught it are the projection's property tests over
+`internal/eventgen`'s walks: on `main` the model drew only its actors' one
+resource, in range, and no walk or fixture added a resource again at the same
+max with a current outside the range out of a log's sight. Labels: `test data
+missing`.
+
+**Closed by** the correction removing and adding such a resource (VTT-796).
+
 ## Open debt
 
 **`migrateLocked`'s re-read error arm is unreachable through `testdb`.**

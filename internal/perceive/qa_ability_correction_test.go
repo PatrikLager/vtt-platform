@@ -602,7 +602,7 @@ func TestQAAbilityCorrectionAListOnlyMemberFirstHeldUnseenIsBroughtByGives(t *te
 	qabcSameSet(t, "C's own log", tb.viewer("C").shown, tb.world, "C")
 }
 
-// VTT-740
+// VTT-784
 func TestQAAbilityCorrectionAHeldMemberWithoutValuesIsWithdrawnOnlyAtItsFirstSight(t *testing.T) {
 	tb := qabcNewTable(t, "A")
 	tb.step(qabcScene())
@@ -638,7 +638,7 @@ func TestQAAbilityCorrectionAHeldMemberWithoutValuesIsWithdrawnOnlyAtItsFirstSig
 	}
 }
 
-// VTT-740
+// VTT-784
 func TestQAAbilityCorrectionAListOnlyMemberAddedAgainWithValuesIsWithdrawnOnlyAtSight(t *testing.T) {
 	tb := qabcNewTable(t, "A")
 	tb.step(qabcScene())
@@ -669,7 +669,7 @@ func TestQAAbilityCorrectionAListOnlyMemberAddedAgainWithValuesIsWithdrawnOnlyAt
 	}
 }
 
-// VTT-740
+// VTT-784
 func TestQAAbilityCorrectionAMemberAddedAgainUnderAnotherNameIsWithdrawnAtOnce(t *testing.T) {
 	tb := qabcNewTable(t, "A")
 	tb.step(qabcScene())
@@ -688,7 +688,7 @@ func TestQAAbilityCorrectionAMemberAddedAgainUnderAnotherNameIsWithdrawnAtOnce(t
 	}
 }
 
-// VTT-739
+// VTT-783
 func TestQAAbilityCorrectionAMemberAddedAgainWithAnotherListIsCorrected(t *testing.T) {
 	tb := qabcNewTable(t, "A")
 	tb.step(qabcScene())
@@ -716,7 +716,7 @@ func TestQAAbilityCorrectionAMemberAddedAgainWithAnotherListIsCorrected(t *testi
 	qabcSameSet(t, "A after sight", tb.viewer("A").shown, tb.world, "B")
 }
 
-// VTT-739
+// VTT-783
 func TestQAAbilityCorrectionAMemberAddedAgainWithOtherAttributesIsIntroducedAfresh(t *testing.T) {
 	tb := qabcNewTable(t, "A")
 	tb.step(qabcScene())
