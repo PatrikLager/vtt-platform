@@ -6,7 +6,7 @@
 
 import type { State } from "../state";
 import type { Participant } from "../session";
-import type { Ability, AdventureMeta, JoinLink, MapMeta, Roster } from "../metadata";
+import type { Ability, AdventureMeta, JoinLink, MapMeta, Property, Roster } from "../metadata";
 import { ActorKind, NoteVisibility } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
@@ -20,6 +20,7 @@ import {
   removeParticipant,
 } from "../commands";
 import { readLine } from "../player";
+import { namer } from "./naming";
 
 /** whisperTargets resolves /w's name to party member ids, or says why it cannot (VTT-593, VTT-594). */
 export function whisperTargets(name: string, st: State, people: ReadonlyMap<string, { name: string }>): string[] | string {
@@ -195,6 +196,15 @@ function textarea(placeholder: string, field: string, presentText: string): HTML
   return t;
 }
 
+const WHOLE = "a whole number from -2147483648 to 2147483647";
+
+// Refuse what a Resource's int32 cannot hold: the server closes on a frame it
+// cannot decode (VTT-808).
+function int32(text: string): number | undefined {
+  const n = Number(text);
+  return /^[+-]?\d+$/.test(text) && n >= -2147483648 && n <= 2147483647 ? n : undefined;
+}
+
 function button(label: string, onClick: () => void, action?: string): HTMLButtonElement {
   const b = document.createElement("button");
   b.className = "chip";
@@ -235,6 +245,8 @@ export interface DMDeps {
   maps: MapMeta[];
   /** The abilities the Abilities group offers to give (VTT-730). */
   abilities: readonly Ability[];
+  /** The ruleset's properties, naming a resource a give asks the value of (VTT-806). */
+  properties?: readonly Property[] | undefined;
   guideFor: (id: string) => Promise<string | null>;
   /**
    * The shared join link, or null when there is none to show.
@@ -556,6 +568,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
 
   // --- abilities: what each sheet names, given and taken (VTT-730) ---
   const abilityRows: HTMLElement[] = [];
+  const named = namer(d.st, [], true, d.abilities, d.properties).resource;
   for (const a of Object.values(d.st.Actors).sort((x, y) => (x.actorId < y.actorId ? -1 : 1))) {
     const row = el("div", "ability-actor");
     row.dataset["actor"] = a.actorId;
@@ -574,11 +587,43 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
       const pick = choiceSelect("give-ability", field,
         [["", "choose an ability"], ...offered.map((ab) => [ab.id, ab.name || ab.id] as const)]);
       row.appendChild(pick);
+      const current = `give-ability-current-${a.actorId}`;
+      const max = `give-ability-max-${a.actorId}`;
+      const lacking = (id: string) => {
+        const usage = d.abilities.find((ab) => ab.id === id)?.usage;
+        return usage?.kind === "resource" && usage.resource && a.resources[usage.resource] === undefined
+          ? usage.resource : undefined;
+      };
+      const fields = [input("", current, "give-resource"), input("", max, "give-resource")] as const;
+      // Show the fields on a choice without a repaint: a repaint per arrow key
+      // takes the select's focus (VTT-788).
+      const follow = () => {
+        const asked = lacking(pick.value);
+        fields.forEach((f, i) => {
+          f.hidden = asked === undefined;
+          f.placeholder = asked === undefined ? "" : `${named(asked)} ${i === 0 ? "now" : "max"}`;
+        });
+      };
+      follow();
+      pick.addEventListener("change", follow);
+      row.append(...fields);
       row.appendChild(button("Give", () => {
         const chosen = pick.value;
         if (chosen === "") return void d.notify("Choose an ability to give first.");
+        const spent = lacking(chosen);
+        const resources: Record<string, { current: number; max: number }> = {};
+        if (spent !== undefined) {
+          const now = int32((draft[current] ?? "").trim());
+          const top = (draft[max] ?? "").trim();
+          const ceiling = top === "" ? 0 : int32(top);
+          if (now === undefined) return void d.notify(`Give ${named(spent)} a current value that is ${WHOLE}.`);
+          if (ceiling === undefined) {
+            return void d.notify(`Give ${named(spent)} a max that is ${WHOLE}, or leave it empty for none.`);
+          }
+          resources[spent] = { current: now, max: ceiling };
+        }
         sending(d, `give-ability:${a.actorId}:${chosen}`, () => ({
-          command: giveAbility(a.actorId, chosen), clears: [field],
+          command: giveAbility(a.actorId, chosen, resources), clears: [field, current, max],
         }))();
       }, "give-ability"));
     }

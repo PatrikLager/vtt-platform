@@ -62,6 +62,13 @@ test("giveAbility and takeAbility match the committed give_ability and take_abil
     fixture("take_ability_command.json"));
 });
 
+// VTT-788
+test("giveAbility with a resource matches the committed give_ability_with_value fixture", () => {
+  sameShape(toJson(ClientCommandSchema, giveAbility("act-fighter", "hunters-flurry",
+    { flurry_uses: { current: 1, max: 1 } })) as Record<string, unknown>,
+  fixture("give_ability_with_value_command.json"));
+});
+
 test("an omitted move reason is absent from the wire, not an empty string", () => {
   // protojson omits empty scalars, and sending `"reason": ""` would be a
   // different shape than the server's own fixtures show.

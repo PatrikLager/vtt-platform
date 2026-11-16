@@ -234,11 +234,13 @@ export function removeCondition(actorId: string, conditionId: string): ClientCom
   });
 }
 
-/** Give an actor's sheet one ability, by its id in the ruleset (SPEC-025). */
-export function giveAbility(actorId: string, abilityId: string): ClientCommand {
+/** Give an actor's sheet one ability, by its id in the ruleset, with the resources it brings (SPEC-025). */
+export function giveAbility(
+  actorId: string, abilityId: string, resources: Record<string, { current: number; max: number }> = {},
+): ClientCommand {
   return create(ClientCommandSchema, {
     requestId: requestId(),
-    command: { case: "giveAbility", value: { actorId, abilityId } },
+    command: { case: "giveAbility", value: { actorId, abilityId, resources } },
   });
 }
 
