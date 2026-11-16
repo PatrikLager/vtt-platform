@@ -75,7 +75,7 @@ func (s *Server) handleTakeAbility(requestID string, cmd *vttv1.ClientCommand, t
 	return s.appendChange(requestID, envs, env, p)
 }
 
-// orphanedBy answers the resource a take leaves no ability on the sheet to spend.
+// Keep a resource another id on the sheet spends: that id needs it (VTT-767).
 func orphanedBy(tk *vttv1.TakeAbility, st *engine.State, rs *rules.Ruleset) (string, bool) {
 	a, held := st.Actors[tk.GetActorId()]
 	if rs == nil || !held || !rules.Offers(a, tk.GetAbilityId()) {
@@ -93,7 +93,7 @@ func orphanedBy(tk *vttv1.TakeAbility, st *engine.State, rs *rules.Ruleset) (str
 	return spent, true
 }
 
-// appendChange stamps envs as first is stamped and appends them as one batch.
+// Stamp every envelope as first is, so each names the issuer (VTT-799).
 func (s *Server) appendChange(requestID string, envs []*vttv1.Envelope, first *vttv1.Envelope,
 	p *identity.Participant) *vttv1.CommandResult {
 	for _, env := range envs {

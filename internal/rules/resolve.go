@@ -206,9 +206,8 @@ func Resolve(rs *Ruleset, st *engine.State, cmd *vttv1.UseAbility, rng Roller) (
 		}
 	}
 
-	// Usage: a limited-use ability's resource must already exist on the
-	// caster (Resolve never creates resource entries — that's add_actor's
-	// job) and hold enough to cover the cost.
+	// Keep the refusal of a missing resource: two writers at once can leave a
+	// sheet naming a limited ability without the resource it spends (VTT-804).
 	if ability.Usage.Limited != nil {
 		lu := ability.Usage.Limited
 		r, ok := caster.GetResources()[lu.Resource]

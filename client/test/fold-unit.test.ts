@@ -8,28 +8,31 @@ import { FoldError } from "../src/state";
 
 // The golden corpus cannot reach every fold variant, and the gap is a MEASURED
 // list rather than an argument. Across every `scenarios/goldens/*/stream.json`,
-// five of fold.ts's arms are never folded: **attackRolled, tokenRemoved,
-// actorRemoved, tokenHidden and sceneSeen**. (Measured 2026-10-20 by listing
-// each stream's payload keys against fold.ts's cases. No total is quoted: an
-// arm count is the shape that rots by addition.)
-// Said at the level of the EVENT VARIANT, which
-// is the level that matters for parity: `attackRolled` shares its arm BODY
-// with `default:` alone, since `abilityUsed` and `adventureLoaded` have arms
-// of their own; it is the variant that no corpus stream carries, and
-// client/test/fold-rejections.test.ts's "an event kind the fold does not
-// know is skipped, not fatal" is what folds one directly. Named
-// rather than cited by line for the reason this file states below: an offset
-// into another file rots the moment anything is inserted above it, and
-// nothing pins it.
+// these arms of fold.ts are never folded: **attackRolled, tokenRemoved,
+// actorRemoved, tokenHidden, sceneSeen, tokenDescribed and whisperAdded**.
+// (Measured by listing each stream's payload keys against fold.ts's cases.
+// No total is quoted: an arm count is the shape that rots by addition.)
+// Said at the level of the EVENT VARIANT, which is the level that matters for
+// parity: `attackRolled` shares its arm BODY with `default:` alone, since
+// `abilityUsed` and `adventureLoaded` have arms of their own; it is the
+// variant that no corpus stream carries, and fold-rejections.test.ts's "an
+// event kind the fold does not know is skipped, not fatal" is what folds one
+// directly. Named rather than cited by line for the reason this file states
+// below: an offset into another file rots the moment anything is inserted
+// above it, and nothing pins it.
 //
-// tokenRemoved and actorRemoved are the two NEWEST, added by retraction-leaves
-// Tasks 8 and 9 respectively (2026-08-31) in that order — every corpus stream
-// predates both, so none can carry either. They get the same answer as the
-// door pair below rather than attackRolled's: exercised directly, not folded
-// incidentally. "tokenRemoved removes only that token" (this file) and
-// "removing an unknown token is rejected" (fold-rejections.test.ts) fold both
-// of tokenRemoved's arms — success and rejection — the same way the door tests
-// below fold doorOpened/doorClosed, and actorRemoved is covered the same way.
+// No scenario removes a token or an actor, describes a token or whispers, so
+// no corpus stream carries tokenRemoved, actorRemoved, tokenDescribed or
+// whisperAdded. They get the same answer as the door pair below rather than
+// attackRolled's: exercised directly, not folded incidentally. "tokenRemoved
+// removes only that token" (this file) and "removing an unknown token is
+// rejected" (fold-rejections.test.ts) fold both of tokenRemoved's arms —
+// success and rejection — the same way the door tests below fold
+// doorOpened/doorClosed, and actorRemoved is covered the same way;
+// tokenDescribed by "a token's description replaces all four texts, an emptied
+// one included" (this file) and "describing an unknown token is rejected"
+// (fold-rejections.test.ts), and whisperAdded by fold-rejections.test.ts's
+// whisper cases and client/test/qa-whisper.test.ts.
 //
 // A CHARACTER LOG'S SIDE OF A REMOVAL is folded too, which is a different claim:
 // client/test/removal-batch-parity.test.ts folds
@@ -58,13 +61,14 @@ import { FoldError } from "../src/state";
 // DICE ARE NOT THE CAUSE, and two earlier versions of this header said they
 // were. It read "three of the seven scenarios roll dice and are excluded until a
 // roller seam exists, which leaves resourceChanged, conditionApplied/Removed and
-// the ability/adventure no-ops unexercised". Every clause was wrong: the corpus
-// is EIGHT; TWO scenarios roll dice (adventure-night, toy-brawl) and both ARE in
-// it; and those two do emit resourceChanged, conditionApplied, conditionRemoved,
-// abilityUsed and adventureLoaded, so none of those arms is unexercised. Only
-// goblin-fight is absent, and scenarios/goldens/README.md says of it that "it
-// costs nothing in coverage: every command type it uses is already covered by
-// toy-brawl" — so its absence explains none of the gap above either.
+// the ability/adventure no-ops unexercised". Every clause was wrong:
+// adventure-night, door-watch and toy-brawl roll dice and ARE in the corpus,
+// and between them adventure-night and toy-brawl emit resourceChanged,
+// conditionApplied, conditionRemoved, abilityUsed and adventureLoaded, so none
+// of those arms is unexercised. goblin-fight, which also rolls dice, has no
+// golden, and scenarios/goldens/README.md says of it that "it costs nothing in
+// coverage: every command type it uses is already covered by toy-brawl" — so
+// its absence explains none of the gap above either.
 //
 // tokenHidden and sceneSeen are in that list because visibility spec §5 makes
 // both projection-only: no command produces them, so no world LOG holds them.
