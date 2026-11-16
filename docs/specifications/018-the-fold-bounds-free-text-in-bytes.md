@@ -7,12 +7,12 @@ Accepted. Implemented by `internal/engine/apply.go` (the const block with
 `maxMoveReasonBytes`, `maxNameBytes` and `maxIDBytes`, and `Apply`'s
 `SessionStarted`, `SceneCreated`, `ActorAdded`, `TokenPlaced`, `TokenMoved`,
 `NarrationAdded`, `WhisperAdded`, `NoteUpserted`, `AdventureLoaded`,
-`AbilityUsed`, `ConditionApplied`, `ActorControlGranted` and
+`AbilityUsed`, `ConditionApplied`, `ResourceAdded`, `ActorControlGranted` and
 `ActorControlRevoked` arms, the last two through `controlTarget`,
 `keyLength` for an actor's keys, and the `AbilityGiven` and `AbilityTaken`
 arms, which bound no ability id) and its TypeScript mirror
 `client/src/fold.ts` (`checkLen`, `checkKeys` for an actor's keys, the
-same thirteen arms, the control arms through `requireControlTarget`, and the
+same arms, the control arms through `requireControlTarget`, and the
 `abilityGiven` and `abilityTaken` arms); mirrored for an adventure's notes,
 opening narration, names and ids by `internal/adventure/load.go`'s constants and for a map's name
 and ids by `internal/mapdef/load.go`'s `maxNameBytes` and `maxIDBytes`, for a
@@ -38,10 +38,12 @@ client fold's half, and the searches below show the fold sets no bound.
 Pinned by
 `internal/engine/apply_test.go`, `apply_boundary_test.go`,
 `move_reason_internal_test.go`, `name_bound_internal_test.go`,
-`id_bound_internal_test.go`, `internal/campaign/qa_id_bound_test.go`,
-`internal/gateway/server_test.go`, `qa_move_reason_bound_test.go`,
-`qa_name_bound_test.go`, `qa_id_bound_test.go`,
-`client/test/fold-rejections.test.ts`, `qa-move-reason-bound.test.ts`,
+`id_bound_internal_test.go`, `resource_change_test.go`,
+`qa_resource_change_test.go`, `internal/campaign/qa_id_bound_test.go`,
+`internal/gateway/server_test.go`, `qa_ability_value_test.go`,
+`qa_move_reason_bound_test.go`, `qa_name_bound_test.go`, `qa_id_bound_test.go`,
+`client/test/fold-rejections.test.ts`, `fold-resources.test.ts`,
+`qa-resource-change.test.ts`, `qa-move-reason-bound.test.ts`,
 `qa-name-bound.test.ts`, `qa-id-bound.test.ts`,
 `internal/adventure/format_test.go`, `load_test.go`, `qa_name_bound_test.go`,
 `qa_id_bound_test.go`, `internal/mapdef/load_test.go`, `installed_test.go`,
@@ -64,12 +66,14 @@ Pinned by
 ## Principles served
 
 Principle 5 of `docs/blueprint.md`: a bound may be raised and never lowered,
-and a field gains one only on one of the two tests in How it works, since a
-bound added later refuses every log that already holds a longer value.
+and a field the log can already hold gains one only on one of the two
+tests in How it works, since a bound added later refuses every log that
+already holds a longer value; a field whose value becomes a key the table
+already bounds carries that bound from the change that adds the field.
 
 ## How it works
 
-**Twenty-five fields are bounded, each in UTF-8 bytes, inclusive.**
+**The fields in this table are bounded, each in UTF-8 bytes, inclusive.**
 
 | Field | Bound | May be empty |
 |---|---|---|
@@ -95,6 +99,7 @@ bound added later refuses every log that already holds a longer value.
 | `ActorAdded`'s `Actor.module_id` | 128 (`maxIDBytes`) | yes |
 | `ActorAdded`'s `Actor.resources` keys | 128 (`maxIDBytes`) | no |
 | `ActorAdded`'s `Actor.attributes` keys | 128 (`maxIDBytes`) | no |
+| `ResourceAdded.resource` | 128 (`maxIDBytes`) | no |
 | `SceneCreated`'s `SceneObject.object_id` | 128 (`maxIDBytes`) | no |
 | `SessionStarted`'s `Envelope.session_id` | 128 (`maxIDBytes`) | no |
 | `TokenMoved.scene_id` | 128 (`maxIDBytes`) | no |
@@ -118,13 +123,18 @@ duplicate and a declared controller, then its name, then its module id, its
 resource names and its attribute names; a `TokenPlaced` for its id, then a
 duplicate, a known scene, a known actor and a position; an `AdventureLoaded`
 for its id, then its name; a `ConditionApplied` for its condition id, then a
-known actor, then a duplicate; an `AbilityUsed` for its ability id alone; a
+known actor, then a duplicate; a `ResourceAdded` for its resource name,
+refused as `engine: resource name must be 1-128 bytes, got <n>`, then a
+value, then a known actor, then a resource the actor already holds; an
+`AbilityUsed` for its ability id alone; a
 `WhisperAdded` for its text, then each of its `to_actor_ids` and then its
 `from_actor_id`, when it has one, for a known actor, refused as `engine:
 whisper names unknown actor "<id>"`; a
 `SessionStarted` for an open session, then its name, then its session id; a
-control event for a participant id, then its length, then a known actor. These
-twenty-five are the only texts `apply.go` bounds above; beyond them it
+control event for a participant id, then its length, then a known actor.
+`ResourceAdded.resource` becomes a key of the actor's `resources`, so it has
+the bound `ActorAdded`'s resource keys have. The fields of the table are the
+only texts `apply.go` bounds above; beyond them it
 requires a scene's object ids to be distinct and an `AbilityGiven`'s ability
 id to be non-empty, refused as `engine: ability_given requires an ability
 id` before its actor is looked up, with no bound on its length. Every other
@@ -139,7 +149,12 @@ by a test or a recipe, that a value of the field written for play rather
 than built to reach a limit, by a command or a file, breaks a frame, a view
 or a refusal that a participant other than its writer receives; a file's
 writer is whoever installs it. The DM, the agent and whoever installs a file
-are trusted with a text's length as they are with its content. No field
+are trusted with a text's length as they are with its content. A field whose
+value becomes a key of a field the table bounds carries that bound, without
+either test, from the change that adds the field: `ResourceAdded.resource`
+becomes a key of `Actor.resources`, and were it longer than an `ActorAdded`
+lets those keys be, the world could hold an actor whose `ActorAdded`,
+carrying the whole sheet into a character log, both folds refuse. No field
 outside the table meets the first: each of SPEC-013's player cells puts text
 it chose into the log only as a field of the table or as an id that
 `engine.Apply` or `Resolve` looks up, `add_whisper`'s text as a field of the
@@ -149,7 +164,7 @@ into `AbilityUsed.outcome_summary` or a reason, and the spectator's one cell,
 
 | Field | What holds it |
 |---|---|
-| `TokenMoved.token_id`, `TokenPlaced.scene_id`, `TokenPlaced.actor_id`, `TokenRemoved.token_id`, `ActorRemoved.actor_id`, `DoorOpened.scene_id`, `DoorClosed.scene_id`, `ResourceChanged.actor_id`, `ResourceChanged.resource`, `ConditionApplied.actor_id`, `ConditionRemoved.actor_id`, `ConditionRemoved.condition_id`, `NoteDeleted.key`, `ActorControlGranted.actor_id`, `ActorControlRevoked.actor_id`, `TokenDescribed.token_id`, `WhisperAdded.to_actor_ids`, `WhisperAdded.from_actor_id`, `AbilityGiven.actor_id`, `AbilityTaken.actor_id` | `engine.Apply` refuses a value that names nothing it has folded, so each equals an id or a name the table bounds |
+| `TokenMoved.token_id`, `TokenPlaced.scene_id`, `TokenPlaced.actor_id`, `TokenRemoved.token_id`, `ActorRemoved.actor_id`, `DoorOpened.scene_id`, `DoorClosed.scene_id`, `ResourceChanged.actor_id`, `ResourceChanged.resource`, `ResourceAdded.actor_id`, `ResourceRemoved.actor_id`, `ResourceRemoved.resource`, `ConditionApplied.actor_id`, `ConditionRemoved.actor_id`, `ConditionRemoved.condition_id`, `NoteDeleted.key`, `ActorControlGranted.actor_id`, `ActorControlRevoked.actor_id`, `TokenDescribed.token_id`, `WhisperAdded.to_actor_ids`, `WhisperAdded.from_actor_id`, `AbilityGiven.actor_id`, `AbilityTaken.actor_id` | `engine.Apply` refuses a value that names nothing it has folded, so each equals an id or a name the table bounds |
 | `Actor.controller_id`, `Actor.controller_ids` | `engine.Apply` refuses an `ActorAdded` that declares either, and fills them from `ActorControlGranted.participant_id` |
 | `AbilityUsed.actor_id`, `AbilityUsed.target_ids`, `AbilityUsed.Outcome.target_id` | `Resolve` refuses a value that names no folded actor |
 | `AbilityUsed.Outcome.result` | `Resolve` writes a branch label, which `internal/rules/load.go` bounds at `maxIDBytes` |
@@ -216,7 +231,7 @@ event exceeds a bound is answered ok=false with that text and appends nothing
 event does not fold, so `campaign.Open` refuses it.
 
 **The client's fold mirrors every bound.** `fold.ts` calls `checkLen(what, s,
-min, max)` for each of the twenty-five fields, an actor's resource and
+min, max)` for each field of the first table, an actor's resource and
 attribute names one by one, with the same numbers as literals, in the same
 order within each arm; `checkLen` counts UTF-8 bytes with `TextEncoder`, as
 Go's `len` does, and throws `FoldError` reading `<field> exceeds <max> bytes`
@@ -272,16 +287,20 @@ requires them to state it too. The `add_whisper` tool describes its `text` as
   or ruleset file does. It goes into the second table above, with what holds
   it, in the same change. Nothing checks that the second table is complete.
 - No field joins the first table unless one of the two tests in How it works
-  is met. A change that takes away what holds a text in the second table, or
+  is met, or it is added with the bound of a key its value becomes, as
+  `ResourceAdded.resource` became a key of `Actor.resources` (D2 of
+  `docs/superpowers/plans/2026-11-15-an-ability-is-given-with-its-value.md`).
+  A change that takes away what holds a text in the second table, or
   that lets a role other than the DM and the agent write one, puts that text
   to the tests again.
 - A bound added to a field later refuses every log that already holds a
   longer value, as a lowered bound does; that cost is why a field joins the
-  first table only on one of the two tests.
+  first table only on one of the two tests or as the mirror of a bounded
+  key.
 
 ## Requirements
 
 VTT-264, VTT-265, VTT-266, VTT-274, VTT-275, VTT-276, VTT-277, VTT-278,
 VTT-279, VTT-281, VTT-282, VTT-284, VTT-285, VTT-286, VTT-289, VTT-290,
 VTT-291, VTT-292, VTT-293, VTT-294, VTT-296, VTT-297, VTT-585, VTT-586,
-VTT-624, VTT-625.
+VTT-624, VTT-625, VTT-770.

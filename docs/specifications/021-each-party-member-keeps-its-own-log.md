@@ -30,8 +30,8 @@ Pinned by `internal/store/character_log_test.go`,
 `character_subscribe_test.go`, `qa_character_subscribe_test.go`,
 `append_watch_test.go`, `qa_append_watch_test.go`,
 `every_log_told_test.go`, `character_log_oracle_test.go`,
-`ability_reopen_test.go`, `qa_ability_reopen_test.go` and
-`poison_internal_test.go`, by
+`ability_reopen_test.go`, `qa_ability_reopen_test.go`,
+`resource_reopen_test.go` and `poison_internal_test.go`, by
 `internal/perceive/resume_from_fold_test.go`, and, for a creature a player
 runs, by `internal/gateway/creature_test.go` and `qa_creature_test.go`,
 `tools/toolgen/main_test.go` and `internal/engine/actor_control_test.go`.
@@ -103,8 +103,8 @@ by id. Its decision starts from nothing seen, so the frames for the resuming
 event place what it sees on its present square and correct each held actor in
 sight, or withdraw and introduce afresh one that is reshaped (SPEC-016). A
 new actor added under an old id continues that id's log, and is withdrawn and
-introduced afresh, or corrected, by the comparison SPEC-016 states (VTT-739,
-VTT-740).
+introduced afresh, or corrected, by the comparison SPEC-016 states (VTT-783,
+VTT-784).
 
 **A creature a player runs.** By the owner's rulings, of 2026-08-23 for a
 creature charmed into a player's service and of 2026-10-19 for one they
@@ -153,20 +153,22 @@ reopened log therefore holds more resumes than the fan-out recorded, all at
 or before its first caused entry, where none moves an anchor.
 
 **The memory, and Open.** What the campaign holds of a log is its fold, its
-last sequence, the decision that writes it (nil while paused), and the
-caused entries and resumes the anchors are rewritten against. `Open` reads
-every stored log, folds it, and refuses a log that does not fold, naming the
-actor (VTT-327). An active log's decision resumes as
-`perceive.Resume(eyes, fold, world)` (SPEC-016), so a reopen introduces
-nothing the log holds (VTT-324), a log that holds a party member's ability
-ids in another order than the world's sheet included
-(`TestACampaignReopenedAfterAGiveResumesEveryLog`,
-`TestQAAbilityReopenResumesALogHoldingTheIdsInAnotherOrder`). No entry is
-changed or removed once written (VTT-326): `grep -rln 'character_events'
---include='*.go' . | grep -v _test.go` prints only `internal/store/store.go`,
-whose statements on the table are its `CREATE TABLE`, the next-sequence query
-and the `INSERT` in `Store.appendLocked`, and the two reads; none updates or
-deletes. Every log folds standalone at every prefix (VTT-323).
+last sequence, the decision that writes it (nil while paused), and the caused
+entries and resumes the anchors are rewritten against. `Open` reads every
+stored log, folds it, and refuses a log that does not fold, naming the actor
+(VTT-327). An active log's decision resumes as `perceive.Resume(eyes, fold,
+world)` (SPEC-016), so a reopen introduces nothing the log holds (VTT-324), a
+log that holds a party member's ability ids in another order than the world's
+sheet included (`TestACampaignReopenedAfterAGiveResumesEveryLog`,
+`TestQAAbilityReopenResumesALogHoldingTheIdsInAnotherOrder`), as is one
+written while a party member's resources were added and removed
+(`TestACampaignReopenedAfterResourcesAddedAndRemovedResumesEveryLog`). No
+entry is changed or removed once written (VTT-326): `grep -rln
+'character_events' --include='*.go' . | grep -v _test.go` prints only
+`internal/store/store.go`, whose statements on the table are its `CREATE
+TABLE`, the next-sequence query and the `INSERT` in `Store.appendLocked`, and
+the two reads; none updates or deletes. Every log folds standalone at every
+prefix (VTT-323).
 
 **Following a log.** `Campaign.SubscribeCharacter(actorID, afterSeq,
 buffer, noProgress)` follows one actor's log from a cursor in that log's own

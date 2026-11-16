@@ -29,18 +29,29 @@ sheet names, by `TestActorAddedWithAbilityIdsRoundTripsInItsOrder` and
 `tools/toolgen/main_test.go`, by
 `tools/toolgen/qa_add_actor_abilities_doc_test.go`, and, for the texts
 `vtt mcp` serves, by `cmd/vtt/qa_campaign_abilities_fit_test.go` and
-`cmd/vtt/qa_use_unnamed_test.go` (VTT-700, VTT-701, VTT-729, VTT-749); a
+`cmd/vtt/qa_use_unnamed_test.go` (VTT-700, VTT-701, VTT-729, VTT-749);
+the spend rule in `add_actor`'s schema, by
+`TestAddActorSaysASpentResourceIsHeldExactlyWhileAnAbilitySpendingItIsNamed`
+in `tools/toolgen/main_test.go` and
+`TestQASFAddActorToolSaysWhatTheSpendRuleRefuses` in
+`cmd/vtt/qa_serve_spend_test.go` (VTT-786); a
 give and a take, by `TestGiveAbilityCommandRoundTrip`,
-`TestTakeAbilityCommandRoundTrip`, `TestAbilityGivenEnvelopeRoundTrip` and
-`TestAbilityTakenEnvelopeRoundTrip` in `contract/roundtrip_test.go`, their
+`TestGiveAbilityWithAValueCommandRoundTrip`,
+`TestTakeAbilityCommandRoundTrip`, `TestAbilityGivenEnvelopeRoundTrip`,
+`TestAbilityTakenEnvelopeRoundTrip`, `TestResourceAddedEnvelopeRoundTrip` and
+`TestResourceRemovedEnvelopeRoundTrip` in `contract/roundtrip_test.go`, their
 conversion by `internal/gateway/ability_change_internal_test.go`, their
+batches by `TestQAAVGiveCarriesTheResourceAtItsValue` and
+`TestQAAVTakeRemovesTheResourceNoOtherAbilitySpends` in
+`internal/gateway/qa_ability_value_test.go` (VTT-799), their
 tools' texts by
-`TestGiveAndTakeAbilitySayWhoMayWhatEachRefusesAndThatNothingElseChanges`
+`TestGiveAndTakeAbilitySayWhoMayWhatEachRefusesAndWhatChanges`
 and `TestGiveAndTakeAbilitySayEachControllingPlayerIsTold` in
 `tools/toolgen/main_test.go`, by
 `internal/gateway/qa_ability_change_command_test.go` and by
-`internal/gateway/qa_watchable_abilities_test.go` (VTT-728, VTT-735), and
-what the tools send by `internal/mcp/ability_change_tools_test.go`;
+`internal/gateway/qa_watchable_abilities_test.go` (VTT-785, VTT-735), and
+what the tools send by `internal/mcp/ability_change_tools_test.go` and
+`cmd/vtt/mcp_ability_change_e2e_test.go`;
 the ability ids a set carries, by
 `TestServerFrameWatchableChangedWithAbilityIdsRoundTrip` in
 `contract/roundtrip_test.go`; a token's
@@ -173,7 +184,11 @@ ability its sheet does not name, so one that names none can use none until
 `give_ability` gives it one, and that `give_ability` and `take_ability`
 change the list in play (VTT-729), that with a ruleset served an id the
 ruleset does not hold refuses the whole command (VTT-700), and that an
-empty id refuses it with or without one (VTT-749). `use_ability`'s tool
+empty id refuses it with or without one (VTT-749). With a ruleset served,
+its `abilityIds` says that an ability spending a resource the actor does not
+hold refuses the whole command, and its `resources` that so does a resource
+some ability of the ruleset spends that no ability the actor names spends
+(VTT-786). `use_ability`'s tool
 says it uses an ability the acting actor's sheet names, and that a use of
 any other is refused whatever the caller's role (VTT-701).
 
@@ -182,24 +197,49 @@ any other is refused whatever the caller's role (VTT-701).
 `GiveAbility` and `TakeAbility`, arms 37 and 38 of `ClientCommand.command`,
 and `AbilityGiven` and `AbilityTaken`, arms 36 and 37 of `Envelope.payload`,
 each carry an `actor_id` (field 1) and an `ability_id` (field 2): one actor
-and one ability, by the owner's ruling OD-1 of 2026-11-14. `ToEvent`
+and one ability, by the owner's ruling OD-1 of 2026-11-14. `GiveAbility`
+also carries `resources` (field 3), a `map<string, Resource>` keyed as
+`Actor.resources` is: the resources the give brings. `ResourceAdded` and
+`ResourceRemoved`, arms 38 and 39 of `Envelope.payload`, each carry an
+`actor_id` (field 1) and a `resource` (field 2), the resource's name, and
+`ResourceAdded` a `value` (field 3), its current and max. `ToEvent`
 (`internal/gateway/convert.go`) makes a `give_ability` an `AbilityGiven`
-and a `take_ability` an `AbilityTaken`, copying both fields. What each event
-does to a sheet is SPEC-025's; who may send each command and what the
-gateway refuses, SPEC-013's; what a character log is sent of either,
-SPEC-016's.
+and a `take_ability` an `AbilityTaken`, copying `actor_id` and
+`ability_id`. What each event does to a sheet is SPEC-025's; who may send
+each command and what the gateway refuses, SPEC-013's; what a character log
+is sent of each, SPEC-016's.
+
+A give and a take are each one batch through `campaign.AppendBatch`
+(`handleGiveAbility` and `handleTakeAbility` in
+`internal/gateway/ability_change.go`): the ability event first, then a
+give's `ResourceAdded` per resource it carries, in byte order of the names,
+at the value it carries, or a take's `ResourceRemoved` of the resource
+SPEC-025 says leaves with the ability. Each event of the batch carries the
+issuer's participant id and role (VTT-799), and the result carries the
+batch's first sequence.
 
 The `give_ability` and `take_ability` tools require `actorId` and
 `abilityId`, documented as the id of the actor whose sheet changes and the
 ability's id in the served ruleset. Each says it is the DM's and the
-agent's alone, that only the actor's ability list changes, and what it
-refuses, appending nothing (VTT-728): `give_ability` an actor the campaign
-does not hold, an ability its sheet already names, an empty ability id
-and, with a ruleset served, an id the ruleset does not hold;
-`take_ability` an actor the campaign does not hold and an ability its sheet
-does not name. `give_ability` adds that its tokens, controllers, conditions
-and resources stay as they are, so the agent changes what a character can
-do by it and not by `remove_actor` and `add_actor`. Each says that each
+agent's alone, what changes and what it refuses, appending nothing
+(VTT-785). `give_ability` says that an ability spending a resource the
+sheet does not hold is given with that resource's value under `resources`,
+its current required, 0 included, and its max optional, and that only the
+ability list and that resource change: its tokens, controllers, conditions,
+attributes and other resources stay as they are, so the agent changes what
+a character can do by it and not by `remove_actor` and `add_actor`. It
+refuses an actor the campaign does not hold, an ability its sheet already
+names and an empty ability id; with a ruleset served, an id the ruleset
+does not hold, an ability given without the value of a resource it spends
+that the sheet does not hold, a resource the sheet already holds and a
+resource the ability does not spend; with none served, any resources. Its
+`resources` says it is only for an ability that spends a resource the sheet
+does not hold, and then required, and that a current null or left out
+refuses the command. `take_ability` says that, with a ruleset served, the
+resource the ability spends leaves the sheet with it when no ability left
+on the sheet spends it, that no other resource leaves and nothing else
+about the actor changes, and that it refuses an actor the campaign does not
+hold and an ability its sheet does not name. Each says that each
 player who controls the actor while it is a party member is told
 (VTT-735), which `WatchableChanged` carries (below) and SPEC-022's window
 shows.
@@ -381,7 +421,8 @@ player as well, who may revoke only control they themselves hold
 
 `remove_actor`, `load_map` and `remove_participant` each produce an ordered
 batch, accepted or rejected atomically through `campaign.AppendBatch`; so do
-`use_ability` and `load_adventure`, whose batches are SPEC-012's.
+`use_ability` and `load_adventure`, whose batches are SPEC-012's, and
+`give_ability` and `take_ability`, whose batches are above.
 
 `remove_actor` emits one `TokenRemoved` per token of that actor, in token-id
 order, then the `ActorRemoved`. This is a correctness requirement rather than a
@@ -457,4 +498,4 @@ Those readers are not reading this record.
 
 VTT-184, VTT-232, VTT-473, VTT-479, VTT-480, VTT-505, VTT-559, VTT-560,
 VTT-561, VTT-562, VTT-563, VTT-567, VTT-591, VTT-674, VTT-700, VTT-701,
-VTT-728, VTT-729, VTT-735, VTT-749.
+VTT-729, VTT-735, VTT-749, VTT-785, VTT-786, VTT-799.

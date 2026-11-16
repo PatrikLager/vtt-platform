@@ -144,12 +144,26 @@ beside `internal/engine/ability_change_test.go`,
 `internal/engine/qa_ability_change_test.go`,
 `cmd/vtt/ability_change_dump_test.go` and
 `internal/harness/fold_golden_test.go` (VTT-715, VTT-717, VTT-720 to
-VTT-722, VTT-727); that the Story words a give and a take, by
+VTT-722, VTT-727); that the fold adds and removes a resource as
+`engine.Apply` does, refusals included, and that a log of them dumps as
+`vtt state dump` prints it, by `client/test/fold-resources.test.ts`,
+`client/test/qa-resource-change.test.ts` and
+`client/test/fold-parity.test.ts`, beside
+`internal/engine/resource_change_test.go`,
+`internal/engine/qa_resource_change_test.go`,
+`cmd/vtt/resource_change_dump_test.go` and
+`cmd/vtt/qa_resource_change_dump_test.go` (VTT-769 to VTT-774); that the
+Story words a give and a take, by
 `client/test/spectator-view.test.ts` and
-`client/test/qa-ability-change.test.ts` (VTT-736); that the DM console
+`client/test/qa-ability-change.test.ts` (VTT-736), and a resource added and
+removed, by `client/test/spectator-view.test.ts` and
+`client/test/qa-resource-change.test.ts` (VTT-790); that the DM console
 offers and sends both, by `client/test/dm-abilities.test.ts`,
 `client/test/qa-dm-abilities.test.ts`, `client/test/app.test.ts` and
-`client/test/command-surface.test.ts` (VTT-730); and that a player's window
+`client/test/command-surface.test.ts` (VTT-730), and asks for and sends a
+give's value, by `client/test/dm-abilities.test.ts`,
+`client/test/qa-give-value.test.ts` and `client/test/commands.test.ts`
+(VTT-788, VTT-789, VTT-805 to VTT-808); and that a player's window
 reads `/api/ruleset` again when a set changes a party member's ability ids
 and tells the player what changed, naming each ability by every list read
 since load, while no other window does either, by
@@ -410,6 +424,19 @@ and not at all when it is empty, as `vtt state dump` does (VTT-704), so the
 client's fold of a log of gives and takes dumps as `vtt state dump` prints
 it, its refusals included (VTT-727).
 
+Its `resourceAdded` arm refuses a resource name shorter than 1 or longer than
+128 bytes (SPEC-018), then an event with no value, then an actor the fold
+does not hold, then a resource the actor already holds, and otherwise sets
+the actor's resources to a new map holding the resource at the event's
+current and max, whatever their numbers; its `resourceRemoved` arm refuses
+an actor the fold does not hold, then a resource the actor does not hold,
+and otherwise sets them to a new map without it (`withResources`). Each
+refusal is a `FoldError` in the client's own words, and the two arms refuse
+and change what `engine.Apply`'s do (SPEC-025), nothing else of the actor or
+the state included (VTT-769 to VTT-773), so the client's fold of a log of
+resources added and removed dumps as `vtt state dump` prints it, its
+refusals included (VTT-774).
+
 The panel offers abilities for the actor it acts as: a player's the party
 member they watch, a DM's and an agent's the actor its chip selects. It
 offers one button for each ability of the window's list that the actor's
@@ -611,7 +638,8 @@ panel's own handling of that answer runs. Until the answer, what was typed
 for the command stays in its field and in `draft` or `PlayerUIState`. When
 the server accepts it (`ok`):
 - the console clears the drafts of the fields that fed the command, Save
-  note's key, title and text and the Say's `say-as` excepted, and asks for a
+  note's key, title and text and the Say's `say-as` excepted, and, for a
+  row's Give, both its value fields whether or not they fed it, and asks for a
   repaint through `DMDeps.rerender`, which `app.ts` sets to `paint`. It
   empties no box on the page itself: the repaint draws each of those fields
   anew, as with nothing typed: empty, the blank option, or for a Describe box
@@ -696,7 +724,10 @@ abilities and the properties with no log, by the role `/api/me` last gave
 - **A resource** is named by `Namer.resource`: by the display name of the
   property `/api/ruleset` gives under its key as a `resource`, else by its
   key, and by its key while the window has no properties; a `number`
-  property names no resource (VTT-622, VTT-623). A disc's resource chip
+  property names no resource (VTT-622, VTT-623). The console's value fields
+  of a give are named so, by a namer `renderDMConsole` builds from the
+  fold, the abilities and the properties `DMDeps` hands it, with no log
+  (VTT-806). A disc's resource chip
   shows `current/max` and is titled so (`ResourceChip.label`, which
   `tokensOnScene` sets), and a token's chips stay sorted by key. The Story's
   and the Events panel's line of a `resourceChanged` reads the actor, the
@@ -737,7 +768,10 @@ by the owner's ruling of 2026-10-24 on the ability's line). A give reads
 "<actor> can now use <ability>" and a take "<actor> can no longer use
 <ability>", the actor and the ability as the window names them (VTT-736),
 in every window whose log holds the entry, a correction's included, by the
-owner's ruling OD-4 of 2026-11-14. A whisper reads
+owner's ruling OD-4 of 2026-11-14. A resource added reads "<actor> now has
+<resource> at <current>" and a resource removed "<actor> no longer has
+<resource>", the resource as `Namer.resource` names it (VTT-790), a
+correction's included. A whisper reads
 "The DM whispers to ", its `to_actor_ids` named as the window names actors
 and joined by ", ", then ": " and its text, or its `from_actor_id` so named,
 " whispers to the DM: " and its text, and the Story draws it with the class
@@ -764,13 +798,30 @@ display name `DMDeps.abilities` gives it, else its id, and " ✕" (`data-action`
 `DMDeps.abilities` holds abilities the sheet does not name, the row then holds
 a select of those, in the list's order, each labelled its display name, else
 its id, after a first option of no value labelled "choose an ability", the
-choice kept in `draft` under `give-ability-` and the actor's id, and a Give
-button (`data-action` `give-ability`) that sends `giveAbility` of the chosen
-ability, or, with none chosen, tells "Choose an ability to give first."
-through `DMDeps.notify` and sends nothing (VTT-730). Neither the select nor a
+choice kept in `draft` under `give-ability-` and the actor's id; a current
+field and a max field, kept in `draft` under `give-ability-current-` and
+`give-ability-max-` and the actor's id, as their `data-field`; and a Give
+button (`data-action` `give-ability`). The two fields are shown exactly
+while the chosen ability's `usage` spends a resource the actor's sheet does
+not hold, and hidden otherwise. They follow each change of the choice
+without a repaint, and each takes as its placeholder the resource named as
+`Namer.resource` names it, then " now" or " max" (VTT-788, VTT-806). Give
+with none chosen tells "Choose an ability to give first." through
+`DMDeps.notify` and sends nothing (VTT-730). With the fields shown, Give
+reads each trimmed, and an integer is an optional sign and digits that a
+32-bit signed field can hold. A current that is not one, an empty one
+included, tells "Give <resource> a current value that is a whole number from
+-2147483648 to 2147483647.", and then a max that is neither empty nor one
+"Give <resource> a max that is a whole number from -2147483648 to
+2147483647, or leave it empty for none.", each sending nothing (VTT-789,
+VTT-805, VTT-808); otherwise Give sends `giveAbility` of the chosen ability
+with that resource under `resources` at the current and the max, an empty
+max as 0, none (VTT-788). With the fields hidden it sends no resources,
+whatever was typed for an earlier choice (VTT-807). Neither the select nor a
 button carries a `data-field`. `app.ts` hands `DMDeps.abilities` the abilities
 of the newest `/api/ruleset` answer, every ability the served ruleset holds
-for the DM and the agent (SPEC-012), so with no ruleset served the console
+for the DM and the agent (SPEC-012), and `DMDeps.properties` its
+properties, so with no ruleset served the console
 offers no give and still offers a take of each id a sheet names. Whether the
 server accepts either is SPEC-013's.
 
@@ -903,15 +954,20 @@ each entry it is sent, and no switch.
   with it, as when the world adds an id again as another, out of sight, as a
   party member with no attributes, resources or module data, which
   `add_actor`'s description tells the agent never to do (VTT-390). An
-  `abilityGiven` or an `abilityTaken` is no part of a run, so where such a
-  correction sends some, they and the grants behind them are drawn.
-- The Story draws a correction's `abilityGiven` frames as it draws a
-  forwarded give, so a party member whose sheet names abilities and holds no
-  attributes, resources or module data is drawn "<actor> can now use
-  <ability>" for each at its first sight in a log that held it unseen,
-  whether its `actorAdded` named the ability or a give added it, and so is
-  such a character in its own log when that log opens for it already a
-  party member (SPEC-021, SPEC-016).
+  `abilityGiven`, an `abilityTaken`, a `resourceAdded` or a `resourceRemoved`
+  is no part of a run, so where such a correction sends some, they and the
+  conditions and grants behind them are drawn.
+- The Story draws a correction's `resourceAdded` and `abilityGiven` frames
+  as it draws a forwarded one, so a party member whose sheet holds no
+  attributes or module data is drawn "<actor> now has <resource> at
+  <current>" for each resource it holds and "<actor> can now use <ability>"
+  for each ability it names at its first sight in a log that held it unseen,
+  whether its `actorAdded` named them or a give added them, and so is such a
+  character in its own log when that log opens for it already a party member
+  (SPEC-021, SPEC-016). A correction that renews a resource, removing and
+  adding it (SPEC-016), draws "<actor> no longer has <resource>" and then
+  "<actor> now has <resource> at <current>" for a resource the sheet never
+  lost.
 - A page opened after a give or a take is told nothing of it, since its first
   set hands over nothing (VTT-733), and a reload forgets the names earlier
   answers gave.
@@ -986,4 +1042,6 @@ VTT-595, VTT-596, VTT-597, VTT-599, VTT-600, VTT-604, VTT-605, VTT-606,
 VTT-607, VTT-622, VTT-623, VTT-662, VTT-666, VTT-668, VTT-672, VTT-679,
 VTT-695, VTT-696, VTT-704, VTT-705, VTT-712, VTT-715, VTT-717, VTT-720,
 VTT-721, VTT-722, VTT-727, VTT-730, VTT-732, VTT-733, VTT-734, VTT-736,
-VTT-737, VTT-752, VTT-753, VTT-756, VTT-758, VTT-759.
+VTT-737, VTT-752, VTT-753, VTT-756, VTT-758, VTT-759, VTT-769, VTT-770,
+VTT-771, VTT-772, VTT-773, VTT-774, VTT-788, VTT-789, VTT-790, VTT-805,
+VTT-806, VTT-807, VTT-808.
