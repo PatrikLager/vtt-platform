@@ -69,7 +69,7 @@ test("the board draws a disc per token, with its initial", () => {
   expect(root.querySelector(".initial")?.textContent).toBe("L");
 });
 
-// VTT-623
+// VTT-816
 test("every resource shows as a current/max chip, named on hover", () => {
   const chip = render(world()).querySelector(".chip") as HTMLElement;
   expect(chip.textContent).toBe("3/10");
@@ -166,12 +166,12 @@ test("the ticker is bounded — an all-night session must not render thousands o
   expect(ticks).toBeGreaterThan(0);
 });
 
-// VTT-263
-test("the feed and the ticker show a move's reason", () => {
+// VTT-821 VTT-818
+test("the Events panel shows a move's reason, and the Story draws no move", () => {
   const log = [env(6, { case: "tokenMoved", value: create(TokenMovedSchema, {
     tokenId: "t1", to: { x: 3, y: 4 }, reason: "the floor gives way" }) })];
   const root = render(world(), log, DM);
-  expect(root.querySelector(".feed .mechanical")?.textContent).toBe("Lera moved to 3,4 — the floor gives way");
+  expect(root.querySelectorAll(".feed .beat")).toHaveLength(0);
   expect(root.querySelector(".ticker .tick")?.textContent).toBe("Lera moved to 3,4 — the floor gives way");
 });
 
@@ -202,7 +202,7 @@ function storyWorld(): State {
 }
 const STORY = namer(storyWorld(), [], false, [{ id: "cleave", name: "Cleave" }]);
 
-// VTT-476 VTT-475 VTT-477 VTT-623 VTT-736 VTT-790
+// VTT-476 VTT-475 VTT-477 VTT-816 VTT-813 VTT-814 VTT-821
 test("describe renders a real label for every event kind, not the fallback", () => {
   const gob = { actorId: "act-gob" };
   const cases: [Envelope, string][] = [
@@ -1516,11 +1516,11 @@ test("the ticker section carries its class, and headings carry none", () => {
   for (const h of Array.from(root.querySelectorAll("h2"))) expect(h.className).toBe("");
 });
 
-// VTT-445 VTT-662
-test("a window not asked for the Events panel draws none, and its Story still shows the log", () => {
+// VTT-445 VTT-822
+test("a window not asked for the Events panel draws none, and its Story still draws the game's lines", () => {
   // More entries than the Events panel shows, so a bounded Story goes red.
   const log = Array.from({ length: 45 }, (_, i) =>
-    env(i + 1, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t1", to: { x: i % 6, y: i % 4 } }) }),
+    env(i + 1, { case: "attackRolled", value: create(AttackRolledSchema, { total: i }) }),
   );
   const root = render(world(), log);
   expect(root.querySelectorAll("section.ticker").length).toBe(0);
@@ -1530,8 +1530,8 @@ test("a window not asked for the Events panel draws none, and its Story still sh
     .toEqual(log.map((e) => describeEvent(e, names)));
 });
 
-// VTT-662
-test("at a companion's first sight the Story shows it coming into view and neither its leaving nor its joining", () => {
+// VTT-822 VTT-810 VTT-818
+test("at a companion's first sight the Story draws no line for its run, its control or its arrival", () => {
   // The log's own entries carry no event id; what it forwards from the world does.
   const own = (seq: number, payload: Envelope["payload"]): Envelope =>
     create(EnvelopeSchema, { sequence: BigInt(seq), payload });
@@ -1549,9 +1549,52 @@ test("at a companion's first sight the Story shows it coming into view and neith
     own(8, { case: "tokenPlaced", value: create(TokenPlacedSchema, { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 4, y: 1 } }) }),
     env(9, { case: "doorOpened", value: create(DoorOpenedSchema, { sceneId: "s1", at: { x: 3, y: 1 } }) }),
   ];
-  const story = Array.from(render(fold(log), log).querySelectorAll(".feed .mechanical"), (n) => n.textContent);
-  expect(story).toEqual([
-    `scene "The Hall"`, "Bram is in the party", "control of Bram given", "Bram is at 4,1", "a door opened at 3,1",
+  const root = render(fold(log), log);
+  const story = Array.from(root.querySelectorAll(".feed .mechanical"), (n) => n.textContent);
+  expect(story).toEqual(["Bram is in the party", "a door opened"]);
+  expect(root.querySelector('[data-token-id="t2"]')).not.toBeNull();
+});
+
+// VTT-809 VTT-810 VTT-822
+test("a party member corrected at its first sight draws no line of its sheet or its control, and the Events panel draws each", () => {
+  // The log's own entries carry no event id; what it forwards from the world does.
+  const own = (seq: number, payload: Envelope["payload"]): Envelope =>
+    create(EnvelopeSchema, { sequence: BigInt(seq), payload });
+  const log = [
+    env(2, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "s1", name: "The Hall", gridWidth: 6, gridHeight: 4 }) }),
+    own(3, { case: "actorAdded", value: create(ActorAddedSchema, { actor: { actorId: "a2", name: "Bram", kind: ActorKind.PARTY_MEMBER } }) }),
+    own(4, { case: "actorControlGranted", value: create(ActorControlGrantedSchema, {
+      actorId: "a2", participantId: "p-friend", kind: ActorKind.PARTY_MEMBER }) }),
+    own(5, { case: "resourceAdded", value: create(ResourceAddedSchema, { actorId: "a2", resource: "vigor", value: { current: 3, max: 10 } }) }),
+    own(6, { case: "abilityGiven", value: create(AbilityGivenSchema, { actorId: "a2", abilityId: "slash" }) }),
+    own(7, { case: "tokenPlaced", value: create(TokenPlacedSchema, { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 4, y: 1 } }) }),
+  ];
+  const root = render(fold(log), log, { ticker: true, dm: true });
+  expect(Array.from(root.querySelectorAll(".feed .beat p"), (n) => n.textContent))
+    .toEqual(["Bram is in the party"]);
+  expect(Array.from(root.querySelectorAll(".ticker .tick"), (n) => n.textContent)).toEqual([
+    "Bram is at 4,1", "Bram can now use slash", "Bram now has vigor at 3", "control of Bram given",
+    "Bram is in the party", 'scene "The Hall"',
+  ]);
+  expect(root.querySelector('[data-token-id="t2"]')).not.toBeNull();
+});
+
+// VTT-819 VTT-820 VTT-447
+test("the Story draws a door as an event with no square, and none the log corrected, and the Events panel draws each with its square", () => {
+  const own = (seq: number, payload: Envelope["payload"]): Envelope =>
+    create(EnvelopeSchema, { sequence: BigInt(seq), payload });
+  const at = { x: 3, y: 1 };
+  const log = [
+    env(1, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "s1", name: "The Hall", gridWidth: 6, gridHeight: 4 }) }),
+    env(2, { case: "doorOpened", value: create(DoorOpenedSchema, { sceneId: "s1", at }) }),
+    own(3, { case: "doorClosed", value: create(DoorClosedSchema, { sceneId: "s1", at }) }),
+    own(4, { case: "doorOpened", value: create(DoorOpenedSchema, { sceneId: "s1", at }) }),
+    env(5, { case: "doorClosed", value: create(DoorClosedSchema, { sceneId: "s1", at }) }),
+  ];
+  const root = render(fold(log), log, { ticker: true, dm: true });
+  expect(Array.from(root.querySelectorAll(".feed .beat p"), (n) => n.textContent)).toEqual(["a door opened", "a door closed"]);
+  expect(Array.from(root.querySelectorAll(".ticker .tick"), (n) => n.textContent)).toEqual([
+    "a door closed at 3,1", "a door opened at 3,1", "a door closed at 3,1", "a door opened at 3,1", 'scene "The Hall"',
   ]);
 });
 
@@ -1682,8 +1725,8 @@ test("an affordable resource ability names its cost without the shortfall note",
   expect(p.button("Jab").title).toBe("vigor 1");
 });
 
-// VTT-622
-test("a resource chip, its Story line and an ability's cost name the resource by its display name", () => {
+// VTT-815
+test("a resource chip, its Events panel line and an ability's cost name the resource by its display name", () => {
   const props: Property[] = [{ key: "vigor", type: "resource", name: "Vigor Points", description: "How much fight is left." }];
   const chip = render(world(), [], { properties: props }).querySelector(".chip") as HTMLElement;
   expect(chip.title).toBe("Vigor Points");
@@ -1699,7 +1742,7 @@ test("a resource chip, its Story line and an ability's cost name the resource by
   expect(jab.title).toBe("Vigor Points 1");
 });
 
-// VTT-622
+// VTT-815
 test("the Events panel names a declared resource by its display name", () => {
   const props: Property[] = [{ key: "vigor", type: "resource", name: "Vigor Points", description: "How much fight is left." }];
   const changed = env(1, { case: "resourceChanged", value: create(ResourceChangedSchema, { actorId: "a1", resource: "vigor", newValue: 3 }) });

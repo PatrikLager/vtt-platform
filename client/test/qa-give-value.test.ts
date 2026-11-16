@@ -275,7 +275,7 @@ describe("qa-give-value: what the fields are called", () => {
   });
 
   test("by its key when the window's properties do not name it", () => {
-    // VTT-788, VTT-806; SPEC-022's Namer.resource, VTT-622 and VTT-623.
+    // VTT-788, VTT-806; SPEC-022's Namer.resource, VTT-815 and VTT-816.
     const h = harness([actor("qa5-key")]);
     choose(h, "qa5-key", SWING.id);
     expect(labelOf(field(h, "qa5-key", "current")).includes("stamina"))
@@ -287,7 +287,7 @@ describe("qa-give-value: what the fields are called", () => {
 
   test("by its key while the window has no properties", () => {
     // VTT-788, VTT-806; SPEC-022: "by its key while the window has no
-    // properties" (VTT-623).
+    // properties" (VTT-816).
     const h = harness([actor("qa5-noprops")], { properties: undefined });
     choose(h, "qa5-noprops", FLURRY.id);
     expect(labelOf(field(h, "qa5-noprops", "current"))
@@ -299,7 +299,7 @@ describe("qa-give-value: what the fields are called", () => {
 
   test("a number property under the key names no resource", () => {
     // VTT-788, VTT-806; SPEC-022: "a `number` property names no resource"
-    // (VTT-622, VTT-623).
+    // (VTT-815, VTT-816).
     const props: Property[] = [...PROPERTIES, {
       key: "stamina", type: "number", name: "Stamina Score",
       description: "",

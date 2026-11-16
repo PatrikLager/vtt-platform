@@ -175,7 +175,7 @@ test("a spectator's reload keeps the shoulder, and another tab does not", async 
   await other.close();
 });
 
-// VTT-393 VTT-445 VTT-446
+// VTT-393 VTT-445 VTT-446 VTT-818
 test("the story feed and ticker record what happened", async ({ page, browser }) => {
   const drawn = async (rows: Locator) =>
     (await rows.evaluateAll((els) =>
@@ -191,7 +191,8 @@ test("the story feed and ticker record what happened", async ({ page, browser })
   await expect(page.locator(".ticker")).toHaveCount(0);
   const rows = page.locator(".feed .mechanical");
   await expect(rows).not.toHaveCount(0, { timeout: 10_000 });
-  await expect(rows.filter({ hasText: /^Lera is at \d+,\d+$/ })).toHaveCount(1);
+  await expect(rows.filter({ hasText: /^Lera is in the party$/ })).toHaveCount(1);
+  await expect(rows.filter({ hasText: / is at \d+,\d+$/ })).toHaveCount(0);
   await expect(rows.filter({ hasText: /#\d/ })).toHaveCount(0);
   expect(await drawn(rows)).toEqual([]);
   await page.screenshot(shot("04-player-feed"));

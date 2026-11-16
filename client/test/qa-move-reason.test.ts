@@ -1,5 +1,5 @@
-// Independent QA for a move's reason in the client's labels. Derived from
-// VTT-263 and the problem paragraph and fourth rule of
+// Independent QA for a move's reason in the client's labels (VTT-821). Derived
+// from the problem paragraph and fourth rule of
 // docs/superpowers/specs/2026-10-03-a-moves-reason-reaches-the-log-design.md;
 // written without reading spectator.ts's body.
 
@@ -87,13 +87,13 @@ function occurrences(hay: string, needle: string): number {
 }
 
 group("describe: a move's label and its reason", () => {
-  // VTT-263
+  // VTT-821
   test("a move whose frame carries a reason is labelled with it", () => {
     const label = describe(move({ reason: "toward the window" }), NAMES);
     expect(label).toContain("toward the window");
   });
 
-  // VTT-263
+  // VTT-821
   test("the reason is shown once, beside the token and destination the label already named", () => {
     const label = describe(move({ reason: "toward the window" }), NAMES);
     expect(label).toContain(BASE);
@@ -109,12 +109,12 @@ group("describe: a move's label and its reason", () => {
     expect(describe(move({ tokenId: "tok-b" }), NAMES)).toBe("a tall shadow moved to 7,5");
   });
 
-  // VTT-263
+  // VTT-821
   test("an empty reason is no reason: proto3 sends nothing, so the label is unchanged", () => {
     expect(describe(move({ reason: "" }), NAMES)).toBe(BASE);
   });
 
-  // VTT-263
+  // VTT-821
   test.each([
     ["non-latin text", "vers la fenêtre — 窓へ, ✓"],
     ["quotes and backslashes", `he said "go" \\ 'now'`],
@@ -127,13 +127,13 @@ group("describe: a move's label and its reason", () => {
     expect(describe(move({ reason }), NAMES)).toContain(reason);
   });
 
-  // VTT-263
+  // VTT-821
   test("a long reason is shown whole, not cut", () => {
     const reason = "a".repeat(250) + "|middle|" + "z".repeat(250) + "|end";
     expect(describe(move({ reason }), NAMES)).toContain(reason);
   });
 
-  // VTT-263
+  // VTT-821
   test.each(["dm", "agent", "player"])(
     "the reason is shown whatever role issued the move (%s)",
     (role) => {
@@ -143,7 +143,7 @@ group("describe: a move's label and its reason", () => {
     },
   );
 
-  // VTT-263
+  // VTT-821
   test("a frame carrying a reason but no destination is still labelled with the reason", () => {
     expect(describe(move({ noTo: true, reason: "toward the window" }), NAMES)).toContain(
       "toward the window",
@@ -151,17 +151,14 @@ group("describe: a move's label and its reason", () => {
   });
 });
 
-group("renderSpectator: the feed and the ticker", () => {
-  // VTT-263
-  test("the feed labels a move with its reason", () => {
+group("renderSpectator: the Events panel, and no Story line", () => {
+  // VTT-818
+  test("the Story draws no line for a move with its reason", () => {
     const root = render([move({ seq: 1n, reason: "toward the window" })]);
-    const beats = feedBeats(root);
-    expect(beats.length).toBe(1);
-    expect(beats[0]).toContain(BASE);
-    expect(beats[0]).toContain("toward the window");
+    expect(feedBeats(root)).toEqual([]);
   });
 
-  // VTT-263
+  // VTT-821
   test("the ticker labels a move with its reason", () => {
     const root = render([move({ seq: 1n, reason: "toward the window" })]);
     const tick = tickFor(root, 1);
@@ -169,55 +166,51 @@ group("renderSpectator: the feed and the ticker", () => {
     expect(tick).toContain("toward the window");
   });
 
-  // VTT-263
+  // VTT-821 VTT-818
   test("in a mixed log the reason labels only the move whose frame carries it", () => {
     const root = render([
       move({ seq: 1n }),
       move({ seq: 2n, tokenId: "tok-b", reason: "toward the window" }),
       move({ seq: 3n, tokenId: "tok-c" }),
     ]);
-    const beats = feedBeats(root);
-    expect(beats.filter((b) => b.includes("toward the window"))).toEqual([
-      expect.stringContaining("a tall shadow"),
-    ]);
-    expect(beats).toContain(BASE);
-    expect(beats).toContain("a creature moved to 7,5");
-
+    expect(feedBeats(root)).toEqual([]);
     expect(tickFor(root, 2)).toContain("toward the window");
+    expect(tickFor(root, 2)).toContain("a tall shadow");
     expect(tickFor(root, 1)).toBe(BASE);
     expect(tickFor(root, 3)).toBe("a creature moved to 7,5");
   });
 
   // The design doc named in this file's header: `"<token> moved to x,y"` —
-  // the feed and ticker label for a move without a reason is unchanged.
-  test("a move with no reason renders as before in both places", () => {
+  // the Events panel's label for a move without a reason is unchanged.
+  test("a move with no reason renders as before in the Events panel, and not in the Story", () => {
     const root = render([move({ seq: 4n })]);
-    expect(feedBeats(root)).toEqual([BASE]);
+    expect(feedBeats(root)).toEqual([]);
     expect(tickFor(root, 1)).toBe(BASE);
   });
 
-  // VTT-263
+  // VTT-821
   test("a reason that looks like markup is shown as text and builds no elements", () => {
     const reason = `<b id="qa-b">bold</b><img id="qa-img" src="x"><script id="qa-s">1</script><i>it</i>`;
     const root = render([move({ seq: 1n, reason })]);
     expect(root.querySelector("#qa-b, #qa-img, #qa-s, b, img, script, i")).toBeNull();
-    expect(feedBeats(root)[0]).toContain(reason);
+    expect(feedBeats(root)).toEqual([]);
     expect(tickFor(root, 1)).toContain(reason);
   });
 
-  // VTT-263
+  // VTT-821
   test("html entities in a reason are not decoded on the way into the DOM", () => {
     const reason = "&amp; &lt;b&gt;";
     const root = render([move({ seq: 1n, reason })]);
-    expect(feedBeats(root)[0]).toContain(reason);
+    expect(feedBeats(root)).toEqual([]);
     expect(tickFor(root, 1)).toContain(reason);
     expect(root.querySelector("b")).toBeNull();
   });
 
-  // VTT-263
-  test("an empty reason renders the plain label in the feed and the ticker", () => {
+  // VTT-821
+  test("an empty reason renders the plain label in the Events panel, and no Story line", () => {
     const root = render([move({ seq: 1n, reason: "" })]);
-    expect(feedBeats(root)).toEqual([BASE]);
+    expect(feedBeats(root)).toEqual([]);
     expect(tickFor(root, 1)).toBe(BASE);
   });
 });
+

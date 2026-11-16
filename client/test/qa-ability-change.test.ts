@@ -281,16 +281,16 @@ function wordsIn(dm: boolean, env: Envelope): string {
   return wordsOf(env, namer(fold(log), log, dm, ABILITIES));
 }
 
-// VTT-736
-test("VTT-736 the Story words an abilityGiven '<actor> can now use <ability>', both as the window names them", () => {
+// VTT-813
+test("VTT-813 the Events panel words an abilityGiven '<actor> can now use <ability>', both as the window names them", () => {
   expect(wordsIn(true, give(17, "act-a", "zeta"))).toBe("Aster can now use Zephyr Step");
   expect(wordsIn(false, give(17, "act-a", "zeta"))).toBe("the tall one can now use Zephyr Step");
   expect(wordsIn(true, give(17, "act-c", "bite"))).toBe("Crag can now use Bite");
   expect(wordsIn(false, give(17, "act-c", "bite"))).toBe("a creature can now use Bite");
 });
 
-// VTT-736
-test("VTT-736 the Story words an abilityTaken '<actor> can no longer use <ability>', both as the window names them", () => {
+// VTT-813
+test("VTT-813 the Events panel words an abilityTaken '<actor> can no longer use <ability>', both as the window names them", () => {
   expect(wordsIn(true, take(17, "act-a", "mu"))).toBe("Aster can no longer use Mule Kick");
   expect(wordsIn(false, take(17, "act-a", "mu"))).toBe("the tall one can no longer use Mule Kick");
   expect(wordsIn(true, take(17, "act-c", "claw"))).toBe("Crag can no longer use claw");

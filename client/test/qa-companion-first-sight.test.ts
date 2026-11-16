@@ -123,8 +123,17 @@ function toldSequences(log: Envelope[]): bigint[] {
   return buildFeed(log).flatMap((f) => f.events.map((e) => e.sequence));
 }
 
+// The kinds the Story draws no line for, in a run or out of one
+// (VTT-809, VTT-810, VTT-818, VTT-823).
+const MECHANICAL = new Set([
+  "resourceChanged", "abilityGiven", "abilityTaken", "resourceAdded", "resourceRemoved",
+  "actorControlGranted", "actorControlRevoked", "tokenPlaced", "tokenMoved", "tokenHidden",
+  "tokenRemoved", "tokenDescribed", "sceneCreated", "sceneSeen", "noteUpserted", "noteDeleted",
+  "adventureLoaded",
+]);
+
 function expectedSequences(entries: Entry[]): bigint[] {
-  return entries.flatMap((e, i) => (e.out ? [] : [BigInt(i + 1)]));
+  return entries.flatMap((e, i) => (e.out || MECHANICAL.has(e.payload.case ?? "") ? [] : [BigInt(i + 1)]));
 }
 
 function expectTold(entries: Entry[], why: string): void {
@@ -157,6 +166,14 @@ function tickerLines(el: HTMLElement): string[] {
 
 const OPENING_STORY = [
   "session started — Dusk",
+  "Bram is in the party",
+  "Ash is in the party",
+  "Cara is in the party",
+];
+// The step, its view and Ash's arrival draw no line (VTT-818).
+const BASE_STORY = OPENING_STORY;
+const OPENING_EVERY_LINE = [
+  "session started — Dusk",
   'scene "Glade"',
   "Bram is in the party",
   "control of Bram given",
@@ -167,14 +184,8 @@ const OPENING_STORY = [
   "Bram is at 1,1",
   "the view changed",
 ];
-const BASE_STORY = [
-  ...OPENING_STORY,
-  "Bram moved to 3,3",
-  "the view changed",
-  "Ash is at 4,4",
-];
 const BASE_EVERY_LINE = [
-  ...OPENING_STORY,
+  ...OPENING_EVERY_LINE,
   "Bram moved to 3,3",
   "the view changed",
   "Ash left",
@@ -187,35 +198,38 @@ const BASE_EVERY_LINE = [
 const count = (lines: string[], line: string): number =>
   lines.filter((l) => l === line).length;
 
-// VTT-662
+// VTT-822
 test("the run at a first sight is left out of buildFeed's entries", () => {
-  expectTold(base(), "VTT-662: the bare removal, the add, its grant and condition");
+  expectTold(base(), "VTT-822: the bare removal, the add, its grant and condition");
 });
 
-// VTT-662
-test("a log with no first sight tells every one of its entries", () => {
+// VTT-822
+test("a log with no first sight tells every entry the Story draws", () => {
   const entries = held();
-  expect(entries.some((e) => e.out), "VTT-662: no entry is marked out").toBe(false);
-  expectTold(entries, "VTT-662: a companion already held comes into view");
+  expect(entries.some((e) => e.out), "VTT-822: no entry is marked out").toBe(false);
+  expectTold(entries, "VTT-822: a companion already held comes into view");
 });
 
-// VTT-662
-test("the opening's introduction and grant of a companion are told", () => {
+// VTT-822
+test("the opening's introduction of a companion is told, and its grant is not", () => {
   const log = numbered(base());
   const told = toldSequences(log);
-  for (const i of [4, 5, 6, 7]) {
-    expect(told, `VTT-662: opening entry ${i + 1} has no removal before it`)
+  for (const i of [4, 6]) {
+    expect(told, `VTT-822: opening entry ${i + 1} has no removal before it`)
       .toContain(BigInt(i + 1));
+  }
+  for (const i of [5, 7]) {
+    expect(told, `VTT-810: opening entry ${i + 1} is a grant`).not.toContain(BigInt(i + 1));
   }
 });
 
-// VTT-662
+// VTT-822
 test("an actorAdded first in the log, with no event id, is told", () => {
   const entries = [own(addition(ASH)), own(grant("ash", "p-ash"))];
-  expectTold(entries, "VTT-662: no removal comes before the add");
+  expectTold(entries, "VTT-822: no removal comes before the add");
 });
 
-// VTT-662
+// VTT-822
 test("an actorRemoved that carries an event id is told, and all behind it", () => {
   expectTold([
     ...opening(), ...step(),
@@ -224,10 +238,10 @@ test("an actorRemoved that carries an event id is told, and all behind it", () =
     own(grant("ash", "p-ash")),
     own(condition("ash", "blessed")),
     arrival(),
-  ], "VTT-662: the removal carries an event id");
+  ], "VTT-822: the removal carries an event id");
 });
 
-// VTT-662
+// VTT-822
 test("a bare removal directly followed by another actor's add is told", () => {
   expectTold([
     ...opening(), ...step(),
@@ -237,16 +251,16 @@ test("a bare removal directly followed by another actor's add is told", () => {
     own(grant("ash", "p-ash")),
     own(condition("ash", "blessed")),
     arrival(),
-  ], "VTT-662: the add after the removal is another actor's");
+  ], "VTT-822: the add after the removal is another actor's");
 });
 
-// VTT-662
+// VTT-822
 test("a bare removal followed by another actor's add, at the end, is told", () => {
   expectTold([
     ...opening(), ...step(),
     own(removal("ash")),
     own(addition(DOV)),
-  ], "VTT-662: the add after the removal is another actor's");
+  ], "VTT-822: the add after the removal is another actor's");
 });
 
 const BETWEEN: [string, Entry][] = [
@@ -255,7 +269,7 @@ const BETWEEN: [string, Entry][] = [
   ["another actor's condition", own(condition("cara", "hidden"))],
 ];
 
-// VTT-662
+// VTT-822
 test.each(BETWEEN)("%s between the removal and the add: the run is told", (_, x) => {
   expectTold([
     ...opening(), ...step(),
@@ -265,21 +279,22 @@ test.each(BETWEEN)("%s between the removal and the add: the run is told", (_, x)
     own(grant("ash", "p-ash")),
     own(condition("ash", "blessed")),
     arrival(),
-  ], "VTT-662: an entry lies between the removal and the add");
+  ], "VTT-822: an entry lies between the removal and the add");
 });
 
-// VTT-662
-test("a grant behind the add that carries an event id is told", () => {
+// VTT-822
+test("a grant behind the add that carries an event id ends the run", () => {
   expectTold([
     ...opening(), ...step(),
     leftOut(own(removal("ash"))),
     leftOut(own(addition(ASH_WHOLE))),
     fromWorld("evt-grant", grant("ash", "p-ash")),
+    own(condition("ash", "blessed")),
     arrival(),
-  ], "VTT-662: the grant carries an event id");
+  ], "VTT-822: the grant carries an event id");
 });
 
-// VTT-662
+// VTT-822
 test("a condition behind the run that carries an event id is told", () => {
   expectTold([
     ...opening(), ...step(),
@@ -288,10 +303,10 @@ test("a condition behind the run that carries an event id is told", () => {
     leftOut(own(grant("ash", "p-ash"))),
     fromWorld("evt-bless", condition("ash", "blessed")),
     arrival(),
-  ], "VTT-662: the condition carries an event id");
+  ], "VTT-822: the condition carries an event id");
 });
 
-// VTT-662
+// VTT-822
 test("a bare condition behind a grant with an event id is told", () => {
   expectTold([
     ...opening(), ...step(),
@@ -299,30 +314,30 @@ test("a bare condition behind a grant with an event id is told", () => {
     leftOut(own(addition(ASH_WHOLE))),
     fromWorld("evt-grant", grant("ash", "p-ash")),
     own(condition("ash", "blessed")),
-  ], "VTT-662: the grant with an event id ends the run");
+  ], "VTT-822: the grant with an event id ends the run");
 });
 
-// VTT-662
+// VTT-822
 test("another actor's condition behind the run is told", () => {
   expectTold([
     ...opening(), ...step(),
     ...firstSight().slice(0, 3),
     own(condition("bram", "steady")),
     arrival(),
-  ], "VTT-662: the condition is Bram's, not Ash's");
+  ], "VTT-822: the condition is Bram's, not Ash's");
 });
 
-// VTT-662
-test("another actor's grant behind the add is told, and what follows it", () => {
+// VTT-822
+test("another actor's grant behind the add ends the run, and the condition behind it is told", () => {
   expectTold([
     ...opening(), ...step(),
     ...firstSight().slice(0, 2),
     own(grant("bram", "p-two")),
     own(condition("ash", "blessed")),
-  ], "VTT-662: the grant is Bram's, and it ends Ash's run");
+  ], "VTT-822: the grant is Bram's, and it ends Ash's run");
 });
 
-// VTT-662
+// VTT-822
 test("two companions first seen at one event, each in its own run, are left out",
   () => {
   expectTold([
@@ -334,11 +349,11 @@ test("two companions first seen at one event, each in its own run, are left out"
     leftOut(own(condition("cara", "keen"))),
     arrival(),
     own(placing("t-cara", "cara", 5, 4)),
-  ], "VTT-662: two runs, one after the other");
+  ], "VTT-822: two runs, one after the other");
 });
 
-// VTT-662
-test("two companions' grants behind both adds are told", () => {
+// VTT-822
+test("two companions' conditions behind both adds are told", () => {
   expectTold([
     ...opening(), ...step(),
     leftOut(own(removal("ash"))),
@@ -350,21 +365,21 @@ test("two companions' grants behind both adds are told", () => {
     own(grant("cara", "p-cara")),
     own(condition("cara", "keen")),
     arrival(),
-  ], "VTT-662: Ash's grant is not directly behind Ash's add");
+  ], "VTT-822: Ash's grant is not directly behind Ash's add");
 });
 
-// VTT-662
+// VTT-822
 test("a bare condition after the token's arrival ends the run and is told", () => {
   expectTold([
     ...opening(), ...step(),
     ...firstSight().slice(0, 3),
     arrival(),
     own(condition("ash", "blessed")),
-  ], "VTT-662: the token's arrival ends the run");
+  ], "VTT-822: the token's arrival ends the run");
 });
 
-// VTT-662
-test("a bare grant after a resource change ends the run and is told", () => {
+// VTT-822
+test("a resource change ends the run, and the bare condition behind it is told", () => {
   expectTold([
     ...opening(), ...step(),
     ...firstSight().slice(0, 2),
@@ -374,7 +389,7 @@ test("a bare grant after a resource change ends the run and is told", () => {
     }),
     own(grant("ash", "p-ash")),
     own(condition("ash", "blessed")),
-  ], "VTT-662: a resource change ends the run");
+  ], "VTT-822: a resource change ends the run");
 });
 
 const narration = (text: string, from = 0n, to = 0n): Payload =>
@@ -392,7 +407,7 @@ function drawn(entries: Entry[]): { story: string[]; spoken: string[] } {
   return { story: storyLines(el), spoken };
 }
 
-// VTT-662
+// VTT-822
 test("a narration between the removal and the add: the run is told", () => {
   const { story, spoken } = drawn([
     ...opening(), ...step(),
@@ -403,43 +418,44 @@ test("a narration between the removal and the add: the run is told", () => {
     own(condition("ash", "blessed")),
     arrival(),
   ]);
-  expect(spoken, "VTT-662: the narration is drawn").toEqual(["Leaves stir."]);
-  expect(count(story, "Ash left"), "VTT-662: the removal is told").toBe(1);
-  expect(count(story, "Ash is in the party"), "VTT-662: the add is told").toBe(2);
-  expect(count(story, "control of Ash given"), "VTT-662: the grant is told").toBe(2);
-  expect(count(story, "Ash gained blessed"), "VTT-662: the condition is told")
+  expect(spoken, "VTT-822: the narration is drawn").toEqual(["Leaves stir."]);
+  expect(count(story, "Ash left"), "VTT-822: the removal is told").toBe(1);
+  expect(count(story, "Ash is in the party"), "VTT-822: the add is told").toBe(2);
+  expect(count(story, "control of Ash given"), "VTT-810: no grant is drawn").toBe(0);
+  expect(count(story, "Ash gained blessed"), "VTT-822: the condition is told")
     .toBe(1);
 });
 
-// VTT-662
+// VTT-822
 test("a narration anchored to the run alone is still drawn", () => {
   const entries = [...base(), own(narration("Ash steps out.", 13n, 16n))];
-  expect(entries.slice(12, 16).every((e) => e.out), "VTT-662: the anchor is the run")
+  expect(entries.slice(12, 16).every((e) => e.out), "VTT-822: the anchor is the run")
     .toBe(true);
   const { story, spoken } = drawn(entries);
-  expect(spoken, "VTT-662: the narration is an entry of the log")
+  expect(spoken, "VTT-822: the narration is an entry of the log")
     .toEqual(["Ash steps out."]);
-  expect(story, "VTT-662: the run stays untold").toEqual(BASE_STORY);
+  expect(story, "VTT-822: the run stays untold").toEqual(BASE_STORY);
 });
 
-// VTT-662
-test("a narration anchored over the run and the arrival is drawn with it", () => {
+// VTT-822
+test("a narration anchored over the run and the arrival is drawn in a beat of its own", () => {
   const entries = [...base(), own(narration("Ash steps out.", 13n, 17n))];
   const { story, spoken } = drawn(entries);
-  expect(spoken, "VTT-662: the narration is drawn").toEqual(["Ash steps out."]);
-  expect(story, "VTT-662: the run stays untold").toEqual(BASE_STORY);
+  expect(spoken, "VTT-822: the narration is drawn").toEqual(["Ash steps out."]);
+  expect(story, "VTT-822: the run stays untold").toEqual(BASE_STORY);
   const log = numbered(entries);
   const page = root();
   renderSpectator(page, fold(log), log, "open", {});
   const beat = Array.from(page.querySelectorAll(".feed .beat"))
     .find((b) => (b.textContent ?? "").includes("Ash steps out."));
+  expect(beat !== undefined, "VTT-812: the narration has a beat").toBe(true);
   const lines = Array.from(beat?.querySelectorAll(".mechanical") ?? [])
     .map((p) => p.textContent ?? "");
-  expect(lines, "VTT-662: the narration shares the arrival's beat")
-    .toContain("Ash is at 4,4");
+  expect(lines, "VTT-812: the arrival draws no line, so the narration's beat holds none")
+    .toEqual([]);
 });
 
-// VTT-662
+// VTT-822
 test("a bare removal and an add with an event id are left out as the row words it",
   () => {
   expectTold([
@@ -449,10 +465,10 @@ test("a bare removal and an add with an event id are left out as the row words i
     leftOut(own(grant("ash", "p-ash"))),
     leftOut(own(condition("ash", "blessed"))),
     arrival(),
-  ], "VTT-662: only the removal is qualified by its event id");
+  ], "VTT-822: only the removal is qualified by its event id");
 });
 
-// VTT-662
+// VTT-822
 test("a creature's bare removal and re-introduction are left out", () => {
   expectTold([
     ...opening(),
@@ -461,31 +477,31 @@ test("a creature's bare removal and re-introduction are left out", () => {
     leftOut(own(removal("gob"))),
     leftOut(own(addition(GOB))),
     own(placing("t-gob", "gob", 5, 4)),
-  ], "VTT-662: the row names any actor, not only a companion");
+  ], "VTT-822: the row names any actor, not only a companion");
 });
 
-// VTT-662
+// VTT-822
 test("a run at the very end of the log is left out and nothing throws", () => {
   expectTold(
     [...opening(), ...step(), ...firstSight()],
-    "VTT-662: the run ends the log",
+    "VTT-822: the run ends the log",
   );
   expectTold(
     [...opening(), ...step(), ...firstSight().slice(0, 2)],
-    "VTT-662: the add ends the log",
+    "VTT-822: the add ends the log",
   );
 });
 
-// VTT-662
+// VTT-822
 test("a bare removal as the last entry is told and nothing throws", () => {
   expectTold(
     [...opening(), ...step(), own(removal("ash"))],
-    "VTT-662: no add follows the removal",
+    "VTT-822: no add follows the removal",
   );
   const lone = numbered([own(removal("ash"))]);
-  expect(() => buildFeed(lone), "VTT-662: a lone removal").not.toThrow();
-  expect(toldSequences(lone), "VTT-662: a lone removal is told").toEqual([1n]);
-  expect(buildFeed([]), "VTT-662: an empty log").toEqual([]);
+  expect(() => buildFeed(lone), "VTT-822: a lone removal").not.toThrow();
+  expect(toldSequences(lone), "VTT-822: a lone removal is told").toEqual([1n]);
+  expect(buildFeed([]), "VTT-822: an empty log").toEqual([]);
 });
 
 const PERCH: ViewExtras["perch"] = {
@@ -500,24 +516,25 @@ const VIEWS: [string, ViewExtras][] = [
   ["agent", { dm: true, ticker: true }],
 ];
 
-// VTT-662
-test.each(VIEWS)("%s: the Story draws the token's arrival, not the run",
+// VTT-822
+test.each(VIEWS)("%s: the Story draws neither the run nor the token's arrival",
   (role, extras) => {
   const log = numbered(base());
   const el = root();
   renderSpectator(el, fold(log), log, "open", extras);
   const story = storyLines(el);
-  expect(story, `VTT-662: ${role}'s Story`).toEqual(BASE_STORY);
-  expect(count(story, "Ash left"), `VTT-662: ${role} is not told Ash left`).toBe(0);
-  expect(count(story, "Ash is in the party"), `VTT-662: ${role}, joined once`)
+  expect(story, `VTT-822: ${role}'s Story`).toEqual(BASE_STORY);
+  expect(count(story, "Ash left"), `VTT-822: ${role} is not told Ash left`).toBe(0);
+  expect(count(story, "Ash is in the party"), `VTT-822: ${role}, joined once`)
     .toBe(1);
-  expect(count(story, "control of Ash given"), `VTT-662: ${role}, one grant`)
-    .toBe(1);
-  expect(count(story, "Ash gained blessed"), `VTT-662: ${role}, no condition`)
+  expect(count(story, "control of Ash given"), `VTT-810: ${role}, no grant`)
+    .toBe(0);
+  expect(count(story, "Ash is at 4,4"), `VTT-818: ${role}, no arrival`).toBe(0);
+  expect(count(story, "Ash gained blessed"), `VTT-822: ${role}, no condition`)
     .toBe(0);
 });
 
-// VTT-662
+// VTT-822
 test.each(VIEWS)("%s: the Story at a first sight equals the one of a companion held",
   (role, extras) => {
   const draw = (entries: Entry[]): string[] => {
@@ -526,7 +543,7 @@ test.each(VIEWS)("%s: the Story at a first sight equals the one of a companion h
     renderSpectator(el, fold(log), log, "open", extras);
     return storyLines(el);
   };
-  expect(draw(base()), `VTT-662: ${role}'s Story`).toEqual(draw(held()));
+  expect(draw(base()), `VTT-822: ${role}'s Story`).toEqual(draw(held()));
 });
 
 // VTT-447
@@ -539,33 +556,33 @@ test.each(VIEWS.slice(2))("%s: the Events panel still shows every entry of the r
     .toEqual([...BASE_EVERY_LINE].reverse());
 });
 
-// VTT-662
+// VTT-822
 test.each(VIEWS)("%s: the fold holds the companion whole after the run",
   (role, extras) => {
   const log = numbered(base());
   const st = fold(log);
   const ash = st.Actors["ash"];
-  expect(ash?.attributes, "VTT-662: Ash's attributes").toEqual({ wit: 4 });
-  expect(ash?.resources, "VTT-662: Ash's resources")
+  expect(ash?.attributes, "VTT-822: Ash's attributes").toEqual({ wit: 4 });
+  expect(ash?.resources, "VTT-822: Ash's resources")
     .toEqual({ hp: { current: 5, max: 8 } });
-  expect(ash?.controllerIds, "VTT-662: Ash's controllers").toEqual(["p-ash"]);
-  expect(ash?.kind, "VTT-662: Ash's kind").toBe(PARTY);
-  expect(st.Conditions["ash"]?.map((c) => c.ID), "VTT-662: Ash's conditions")
+  expect(ash?.controllerIds, "VTT-822: Ash's controllers").toEqual(["p-ash"]);
+  expect(ash?.kind, "VTT-822: Ash's kind").toBe(PARTY);
+  expect(st.Conditions["ash"]?.map((c) => c.ID), "VTT-822: Ash's conditions")
     .toEqual(["blessed"]);
-  expect(st.Tokens["t-ash"], "VTT-662: Ash's token").toMatchObject({ X: 4, Y: 4 });
+  expect(st.Tokens["t-ash"], "VTT-822: Ash's token").toMatchObject({ X: 4, Y: 4 });
 
   const el = root();
   renderSpectator(el, st, log, "open", extras);
   const disc = el.querySelector('[data-token-id="t-ash"]');
-  expect(disc !== null, `VTT-662: ${role}'s board draws Ash`).toBe(true);
+  expect(disc !== null, `VTT-822: ${role}'s board draws Ash`).toBe(true);
   const chips = Array.from(disc?.querySelectorAll(".chip") ?? [])
     .map((c) => c.textContent);
-  expect(chips, `VTT-662: ${role}'s board shows Ash's hp`).toEqual(["5/8"]);
+  expect(chips, `VTT-822: ${role}'s board shows Ash's hp`).toEqual(["5/8"]);
   const dots = Array.from(disc?.querySelectorAll(".dot") ?? [])
     .map((d) => d.getAttribute("title"));
-  expect(dots, `VTT-662: ${role}'s board shows Ash's condition`)
+  expect(dots, `VTT-822: ${role}'s board shows Ash's condition`)
     .toEqual(["blessed"]);
-  expect(count(storyLines(el), "Ash gained blessed"), `VTT-662: ${role}'s Story`)
+  expect(count(storyLines(el), "Ash gained blessed"), `VTT-822: ${role}'s Story`)
     .toBe(0);
 });
 
@@ -691,19 +708,19 @@ function expectPanelFor(role: Role, el: HTMLElement): void {
   }
 }
 
-// VTT-662
+// VTT-822
 test.each(ROLES)("%s: a session's window does not tell the run at a first sight",
   async (role) => {
   const { el, ws } = await bootAs(role);
   for (const f of frames(numbered(base()))) ws.deliver(f);
   await settle();
-  expect(el.textContent ?? "", `VTT-662: ${role}'s log folds`)
+  expect(el.textContent ?? "", `VTT-822: ${role}'s log folds`)
     .not.toContain(FOLD_FAILED);
-  expect(storyLines(el), `VTT-662: ${role}'s Story`).toEqual(BASE_STORY);
+  expect(storyLines(el), `VTT-822: ${role}'s Story`).toEqual(BASE_STORY);
   expectPanelFor(role, el);
 });
 
-// VTT-662
+// VTT-822
 test.each(ROLES)("%s: entries arriving one at a time end with the run untold",
   async (role) => {
   const { el, ws } = await bootAs(role);
@@ -714,17 +731,17 @@ test.each(ROLES)("%s: entries arriving one at a time end with the run untold",
     ws.deliver(f);
     await settle();
   }
-  expect(count(storyLines(el), "Ash left"), `VTT-662: ${role}, the removal is last`)
+  expect(count(storyLines(el), "Ash left"), `VTT-822: ${role}, the removal is last`)
     .toBe(1);
   for (const f of all.slice(removedAt + 1)) {
     ws.deliver(f);
     await settle();
   }
-  expect(storyLines(el), `VTT-662: ${role}'s Story once the run is whole`)
+  expect(storyLines(el), `VTT-822: ${role}'s Story once the run is whole`)
     .toEqual(BASE_STORY);
 });
 
-// VTT-662
+// VTT-822
 test.each(ROLES)("%s: a log that cannot fold shows its reason and no Story",
   async (role) => {
   const { el, ws } = await bootAs(role);
@@ -732,8 +749,8 @@ test.each(ROLES)("%s: a log that cannot fold shows its reason and no Story",
   const entries = [...base(), again];
   for (const f of frames(numbered(entries))) ws.deliver(f);
   await settle();
-  expect(el.textContent ?? "", `VTT-662: ${role} shows the reason`)
+  expect(el.textContent ?? "", `VTT-822: ${role} shows the reason`)
     .toContain(FOLD_FAILED);
-  expect(el.querySelectorAll(".feed").length, `VTT-662: ${role} draws no Story`)
+  expect(el.querySelectorAll(".feed").length, `VTT-822: ${role} draws no Story`)
     .toBe(0);
 });

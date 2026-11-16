@@ -366,7 +366,7 @@ test("qaWS: VTT-484 a DM's and an agent's target buttons are the GM chain", () =
 });
 
 // VTT-476 VTT-475
-test("qaWS: a player's Story words each case of the table", () => {
+test("qaWS: describe words each case of the table as a player's window names it", () => {
   const n = namer(seen(world()), [], false, ABILITIES);
   const cases: [string, MessageInitShape<typeof EnvelopeSchema>][] = [
     ["lera Stone is in the party", {
@@ -440,7 +440,7 @@ test("qaWS: a player's Story words each case of the table", () => {
 });
 
 // VTT-476 VTT-475
-test("qaWS: a DM's Story words by the GM chain", () => {
+test("qaWS: describe words each case by the GM chain in a DM's window", () => {
   const n = namer(world(), [], true, ABILITIES);
   expect(lineOf(env({ payload: { case: "actorAdded", value: {
     actor: { actorId: "act-c1", name: "Lurker Prime", kind: NON_PARTY },
@@ -453,7 +453,7 @@ test("qaWS: a DM's Story words by the GM chain", () => {
   } } }), n)).toBe("control of Bram Holt given");
 });
 
-// VTT-263 VTT-476
+// VTT-821 VTT-476
 test("qaWS: a move with a reason reads it after a dash, as before", () => {
   const n = namer(seen(world()), [], false, ABILITIES);
   const line = lineOf(env({ payload: { case: "tokenMoved", value: {
@@ -683,26 +683,30 @@ test("qaWS: VTT-475 VTT-483 a player's whole window shows no id and no GM text",
   }
 });
 
-// VTT-475 VTT-477
+// VTT-475 VTT-477 VTT-823
 test("qaWS: VTT-475 VTT-477 a player's Story shows the window's naming", () => {
   const log = [
     everyCase().tokenPlaced,
+    everyCase().tokenHidden,
     used([{ targetId: "act-c1", result: "landed", total: 17 }]),
   ];
   const story = storyText(draw(seen(world()), false, log).root);
-  expect(story).toContain("a hunched figure is at 3,3");
+  expect(story).not.toContain("went out of sight");
+  expect(story).not.toContain("is at 3,3");
   expect(story).toContain(
     "lera Stone used Sweeping Strike on a hunched figure: landed, rolled 17");
 });
 
-// VTT-484 VTT-477
+// VTT-484 VTT-477 VTT-823
 test("qaWS: VTT-484 VTT-477 a DM's Story shows the GM chain", () => {
   const log = [
     everyCase().tokenPlaced,
+    everyCase().tokenHidden,
     used([{ targetId: "act-c1", result: "landed", total: 17 }]),
   ];
   const story = storyText(draw(world(), true, log).root);
-  expect(story).toContain("Cave Lurker is at 3,3");
+  expect(story).not.toContain("went out of sight");
+  expect(story).not.toContain("is at 3,3");
   expect(story).toContain(
     "lera Stone used Sweeping Strike on Cave Lurker: landed, rolled 17");
   expect(story).not.toContain("vs 15");

@@ -3,10 +3,13 @@ import { create } from "@bufbuild/protobuf";
 import {
   EnvelopeSchema,
   SessionStartedSchema,
-  TokenMovedSchema,
+  AttackRolledSchema,
   NarrationAddedSchema,
   ActorAddedSchema,
   ActorRemovedSchema,
+  ActorControlGrantedSchema,
+  ConditionAppliedSchema,
+  ResourceChangedSchema,
   ActorKind,
   type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
@@ -16,8 +19,8 @@ function env(seq: number, payload: Envelope["payload"]): Envelope {
   return create(EnvelopeSchema, { eventId: `evt-${seq}`, sequence: BigInt(seq), payload });
 }
 
-const moved = (seq: number, to: { x: number; y: number }) =>
-  env(seq, { case: "tokenMoved", value: create(TokenMovedSchema, { tokenId: "t1", to }) });
+const rolled = (seq: number) =>
+  env(seq, { case: "attackRolled", value: create(AttackRolledSchema, { total: seq }) });
 
 const said = (seq: number, text: string, anchor?: [number, number], as?: string) =>
   env(seq, {
@@ -33,39 +36,39 @@ const said = (seq: number, text: string, anchor?: [number, number], as?: string)
 test("entries are chronological", () => {
   const feed = buildFeed([
     env(1, { case: "sessionStarted", value: create(SessionStartedSchema, { name: "S" }) }),
-    moved(2, { x: 1, y: 1 }),
+    rolled(2),
     said(3, "A hush falls."),
   ]);
   expect(feed.map((e) => Number(e.seq))).toEqual([1, 2, 3]);
 });
 
 test("anchored narration is grouped WITH the event it describes, not after it", () => {
-  // This is the whole point of anchoring: "Lera steps toward the bar" belongs
-  // beside the move it narrates. Rendering it as a separate later line reads
+  // This is the whole point of anchoring: "Lera swings at the goblin" belongs
+  // beside the roll it narrates. Rendering it as a separate later line reads
   // as a second, unrelated beat.
   const feed = buildFeed([
-    moved(1, { x: 1, y: 1 }),
-    said(2, "Lera steps toward the bar.", [1, 1]),
+    rolled(1),
+    said(2, "Lera swings at the goblin.", [1, 1]),
   ]);
   expect(feed).toHaveLength(1);
   expect(Number(feed[0]!.seq)).toBe(1);
-  expect(feed[0]!.narrations.map((n) => n.text)).toEqual(["Lera steps toward the bar."]);
+  expect(feed[0]!.narrations.map((n) => n.text)).toEqual(["Lera swings at the goblin."]);
   expect(feed[0]!.events).toHaveLength(1);
 });
 
 test("a narration anchored across a RANGE groups every event in it", () => {
   const feed = buildFeed([
-    moved(1, { x: 1, y: 1 }),
-    moved(2, { x: 2, y: 2 }),
-    moved(3, { x: 3, y: 3 }),
-    said(4, "She crosses the room in three strides.", [1, 3]),
+    rolled(1),
+    rolled(2),
+    rolled(3),
+    said(4, "She strikes three times.", [1, 3]),
   ]);
   expect(feed).toHaveLength(1);
   expect(feed[0]!.events.map((e) => Number(e.sequence))).toEqual([1, 2, 3]);
 });
 
 test("unanchored narration stands on its own, in sequence", () => {
-  const feed = buildFeed([moved(1, { x: 1, y: 1 }), said(2, "Table talk.")]);
+  const feed = buildFeed([rolled(1), said(2, "Table talk.")]);
   expect(feed).toHaveLength(2);
   expect(feed[1]!.events).toHaveLength(0);
   expect(feed[1]!.narrations[0]!.text).toBe("Table talk.");
@@ -106,10 +109,10 @@ test("an anchor range includes the events at BOTH of its ends", () => {
   // Inclusive at from and at to. Exclusive at either end would split the beat
   // the DM deliberately joined, leaving an orphan row beside it.
   const feed = buildFeed([
-    moved(1, { x: 1, y: 1 }),
-    moved(2, { x: 2, y: 2 }),
-    moved(3, { x: 3, y: 3 }),
-    said(4, "Three strides.", [1, 3]),
+    rolled(1),
+    rolled(2),
+    rolled(3),
+    said(4, "Three blows.", [1, 3]),
   ]);
   expect(feed.length).toBe(1);
   expect(feed[0]!.events.map((e) => Number(e.sequence))).toEqual([1, 2, 3]);
@@ -120,10 +123,10 @@ test("events outside the anchor range keep their own entries", () => {
   // NOT be pulled in. A comparison flipped to always-true swallows the whole
   // log into one beat.
   const feed = buildFeed([
-    moved(1, { x: 1, y: 1 }),
-    moved(2, { x: 2, y: 2 }),
-    moved(3, { x: 3, y: 3 }),
-    moved(5, { x: 5, y: 5 }),
+    rolled(1),
+    rolled(2),
+    rolled(3),
+    rolled(5),
     said(6, "The middle two.", [2, 3]),
   ]);
   expect(feed.map((e) => Number(e.seq))).toEqual([1, 2, 5]);
@@ -140,8 +143,8 @@ test("a half-specified anchor is treated as unanchored, not as a range from zero
   const onlyFrom = create(NarrationAddedSchema, { text: "half", anchorFromSeq: 2n, anchorToSeq: 0n });
   const onlyTo = create(NarrationAddedSchema, { text: "other half", anchorFromSeq: 0n, anchorToSeq: 3n });
   const feed = buildFeed([
-    moved(1, { x: 1, y: 1 }),
-    moved(2, { x: 2, y: 2 }),
+    rolled(1),
+    rolled(2),
     env(3, { case: "narrationAdded", value: onlyFrom }),
     env(4, { case: "narrationAdded", value: onlyTo }),
   ]);
@@ -159,11 +162,11 @@ test("a narration whose whole anchor range is MISSING stands alone rather than v
   // entry carries NO events. Drop that and a narration could silently be
   // stapled to a beat it does not describe.
   const feed = buildFeed([
-    moved(1, { x: 1, y: 1 }),
-    said(3, "About the move.", [2, 2]),
+    rolled(1),
+    said(3, "About the roll.", [2, 2]),
   ]);
   expect(feed.map((e) => Number(e.seq))).toEqual([1, 3]);
-  expect(feed.find((e) => Number(e.seq) === 3)!.narrations[0]!.text).toBe("About the move.");
+  expect(feed.find((e) => Number(e.seq) === 3)!.narrations[0]!.text).toBe("About the roll.");
   expect(feed.find((e) => Number(e.seq) === 3)!.events).toEqual([]);
 });
 
@@ -172,9 +175,9 @@ test("overlapping anchors resolve last-writer-wins", () => {
   // LATER narration owns the grouping, and this pins that it is the later one
   // rather than the first or an arbitrary winner.
   const feed = buildFeed([
-    moved(1, { x: 1, y: 1 }),
-    moved(2, { x: 2, y: 2 }),
-    moved(3, { x: 3, y: 3 }),
+    rolled(1),
+    rolled(2),
+    rolled(3),
     said(4, "first claim", [1, 2]),
     said(5, "second claim", [2, 3]),
   ]);
@@ -191,11 +194,11 @@ test("entries are ordered ascending even when the log arrives shuffled", () => {
   // the order events were seen, not sequence order. The sort is what makes the
   // feed chronological, and two events are not enough to prove direction.
   const feed = buildFeed([
-    moved(9, { x: 9, y: 9 }),
-    moved(3, { x: 3, y: 3 }),
-    moved(7, { x: 7, y: 7 }),
-    moved(1, { x: 1, y: 1 }),
-    moved(5, { x: 5, y: 5 }),
+    rolled(9),
+    rolled(3),
+    rolled(7),
+    rolled(1),
+    rolled(5),
   ]);
   expect(feed.map((e) => Number(e.seq))).toEqual([1, 3, 5, 7, 9]);
 });
@@ -210,7 +213,7 @@ test("an anchor whose range is empty does not capture the next event after it", 
   // Range [2,2] with nothing at 2 and an event at 3 is the smallest case that
   // separates "no match" from "first match past the end".
   const feed = buildFeed([
-    moved(3, { x: 3, y: 3 }),
+    rolled(3),
     said(4, "About a moment not in this log.", [2, 2]),
   ]);
   expect(feed.map((e) => Number(e.seq))).toEqual([3, 4]);
@@ -245,11 +248,11 @@ test("an unset payload alongside real events leaves the real ones intact", () =>
   // The same input in the position it would actually arrive in — mid-log,
   // between events an older client does understand.
   const bare = create(EnvelopeSchema, { eventId: "x", sequence: 2n });
-  const feed = buildFeed([moved(1, { x: 1, y: 1 }), bare, moved(3, { x: 3, y: 3 })]);
+  const feed = buildFeed([rolled(1), bare, rolled(3)]);
   expect(feed.map((e) => Number(e.seq))).toEqual([1, 2, 3]);
 });
 
-// VTT-662
+// VTT-822
 test("a removal that carries an event id, or that another actor's introduction follows, is told", () => {
   const removed = (seq: number, actorId: string, eventId: string) =>
     create(EnvelopeSchema, {
@@ -265,7 +268,7 @@ test("a removal that carries an event id, or that another actor's introduction f
   expect(told([removed(1, "a1", ""), added(2, "a2", "")])).toEqual(["actorRemoved 1", "actorAdded 2"]);
 });
 
-// VTT-662
+// VTT-822
 test("an entry with no event id that is not a removal is told with the add behind it", () => {
   const used = create(EnvelopeSchema, {
     sequence: 1n, payload: { case: "abilityUsed", value: { actorId: "a1", abilityId: "wave" } },
@@ -278,7 +281,7 @@ test("an entry with no event id that is not a removal is told with the add behin
   expect(told).toEqual(["abilityUsed 1", "actorAdded 2"]);
 });
 
-// VTT-662
+// VTT-822
 test("a bare removal is told when the entry after it holds nothing this client reads", () => {
   const gone = create(EnvelopeSchema, {
     sequence: 1n, payload: { case: "actorRemoved", value: create(ActorRemovedSchema, { actorId: "a1" }) },
@@ -297,4 +300,51 @@ test("buildFeed tells a bare removal and an actorAdded with no actor after it", 
   });
   const told = buildFeed([gone, added]).flatMap((e) => e.events.map((v) => `${v.payload.case} ${v.sequence}`));
   expect(told).toEqual(["actorRemoved 1", "actorAdded 2"]);
+});
+
+// VTT-809 VTT-810 VTT-818 VTT-819 VTT-820 VTT-822 VTT-823
+test("buildFeed keeps each kind the Story draws and leaves out the rest, an entry with an event id and one with none", () => {
+  const leftOut = new Set([
+    "resourceChanged", "abilityGiven", "abilityTaken", "resourceAdded", "resourceRemoved",
+    "actorControlGranted", "actorControlRevoked",
+    "tokenPlaced", "tokenMoved", "tokenHidden", "tokenRemoved", "tokenDescribed", "sceneCreated", "sceneSeen",
+    "noteUpserted", "noteDeleted", "adventureLoaded",
+  ]);
+  const doors = new Set(["doorOpened", "doorClosed"]);
+  const kinds = EnvelopeSchema.oneofs.find((o) => o.name === "payload")!.fields;
+  for (const k of [...leftOut, ...doors]) expect(kinds.map((f) => f.localName)).toContain(k);
+  for (const f of kinds) {
+    const payload = { case: f.localName, value: create(f.message!) } as Envelope["payload"];
+    for (const eventId of ["e-1", ""]) {
+      const kept = buildFeed([create(EnvelopeSchema, { eventId, sequence: 1n, payload })]).length === 1;
+      const want = !leftOut.has(f.localName) && (eventId !== "" || !doors.has(f.localName));
+      expect(`${f.localName} "${eventId}" kept: ${kept}`).toBe(`${f.localName} "${eventId}" kept: ${want}`);
+    }
+  }
+});
+
+// VTT-812
+test("a narration anchored only to an entry the Story leaves out is its own beat, at its own place", () => {
+  const changed = env(2, {
+    case: "resourceChanged", value: create(ResourceChangedSchema, { actorId: "a1", resource: "hp", newValue: 4 }),
+  });
+  const feed = buildFeed([rolled(1), changed, rolled(3), said(4, "She winces.", [2, 2])]);
+  expect(feed.map((e) => [Number(e.seq), e.events.map((v) => Number(v.sequence)), e.narrations.map((n) => n.text)]))
+    .toEqual([[1, [1], []], [3, [3], []], [4, [], ["She winces."]]]);
+});
+
+// VTT-822
+test("a correction's sheet frame ends a run, and the bare condition behind it is told", () => {
+  const own = (seq: number, payload: Envelope["payload"]) => create(EnvelopeSchema, { sequence: BigInt(seq), payload });
+  const told = buildFeed([
+    own(1, { case: "actorRemoved", value: create(ActorRemovedSchema, { actorId: "a1" }) }),
+    own(2, {
+      case: "actorAdded",
+      value: create(ActorAddedSchema, { actor: { actorId: "a1", name: "Ash", kind: ActorKind.PARTY_MEMBER } }),
+    }),
+    own(3, { case: "actorControlGranted", value: create(ActorControlGrantedSchema, { actorId: "a1", participantId: "p" }) }),
+    own(4, { case: "resourceChanged", value: create(ResourceChangedSchema, { actorId: "a1", resource: "hp", newValue: 4 }) }),
+    own(5, { case: "conditionApplied", value: create(ConditionAppliedSchema, { actorId: "a1", conditionId: "dazed" }) }),
+  ]).flatMap((e) => e.events.map((v) => `${v.payload.case} ${v.sequence}`));
+  expect(told).toEqual(["conditionApplied 5"]);
 });

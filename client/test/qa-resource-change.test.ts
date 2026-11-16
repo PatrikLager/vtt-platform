@@ -238,10 +238,10 @@ describe("the client's dump of a resource log", () => {
   });
 });
 
-// VTT-790: the Story words a ResourceAdded "<actor> now has <resource> at
-// <current>" and a ResourceRemoved "<actor> no longer has <resource>", the
+// VTT-814: the Events panel words a ResourceAdded "<actor> now has <resource>
+// at <current>" and a ResourceRemoved "<actor> no longer has <resource>", the
 // resource named by Namer.resource.
-describe("the Story's line of a resource event", () => {
+describe("the Events panel's line of a resource event", () => {
   const names: Namer = {
     token: (id: string) => `TOKEN(${id})`,
     shown: (id: string) => `SHOWN(${id})`,

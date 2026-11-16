@@ -171,6 +171,18 @@ function moves(n: number, reason: (i: number) => string = reasonOf): Frame[] {
 
 const logWith = (n: number) => [...SETUP, ...moves(n)];
 
+/** Of SETUP the Story draws the session's start and Bram's add (VTT-822). */
+const SETUP_DRAWN = 2;
+
+/** Conditions 1..n Bram gains, condition i named tag(i): entries the Story draws. */
+function gains(n: number): Frame[] {
+  const out: Frame[] = [];
+  for (let i = 1; i <= n; i++) out.push({ conditionApplied: { actorId: "a-bram", conditionId: tag(i), source: "dm" } });
+  return out;
+}
+
+const drawnLogWith = (n: number) => [...SETUP, ...gains(n)];
+
 function deliverLog(sock: FakeSocket, payloads: Frame[], firstSeq = 1) {
   payloads.forEach((p, i) => sock.deliver(envelope(firstSeq + i, p)));
 }
@@ -301,16 +313,17 @@ for (const role of ["dm", "agent"] as const) {
     expect(moveIn(rows[2]!, 3)).toBe(2);
   });
 
-  // VTT-263
-  test(`qaEP: ${role}: the ticker and the feed label a move with its reason`, async () => {
+  // VTT-821 VTT-818
+  test(`qaEP: ${role}: the ticker labels a move with its reason, and the Story draws no move`, async () => {
     const { r } = await openWorld(role, [...SETUP, ...moves(1, () => "dodging the falling chandelier")]);
     expect(ticks(r)[0]).toContain("dodging the falling chandelier");
-    expect(feedRows(r).some((x) => x.includes("dodging the falling chandelier"))).toBe(true);
+    expect(feedRows(r)).toHaveLength(SETUP_DRAWN);
+    expect(feedRows(r).some((x) => x.includes("dodging the falling chandelier"))).toBe(false);
   });
 
   // VTT-393
   test(`qaEP: ${role}: neither the ticker's rows nor the Story's show a log sequence number`, async () => {
-    const { r } = await openWorld(role, logWith(45));
+    const { r } = await openWorld(role, drawnLogWith(45));
     const rows = ticks(r);
     expect(rows).toHaveLength(40);
     expect(rows.flatMap(strayNumbers)).toEqual([]);
@@ -367,38 +380,39 @@ for (const role of ["player", "spectator"] as const) {
     expect(Array.from(r.querySelectorAll("h2")).map((h) => h.textContent)).not.toContain("Events");
   });
 
-  // VTT-662
-  test(`qaEP: ${role}: the Story still shows every entry of the log, more than 40 included`, async () => {
-    const { r } = await openSeat(role, logWith(45));
+  // VTT-822
+  test(`qaEP: ${role}: the Story still shows every entry it draws, more than 40 included`, async () => {
+    const { r } = await openSeat(role, drawnLogWith(45));
     const rows = feedRows(r);
-    expect(rows).toHaveLength(SETUP.length + 45);
-    for (let i = 1; i <= 45; i++) expect(rows.some((x) => x.includes(reasonOf(i)))).toBe(true);
+    expect(rows).toHaveLength(SETUP_DRAWN + 45);
+    for (let i = 1; i <= 45; i++) expect(rows.some((x) => x.endsWith(` ${tag(i)}`))).toBe(true);
   });
 
   // VTT-393
   test(`qaEP: ${role}: the window shows no log sequence number`, async () => {
-    const { r } = await openSeat(role, logWith(45));
+    const { r } = await openSeat(role, drawnLogWith(45));
     expect(count(r, ownPanel[role])).toBeGreaterThan(0);
-    expect(feedRows(r)).toHaveLength(SETUP.length + 45);
+    expect(feedRows(r)).toHaveLength(SETUP_DRAWN + 45);
     expect(strayNumbers(r.textContent ?? "")).toEqual([]);
   });
 
-  // VTT-263
-  test(`qaEP: ${role}: the Story labels a move with its reason`, async () => {
+  // VTT-818
+  test(`qaEP: ${role}: the Story draws no move, nor its reason`, async () => {
     const { r } = await openSeat(role, [...SETUP, ...moves(1, () => "dodging the falling chandelier")]);
     expect(count(r, ownPanel[role])).toBeGreaterThan(0);
-    expect(feedRows(r).some((x) => x.includes("dodging the falling chandelier"))).toBe(true);
+    expect(feedRows(r)).toHaveLength(SETUP_DRAWN);
+    expect(feedRows(r).some((x) => x.includes("dodging the falling chandelier"))).toBe(false);
   });
 }
 
 for (const role of ["dm", "agent"] as const) {
-  // VTT-662
-  test(`qaEP: ${role}: the Story shows every entry of the log while the panel shows 40`, async () => {
-    const { r } = await openWorld(role, logWith(45));
+  // VTT-822
+  test(`qaEP: ${role}: the Story shows every entry it draws while the panel shows 40`, async () => {
+    const { r } = await openWorld(role, drawnLogWith(45));
     expect(ticks(r)).toHaveLength(40);
     const rows = feedRows(r);
-    expect(rows).toHaveLength(SETUP.length + 45);
-    for (let i = 1; i <= 45; i++) expect(rows.some((x) => x.includes(reasonOf(i)))).toBe(true);
+    expect(rows).toHaveLength(SETUP_DRAWN + 45);
+    for (let i = 1; i <= 45; i++) expect(rows.some((x) => x.endsWith(` ${tag(i)}`))).toBe(true);
   });
 }
 
@@ -408,7 +422,7 @@ for (const role of ["dm", "agent"] as const) {
 test("qaEP: until /api/me answers, a page sent the world draws no Events panel, and draws it once the answer is dm", async () => {
   const { r } = await openWorld("dm", logWith(3), { holdMe: true });
   expect(me.calls).toBeGreaterThan(0);
-  expect(feedRows(r)).toHaveLength(SETUP.length + 3);
+  expect(feedRows(r)).toHaveLength(SETUP_DRAWN);
   expect(tickers(r)).toBe(0);
   me.release();
   await settle();
@@ -421,7 +435,7 @@ test("qaEP: until /api/me answers, a page sent the world draws no Events panel, 
 test("qaEP: a first /api/me that answers 404 leaves no role, and the page sent the world draws no Events panel", async () => {
   const { r } = await openWorld(null, logWith(3));
   expect(me.calls).toBeGreaterThan(0);
-  expect(feedRows(r)).toHaveLength(SETUP.length + 3);
+  expect(feedRows(r)).toHaveLength(SETUP_DRAWN);
   expect(tickers(r)).toBe(0);
   expect(count(r, "p.tick")).toBe(0);
 });
@@ -430,7 +444,7 @@ test("qaEP: a first /api/me that answers 404 leaves no role, and the page sent t
 test("qaEP: a /api/me that answers with no role field draws no Events panel", async () => {
   const { r } = await openWorld("omit", logWith(3));
   expect(me.calls).toBeGreaterThan(0);
-  expect(feedRows(r)).toHaveLength(SETUP.length + 3);
+  expect(feedRows(r)).toHaveLength(SETUP_DRAWN);
   expect(tickers(r)).toBe(0);
 });
 
@@ -438,7 +452,7 @@ test("qaEP: a /api/me that answers with no role field draws no Events panel", as
 test("qaEP: a /api/me role that is neither dm nor agent, gm say, draws no Events panel", async () => {
   const { r } = await openWorld("gm", logWith(3));
   expect(me.calls).toBeGreaterThan(0);
-  expect(feedRows(r)).toHaveLength(SETUP.length + 3);
+  expect(feedRows(r)).toHaveLength(SETUP_DRAWN);
   expect(tickers(r)).toBe(0);
 });
 
@@ -500,7 +514,7 @@ test("qaEP: a dm whose re-read answers with no role field knows no role and lose
   sock.deliver(presenceChanged("p-me"));
   await settle();
   expect(me.calls).toBeGreaterThan(before);
-  expect(feedRows(r)).toHaveLength(SETUP.length + 3);
+  expect(feedRows(r)).toHaveLength(SETUP_DRAWN);
   expect(tickers(r)).toBe(0);
 });
 

@@ -22,7 +22,7 @@ export interface Cell {
 
 export interface ResourceChip {
   name: string;
-  /** label is what the chip's hover names it (VTT-622, VTT-623). */
+  /** label is what the chip's hover names it (VTT-815, VTT-816). */
   label: string;
   current: number;
   max: number;

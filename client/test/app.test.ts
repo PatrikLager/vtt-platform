@@ -3196,7 +3196,7 @@ test("a player's move moves the character they watch", async () => {
   s?.close();
 });
 
-// VTT-393 VTT-445 VTT-446 VTT-662
+// VTT-393 VTT-445 VTT-446 VTT-822
 test("no role's window shows a log sequence number", async () => {
   const seqs = [7001, 7002, 7003, 7004, 7005, 7006];
   const shows = (t: string, n: number) =>
@@ -3224,7 +3224,8 @@ test("no role's window shows a log sequence number", async () => {
 
     expect(r.querySelector(panel[role]!)).not.toBeNull();
     expect(r.textContent).toContain("The lamps gutter.");
-    expect(r.querySelectorAll(".feed .mechanical").length).toBe(5);
+    expect(Array.from(r.querySelectorAll(".feed .mechanical"), (n) => n.textContent))
+      .toEqual(["session started — Night", "Lera is in the party"]);
     if (role === "dm" || role === "agent") expect(r.querySelectorAll(".ticker .tick").length).toBe(6);
     else expect(r.querySelectorAll("section.ticker").length).toBe(0);
     const shown = [
@@ -3568,8 +3569,11 @@ test("a page sent the set but no viewpoint leaves the next page the party member
 
 const storyRows = (r: HTMLElement) => Array.from(r.querySelectorAll(".feed .mechanical"), (n) => n.textContent);
 
-// VTT-445 VTT-662
-test("a player's and a spectator's window draws no Events panel, and its Story shows what it was sent", async () => {
+/** What the Story draws of seedTable's log: its scene, grant and token's placing are not drawn. */
+const SEEDED_STORY = ["session started — Night", "Lera comes into sight"];
+
+// VTT-445 VTT-822
+test("a player's and a spectator's window draws no Events panel, and its Story draws the game's lines it was sent", async () => {
   const own: Record<string, string> = { player: ".player", spectator: ".perch" };
   for (const role of ["player", "spectator"]) {
     const { r, s, sock } = await dialAs(role);
@@ -3577,15 +3581,15 @@ test("a player's and a spectator's window draws no Events panel, and its Story s
     seedTable(sock);
     await settle();
     expect(r.querySelectorAll(own[role]!).length).toBe(1);
-    expect(storyRows(r)).toHaveLength(5);
+    expect(storyRows(r)).toEqual(SEEDED_STORY);
     expect(r.querySelectorAll("section.ticker").length).toBe(0);
     expect(Array.from(r.querySelectorAll("h2"), (h) => h.textContent)).not.toContain("Events");
     s?.close();
   }
 });
 
-// VTT-445 VTT-662
-test("a page whose /api/me answers no role draws no Events panel, and its Story shows what it was sent", async () => {
+// VTT-445 VTT-822
+test("a page whose /api/me answers no role draws no Events panel, and its Story draws the game's lines it was sent", async () => {
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({});
   useFakeSocket();
@@ -3595,19 +3599,104 @@ test("a page whose /api/me answers no role draws no Events panel, and its Story 
   sock.open();
   seedTable(sock);
   await settle();
-  expect(storyRows(r)).toHaveLength(5);
+  expect(storyRows(r)).toEqual(SEEDED_STORY);
   expect(r.querySelectorAll("section.ticker").length).toBe(0);
   s?.close();
 });
 
-// VTT-446 VTT-447 VTT-662
+// VTT-446 VTT-447
 test("a DM's and an agent's window draws a row in the Events panel for each entry it was sent, newest first", async () => {
   for (const role of ["dm", "agent"]) {
     const { r, s } = await tableAs(role);
     expect(r.querySelectorAll(".dm").length).toBe(1);
     const ticks = Array.from(r.querySelectorAll(".ticker .tick"), (n) => n.textContent);
-    expect(ticks).toEqual(storyRows(r).reverse());
-    expect(ticks[0]).toBe("Lera is at 1,1");
+    expect(ticks).toEqual(["Lera is at 1,1", "control of Lera given", "Lera comes into sight", 'scene "Hall"', "session started — Night"]);
+    expect(storyRows(r)).toEqual(SEEDED_STORY);
+    s?.close();
+  }
+});
+
+/** Each entry the Story draws or leaves out, with its Events panel row, a story line or null. */
+const EVERY_KIND: [Frame, string, string | null][] = [
+  [{ sessionStarted: { name: "Night" } }, "session started — Night", "session started — Night"],
+  [{ sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 8, gridHeight: 8 } }, 'scene "Hall"', null],
+  [{ actorAdded: { actor: { actorId: "a1", name: "Lera", kind: "ACTOR_KIND_PARTY_MEMBER", resources: { hp: { current: 5, max: 5 } } } } },
+    "Lera is in the party", "Lera is in the party"],
+  [{ actorControlGranted: { actorId: "a1", participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" } }, "control of Lera given", null],
+  [{ tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 }, name: "Lera", gmName: "Lera" } },
+    "Lera is at 1,1", null],
+  [{ tokenMoved: { tokenId: "t1", sceneId: "s1", to: { x: 2, y: 1 }, reason: "r" } }, "Lera moved to 2,1 — r", null],
+  [{ tokenDescribed: { tokenId: "t1", name: "Lera", gmName: "Lera" } }, "Lera described", null],
+  [{ sceneSeen: { sceneId: "s1" } }, "the view changed", null],
+  [{ noteUpserted: { key: "k", title: "T", text: "x", visibility: "NOTE_VISIBILITY_PUBLIC" } }, 'note "k" updated', null],
+  [{ noteDeleted: { key: "k" } }, 'note "k" withdrawn', null],
+  [{ adventureLoaded: { adventureId: "adv" } }, "adventure adv loaded", null],
+  [{ resourceChanged: { actorId: "a1", resource: "hp", delta: -1, newValue: 4 } }, "Lera hp → 4", null],
+  [{ abilityGiven: { actorId: "a1", abilityId: "slash" } }, "Lera can now use slash", null],
+  [{ abilityTaken: { actorId: "a1", abilityId: "slash" } }, "Lera can no longer use slash", null],
+  [{ resourceAdded: { actorId: "a1", resource: "vigor", value: { current: 1, max: 2 } } }, "Lera now has vigor at 1", null],
+  [{ resourceRemoved: { actorId: "a1", resource: "vigor" } }, "Lera no longer has vigor", null],
+  [{ actorAdded: { actor: { actorId: "a2", name: "Bram", kind: "ACTOR_KIND_PARTY_MEMBER" } } }, "Bram is in the party", "Bram is in the party"],
+  [{ actorControlGranted: { actorId: "a2", participantId: "q", kind: "ACTOR_KIND_PARTY_MEMBER" } }, "control of Bram given", null],
+  [{ tokenPlaced: { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 4, y: 4 }, name: "Bram", gmName: "Bram" } },
+    "Bram is at 4,4", null],
+  [{ actorControlRevoked: { actorId: "a2", participantId: "q" } }, "control of Bram taken back", null],
+  [{ conditionApplied: { actorId: "a1", conditionId: "prone", source: "dm" } }, "Lera gained prone", "Lera gained prone"],
+  [{ conditionRemoved: { actorId: "a1", conditionId: "prone" } }, "Lera lost prone", "Lera lost prone"],
+  [{ abilityUsed: { actorId: "a1", abilityId: "poke", targetIds: ["a2"] } }, "Lera used poke on Bram", "Lera used poke on Bram"],
+  [{ attackRolled: { total: 12 } }, "roll 12", "roll 12"],
+  [{ doorOpened: { sceneId: "s1", at: { x: 3, y: 1 } } }, "a door opened at 3,1", "a door opened"],
+  [{ doorClosed: { sceneId: "s1", at: { x: 3, y: 1 } } }, "a door closed at 3,1", "a door closed"],
+  [{ whisperAdded: { text: "psst", toActorIds: ["a1"] } }, "The DM whispers to Lera: psst", "The DM whispers to Lera: psst"],
+  [{ sessionEnded: {} }, "session ended", "session ended"],
+];
+
+/** The same kinds with no event id, as a character log's projection writes its own entries. */
+const EVERY_KIND_BARE: [Frame, string][] = [
+  [{ resourceChanged: { actorId: "a1", resource: "hp", delta: -1, newValue: 3 } }, "Lera hp → 3"],
+  [{ abilityGiven: { actorId: "a1", abilityId: "slash" } }, "Lera can now use slash"],
+  [{ abilityTaken: { actorId: "a1", abilityId: "slash" } }, "Lera can no longer use slash"],
+  [{ resourceAdded: { actorId: "a1", resource: "vigor", value: { current: 2, max: 2 } } }, "Lera now has vigor at 2"],
+  [{ resourceRemoved: { actorId: "a1", resource: "vigor" } }, "Lera no longer has vigor"],
+  [{ actorControlGranted: { actorId: "a2", participantId: "q", kind: "ACTOR_KIND_PARTY_MEMBER" } }, "control of Bram given"],
+  [{ actorControlRevoked: { actorId: "a2", participantId: "q" } }, "control of Bram taken back"],
+  [{ sceneCreated: { sceneId: "s2", name: "Crypt", gridWidth: 8, gridHeight: 8 } }, 'scene "Crypt"'],
+  [{ tokenPlaced: { tokenId: "t3", sceneId: "s2", actorId: "a2", position: { x: 2, y: 2 }, name: "Bram", gmName: "Bram" } },
+    "Bram is at 2,2"],
+  [{ tokenMoved: { tokenId: "t3", sceneId: "s2", to: { x: 3, y: 2 } } }, "Bram moved to 3,2"],
+  [{ tokenDescribed: { tokenId: "t3", name: "Bram", gmName: "Bram" } }, "Bram described"],
+  [{ tokenRemoved: { tokenId: "t3" } }, "Bram taken off the board"],
+  [{ sceneSeen: { sceneId: "s2" } }, "the view changed"],
+  [{ noteUpserted: { key: "k2", title: "T", text: "x", visibility: "NOTE_VISIBILITY_PUBLIC" } }, 'note "k2" updated'],
+  [{ noteDeleted: { key: "k2" } }, 'note "k2" withdrawn'],
+  [{ adventureLoaded: { adventureId: "adv2" } }, "adventure adv2 loaded"],
+  [{ doorOpened: { sceneId: "s1", at: { x: 3, y: 1 } } }, "a door opened at 3,1"],
+  [{ doorClosed: { sceneId: "s1", at: { x: 3, y: 1 } } }, "a door closed at 3,1"],
+  [{ tokenHidden: { tokenId: "t2" } }, "Bram went out of sight"],
+];
+
+const storyLines = (r: HTMLElement) => Array.from(r.querySelectorAll(".feed .beat p"), (n) => n.textContent);
+
+// VTT-809 VTT-810 VTT-818 VTT-819 VTT-820 VTT-822 VTT-823 VTT-446 VTT-447
+test("every role's Story draws what happens in the game and no mechanical entry, and the DM's and the agent's Events panel draws each", async () => {
+  for (const role of ["dm", "agent", "player", "spectator"]) {
+    const { r, s, sock } = await dialAs(role);
+    if (role === "player" || role === "spectator") opensOn(sock, "a1");
+    EVERY_KIND.forEach(([payload], i) => sock.deliver(envelope(i + 1, payload)));
+    await settle();
+    const told = EVERY_KIND.flatMap(([, , story]) => (story === null ? [] : [story]));
+    expect([role, storyLines(r)]).toEqual([role, told]);
+    const panel = role === "dm" || role === "agent";
+    const ticks = () => Array.from(r.querySelectorAll(".ticker .tick"), (n) => n.textContent);
+    expect([role, ticks()]).toEqual([role, panel ? EVERY_KIND.map(([, row]) => row).reverse() : []]);
+
+    const next = EVERY_KIND.length + 1;
+    EVERY_KIND_BARE.forEach(([payload], i) => sock.deliver({ event: { sequence: String(next + i), ...payload } }));
+    await settle();
+    expect([role, storyLines(r)]).toEqual([role, told]);
+    if (panel) {
+      expect(ticks().slice(0, EVERY_KIND_BARE.length)).toEqual(EVERY_KIND_BARE.map(([, row]) => row).reverse());
+    }
     s?.close();
   }
 });
@@ -3960,8 +4049,8 @@ test("after a removal the share link opens the join form, and a page under the d
   again?.close();
 });
 
-// VTT-622
-test("the ruleset's properties reach the chip, the Story and the cost", async () => {
+// VTT-815 VTT-809
+test("the ruleset's properties reach the chip and the cost, and the Story draws no resource change", async () => {
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
     "/api/me": { participantId: "p", name: "Lera", role: "player" },
@@ -3986,7 +4075,8 @@ test("the ruleset's properties reach the chip, the Story and the cost", async ()
   sock.deliver(envelope(6, { resourceChanged: { actorId: "a1", resource: "vigor", delta: -1, newValue: 2 } }));
   await settle();
   expect((r.querySelector(".token .chip") as HTMLElement).title).toBe("Vigor Points");
-  expect(Array.from(r.querySelectorAll(".feed .mechanical"), (n) => n.textContent)).toContain("Lera Vigor Points → 2");
+  expect(r.querySelector(".feed")?.textContent).not.toContain("Vigor Points");
+  expect(r.querySelector(".feed")?.textContent).not.toContain("→");
   const jab = Array.from(r.querySelectorAll(".player button")).find((b) => b.textContent === "Jab") as HTMLElement;
   expect(jab.title).toBe("Vigor Points 1");
   s?.close();

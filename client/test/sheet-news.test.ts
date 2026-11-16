@@ -247,7 +247,7 @@ test("a player is told what a give and a take changed once the read it issued an
   w.reads[2]!([HEAL]);
   await flush();
   expect(toast(w)).toBe("Ayla can no longer use Slash.");
-  expect(w.root.querySelector(".feed")?.textContent).toContain("Ayla can no longer use Slash");
+  expect(w.root.querySelector(".feed")?.textContent).not.toContain("can no longer use"); // VTT-809
 });
 
 // VTT-733
@@ -282,7 +282,7 @@ test("a read that fails still tells the change, naming an ability no answer has 
   expect(toast(w)).toBe("Ayla can now use heal.");
 });
 
-// VTT-734 VTT-758
+// VTT-734 VTT-758 VTT-809
 test("an older read's answer arriving after the newest names an ability in the Story at once, and leaves the message standing", async () => {
   const ayla: Member = ["a", "Ayla", ["slash"]];
   const w = await playerOn([ayla], ayla, [SLASH]);
@@ -294,14 +294,16 @@ test("an older read's answer arriving after the newest names an ability in the S
   w.reads[2]!([SLASH]);
   await flush();
   w.socket.frame(given("a", "heal"));
+  w.socket.frame(entry({ case: "abilityUsed", value: { actorId: "a", abilityId: "heal", targetIds: ["a"] } }));
   await flush();
   const story = () => w.root.querySelector(".feed")?.textContent ?? "";
-  expect(story()).toContain("Ayla can now use heal");
+  expect(story()).toContain("Ayla used heal on Ayla");
+  expect(story()).not.toContain("can now use");
   expect(toast(w)).toBe("You no longer play Bo.");
   w.reads[1]!([SLASH, HEAL]);
   await flush();
-  expect(story()).toContain("Ayla can now use Heal");
-  expect(story()).not.toContain("Ayla can now use heal");
+  expect(story()).toContain("Ayla used Heal on Ayla");
+  expect(story()).not.toContain("Ayla used heal");
   expect(toast(w)).toBe("You no longer play Bo.");
 });
 

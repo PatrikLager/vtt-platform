@@ -179,6 +179,18 @@ export function describe(e: Envelope, names: Namer): string {
   }
 }
 
+// Name no square here: describe keeps it for the Events panel (VTT-819).
+function tell(e: Envelope, names: Namer): string {
+  switch (e.payload.case) {
+    case "doorOpened":
+      return "a door opened";
+    case "doorClosed":
+      return "a door closed";
+    default:
+      return describe(e, names);
+  }
+}
+
 // Read outcomes, never outcome_summary: the summary carries what the roll was
 // compared with (VTT-477).
 function abilityLine(u: AbilityUsed, names: Namer): string {
@@ -455,7 +467,7 @@ function renderFeed(entries: FeedEntry[], names: Namer): HTMLElement {
     }
     for (const e of entry.events) {
       const cls = e.payload.case === "whisperAdded" ? "whisper" : "mechanical";
-      item.appendChild(el("p", cls, describe(e, names)));
+      item.appendChild(el("p", cls, tell(e, names)));
     }
     wrap.appendChild(item);
   }

@@ -58,7 +58,7 @@ class FakeSocket {
 /** One GET /api/ruleset the window issued, held until the test settles it. */
 interface Read {
   settled: boolean;
-  answer(abilities: Array<[id: string, name: string]>, resources?: Array<[key: string, name: string]>): void;
+  answer(abilities: Array<[id: string, name: string, spends?: string]>, resources?: Array<[key: string, name: string]>): void;
   fail(status?: number): void;
 }
 
@@ -81,12 +81,13 @@ async function flush(): Promise<void> {
   for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
 }
 
-function rulesetBody(abilities: Array<[string, string]>, resources: Array<[string, string]>): string {
+function rulesetBody(abilities: Array<[string, string, string?]>, resources: Array<[string, string]>): string {
   return JSON.stringify({
     id: "qa-rules",
     name: "QA rules",
-    abilities: abilities.map(([id, name]) => ({
-      id, name, range: 1, maxTargets: 1, usage: { kind: "atWill" },
+    abilities: abilities.map(([id, name, spends]) => ({
+      id, name, range: 1, maxTargets: 1,
+      usage: spends === undefined ? { kind: "atWill" } : { kind: "resource", resource: spends, cost: 1 },
     })),
     conditions: [],
     resources: resources.map(([key]) => key),
@@ -105,6 +106,7 @@ interface Table {
   ws: FakeSocket;
   reads: Read[];
   pending(): Read[];
+  /** Give the ability, then use it: the use is the Story's line that names it (VTT-734). */
   give(actorId: string, abilityId: string): void;
   spend(actorId: string, resource: string, newValue: number): void;
   set(actors: PartyMember[], controlsNone?: boolean): void;
@@ -121,7 +123,7 @@ interface Table {
 async function openTable(
   role: Role,
   party: PartyMember[],
-  baseline: Array<[string, string]>,
+  baseline: Array<[string, string, string?]>,
 ): Promise<Table> {
   localStorage.setItem("vtt.token", "qa-token");
   const reads: Read[] = [];
@@ -183,6 +185,8 @@ async function openTable(
     give(actorId, abilityId) {
       seq += 1n;
       event({ case: "event", value: { eventId: `give-${actorId}-${abilityId}`, sequence: seq, payload: { case: "abilityGiven", value: { actorId, abilityId } } } });
+      seq += 1n;
+      event({ case: "event", value: { eventId: `use-${actorId}-${abilityId}`, sequence: seq, payload: { case: "abilityUsed", value: { actorId, abilityId, targetIds: [actorId] } } } });
     },
     spend(actorId, resource, newValue) {
       seq += 1n;
@@ -217,7 +221,7 @@ async function openTable(
   return t;
 }
 
-const story = (actor: string, ability: string): string => `${actor} can now use ${ability}`;
+const story = (actor: string, ability: string): string => `${actor} used ${ability}`;
 
 describe("two /api/ruleset reads in flight in a player's window", () => {
   // VTT-753 VTT-734 VTT-733
@@ -416,9 +420,13 @@ describe("two /api/ruleset reads in flight in a player's window", () => {
   }
 });
 
-// VTT-756 VTT-753
-test("an older read's answer arriving after the newest does not change how the Story names a resource", async () => {
-  const t = await openTable("player", [{ id: "a1", name: "Aria", abilityIds: ["strike"] }], [["strike", "Strike"]]);
+// VTT-817 VTT-753
+test("an older read's answer arriving after the newest does not change how the player panel's ability button names the resource it spends", async () => {
+  const t = await openTable("player", [{ id: "a1", name: "Aria", abilityIds: ["strike"] }], [["strike", "Strike", "vigor"]]);
+  const cost = (): string | null => {
+    const strike = Array.from(t.root.querySelectorAll("section.player button")).find((b) => b.textContent === "Strike");
+    return strike?.getAttribute("title") ?? null;
+  };
   t.spend("a1", "vigor", 4);
 
   t.give("a1", "fireball");
@@ -431,13 +439,13 @@ test("an older read's answer arriving after the newest does not change how the S
   expect(t.pending()).toHaveLength(2);
   const newest = t.pending()[1]!;
 
-  newest.answer([["strike", "Strike"], ["heal", "Heal"]], [["vigor", "Stamina"]]);
+  newest.answer([["strike", "Strike", "vigor"], ["heal", "Heal"]], [["vigor", "Stamina"]]);
   await flush();
-  expect(t.story()).toContain("Stamina");
+  expect(cost()).toBe("Stamina 1");
 
-  older.answer([["strike", "Strike"], ["fireball", "Fireball"]], [["vigor", "Old Vigor"]]);
+  older.answer([["strike", "Strike", "vigor"], ["fireball", "Fireball"]], [["vigor", "Old Vigor"]]);
   await flush();
-  expect(t.story()).toContain("Stamina");
+  expect(cost()).toBe("Stamina 1");
   expect(t.story()).not.toContain("Old Vigor");
 });
 

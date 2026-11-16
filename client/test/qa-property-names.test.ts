@@ -2,7 +2,7 @@ import "./support/dom";
 import { expect, test } from "bun:test";
 import { create } from "@bufbuild/protobuf";
 import {
-  AbilityUsedSchema, ActorKind, EnvelopeSchema, ResourceChangedSchema,
+  AbilityUsedSchema, ActorKind, ConditionAppliedSchema, EnvelopeSchema, ResourceChangedSchema,
   type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import type { Ability, Me, Property } from "../src/metadata";
@@ -98,7 +98,7 @@ function qaPNBoard(
 ): HTMLElement {
   const root = document.createElement("div");
   renderSpectator(root, st, log, "ok", {
-    properties, abilities: QA_PN_ABILITIES, dm,
+    properties, abilities: QA_PN_ABILITIES, dm, ticker: dm,
   });
   return root;
 }
@@ -143,26 +143,47 @@ function qaPNStoryOf(e: Envelope, properties: Property[] | undefined): string {
   return fromDescribe;
 }
 
-// VTT-622
+// The Story draws no resource change (VTT-809): its line is the Events panel's.
+function qaPNEventsRowOf(e: Envelope, properties: Property[] | undefined): string {
+  const st = qaPNState();
+  const fromDescribe = qaPNLine(e, namer(st, [e], true, QA_PN_ABILITIES, properties));
+  const root = qaPNBoard(st, [e], properties, true);
+  expect(qaPNStory(root)).toEqual([]);
+  const rows = Array.from(root.querySelectorAll(".ticker .tick"));
+  expect(rows.map((p) => (p.textContent ?? "").trim())).toEqual([fromDescribe]);
+  return fromDescribe;
+}
+
+function qaPNCondition(actorId: string): Envelope {
+  return create(EnvelopeSchema, {
+    eventId: `ev-${actorId}-dazed`, sequence: 1n,
+    payload: {
+      case: "conditionApplied",
+      value: create(ConditionAppliedSchema, { actorId, conditionId: "dazed", source: "dm" }),
+    },
+  });
+}
+
+// VTT-815
 test("namer names a declared resource by the property's display name", () => {
   const n = namer(qaPNState(), [], false, QA_PN_ABILITIES, QA_PN_PROPS);
   expect(n.resource("hp")).toBe("Vigor");
   expect(n.resource("mana")).toBe("Arcana");
 });
 
-// VTT-622
+// VTT-815
 test("a DM window's namer names a declared resource the same way", () => {
   const n = namer(qaPNState(), [], true, QA_PN_ABILITIES, QA_PN_PROPS);
   expect(n.resource("mana")).toBe("Arcana");
 });
 
-// VTT-623
+// VTT-816
 test("namer names an undeclared resource by its key", () => {
   const n = namer(qaPNState(), [], false, QA_PN_ABILITIES, QA_PN_PROPS);
   expect(n.resource("focus")).toBe("focus");
 });
 
-// VTT-623
+// VTT-816
 test("namer with no properties names every resource by its key", () => {
   const without = namer(qaPNState(), [], false, QA_PN_ABILITIES);
   const empty = namer(qaPNState(), [], false, QA_PN_ABILITIES, []);
@@ -172,7 +193,7 @@ test("namer with no properties names every resource by its key", () => {
   }
 });
 
-// VTT-622
+// VTT-815
 test("a declared resource's chip is titled by its name, face current/max", () => {
   const root = qaPNBoard(qaPNState(), [], QA_PN_PROPS);
   const chips = qaPNChips(root, "tok-aria-01");
@@ -183,7 +204,7 @@ test("a declared resource's chip is titled by its name, face current/max", () =>
   expect(qaPNChipTitles(root, "tok-grub-02")).toEqual(["Vigor"]);
 });
 
-// VTT-622
+// VTT-815
 test("tokensOnScene labels a declared resource's chip by its name", () => {
   const st = qaPNState();
   const n = namer(st, [], false, QA_PN_ABILITIES, QA_PN_PROPS);
@@ -193,13 +214,13 @@ test("tokensOnScene labels a declared resource's chip by its name", () => {
   expect(hp).toEqual({ name: "hp", label: "Vigor", current: 3, max: 10 });
 });
 
-// VTT-622
+// VTT-815
 test("a DM window titles a declared resource's chip by its name", () => {
   const root = qaPNBoard(qaPNState(), [], QA_PN_PROPS, true);
   expect(qaPNChipTitles(root, "tok-bran-03")).toContain("Arcana");
 });
 
-// VTT-623
+// VTT-816
 test("an undeclared resource's chip is titled by its key", () => {
   const root = qaPNBoard(qaPNState(), [], QA_PN_PROPS);
   const focus = qaPNChips(root, "tok-aria-01")
@@ -207,7 +228,7 @@ test("an undeclared resource's chip is titled by its key", () => {
   expect(focus?.textContent?.trim()).toBe("2/5");
 });
 
-// VTT-623
+// VTT-816
 test("with no properties every chip is titled by its key", () => {
   for (const props of [undefined, []]) {
     const root = qaPNBoard(qaPNState(), [], props);
@@ -226,53 +247,53 @@ test("chips are ordered by key, not by display name or insertion", () => {
   expect(disc?.resources.map((r) => r.name)).toEqual(["focus", "hp", "mana"]);
 });
 
-// VTT-622
-test("the Story line of a declared resource's change has its whole form", () => {
-  const line = qaPNStoryOf(qaPNChange(ARIA, "mana", 7), QA_PN_PROPS);
+// VTT-815 VTT-809
+test("the Events panel's line of a declared resource's change has its whole form", () => {
+  const line = qaPNEventsRowOf(qaPNChange(ARIA, "mana", 7), QA_PN_PROPS);
   expect(line).toMatch(/^Aria\s+Arcana\s+→\s+7$/);
 });
 
-// VTT-623
-test("the Story line of an undeclared resource's change names its key", () => {
-  const line = qaPNStoryOf(qaPNChange(ARIA, "focus", 6), QA_PN_PROPS);
+// VTT-816 VTT-809
+test("the Events panel's line of an undeclared resource's change names its key", () => {
+  const line = qaPNEventsRowOf(qaPNChange(ARIA, "focus", 6), QA_PN_PROPS);
   expect(line).toMatch(/^Aria\s+focus\s+→\s+6$/);
 });
 
-// VTT-623
-test("with no properties the Story line names a resource by its key", () => {
-  expect(qaPNStoryOf(qaPNChange(ARIA, "mana", 7), undefined))
+// VTT-816 VTT-809
+test("with no properties the Events panel's line names a resource by its key", () => {
+  expect(qaPNEventsRowOf(qaPNChange(ARIA, "mana", 7), undefined))
     .toMatch(/^Aria\s+mana\s+→\s+7$/);
-  expect(qaPNStoryOf(qaPNChange(ARIA, "hp", 8), []))
+  expect(qaPNEventsRowOf(qaPNChange(ARIA, "hp", 8), []))
     .toMatch(/^Aria\s+hp\s+→\s+8$/);
 });
 
 // VTT-475
 test("the Story line names the actor by token name, party name, or not", () => {
-  const named = qaPNStoryOf(qaPNChange(BRAN, "mana", 7), QA_PN_PROPS);
-  expect(named).toMatch(/^Wren\s+Arcana\s+→\s+7$/);
-  const unnamed = qaPNStoryOf(qaPNChange(GRUB, "hp", 5), QA_PN_PROPS);
-  expect(unnamed).toMatch(/^a creature\s+Vigor\s+→\s+5$/);
-  expect(qaPNStoryOf(qaPNChange(ARIA, "hp", 8), QA_PN_PROPS)).toMatch(/^Aria\s+Vigor\s+→\s+8$/);
+  const named = qaPNStoryOf(qaPNCondition(BRAN), QA_PN_PROPS);
+  expect(named).toMatch(/^Wren\s+gained\s+dazed$/);
+  const unnamed = qaPNStoryOf(qaPNCondition(GRUB), QA_PN_PROPS);
+  expect(unnamed).toMatch(/^a creature\s+gained\s+dazed$/);
+  expect(qaPNStoryOf(qaPNCondition(ARIA), QA_PN_PROPS)).toMatch(/^Aria\s+gained\s+dazed$/);
   for (const line of [named, unnamed]) {
     expect(line).not.toMatch(/act-|tok-|Bran|Grub/);
   }
 });
 
-// VTT-622
+// VTT-815
 test("an unaffordable cost names the resource and says not enough", () => {
   const panel = qaPNPanel(qaPNState(), ARIA, QA_PN_PROPS);
   expect(qaPNCost(panel, "Zap")).toBe("Arcana 2 — not enough");
   expect(qaPNCost(panel, "Blood Rite")).toBe("Vigor 4 — not enough");
 });
 
-// VTT-622
+// VTT-815
 test("an affordable cost names the resource with no shortfall", () => {
   const panel = qaPNPanel(qaPNState(), BRAN, QA_PN_PROPS);
   expect(qaPNCost(panel, "Zap")).toBe("Arcana 2");
   expect(qaPNCost(panel, "Blood Rite")).toBe("Vigor 4");
 });
 
-// VTT-622
+// VTT-815
 test("a cost exactly equal to what the actor holds is affordable", () => {
   const st = qaPNState();
   const bran = st.Actors[BRAN];
@@ -296,15 +317,15 @@ test("with no properties every cost is named by its key", () => {
   }
 });
 
-// VTT-623
+// VTT-816
 test("a number property does not name a resource chip of the same key", () => {
   const root = qaPNBoard(qaPNState(), [], QA_PN_NUMBER_PROPS);
   expect(qaPNChipTitles(root, "tok-grub-02")).toEqual(["hp"]);
 });
 
-// VTT-623
-test("a number property does not name a Story line of the same key", () => {
-  const line = qaPNStoryOf(qaPNChange(ARIA, "hp", 8), QA_PN_NUMBER_PROPS);
+// VTT-816 VTT-809
+test("a number property does not name an Events panel line of the same key", () => {
+  const line = qaPNEventsRowOf(qaPNChange(ARIA, "hp", 8), QA_PN_NUMBER_PROPS);
   expect(line).toMatch(/^Aria\s+hp\s+→\s+8$/);
 });
 

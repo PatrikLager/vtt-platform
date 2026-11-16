@@ -147,7 +147,7 @@ test("a sheet's news names each character and each ability given and taken, by t
   expect(sheetNews([{ actorId: "a", name: "Ayla", given: ["heal"], taken: [] }], [])).toBe("Ayla can now use heal.");
 });
 
-// VTT-622 VTT-623
+// VTT-815 VTT-816
 test("a resource is named by the ruleset's display name, else its key", () => {
   const props = [{ key: "vigor", type: "resource" as const, name: "Vigor Points", description: "How much fight is left." }];
   const n = namer(newState(), [], false, [], props);

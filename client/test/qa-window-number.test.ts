@@ -575,7 +575,7 @@ test.each(["world", "character"] as const)("renderSpectator over a %s log writes
 });
 
 // VTT-393
-test("describe, the label feed and ticker show for an event, names no sequence for any kind of event", () => {
+test("describe, the label the Events panel shows for an event, names no sequence for any kind of event", () => {
   const frames = [...worldLog(HIGH), ...characterLog(HIGH + 100, "p-me")];
   const seqs = seqsOf(frames);
   const labels = envelopes(frames).map((e) => describeEvent(e, namer(newState(), [], false, undefined)));
