@@ -265,6 +265,23 @@ client/src/view/dm.ts  ArrayDeclaration  offset=46  span=2  nth=1  copies=1  ["S
     code: command: takeAbility(a.actorId, id), clears: [],
     The draft fields a Take empties once the server accepts it, `[]` -> `["Stryker was here"]`. `sending` hands the list to clearDraft, whose only act is `delete draft[f]`, and `draft` is private to dm.ts. No control keys a draft "Stryker was here": every key the console reads or writes is a lower-case word followed by a hyphen and more, the literal keys (`say-as`, `actor-json`, `note-visibility` and the rest) as much as the built ones (`describe-name:`, `give-ability-`, `grant-`, `grant-kind-` and the like, each followed by an id), and the mutant's key opens with a capital and holds spaces. So the delete removes nothing, and every box and choice the console draws holds what it held under the original. A spy on the delete, or a Proxy around `draft`, sees the extra key; neither is an input to the console. WHOEVER ADDS OR RENAMES A DRAFT KEY IN dm.ts RE-JUDGES THIS ENTRY: its premise is the spelling of every key, and no gate asks.
 
+# The full run of 2026-11-16 on 09c55a9 found the entries below, on the value
+# fields a give shows when its ability spends a resource the actor's sheet
+# does not hold (VTT-788, VTT-789, VTT-806). The same run found the
+# placeholder those fields carry while hidden surviving, with its condition
+# forced false and with its empty text replaced; an assertion in "choosing an
+# ability that spends a resource the sheet lacks shows a current and a max
+# field, named as the window names it" in client/test/dm-abilities.test.ts
+# kills both, so they have no entry.
+
+client/src/view/dm.ts  BooleanLiteral  offset=31  span=4  nth=1  copies=1  false
+    code: const named = namer(d.st, [], true, d.abilities, d.properties).resource;
+    The namer the Abilities group builds only to name a resource, its `dm` argument `true` -> `false`. The call keeps nothing of the namer but `resource`, and `resource` reads `properties` alone: `dm` reaches only the namer's token and actor names and its `dm` member, and this call reads none of them. Built with either value, the namer runs the same lookups over State.Tokens and over the log, which is `[]` here, and neither throws. So every value field and every refusal of a give names the resource as under the original (VTT-806). WHOEVER MAKES namer's `resource` DEPEND ON `dm`, DIRECTLY OR THROUGH ANYTHING THE NAMER BUILDS FROM IT, RE-JUDGES THIS ENTRY: its premise is in client/src/view/naming.ts, and no gate asks.
+
+client/src/view/dm.ts  StringLiteral  offset=38  span=2  nth=1  copies=1  "Stryker was here!"
+    code: const now = int32((draft[current] ?? "").trim());
+    A give's current when the DM has typed none, the fallback `""` -> "Stryker was here!". int32 returns a number only for an optionally signed run of digits, and neither string is one, so under both the give stops at the same notice, that the resource needs a current value that is a whole number, and sends nothing (VTT-789). Where the draft holds the field's text the fallback is not read. The same fallback on the max's line is killed, because an empty max is sent as none (VTT-788). WHOEVER MAKES int32 ACCEPT TEXT THAT IS NOT DIGITS, OR GIVES AN EMPTY CURRENT A MEANING, RE-JUDGES THIS ENTRY: no gate asks.
+
 # --- client/src/player.ts ----------------------------------------------------
 #
 # 22 survivors -> the comparators below, by pinning ORDER (client/test/

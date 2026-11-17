@@ -214,6 +214,9 @@ test("choosing an ability that spends a resource the sheet lacks shows a current
     .toEqual(["Lera", "select", "give-ability-current-av-shown", "give-ability-max-av-shown", "Give"]);
   c.choose("av-shown", "jab");
   expect(fieldsShown(c, "av-shown")).toEqual([false, false]);
+  expect(["current", "max"].map((f) => c.row("av-shown")
+    ?.querySelector<HTMLInputElement>(`[data-field="give-ability-${f}-av-shown"]`)?.placeholder ?? ""))
+    .toEqual(["", ""]);
   c.choose("av-shown", "flurry");
   document.body.innerHTML = "";
   expect(shownFields(spendingConsole(stateWith({ "av-shown": { name: "Lera", abilityIds: [] } })), "av-shown").current?.placeholder)
