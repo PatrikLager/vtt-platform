@@ -172,6 +172,17 @@ func qaRRRouteBody(t *testing.T, g *qaRRGateway) []byte {
 	return body
 }
 
+func qaRRSheetPageCount(t *testing.T, body []byte) int {
+	t.Helper()
+	var doc struct {
+		Sheet []json.RawMessage `json:"sheet"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		t.Fatalf("route body: %v", err)
+	}
+	return len(doc.Sheet)
+}
+
 func qaRRPropertyCount(t *testing.T, body []byte) int {
 	t.Helper()
 	var doc struct {
@@ -194,6 +205,9 @@ func TestQARRGetRulesetReturnsTheRouteBodyVerbatim(t *testing.T) {
 			want := qaRRRouteBody(t, g)
 			if qaRRPropertyCount(t, want) == 0 {
 				t.Fatalf("degenerate fixture: the route serves no properties")
+			}
+			if filepath.Base(dir) == "dnd45e-minimal" && qaRRSheetPageCount(t, want) == 0 {
+				t.Fatalf("degenerate fixture: the route serves no sheet")
 			}
 			if got != string(want) {
 				t.Errorf("get_ruleset text differs from the route body\n got %q\nwant %q", got, want)

@@ -123,6 +123,22 @@ type rulesetJSON struct {
 	Conditions []conditionJSON `json:"conditions"`
 	Resources  []string        `json:"resources"`
 	Properties []propertyJSON  `json:"properties"`
+	Sheet      []sheetPageJSON `json:"sheet"`
+}
+
+// VTT-831
+type sheetPageJSON struct {
+	Name     string             `json:"name"`
+	Sections []sheetSectionJSON `json:"sections"`
+}
+
+// Keep omitempty on both lists: a section carries only the list its kind
+// names (VTT-831).
+type sheetSectionJSON struct {
+	Name      string      `json:"name"`
+	Kind      string      `json:"kind"`
+	Values    []string    `json:"values,omitempty"`
+	Abilities []usageJSON `json:"abilities,omitempty"`
 }
 
 // VTT-619
@@ -145,6 +161,7 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 		Conditions: []conditionJSON{},
 		Resources:  []string{},
 		Properties: []propertyJSON{},
+		Sheet:      []sheetPageJSON{},
 	}
 	if s.ruleset != nil {
 		rs := s.ruleset
@@ -191,6 +208,30 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 			out.Properties = append(out.Properties, propertyJSON{
 				Key: p.Key, Type: p.Type, Name: p.Name, Description: p.Description,
 			})
+		}
+
+		for _, page := range rs.Sheet {
+			sections := make([]sheetSectionJSON, 0, len(page.Sections))
+			for _, sec := range page.Sections {
+				js := sheetSectionJSON{Name: sec.Name}
+				switch {
+				case sec.Values != nil:
+					js.Kind, js.Values = "values", sec.Values
+				case sec.Conditions:
+					js.Kind = "conditions"
+				default:
+					js.Kind = "abilities"
+					for _, u := range sec.Abilities {
+						if u.AtWill {
+							js.Abilities = append(js.Abilities, usageJSON{Kind: "atWill"})
+						} else {
+							js.Abilities = append(js.Abilities, usageJSON{Kind: "resource", Resource: u.Resource})
+						}
+					}
+				}
+				sections = append(sections, js)
+			}
+			out.Sheet = append(out.Sheet, sheetPageJSON{Name: page.Name, Sections: sections})
 		}
 	}
 	writeJSON(w, out)

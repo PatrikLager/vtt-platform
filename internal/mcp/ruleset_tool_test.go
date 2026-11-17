@@ -76,3 +76,27 @@ func TestGetRulesetSaysWhichAbilitiesEachRoleReads(t *testing.T) {
 	}
 	t.Fatal("no get_ruleset tool is served")
 }
+
+// VTT-833
+func TestGetRulesetSaysItAnswersTheDeclaredSheet(t *testing.T) {
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	cs, cleanup := startSession(t, fs.wsURL())
+	defer cleanup()
+	list, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	for _, tool := range list.Tools {
+		if tool.Name != "get_ruleset" {
+			continue
+		}
+		for _, want := range []string{"`sheet`", "its pages in order", "named sections",
+			"`values`", "`conditions`", "`abilities`", "`sheet` is [] when the ruleset declares none"} {
+			if !strings.Contains(tool.Description, want) {
+				t.Errorf("get_ruleset's description = %q, want it to say %q", tool.Description, want)
+			}
+		}
+		return
+	}
+	t.Fatal("no get_ruleset tool is served")
+}
