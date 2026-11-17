@@ -211,13 +211,15 @@ tests.
 A string a map, an adventure or a ruleset file carries and its loader does not
 bound is under the same decision: a ruleset's display names, descriptions,
 expressions, atom ids, param names and graph keys, its manifest's id and name,
-and its guide; a map's or an adventure's `overrides` values and objects'
+its sheet's page and section names, and its guide; a map's or an adventure's
+`overrides` values and objects'
 `kind` and `art`; a map's or an adventure's placement `name`, `notes`,
 `gm_name` and `gm_notes`; and a map's placement `actor_id`. Where one reaches
 the log, it is only as a field of the tables above. Through
 `/api/ruleset` (SPEC-012), a ruleset's manifest id and name and its
-conditions' and properties' display names and descriptions reach every
-participant, and an ability's display name reaches the DM, the agent and a
+conditions' and properties' display names and descriptions and its sheet's
+page and section names reach every participant, and an ability's display name
+reaches the DM, the agent and a
 player who controls an actor whose sheet names it; its guide reaches the DM
 and the agent through `/api/ruleset/guide`. A
 refusal that quotes such a value, or an id a command gave that names nothing,

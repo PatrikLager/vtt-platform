@@ -209,11 +209,21 @@ VTT-431); that `vtt mcp` holds the log it is sent and names it, by
 `vtt state dump` folds one log and names it, by
 `cmd/vtt/state_dump_switch_test.go` and
 `cmd/vtt/qa_state_dump_switch_test.go` (VTT-423 to VTT-426, VTT-432 to
-VTT-435). That `vtt events tail` prints no switch is held by no row.
+VTT-435). That `vtt events tail` prints no switch is held by no row. That a
+disc's resource chips are drawn in a DM's and an agent's window alone and
+its condition dots in every window is held by `client/test/grid.test.ts`,
+`client/test/app.test.ts`, `client/test/qa-chips-by-role.test.ts`,
+`client/test/qa-companion-first-sight.test.ts` and `client/e2e/table.spec.ts`
+(VTT-834, VTT-835); that the player panel is the character's sheet, laid out
+as the window's ruleset declares, by `client/test/panel-sheet.test.ts`,
+`client/test/spectator-view.test.ts`,
+`client/test/qa-panel-sheet.test.ts`, `client/test/sheet.test.ts`,
+`client/test/qa-sheet-model.test.ts`, `client/test/app.test.ts` and
+`client/e2e/table.spec.ts` (VTT-836 to VTT-846).
 
 ## Principles served
 
-Principles 7, 11, 12, 13, 14, 22 and 27 of `docs/blueprint.md`:
+Principles 7, 11, 12, 13, 14, 22, 23 and 27 of `docs/blueprint.md`:
 
 - **7.** A grant, a revocation, a change of role, a give or a take reaches
   the abilities a player's window offers without a reload.
@@ -227,6 +237,8 @@ Principles 7, 11, 12, 13, 14, 22 and 27 of `docs/blueprint.md`:
 - **14.** A player's click on a cell holding the watched one's token and no
   other listed member's sends nothing.
 - **22.** A reload keeps the viewpoint.
+- **23.** With a sheet declared, the panel draws a character's sheet as the
+  window's ruleset lays it out, and invents no grouping of its own.
 - **27.** The panel offers a character only the abilities its sheet names.
 
 ## How it works
@@ -471,10 +483,13 @@ refusals included (VTT-774).
 The panel offers abilities for the actor it acts as: a player's the party
 member they watch, a DM's and an agent's the actor its chip selects. It
 offers one button for each ability of the window's list that the actor's
-sheet names, in the list's order, and none for any other (`offered` and
-`sheetNames` in `client/src/player.ts`), in a player's, a DM's and an
-agent's window alike, by principle 27 and the owner's ruling of 2026-11-05
-(VTT-695). With none offered it draws no "Abilities" heading. It draws
+sheet names, and none for any other (`offered` and `sheetNames` in
+`client/src/player.ts`), in a player's, a DM's and an agent's window alike,
+by principle 27 and the owner's ruling of 2026-11-05 (VTT-695). Where each
+button stands is the sheet's (below): with a sheet declared, on the page
+whose section names its usage, ordered by section and then by the list's
+order; with none declared, in the "Abilities" section, in the list's order.
+With none offered it draws no "Abilities" heading. It draws
 target buttons only for a selection it offers, and a board click counts a
 selection as armed only when the acting actor's sheet names it
 (`moveCommandFor`). The window's list is the last one `/api/ruleset` gave
@@ -721,10 +736,49 @@ asks for no repaint, frees the control that sent it, and passes its error to
 `console.error` (VTT-526, VTT-537; the owner's ruling "console.error(e)" of
 2026-10-29).
 
+**The panel is the character's sheet.** The panel is headed by the name of the
+character it shows, as its chip names it, else by the fold's name, else by its
+id, and draws no heading while it shows none (VTT-836). Below the chips it
+draws the sheet `sheetFor` (`client/src/player.ts`) computes for that
+character from the window's abilities and properties and the sheet and
+conditions the window's newest `/api/ruleset` answer gave (`layout` in
+`startSession`; an answer without either reads as none), and an answer to an
+older read arriving after it changes neither (VTT-845).
+- **Pages.** With a sheet of more than one page it draws one `.tab` per
+  page in `.tabs`, named and ordered as declared, and shows the first page
+  until a tab is clicked; it keeps the page shown in `PlayerUIState.page`,
+  by its name, across a repaint, a switch of character and a new answer,
+  and shows the first page when the sheet no longer declares that name; a
+  sheet of one page draws no tab (VTT-837, VTT-838).
+- **Sections.** In `.sheet` it draws the page's sections in their order,
+  each an `h3` of its name, and leaves out a section with nothing to show
+  for the character (VTT-839). A values section draws its values in the
+  order it names them, each a `.value` reading the name, a space and the
+  value, a number as itself and a resource as `current/max`, named by the
+  display name of the property declaring its key as that type and titled
+  by its description, else by its key with no title; a key held both as
+  an attribute and as a resource draws both, the attribute first, and a
+  key the sheet does not hold draws nothing (VTT-841). A conditions section
+  draws the character's conditions in the order the fold applied them,
+  each a `.condition` named and titled by the ruleset, else named by its id
+  with no title (VTT-842). An abilities section draws a `.row` of the
+  buttons the panel offers whose usage one of its usages names, in the
+  window's list order, each labelled by the ability's name, else its id
+  (VTT-843, VTT-846).
+- **No sheet declared.** With no sheet, or an empty one, it draws no tab
+  and one page of the sections "Values", "Conditions" and "Abilities", in
+  that order, each left out when empty, its values those of the window's
+  properties in their order, then every key no property declares as that
+  type, in key order, an attribute before a resource of one key (VTT-840).
+- **Outside the page.** The target buttons, or "Click the board to move.",
+  the arm-doors toggle and the Say form are drawn below the page on every
+  page, so an ability armed on one page keeps its targets on another.
+
 ### How the window names what it shows
 
 `namer` in `client/src/view/naming.ts` names each token and actor the window
-shows, except in the panel's chips and the perch's buttons, and a resource
+shows, except in the panel's chips, its heading and the perch's buttons, and
+a resource
 as below. `renderSpectator` builds one per paint, from the fold, the log,
 `ViewExtras.dm`, `ViewExtras.abilities` and `ViewExtras.properties`, for a
 disc's initial, its native `title` and its resource chips, its card, and the
@@ -759,18 +813,23 @@ abilities and the properties with no log, by the role `/api/me` last gave
   property names no resource (VTT-815, VTT-816). The console's value fields
   of a give are named so, by a namer `renderDMConsole` builds from the
   fold, the abilities and the properties `DMDeps` hands it, with no log
-  (VTT-806). A disc's resource chip
-  shows `current/max` and is titled so (`ResourceChip.label`, which
-  `tokensOnScene` sets), and a token's chips stay sorted by key. The Events
+  (VTT-806). A disc's resource chip, which `tokensOnScene` gives a disc
+  only in a DM's and an agent's window (VTT-834), shows `current/max` and
+  is titled so (`ResourceChip.label`, which `tokensOnScene` sets), and a
+  token's chips stay sorted by key. Every window draws a disc's condition
+  dots, in the order the fold applied them (VTT-835). The Events
   panel's line of a `resourceChanged` reads the actor, the
   resource so named, ` → ` and the new value. On the panel, a resource
-  ability's button is titled the resource so named, a space and the cost,
-  and ` — not enough` when the acting actor cannot afford it.
+  ability's button is titled the resource so named, a space and its
+  `current/max` on the acting actor's sheet when the sheet holds it,
+  `, costs ` and the cost, and ` — not enough` when the actor cannot
+  afford it, and an at-will ability's `at will` (VTT-844).
 
 A player's chips and the perch's buttons name a party member as the
 `WatchableChanged` set names it, and a DM's or an agent's chips an actor as
 the fold holds it, each by its id when that name is empty (VTT-404); the
-naming above does not reach them.
+panel's heading names its character as its chip does, else by the fold's
+name, else by its id (VTT-836). The naming above does not reach them.
 
 **The card.** Each disc carries a `.token-card`: the naming, then, in a DM's
 or an agent's window, "players see: " and what a player's window names the
@@ -956,9 +1015,16 @@ each entry it is sent, and no switch.
 ## Consequences
 
 - A window that is not a DM's or an agent's names no actor or token by its id
-  on a disc, a card, a target button or a Story line; the chips and the perch
-  name an unnamed party member by its id (VTT-404). The frames it is sent
+  on a disc, a card, a target button or a Story line; the chips, the perch
+  and the panel's heading name an unnamed party member by its id (VTT-404,
+  VTT-836). The frames it is sent
   still carry the ids, and `outcome_summary` (SPEC-007).
+- A player's and a spectator's board shows no resource value: a player
+  reads their character's values on the panel's sheet, and a seen
+  companion's nowhere, by the owner's ruling of 2026-11-17.
+- A kind of sheet section the route adds, once `SheetSection` in
+  `client/src/metadata.ts` names it, fails `task client:typecheck` at
+  `sheetFor`'s switch until the client handles it.
 - A payload added to the contract needs a line in `describe`, and an answer
   in `STORY` whether the Story draws it, before the client typechecks.
 - An input or a textarea added to a view needs a `data-field` unique in the
@@ -1088,4 +1154,5 @@ VTT-737, VTT-752, VTT-753, VTT-758, VTT-759, VTT-769, VTT-770,
 VTT-771, VTT-772, VTT-773, VTT-774, VTT-788, VTT-789, VTT-805,
 VTT-806, VTT-807, VTT-808, VTT-809, VTT-810, VTT-812, VTT-813, VTT-814,
 VTT-815, VTT-816, VTT-817, VTT-818, VTT-819, VTT-820, VTT-821, VTT-822,
-VTT-823.
+VTT-823, VTT-834, VTT-835, VTT-836, VTT-837, VTT-838, VTT-839, VTT-840,
+VTT-841, VTT-842, VTT-843, VTT-844, VTT-845, VTT-846.

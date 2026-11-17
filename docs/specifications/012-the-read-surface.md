@@ -21,7 +21,8 @@ through `readMetadata` in `internal/mcp/door_tools.go`; pinned by
 `qa_ruleset_route_test.go`, `ruleset_by_role_test.go`,
 `qa_ruleset_by_role_test.go`, `use_ability_sheet_test.go`,
 `qa_use_unnamed_test.go`, `artfile_internal_test.go`,
-`qa_art_root_test.go`, `internal/mcp/ruleset_tool_test.go`,
+`qa_art_root_test.go`, `sheet_route_test.go`, `qa_sheet_route_test.go`,
+`internal/mcp/ruleset_tool_test.go`,
 `cmd/vtt/qa_get_ruleset_test.go`, `cmd/vtt/qa_ruleset_by_role_test.go` and,
 for the default cell size, `cmd/vtt/art_test.go`.
 
@@ -39,9 +40,10 @@ Principles 6, 7, 15 and 35 of `docs/blueprint.md`:
 - **35.** A ruleset is served as data to whoever may see each part of it: a
   summary of every ability to the DM and the agent, and to a player of each
   ability named by the sheets of the actors they control; its conditions,
-  and every property it declares with its display name and explanation, to
-  every role; its guide to the DM and the agent. How an ability resolves,
-  and what a resource carries beyond its words, is not served.
+  every property it declares with its display name and explanation, and the
+  layout of its sheet, to every role; its guide to the DM and the agent. How
+  an ability resolves, and what a resource carries beyond its words, is not
+  served.
 
 ## How it works
 
@@ -87,11 +89,11 @@ of the caller itself. The HTTP role maps are not cells of `commandRoles` in
 `TestEveryClientCommandHasRoleCells` walks that oneof.
 
 **Empty is not an error, and a missing guide is.** `handleRuleset` builds its
-answer with every slice non-nil (`Abilities`, `Conditions`, `Resources` and
-`Properties` start as empty slices), and `handleAdventures` and `handleMaps`
-start from an empty slice, so a server with nothing loaded answers
-`/api/ruleset`, `/api/adventures` and `/api/maps` with status 200 and `[]`
-where a client expects an array, never `null`. A guide is different. Each
+answer with every slice non-nil (`Abilities`, `Conditions`, `Resources`,
+`Properties` and `Sheet` start as empty slices), and `handleAdventures` and
+`handleMaps` start from an empty slice, so a server with nothing loaded
+answers `/api/ruleset`, `/api/adventures` and `/api/maps` with status 200 and
+`[]` where a client expects an array, never `null`. A guide is different. Each
 guide route asks the role right after `authed`, so a player and a spectator
 are answered 403 whether or not the guide exists; to the DM and the agent,
 `handleRulesetGuide` answers 404 with `gateway: no ruleset guide available`
@@ -114,7 +116,15 @@ or `kind` `resource` with `resource` and `cost`), `conditions` as
 `conditionJSON` (`id`, `name`, `description`), `resources` as the keys of
 the ruleset's resource properties (VTT-631), and `properties` as
 `propertyJSON`, each property's `key`, `type`, `name` and `description`
-(VTT-619, SPEC-024); a resource's `default_max_expr` and thresholds are not
+(VTT-619, SPEC-024), and `sheet` as `sheetPageJSON`, the ruleset's
+declared pages in their order, each with its `name` and its `sections` in
+order, each section `sheetSectionJSON` with its `name`, its `kind` and the
+one list its kind names: `values`, the property keys, in order, for `kind`
+`values`; none for `kind` `conditions`; `abilities`, its usages in order,
+each a `usageJSON` with no cost, `{"kind": "atWill"}` or `{"kind":
+"resource", "resource": <key>}`, for `kind` `abilities` (VTT-831). `sheet`
+is `[]` when no ruleset is loaded or the loaded one declares none
+(VTT-832). A resource's `default_max_expr` and thresholds are not
 served. Which abilities it writes is decided on every request by
 `abilitiesReadBy`, from the participant `authed` returned: for the DM and
 the agent, every ability `rules.Ruleset.Compiled` holds (VTT-693); for a
@@ -128,13 +138,16 @@ accepts, none (VTT-692). For a player it reads the sheets of
 an ability given to or taken from an actor a player controls is in or out
 of that player's next answer, as a grant, a revocation or a change of role
 is (`TestAPlayersReadFollowsAGiveAndATake`). An id a sheet names that
-`Compiled` does not hold is not written. `conditions`, `resources` and
-`properties` are every role's (VTT-710, VTT-619, VTT-631). The abilities are
+`Compiled` does not hold is not written. `conditions`, `resources`,
+`properties` and `sheet` are every role's (VTT-710, VTT-619, VTT-631,
+VTT-831): the sheet names property keys and usages, never an ability, so
+it holds nothing `abilitiesReadBy` would filter. The abilities are
 filtered as they are read from `Compiled`, and then they and the conditions
 are sorted by id with `slices.SortFunc`, because `rules.Ruleset.Compiled` and
 `Conditions` are maps and Go randomises map iteration; `resources` and
-`properties` are built from `rules.Ruleset.Properties`, a slice, and keep the
-ruleset's declared order. `handleRulesetGuide` writes `{"guide": ...}` with
+`properties` are built from `rules.Ruleset.Properties` and `sheet` from
+`rules.Ruleset.Sheet`, slices, and keep the ruleset's declared order.
+`handleRulesetGuide` writes `{"guide": ...}` with
 the ruleset's `Guide` markdown, to the DM and the agent.
 
 **The agent's reader.** The MCP tool `get_ruleset`, which
@@ -147,7 +160,9 @@ A 200 whose body is JSON is returned verbatim as the tool's text content
 never as content (VTT-633). `readMetadata` sends through
 `http.DefaultClient`, which follows a redirect. `getRulesetDescription` says
 that the DM and the agent read every ability and a player only the
-abilities named by the sheets of the actors they control (VTT-694).
+abilities named by the sheets of the actors they control (VTT-694), and
+that it answers, as `sheet`, the ruleset's pages of named sections, what
+each shows by its `kind`, and `[]` when it declares none (VTT-833).
 `get_ruleset_guide`'s description points to `get_ruleset` for what a
 property means. `get_ruleset_guide` (`handleGetRulesetGuide`) reads no
 route: it answers with the guide `vtt mcp --ruleset` loaded from its own
@@ -293,7 +308,8 @@ A client author is bound by these:
   grant, a revocation, a give or a take; when the browser client reads it
   again is SPEC-022's.
 - What a property means is read from `/api/ruleset`'s `properties`, or
-  `get_ruleset`, and not from a guide (SPEC-024).
+  `get_ruleset`, and not from a guide (SPEC-024), and how a sheet is laid
+  out from its `sheet`.
 - Who the caller is comes from `/api/me`; what they control comes from the
   log, never from `/api/me`.
 - A map draws at its entry's `cellPx`, and the campaign's `cellPx` is what a
@@ -314,4 +330,4 @@ VTT-121, VTT-122, VTT-123, VTT-124, VTT-125, VTT-126, VTT-127, VTT-128,
 VTT-129, VTT-130, VTT-131, VTT-132, VTT-133, VTT-134, VTT-135, VTT-136,
 VTT-137, VTT-578, VTT-581, VTT-619, VTT-620, VTT-621, VTT-631, VTT-632,
 VTT-633, VTT-682, VTT-691, VTT-692, VTT-693, VTT-694, VTT-702, VTT-709,
-VTT-710, VTT-711.
+VTT-710, VTT-711, VTT-831, VTT-832, VTT-833.
