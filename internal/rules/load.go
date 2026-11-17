@@ -88,6 +88,12 @@ func loadV2(dir string, manifest *loadedManifest) (*Ruleset, error) {
 		return nil, err
 	}
 	rs.Compiled = compiled
+
+	sheet, err := checkSheet(manifest.path, manifest.sheet, rs)
+	if err != nil {
+		return nil, err
+	}
+	rs.Sheet = sheet
 	return rs, nil
 }
 
@@ -98,6 +104,22 @@ type manifestJSON struct {
 	Name          string         `json:"name"`
 	FormatVersion string         `json:"format_version"`
 	Properties    []propertyJSON `json:"properties"`
+	// A pointer, so that "sheet": [] is told apart from no sheet (VTT-825).
+	Sheet *[]sheetPageJSON `json:"sheet"`
+}
+
+type sheetPageJSON struct {
+	Name     string             `json:"name"`
+	Sections []sheetSectionJSON `json:"sections"`
+}
+
+// sheetSectionJSON's pointers tell a kind the section names apart from one
+// it leaves out (VTT-825).
+type sheetSectionJSON struct {
+	Name       string        `json:"name"`
+	Values     *[]string     `json:"values"`
+	Conditions *bool         `json:"conditions"`
+	Abilities  *[]ShownUsage `json:"abilities"`
 }
 
 type propertyJSON struct {
@@ -128,6 +150,8 @@ type loadedManifest struct {
 	Name          string
 	FormatVersion string
 	properties    []Property
+	path          string
+	sheet         *[]sheetPageJSON
 }
 
 // checkFormatVersion refuses any format_version but "3" (VTT-616). It reads
@@ -189,6 +213,7 @@ func loadManifest(path string) (*loadedManifest, error) {
 
 	return &loadedManifest{
 		ID: raw.ID, Name: raw.Name, FormatVersion: raw.FormatVersion, properties: props,
+		path: path, sheet: raw.Sheet,
 	}, nil
 }
 
@@ -405,6 +430,148 @@ func (u *Usage) UnmarshalJSON(data []byte) error {
 	}
 	*u = Usage{Limited: &LimitedUsage{Resource: obj.Limited.Resource, Cost: *obj.Limited.Cost}}
 	return nil
+}
+
+// UnmarshalJSON decodes a ShownUsage from the bare string "at_will" or an
+// object {"spends": "<resource key>"}, refusing any other field (VTT-830).
+func (u *ShownUsage) UnmarshalJSON(data []byte) error {
+	var asString string
+	if err := json.Unmarshal(data, &asString); err == nil {
+		if asString != "at_will" {
+			return fmt.Errorf("invalid shown usage %q (want \"at_will\" or an object with \"spends\")", asString)
+		}
+		*u = ShownUsage{AtWill: true}
+		return nil
+	}
+	var obj struct {
+		Spends *string `json:"spends"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&obj); err != nil {
+		return fmt.Errorf("invalid shown usage object: %w", err)
+	}
+	if obj.Spends == nil {
+		return fmt.Errorf(`shown usage object must name the resource it "spends"`)
+	}
+	*u = ShownUsage{Resource: *obj.Spends}
+	return nil
+}
+
+// checkSheet checks the sheet a manifest declares against the loaded ruleset
+// and returns it, or nil when none is declared (VTT-825 to VTT-828).
+func checkSheet(path string, raw *[]sheetPageJSON, rs *Ruleset) ([]SheetPage, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	if len(*raw) == 0 {
+		return nil, fieldErr(path, "sheet", "must hold a page")
+	}
+	types := map[string]string{}
+	for _, p := range rs.Properties {
+		types[p.Key] = p.Type
+	}
+	pageNames := map[string]bool{}
+	shownKeys := map[string]bool{}
+	shownUsages := map[ShownUsage]bool{}
+	conditionsShown := false
+	pages := make([]SheetPage, 0, len(*raw))
+	for i, rp := range *raw {
+		field := fmt.Sprintf("sheet[%d]", i)
+		if rp.Name == "" {
+			return nil, fieldErr(path, field+".name", "must not be empty")
+		}
+		if pageNames[rp.Name] {
+			return nil, fieldErr(path, field+".name", fmt.Sprintf("must not repeat page %q", rp.Name))
+		}
+		pageNames[rp.Name] = true
+		if len(rp.Sections) == 0 {
+			return nil, fieldErr(path, field+".sections", fmt.Sprintf("page %q must hold a section", rp.Name))
+		}
+		page := SheetPage{Name: rp.Name, Sections: make([]SheetSection, 0, len(rp.Sections))}
+		for j, rsec := range rp.Sections {
+			sfield := fmt.Sprintf("%s.sections[%d]", field, j)
+			if rsec.Name == "" {
+				return nil, fieldErr(path, sfield+".name", "must not be empty")
+			}
+			kinds := 0
+			for _, set := range []bool{rsec.Values != nil, rsec.Conditions != nil, rsec.Abilities != nil} {
+				if set {
+					kinds++
+				}
+			}
+			if kinds != 1 {
+				return nil, fieldErr(path, sfield, fmt.Sprintf("section %q must show exactly one of values, conditions and abilities", rsec.Name))
+			}
+			section := SheetSection{Name: rsec.Name}
+			switch {
+			case rsec.Values != nil:
+				if len(*rsec.Values) == 0 {
+					return nil, fieldErr(path, sfield+".values", "must not be empty")
+				}
+				for k, key := range *rsec.Values {
+					vfield := fmt.Sprintf("%s.values[%d]", sfield, k)
+					if types[key] == "" {
+						return nil, fieldErr(path, vfield, fmt.Sprintf("names %q, which no property declares", key))
+					}
+					if shownKeys[key] {
+						return nil, fieldErr(path, vfield, fmt.Sprintf("names %q, which the sheet shows already", key))
+					}
+					shownKeys[key] = true
+				}
+				section.Values = append([]string{}, *rsec.Values...)
+			case rsec.Conditions != nil:
+				if !*rsec.Conditions {
+					return nil, fieldErr(path, sfield+".conditions", "must be true")
+				}
+				if conditionsShown {
+					return nil, fieldErr(path, sfield+".conditions", "the sheet shows the conditions already")
+				}
+				conditionsShown = true
+				section.Conditions = true
+			default:
+				if len(*rsec.Abilities) == 0 {
+					return nil, fieldErr(path, sfield+".abilities", "must not be empty")
+				}
+				for k, u := range *rsec.Abilities {
+					afield := fmt.Sprintf("%s.abilities[%d]", sfield, k)
+					if !u.AtWill && types[u.Resource] != PropertyResource {
+						return nil, fieldErr(path, afield, fmt.Sprintf("spends %q, which no resource property declares", u.Resource))
+					}
+					if shownUsages[u] {
+						return nil, fieldErr(path, afield, fmt.Sprintf("names the usage %s, which the sheet shows already", usageWords(u)))
+					}
+					shownUsages[u] = true
+				}
+				section.Abilities = append([]ShownUsage{}, *rsec.Abilities...)
+			}
+			page.Sections = append(page.Sections, section)
+		}
+		pages = append(pages, page)
+	}
+	ids := make([]string, 0, len(rs.Compiled))
+	for id := range rs.Compiled {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		usage := rs.Compiled[id].Usage
+		shown := ShownUsage{AtWill: usage.AtWill}
+		if usage.Limited != nil {
+			shown = ShownUsage{Resource: usage.Limited.Resource}
+		}
+		if !shownUsages[shown] {
+			return nil, fieldErr(path, "sheet", fmt.Sprintf("no section shows ability %q, whose usage is %s", id, usageWords(shown)))
+		}
+	}
+	return pages, nil
+}
+
+func usageWords(u ShownUsage) string {
+	if u.AtWill {
+		return `"at_will"`
+	}
+	return fmt.Sprintf("spends %q", u.Resource)
 }
 
 // --- cross-reference validation (spec §5) ---

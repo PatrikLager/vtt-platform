@@ -608,7 +608,7 @@ func TestQAPFFormatVersionIsReadBeforeTheRestOfTheFile(t *testing.T) {
 	}
 }
 
-// VTT-627
+// VTT-830
 func TestQAPFUnknownManifestFieldIsRefused(t *testing.T) {
 	s := qaPFBase()
 	s.manifest()["attributes"] = []any{"brawn"}

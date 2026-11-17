@@ -22,6 +22,10 @@ type Ruleset struct {
 	// Load refuses a key declared twice (VTT-612).
 	Properties []Property
 
+	// Sheet is how a character's sheet is laid out, in the order declared,
+	// or nil when the ruleset declares none (VTT-824).
+	Sheet []SheetPage
+
 	// Conditions is keyed by its declared id. Load rejects duplicate ids
 	// (within and across files) before the map is populated, so every
 	// entry here is unique by construction.
@@ -271,6 +275,29 @@ type Threshold struct {
 type Usage struct {
 	AtWill  bool
 	Limited *LimitedUsage
+}
+
+// SheetPage is one named page of a ruleset's sheet.
+type SheetPage struct {
+	Name     string
+	Sections []SheetSection
+}
+
+// SheetSection is one named section of a sheet's page, showing exactly one
+// of Values, Conditions and Abilities (VTT-825).
+type SheetSection struct {
+	Name string
+	// Values is property keys, in the order the section shows them.
+	Values     []string
+	Conditions bool
+	Abilities  []ShownUsage
+}
+
+// ShownUsage picks the abilities a section shows: those used at will, or
+// those that spend Resource.
+type ShownUsage struct {
+	AtWill   bool
+	Resource string
 }
 
 // LimitedUsage names the resource an ability's use spends, and how much.

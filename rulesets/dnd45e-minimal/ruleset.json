@@ -76,5 +76,64 @@
       "description": "What the hunter's flurry, the one encounter power here, spends. Only a creature with that power needs it, one use a fresh encounter, and nothing here refills it.",
       "thresholds": []
     }
+  ],
+  "sheet": [
+    {
+      "name": "In play",
+      "sections": [
+        {
+          "name": "Hit points",
+          "values": [
+            "hp"
+          ]
+        },
+        {
+          "name": "Conditions",
+          "conditions": true
+        },
+        {
+          "name": "At-will powers",
+          "abilities": [
+            "at_will"
+          ]
+        },
+        {
+          "name": "Uses",
+          "values": [
+            "flurry_uses"
+          ]
+        },
+        {
+          "name": "Encounter powers",
+          "abilities": [
+            {
+              "spends": "flurry_uses"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Character",
+      "sections": [
+        {
+          "name": "Ability scores",
+          "values": [
+            "str",
+            "dex",
+            "con"
+          ]
+        },
+        {
+          "name": "Defenses",
+          "values": [
+            "ac",
+            "fort",
+            "ref",
+            "will"
+          ]
+        }
+      ]
+    }
   ]
 }

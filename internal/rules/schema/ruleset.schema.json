@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PatrikLager/vtt-platform/internal/rules/schema/ruleset.schema.json",
   "title": "Ruleset manifest (ruleset.json)",
-  "description": "The top-level manifest of a rulesets/<id>/ directory: identity, format version, and every property the ruleset's actors carry, each named in the table's words. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
+  "description": "The top-level manifest of a rulesets/<id>/ directory: identity, format version, every property the ruleset's actors carry, each named in the table's words, and, optionally, how a character's sheet is laid out. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
   "type": "object",
   "required": [
     "id",
@@ -94,6 +94,100 @@
               }
             },
             "description": "A resource only: conditions that follow its value."
+          }
+        }
+      }
+    },
+    "sheet": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Optional. How a character's sheet is laid out: its pages, in order, each of named sections, each showing one of the character's values, its conditions or its abilities. A ruleset may declare none. A property key stands at most once among the sections' values, a usage at most once among their abilities, and the conditions in at most one section; a property need not stand at all, and a key may stand both as a value and in the usage that spends it. When a sheet is declared, every ability's usage stands in a section.",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "sections"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The page's name; no two pages share one."
+          },
+          "sections": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "oneOf": [
+                {
+                  "required": [
+                    "values"
+                  ]
+                },
+                {
+                  "required": [
+                    "conditions"
+                  ]
+                },
+                {
+                  "required": [
+                    "abilities"
+                  ]
+                }
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The section's heading."
+                },
+                "values": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "Keys of declared properties, shown in this order."
+                },
+                "conditions": {
+                  "const": true,
+                  "description": "The section shows the character's conditions."
+                },
+                "abilities": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "oneOf": [
+                      {
+                        "const": "at_will"
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "spends"
+                        ],
+                        "additionalProperties": false,
+                        "properties": {
+                          "spends": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "The key of a declared resource property: the section shows the abilities that spend it."
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "description": "The usages whose abilities the section shows: \"at_will\", or an object naming the resource the abilities spend."
+                }
+              }
+            }
           }
         }
       }

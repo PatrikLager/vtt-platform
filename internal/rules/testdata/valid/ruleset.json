@@ -35,5 +35,44 @@
       "name": "Guard",
       "description": "The fixture's guard."
     }
+  ],
+  "sheet": [
+    {
+      "name": "Front",
+      "sections": [
+        {
+          "name": "Pool",
+          "values": [
+            "pool_a"
+          ]
+        },
+        {
+          "name": "Marks",
+          "conditions": true
+        },
+        {
+          "name": "Moves",
+          "abilities": [
+            "at_will",
+            {
+              "spends": "pool_a"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Back",
+      "sections": [
+        {
+          "name": "Numbers",
+          "values": [
+            "brawn",
+            "grit",
+            "guard"
+          ]
+        }
+      ]
+    }
   ]
 }
