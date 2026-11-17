@@ -27,6 +27,21 @@ export interface Property {
   description: string;
 }
 
+/** SheetUsage picks the abilities a sheet's section shows (VTT-831). */
+export type SheetUsage = { kind: "atWill" } | { kind: "resource"; resource: string };
+
+/** SheetSection is one section of a ruleset's sheet, by what it shows (VTT-831). */
+export type SheetSection =
+  | { name: string; kind: "values"; values: string[] }
+  | { name: string; kind: "conditions" }
+  | { name: string; kind: "abilities"; abilities: SheetUsage[] };
+
+/** SheetPage is one page of a ruleset's sheet (VTT-831). */
+export interface SheetPage {
+  name: string;
+  sections: SheetSection[];
+}
+
 export interface RulesetMeta {
   id: string;
   name: string;
@@ -34,6 +49,7 @@ export interface RulesetMeta {
   conditions: ConditionDef[];
   resources: string[];
   properties: Property[];
+  sheet: SheetPage[];
 }
 
 /** Who this token makes you: the participant id every control check is a

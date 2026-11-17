@@ -5,8 +5,8 @@
 // none of them is a security boundary. Their job is to keep a player from
 // firing commands that will bounce, not to enforce anything.
 
-import type { Actor, State, Token } from "./state";
-import type { Ability, Me } from "./metadata";
+import type { Actor, ActorCondition, State, Token } from "./state";
+import type { Ability, ConditionDef, Me, Property, SheetPage, SheetUsage } from "./metadata";
 import type { Point } from "./commands";
 
 /** The actors this participant controls. */
@@ -34,6 +34,126 @@ export function sheetNames(actor: Actor, abilityId: string): boolean {
 /** The window's abilities the actor's sheet names, in the window's order (VTT-695). */
 export function offered(abilities: Ability[], actor: Actor): Ability[] {
   return abilities.filter((a) => sheetNames(actor, a.id));
+}
+
+/** ShownValue is one value as the sheet shows it: named, written and titled. */
+export interface ShownValue {
+  key: string;
+  name: string;
+  text: string;
+  title: string;
+}
+
+/** ShownCondition is one condition as the sheet shows it. */
+export interface ShownCondition {
+  id: string;
+  name: string;
+  title: string;
+}
+
+/** ShownSection is one section of the sheet with what it shows the character. */
+export type ShownSection =
+  | { name: string; kind: "values"; values: ShownValue[] }
+  | { name: string; kind: "conditions"; conditions: ShownCondition[] }
+  | { name: string; kind: "abilities"; abilities: Ability[] };
+
+/** ShownPage is one page of the sheet as the panel draws it. */
+export interface ShownPage {
+  name: string;
+  sections: ShownSection[];
+}
+
+const byKey = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+// VTT-841
+function shownValue(actor: Actor, key: string, type: "number" | "resource", properties: readonly Property[]): ShownValue | undefined {
+  const held = type === "number" ? actor.attributes[key] : actor.resources[key];
+  if (held === undefined) return undefined;
+  const text = typeof held === "number" ? String(held) : `${held.current}/${held.max}`;
+  const p = properties.find((x) => x.key === key && x.type === type);
+  return { key, name: p?.name || key, text, title: p?.description ?? "" };
+}
+
+function heldValues(actor: Actor, key: string, properties: readonly Property[]): ShownValue[] {
+  return [shownValue(actor, key, "number", properties), shownValue(actor, key, "resource", properties)]
+    .filter((v): v is ShownValue => v !== undefined);
+}
+
+function usageShows(u: SheetUsage, a: Ability): boolean {
+  switch (u.kind) {
+    case "atWill":
+      return a.usage.kind === "atWill";
+    case "resource":
+      return a.usage.kind === "resource" && a.usage.resource === u.resource;
+  }
+}
+
+function shows(s: ShownSection): boolean {
+  switch (s.kind) {
+    case "values":
+      return s.values.length > 0;
+    case "conditions":
+      return s.conditions.length > 0;
+    case "abilities":
+      return s.abilities.length > 0;
+  }
+}
+
+/**
+ * sheetFor is the character's sheet as the panel draws it: the window's
+ * declared pages and sections in their order, each section left out when it
+ * has nothing to show, or one unnamed page of "Values", "Conditions" and
+ * "Abilities" when none is declared (VTT-839 to VTT-843).
+ */
+export function sheetFor(
+  actor: Actor,
+  conditions: readonly ActorCondition[],
+  abilities: Ability[],
+  properties: readonly Property[] | undefined,
+  conditionDefs: readonly ConditionDef[] | undefined,
+  sheet: readonly SheetPage[] | undefined,
+): ShownPage[] {
+  const props = properties ?? [];
+  const shownConditions = conditions.map((c): ShownCondition => {
+    const d = conditionDefs?.find((x) => x.id === c.ID);
+    return { id: c.ID, name: d?.name || c.ID, title: d?.description ?? "" };
+  });
+  const offers = offered(abilities, actor);
+
+  if (!sheet || sheet.length === 0) {
+    const values: ShownValue[] = [];
+    for (const p of props) {
+      const v = shownValue(actor, p.key, p.type, props);
+      if (v) values.push(v);
+    }
+    for (const key of [...new Set([...Object.keys(actor.attributes), ...Object.keys(actor.resources)])].sort(byKey)) {
+      for (const type of ["number", "resource"] as const) {
+        if (props.some((p) => p.key === key && p.type === type)) continue;
+        const v = shownValue(actor, key, type, props);
+        if (v) values.push(v);
+      }
+    }
+    const sections: ShownSection[] = [
+      { name: "Values", kind: "values", values },
+      { name: "Conditions", kind: "conditions", conditions: shownConditions },
+      { name: "Abilities", kind: "abilities", abilities: offers },
+    ];
+    return [{ name: "", sections: sections.filter(shows) }];
+  }
+
+  return sheet.map((page) => ({
+    name: page.name,
+    sections: page.sections.map((s): ShownSection => {
+      switch (s.kind) {
+        case "values":
+          return { name: s.name, kind: "values", values: s.values.flatMap((k) => heldValues(actor, k, props)) };
+        case "conditions":
+          return { name: s.name, kind: "conditions", conditions: shownConditions };
+        case "abilities":
+          return { name: s.name, kind: "abilities", abilities: offers.filter((a) => s.abilities.some((u) => usageShows(u, a))) };
+      }
+    }).filter(shows),
+  }));
 }
 
 /** Whether actor can currently pay for ability. */
