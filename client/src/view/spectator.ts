@@ -352,7 +352,7 @@ function renderGrid(
   // scene.Visible, NOT a set derived here: the seam is grid.ts's, and this
   // call site's only job is to hand it the one this seat was actually sent.
   // Undefined (the DM's stream, which carries no sceneSeen) draws every token;
-  // see tokensOnScene on why that is not the same as an empty set.
+  // see Scene.Visible in state.ts on why that is not the same as an empty set.
   for (const d of tokensOnScene(st, sceneId, scene.Visible, names)) {
     board.appendChild(renderDisc(d, cam, scene, names.dm, pinned, onCardPin));
   }
@@ -411,8 +411,7 @@ function renderDisc(
   initial.style.fontSize = `${16 * scale}px`;
   t.appendChild(initial);
 
-  // ALL resources, ALL conditions — no notion of a "primary" one exists in
-  // the ruleset format, and inventing one here would bake in a genre.
+  // Draw what tokensOnScene hands this disc; it decides which window gets chips.
   if (d.resources.length > 0) {
     const chips = el("div", "chips");
     for (const r of d.resources) {

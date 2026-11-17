@@ -71,7 +71,7 @@ test("the board draws a disc per token, with its initial", () => {
 
 // VTT-816
 test("every resource shows as a current/max chip, named on hover", () => {
-  const chip = render(world()).querySelector(".chip") as HTMLElement;
+  const chip = render(world(), [], { dm: true }).querySelector(".chip") as HTMLElement;
   expect(chip.textContent).toBe("3/10");
   // The NAME is the tooltip, never abbreviated onto the face.
   expect(chip.title).toBe("vigor");
@@ -967,7 +967,7 @@ test("a token's INNER content shrinks with the camera too, not just its outer bo
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 1 }];
 
   const root = document.createElement("div");
-  renderSpectator(root, st, [], "connected");
+  renderSpectator(root, st, [], "connected", { dm: true });
   const tok = root.querySelector(".token") as HTMLElement;
   const initial = tok.querySelector(".initial") as HTMLElement;
   const chip = tok.querySelector(".chip") as HTMLElement;
@@ -1328,7 +1328,7 @@ test("a token with no resources or conditions renders neither chips nor dots", (
 });
 
 test("a token WITH them renders both containers", () => {
-  const t = render(world()).querySelector(".token")!;
+  const t = render(world(), [], { dm: true }).querySelector(".token")!;
   expect(t.querySelector(".chips")).not.toBeNull();
   expect(t.querySelector(".dots")).not.toBeNull();
 });
@@ -1728,7 +1728,7 @@ test("an affordable resource ability names its cost without the shortfall note",
 // VTT-815
 test("a resource chip, its Events panel line and an ability's cost name the resource by its display name", () => {
   const props: Property[] = [{ key: "vigor", type: "resource", name: "Vigor Points", description: "How much fight is left." }];
-  const chip = render(world(), [], { properties: props }).querySelector(".chip") as HTMLElement;
+  const chip = render(world(), [], { properties: props, dm: true }).querySelector(".chip") as HTMLElement;
   expect(chip.title).toBe("Vigor Points");
   const changed = env(1, { case: "resourceChanged", value: create(ResourceChangedSchema, { actorId: "a1", resource: "vigor", newValue: 3 }) });
   expect(describeEvent(changed, namer(world(), [], false, [], props))).toContain("Vigor Points → 3");

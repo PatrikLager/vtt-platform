@@ -1248,6 +1248,36 @@ test("before /api/maps resolves, the console renders no Maps group at all", asyn
   s?.close();
 });
 
+// VTT-834 VTT-835
+test.each([["dm", true], ["agent", true], ["player", false], ["spectator", false], ["unread", false]] as const)(
+  "a window whose role is read as %s draws a disc's resource chips: %p, and its condition dots always",
+  async (role, chips) => {
+    localStorage.setItem("vtt.token", "tok");
+    stubMetadata({
+      ...(role === "unread" ? {} : { "/api/me": { participantId: "p", name: "Lera", role } }),
+      "/api/ruleset": { id: "r", name: "R", conditions: [], resources: [], abilities: [], properties: [] },
+      "/api/adventures": { adventures: [] },
+    });
+    useFakeSocket();
+    const r = root();
+    const s = boot(r);
+    const sock = FakeSocket.instances[0]!;
+    sock.open();
+    if (!chips) opensOn(sock, "a1");
+    sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+    sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 8, gridHeight: 8 } }));
+    sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera", resources: { wits: { current: 1, max: 2 }, vigor: { current: 3, max: 10 } } } } }));
+    sock.deliver(envelope(4, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }));
+    sock.deliver(envelope(5, { conditionApplied: { actorId: "a1", conditionId: "dazed" } }));
+    await settle();
+    const disc = r.querySelector('[data-token-id="t1"]');
+    expect(disc).not.toBeNull();
+    expect(Array.from(disc!.querySelectorAll(".chip"), (c) => c.textContent)).toEqual(chips ? ["3/10", "1/2"] : []);
+    expect(Array.from(disc!.querySelectorAll(".dot"), (d) => d.getAttribute("title"))).toEqual(["dazed"]);
+    s?.close();
+  },
+);
+
 /** Open a player's or a spectator's connection as the gateway does: the set, then the viewpoint. */
 function opensOn(sock: FakeSocket, viewpoint: string, actors: [string, string][] = [["a1", "Lera"]]) {
   sock.deliver({ watchableChanged: { actors: actors.map(([actorId, name]) => ({ actorId, name })) } });
@@ -4053,7 +4083,7 @@ test("after a removal the share link opens the join form, and a page under the d
 test("the ruleset's properties reach the chip and the cost, and the Story draws no resource change", async () => {
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({
-    "/api/me": { participantId: "p", name: "Lera", role: "player" },
+    "/api/me": { participantId: "p", name: "DM", role: "dm" },
     "/api/ruleset": {
       id: "r", name: "R", conditions: [], resources: ["vigor"],
       abilities: [{ id: "jab", name: "Jab", range: 1, maxTargets: 1, usage: { kind: "resource", resource: "vigor", cost: 1 } }],

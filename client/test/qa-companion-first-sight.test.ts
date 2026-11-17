@@ -556,7 +556,7 @@ test.each(VIEWS.slice(2))("%s: the Events panel still shows every entry of the r
     .toEqual([...BASE_EVERY_LINE].reverse());
 });
 
-// VTT-822
+// VTT-822 VTT-834 VTT-835
 test.each(VIEWS)("%s: the fold holds the companion whole after the run",
   (role, extras) => {
   const log = numbered(base());
@@ -577,7 +577,8 @@ test.each(VIEWS)("%s: the fold holds the companion whole after the run",
   expect(disc !== null, `VTT-822: ${role}'s board draws Ash`).toBe(true);
   const chips = Array.from(disc?.querySelectorAll(".chip") ?? [])
     .map((c) => c.textContent);
-  expect(chips, `VTT-822: ${role}'s board shows Ash's hp`).toEqual(["5/8"]);
+  expect(chips, `VTT-834: ${role}'s board shows Ash's hp on a chip only in a DM's or an agent's window`)
+    .toEqual(extras.dm ? ["5/8"] : []);
   const dots = Array.from(disc?.querySelectorAll(".dot") ?? [])
     .map((d) => d.getAttribute("title"));
   expect(dots, `VTT-822: ${role}'s board shows Ash's condition`)

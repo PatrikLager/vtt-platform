@@ -43,13 +43,14 @@ function worldWith(): State {
   st.Tokens["t1"] = { ID: "t1", SceneID: "s1", ActorID: "a1", X: 2, Y: 3 };
   st.Tokens["t2"] = { ID: "t2", SceneID: "s2", ActorID: "a2", X: 0, Y: 0 };
   st.Conditions["a1"] = [
-    { ID: "dazed", Source: "dm", AppliedSeq: 5 },
-    { ID: "marked", Source: "dm", AppliedSeq: 6 },
+    { ID: "marked", Source: "dm", AppliedSeq: 5 },
+    { ID: "dazed", Source: "dm", AppliedSeq: 6 },
   ];
   return st;
 }
 
 const discsOf = (st: State, scene: string) => tokensOnScene(st, scene, undefined, namer(st, [], false, undefined));
+const dmDiscsOf = (st: State, scene: string) => tokensOnScene(st, scene, undefined, namer(st, [], true, undefined));
 
 test("only tokens on the requested scene are returned", () => {
   const discs = discsOf(worldWith(), "s1");
@@ -66,21 +67,27 @@ test("an actor with no name still gets a stable label rather than a blank disc",
   expect(discs[0]!.initial).toBe("?");
 });
 
+// VTT-834
 test("EVERY resource is shown, in a stable order, with current and max", () => {
-  // Spec §4: ALL resources as current/max chips. Picking a "primary" one
-  // would need ruleset client-hints the format does not have (§9), and
-  // guessing which matters is exactly the genre assumption the platform
-  // refuses to make.
-  const chips = discsOf(worldWith(), "s1")[0]!.resources;
+  const chips = dmDiscsOf(worldWith(), "s1")[0]!.resources;
   expect(chips.map((c) => c.name)).toEqual(["focus", "vigor"]); // sorted, not map order
   expect(chips.find((c) => c.name === "vigor")).toEqual({ name: "vigor", label: "vigor", current: 3, max: 10 });
 });
 
+// VTT-834
+test("a window that is not a DM's or an agent's gives no disc a resource", () => {
+  const st = worldWith();
+  expect(Object.keys(st.Actors["a1"]!.resources).length).toBeGreaterThan(0);
+  expect(discsOf(st, "s1").map((d) => d.resources)).toEqual([[]]);
+});
+
+// VTT-835
 test("EVERY condition is shown, in applied order", () => {
   // Applied order is meaningful — it is the order the table saw them happen —
   // and the fold preserves it deliberately, so the view must not re-sort.
-  const dots = discsOf(worldWith(), "s1")[0]!.conditions;
-  expect(dots.map((c) => c.id)).toEqual(["dazed", "marked"]);
+  for (const discs of [discsOf(worldWith(), "s1"), dmDiscsOf(worldWith(), "s1")]) {
+    expect(discs[0]!.conditions.map((c) => c.id)).toEqual(["marked", "dazed"]);
+  }
 });
 
 test("a token whose actor vanished does not crash the board", () => {
@@ -88,9 +95,10 @@ test("a token whose actor vanished does not crash the board", () => {
   // grid instead of one disc.
   const st = worldWith();
   delete st.Actors["a1"];
-  const discs = discsOf(st, "s1");
-  expect(discs).toHaveLength(1);
-  expect(discs[0]!.resources).toEqual([]);
+  for (const discs of [discsOf(st, "s1"), dmDiscsOf(st, "s1")]) {
+    expect(discs).toHaveLength(1);
+    expect(discs[0]!.resources).toEqual([]);
+  }
 });
 
 // --- draw order and the disc fallbacks --------------------------------------
@@ -135,11 +143,12 @@ test("a token whose actor is gone still draws, as a creature", () => {
   const st = newState();
   st.Scenes["s1"] = { ID: "s1", Name: "Hall", GridWidth: 4, GridHeight: 4 };
   st.Tokens["t9"] = { ID: "t9", SceneID: "s1", ActorID: "ghost", X: 1, Y: 1 };
-  const [d] = discsOf(st, "s1");
-  expect(d!.name).toBe(UNNAMED);
-  expect(d!.initial).toBe("?");
-  expect(d!.resources).toEqual([]);
-  expect(d!.conditions).toEqual([]);
+  for (const [d] of [discsOf(st, "s1"), dmDiscsOf(st, "s1")]) {
+    expect(d!.name).toBe(UNNAMED);
+    expect(d!.initial).toBe("?");
+    expect(d!.resources).toEqual([]);
+    expect(d!.conditions).toEqual([]);
+  }
 });
 
 test("a long reversed board still sorts, exercising the merge paths", () => {

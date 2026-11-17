@@ -195,7 +195,7 @@ test("namer with no properties names every resource by its key", () => {
 
 // VTT-815
 test("a declared resource's chip is titled by its name, face current/max", () => {
-  const root = qaPNBoard(qaPNState(), [], QA_PN_PROPS);
+  const root = qaPNBoard(qaPNState(), [], QA_PN_PROPS, true);
   const chips = qaPNChips(root, "tok-aria-01");
   const hp = chips.find((c) => c.getAttribute("title") === "Vigor");
   expect(hp?.textContent?.trim()).toBe("3/10");
@@ -207,7 +207,7 @@ test("a declared resource's chip is titled by its name, face current/max", () =>
 // VTT-815
 test("tokensOnScene labels a declared resource's chip by its name", () => {
   const st = qaPNState();
-  const n = namer(st, [], false, QA_PN_ABILITIES, QA_PN_PROPS);
+  const n = namer(st, [], true, QA_PN_ABILITIES, QA_PN_PROPS);
   const disc = tokensOnScene(st, SCENE, undefined, n)
     .find((d) => d.tokenId === "tok-aria-01");
   const hp = disc?.resources.find((r) => r.name === "hp");
@@ -222,7 +222,7 @@ test("a DM window titles a declared resource's chip by its name", () => {
 
 // VTT-816
 test("an undeclared resource's chip is titled by its key", () => {
-  const root = qaPNBoard(qaPNState(), [], QA_PN_PROPS);
+  const root = qaPNBoard(qaPNState(), [], QA_PN_PROPS, true);
   const focus = qaPNChips(root, "tok-aria-01")
     .find((c) => c.getAttribute("title") === "focus");
   expect(focus?.textContent?.trim()).toBe("2/5");
@@ -231,17 +231,17 @@ test("an undeclared resource's chip is titled by its key", () => {
 // VTT-816
 test("with no properties every chip is titled by its key", () => {
   for (const props of [undefined, []]) {
-    const root = qaPNBoard(qaPNState(), [], props);
+    const root = qaPNBoard(qaPNState(), [], props, true);
     expect(qaPNChipTitles(root, "tok-aria-01")).toEqual(["focus", "hp", "mana"]);
     expect(qaPNChipTitles(root, "tok-grub-02")).toEqual(["hp"]);
   }
 });
 
 test("chips are ordered by key, not by display name or insertion", () => {
-  const root = qaPNBoard(qaPNState(), [], QA_PN_PROPS);
+  const root = qaPNBoard(qaPNState(), [], QA_PN_PROPS, true);
   expect(qaPNChipTitles(root, "tok-aria-01")).toEqual(["focus", "Vigor", "Arcana"]);
   const st = qaPNState();
-  const n = namer(st, [], false, QA_PN_ABILITIES, QA_PN_PROPS);
+  const n = namer(st, [], true, QA_PN_ABILITIES, QA_PN_PROPS);
   const disc = tokensOnScene(st, SCENE, undefined, n)
     .find((d) => d.tokenId === "tok-aria-01");
   expect(disc?.resources.map((r) => r.name)).toEqual(["focus", "hp", "mana"]);
@@ -319,7 +319,7 @@ test("with no properties every cost is named by its key", () => {
 
 // VTT-816
 test("a number property does not name a resource chip of the same key", () => {
-  const root = qaPNBoard(qaPNState(), [], QA_PN_NUMBER_PROPS);
+  const root = qaPNBoard(qaPNState(), [], QA_PN_NUMBER_PROPS, true);
   expect(qaPNChipTitles(root, "tok-grub-02")).toEqual(["hp"]);
 });
 
