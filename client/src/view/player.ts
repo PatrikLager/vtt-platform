@@ -4,23 +4,31 @@
 // Offer every token in range, your own included: the ruleset format has no
 // target kind, and the server refuses an illegal use.
 
-import type { State } from "../state";
-import type { Ability, Me, Property } from "../metadata";
-import { affordable, controlledActors, offered, readLine, sheetNames, targetableTokens } from "../player";
+import type { Ability, ConditionDef, Me, Property, SheetPage } from "../metadata";
+import type { Actor, State } from "../state";
+import { affordable, controlledActors, offered, readLine, sheetFor, sheetNames, targetableTokens, type ShownSection } from "../player";
 import { moveToken, useAbility, setViewpoint, speakAs, speakOutOfCharacter, addWhisper } from "../commands";
 import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import { currentSceneId, mayWorkDoor } from "./doors";
-import { namer } from "./naming";
+import { namer, type Namer } from "./naming";
 
 export interface PlayerUIState {
   selectedActorId: string;
   selectedAbilityId: string;
   /** Whether a board click works a door instead of moving a token (SPEC-022). */
   doorsArmed: boolean;
+  /** The name of the sheet's page the panel shows (VTT-838). */
+  page?: string;
   // VTT-522
   sayText?: string;
   /** A line the panel sent is unanswered: Send and Enter send nothing (VTT-523). */
   saying?: boolean;
+}
+
+/** PanelLayout is the sheet and the conditions of the window's newest ruleset answer (VTT-845). */
+export interface PanelLayout {
+  sheet?: SheetPage[] | undefined;
+  conditions?: ConditionDef[] | undefined;
 }
 
 /** A player's switch between the party members the gateway lets them watch (VTT-457). */
@@ -70,16 +78,21 @@ export function renderPlayerPanel(
   switcher?: Switcher,
   notify?: (msg: string) => void,
   properties?: Property[],
+  layout?: PanelLayout,
 ): HTMLElement {
   const names = namer(st, [], me.role === "dm" || me.role === "agent", abilities, properties);
   const wrap = el("section", "player");
-  wrap.appendChild(el("h2", undefined, "Your turn"));
 
   const mine = switcher ? switcher.actors : controlledActors(st, me.participantId);
   if (mine.length === 0) {
     wrap.appendChild(el("p", "empty", "You do not control an actor yet."));
     return wrap;
   }
+  const actorId = ui.selectedActorId || mine[0]!.actorId;
+  const actor = st.Actors[actorId];
+  const chip = mine.find((a) => a.actorId === actorId);
+  // VTT-836
+  if (actor) wrap.appendChild(el("h2", undefined, chip ? chip.name || chip.actorId : actor.name || actorId));
 
   // --- actor selection ---
   const picker = el("div", "row");
@@ -98,8 +111,6 @@ export function renderPlayerPanel(
   }
   wrap.appendChild(picker);
 
-  const actorId = ui.selectedActorId || mine[0]!.actorId;
-  const actor = st.Actors[actorId];
   const tokenId = tokenForActor(st, actorId);
 
   if (!actor) return wrap;
@@ -107,29 +118,39 @@ export function renderPlayerPanel(
     wrap.appendChild(el("p", "empty", "That actor has no token on the board yet."));
   }
 
-  // --- abilities ---
-  const offers = offered(abilities, actor);
-  if (offers.length > 0) {
-    wrap.appendChild(el("h3", undefined, "Abilities"));
-    const list = el("div", "row");
-    for (const ab of offers) {
-      const can = affordable(ab, actor);
-      const b = el("button", ui.selectedAbilityId === ab.id ? "chip sel" : "chip", ab.name || ab.id);
-      // Unaffordable abilities are shown and disabled rather than hidden: a
-      // player needs to know the ability exists and why it is unavailable.
-      (b as HTMLButtonElement).disabled = !can || tokenId === "";
-      b.title =
-        ab.usage.kind === "resource"
-          ? `${names.resource(ab.usage.resource ?? "")} ${ab.usage.cost}${can ? "" : " — not enough"}`
-          : "at will";
+  const pages = sheetFor(actor, st.Conditions[actorId] ?? [], abilities, properties, layout?.conditions, layout?.sheet);
+  const page = pages.find((p) => p.name === ui.page) ?? pages[0]!;
+  if (pages.length > 1) {
+    const tabs = el("div", "tabs");
+    for (const p of pages) {
+      const b = el("button", p === page ? "tab sel" : "tab", p.name);
       b.addEventListener("click", () => {
-        ui.selectedAbilityId = ui.selectedAbilityId === ab.id ? "" : ab.id;
+        ui.page = p.name;
         rerender();
       });
-      list.appendChild(b);
+      tabs.appendChild(b);
     }
-    wrap.appendChild(list);
+    wrap.appendChild(tabs);
   }
+  const sheet = el("div", "sheet");
+  const button = (ab: Ability) => {
+    const can = affordable(ab, actor);
+    const b = el("button", ui.selectedAbilityId === ab.id ? "chip sel" : "chip", ab.name || ab.id);
+    // Show an unaffordable ability disabled, never hide it (VTT-695).
+    (b as HTMLButtonElement).disabled = !can || tokenId === "";
+    b.title = costTitle(ab, actor, names, can);
+    b.addEventListener("click", () => {
+      ui.selectedAbilityId = ui.selectedAbilityId === ab.id ? "" : ab.id;
+      rerender();
+    });
+    return b;
+  };
+  for (const s of page.sections) {
+    sheet.appendChild(el("h3", undefined, s.name));
+    sheet.appendChild(drawSection(s, button));
+  }
+  wrap.appendChild(sheet);
+  const offers = offered(abilities, actor);
 
   // --- targets, when an ability is armed ---
   const armed = offers.find((a) => a.id === ui.selectedAbilityId);
@@ -228,6 +249,44 @@ export function renderPlayerPanel(
   wrap.appendChild(form);
 
   return wrap;
+}
+
+// VTT-844
+function costTitle(ab: Ability, actor: Actor, names: Namer, can: boolean): string {
+  if (ab.usage.kind !== "resource") return "at will";
+  const key = ab.usage.resource ?? "";
+  const held = actor.resources[key];
+  const amount = held ? ` ${held.current}/${held.max}` : "";
+  return `${names.resource(key)}${amount}, costs ${ab.usage.cost ?? 0}${can ? "" : " — not enough"}`;
+}
+
+// VTT-839 VTT-841 VTT-842 VTT-843
+function drawSection(s: ShownSection, button: (ab: Ability) => HTMLElement): HTMLElement {
+  switch (s.kind) {
+    case "values": {
+      const list = el("div", "values");
+      for (const v of s.values) {
+        const n = el("span", "value", `${v.name} ${v.text}`);
+        if (v.title !== "") n.title = v.title;
+        list.appendChild(n);
+      }
+      return list;
+    }
+    case "conditions": {
+      const list = el("div", "conditions");
+      for (const c of s.conditions) {
+        const n = el("span", "condition", c.name);
+        if (c.title !== "") n.title = c.title;
+        list.appendChild(n);
+      }
+      return list;
+    }
+    case "abilities": {
+      const row = el("div", "row");
+      for (const ab of s.abilities) row.appendChild(button(ab));
+      return row;
+    }
+  }
 }
 
 /** Build the move command for a board click, or null when it is not actionable. */

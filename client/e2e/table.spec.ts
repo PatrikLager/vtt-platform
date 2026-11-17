@@ -1,4 +1,7 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { fixture } from "./setup";
 
 // End-to-end against the SHIPPED binary: embedded client, wire, HTTP
@@ -285,9 +288,9 @@ test("a spectator's command is refused by the server", async ({ page }) => {
 
 // VTT-436 VTT-474 VTT-477
 test("a player's ability reaches the creature they aim it at", async ({ page, browser }) => {
-  // Last in this file: the grant below makes the Human Fighter the player's
-  // default view, and "a player sees their own panel and can move their token"
-  // expects Lera's.
+  // After every test that expects Lera's view: the grant below makes the Human
+  // Fighter the player's default view, and "a player sees their own panel and
+  // can move their token" expects Lera's.
   const dmCtx = await browser.newContext();
   const dm = await dmCtx.newPage();
   await openAs(dm, "dm");
@@ -346,4 +349,32 @@ test("a player's ability reaches the creature they aim it at", async ({ page, br
   await page.mouse.move(0, 0);
   await expect(disc.locator(".token-card")).toBeVisible();
   await page.screenshot(shot("08-player-ability-resolved"));
+});
+
+// After "a DM starts a session and loads an adventure" and "a player's ability
+// reaches the creature they aim it at", whose grant this test reads.
+// VTT-834 VTT-837
+test("a player's panel draws the pages the ruleset declares, and only the DM's board draws chips", async ({ page, browser }) => {
+  const declared = JSON.parse(readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "..", "rulesets", "dnd45e-minimal", "ruleset.json"), "utf8",
+  )) as { sheet: { name: string; sections: { name: string }[] }[] };
+  expect(declared.sheet.length).toBeGreaterThan(1);
+
+  await openAs(page, "player");
+  const panel = page.locator(".player");
+  await panel.locator("button.chip", { hasText: "Human Fighter" }).click();
+  await expect(panel.locator("h2")).toHaveText("Human Fighter", { timeout: 10_000 });
+  await expect(panel.locator(".tabs .tab")).toHaveText(declared.sheet.map((p) => p.name));
+  await panel.locator(".tabs .tab", { hasText: declared.sheet[1]!.name }).click();
+  await expect(panel.locator(".tabs .tab.sel")).toHaveText(declared.sheet[1]!.name);
+  await expect(panel.locator(".sheet h3").first()).toHaveText(declared.sheet[1]!.sections[0]!.name);
+  await page.screenshot(shot("09-player-sheet"));
+  await expect(page.locator('.token[data-token-id="tok-lera"]')).toBeVisible();
+  await expect(page.locator(".token .chips")).toHaveCount(0);
+
+  const dmCtx = await browser.newContext();
+  const dm = await dmCtx.newPage();
+  await openAs(dm, "dm");
+  await expect(dm.locator(".token .chips").first()).toBeVisible({ timeout: 10_000 });
+  await dmCtx.close();
 });

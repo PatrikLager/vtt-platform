@@ -13,7 +13,7 @@ import { Auth } from "./auth";
 import { Session, type SheetChange } from "./session";
 import type { WireStatus } from "./wire";
 import { renderSpectator } from "./view/spectator";
-import { renderPlayerPanel, moveCommandFor, playerClickFor, type PlayerUIState } from "./view/player";
+import { renderPlayerPanel, moveCommandFor, playerClickFor, type PanelLayout, type PlayerUIState } from "./view/player";
 import { doorCommandFor } from "./view/doors";
 import {
   fetchMe, fetchRuleset, fetchAdventures, fetchAdventureGuide, fetchMaps,
@@ -165,6 +165,8 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
   // the sheet's toast name what an earlier answer named (VTT-734).
   const everRead = new Map<string, Ability>();
   let properties: Property[] | undefined;
+  // VTT-845
+  let layout: PanelLayout = {};
   let adventures: AdventureMeta[] = [];
   let maps: MapMeta[] = [];
   let joinLink: JoinLink | null = null;
@@ -396,7 +398,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     renderSpectator(root, session.state, [...session.events], status, {
       panel: canAct
         ? renderPlayerPanel(session.state, me!, abilities, ui, act, paint,
-          isPlayer ? { actors: watchable, onSwitch: (id) => void switchTo(id) } : undefined, notify, properties)
+          isPlayer ? { actors: watchable, onSwitch: (id) => void switchTo(id) } : undefined, notify, properties, layout)
         : undefined,
       console: isDM
         ? renderDMConsole({
@@ -568,6 +570,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
       if (ticket === newestRuleset) {
         abilities = rs.abilities;
         properties = rs.properties;
+        layout = { sheet: rs.sheet, conditions: rs.conditions };
       }
       tell();
       paint();

@@ -441,11 +441,11 @@ test("an older read's answer arriving after the newest does not change how the p
 
   newest.answer([["strike", "Strike", "vigor"], ["heal", "Heal"]], [["vigor", "Stamina"]]);
   await flush();
-  expect(cost()).toBe("Stamina 1");
+  expect(cost()).toBe("Stamina 4/5, costs 1");
 
   older.answer([["strike", "Strike", "vigor"], ["fireball", "Fireball"]], [["vigor", "Old Vigor"]]);
   await flush();
-  expect(cost()).toBe("Stamina 1");
+  expect(cost()).toBe("Stamina 4/5, costs 1");
   expect(t.story()).not.toContain("Old Vigor");
 });
 

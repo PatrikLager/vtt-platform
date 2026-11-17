@@ -282,15 +282,15 @@ test("the Story line names the actor by token name, party name, or not", () => {
 // VTT-815
 test("an unaffordable cost names the resource and says not enough", () => {
   const panel = qaPNPanel(qaPNState(), ARIA, QA_PN_PROPS);
-  expect(qaPNCost(panel, "Zap")).toBe("Arcana 2 — not enough");
-  expect(qaPNCost(panel, "Blood Rite")).toBe("Vigor 4 — not enough");
+  expect(qaPNCost(panel, "Zap")).toBe("Arcana 1/4, costs 2 — not enough");
+  expect(qaPNCost(panel, "Blood Rite")).toBe("Vigor 3/10, costs 4 — not enough");
 });
 
 // VTT-815
 test("an affordable cost names the resource with no shortfall", () => {
   const panel = qaPNPanel(qaPNState(), BRAN, QA_PN_PROPS);
-  expect(qaPNCost(panel, "Zap")).toBe("Arcana 2");
-  expect(qaPNCost(panel, "Blood Rite")).toBe("Vigor 4");
+  expect(qaPNCost(panel, "Zap")).toBe("Arcana 4/4, costs 2");
+  expect(qaPNCost(panel, "Blood Rite")).toBe("Vigor 9/9, costs 4");
 });
 
 // VTT-815
@@ -299,21 +299,21 @@ test("a cost exactly equal to what the actor holds is affordable", () => {
   const bran = st.Actors[BRAN];
   if (bran === undefined) throw new Error("fixture lost Bran");
   bran.resources["mana"] = { current: 2, max: 4 };
-  expect(qaPNCost(qaPNPanel(st, BRAN, QA_PN_PROPS), "Zap")).toBe("Arcana 2");
+  expect(qaPNCost(qaPNPanel(st, BRAN, QA_PN_PROPS), "Zap")).toBe("Arcana 2/4, costs 2");
 });
 
 test("an undeclared resource's cost is named by its key", () => {
   const st = qaPNState();
   expect(qaPNCost(qaPNPanel(st, ARIA, QA_PN_PROPS), "Focus Shot"))
-    .toBe("focus 3 — not enough");
-  expect(qaPNCost(qaPNPanel(st, BRAN, QA_PN_PROPS), "Focus Shot")).toBe("focus 3");
+    .toBe("focus 2/5, costs 3 — not enough");
+  expect(qaPNCost(qaPNPanel(st, BRAN, QA_PN_PROPS), "Focus Shot")).toBe("focus 3/5, costs 3");
 });
 
 test("with no properties every cost is named by its key", () => {
   const st = qaPNState();
   for (const props of [undefined, []]) {
-    expect(qaPNCost(qaPNPanel(st, ARIA, props), "Zap")).toBe("mana 2 — not enough");
-    expect(qaPNCost(qaPNPanel(st, BRAN, props), "Blood Rite")).toBe("hp 4");
+    expect(qaPNCost(qaPNPanel(st, ARIA, props), "Zap")).toBe("mana 1/4, costs 2 — not enough");
+    expect(qaPNCost(qaPNPanel(st, BRAN, props), "Blood Rite")).toBe("hp 9/9, costs 4");
   }
 });
 
@@ -331,7 +331,7 @@ test("a number property does not name an Events panel line of the same key", () 
 
 test("a number property does not name a cost of the same key", () => {
   const panel = qaPNPanel(qaPNState(), BRAN, QA_PN_NUMBER_PROPS);
-  expect(qaPNCost(panel, "Blood Rite")).toBe("hp 4");
+  expect(qaPNCost(panel, "Blood Rite")).toBe("hp 9/9, costs 4");
 });
 
 // VTT-475

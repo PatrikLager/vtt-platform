@@ -1722,7 +1722,7 @@ test("an affordable resource ability names its cost without the shortfall note",
   };
   const p = panel(world(), [cheap]);
   expect(p.button("Jab").disabled).toBe(false);
-  expect(p.button("Jab").title).toBe("vigor 1");
+  expect(p.button("Jab").title).toBe("vigor 3/10, costs 1");
 });
 
 // VTT-815
@@ -1739,7 +1739,7 @@ test("a resource chip, its Events panel line and an ability's cost name the reso
   const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "", doorsArmed: false };
   const node = renderPlayerPanel(world(), me, [cheap], ui, async () => ok(), () => {}, undefined, undefined, props);
   const jab = Array.from(node.querySelectorAll("button")).find((b) => b.textContent === "Jab")!;
-  expect(jab.title).toBe("Vigor Points 1");
+  expect(jab.title).toBe("Vigor Points 3/10, costs 1");
 });
 
 // VTT-815
@@ -1752,7 +1752,7 @@ test("the Events panel names a declared resource by its display name", () => {
 
 test("a resource ability naming no resource names no resource in its cost", () => {
   const malformed: Ability = { id: "m", name: "Malformed", range: 1, maxTargets: 1, usage: { kind: "resource", cost: 2 } };
-  expect(panel(world(), [malformed]).button("Malformed").title).toBe(" 2 — not enough");
+  expect(panel(world(), [malformed]).button("Malformed").title).toBe(", costs 2 — not enough");
 });
 
 // --- no token on the board --------------------------------------------------
@@ -1904,9 +1904,10 @@ test("the panel's structure carries the classes the stylesheet targets", () => {
   for (const h of Array.from(p.node.querySelectorAll("h2,h3"))) expect(h.className).toBe("");
 });
 
+// VTT-836
 test("the panel's headings say what each section is", () => {
   const p = panel(world(), [atWill]);
-  expect(Array.from(p.node.querySelectorAll("h2")).map((n) => n.textContent)).toEqual(["Your turn"]);
+  expect(Array.from(p.node.querySelectorAll("h2")).map((n) => n.textContent)).toEqual(["Lera"]);
   const h3 = Array.from(p.node.querySelectorAll("h3")).map((n) => n.textContent);
   expect(h3).toContain("Abilities");
   expect(h3).toContain("Say something");
