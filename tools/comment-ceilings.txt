@@ -4,14 +4,14 @@
 # `python3 tools/check-comments.py --write-ledger`, never by hand and
 # never raised. SPEC-010.
 
-client/src/app.ts  44.3
+client/src/app.ts  44.2
 client/src/auth.ts  44.5
 client/src/commands.ts  38.0
 client/src/fold.ts  29.7
 client/src/join.ts  36.5
 client/src/main.ts  83.4
-client/src/metadata.ts  48.7
-client/src/player.ts  39.9
+client/src/metadata.ts  47.2
+client/src/player.ts  25.0
 client/src/session.ts  31.0
 client/src/state.ts  61.2
 client/src/view/art-assets.ts  68.9
@@ -21,13 +21,13 @@ client/src/view/dm.ts  32.7
 client/src/view/doors.ts  72.5
 client/src/view/feed.ts  15.1
 client/src/view/focus.ts  19.1
-client/src/view/grid.ts  42.8
+client/src/view/grid.ts  28.9
 client/src/view/join.ts  29.9
 client/src/view/naming.ts  8.1
 client/src/view/pack-assets.ts  62.7
-client/src/view/player.ts  19.1
+client/src/view/player.ts  15.8
 client/src/view/scene-plan.ts  52.9
-client/src/view/spectator.ts  38.8
+client/src/view/spectator.ts  38.7
 client/src/wire.ts  29.6
 cmd/vtt/ability_change_dump_test.go  1.7
 cmd/vtt/adventures.go  57.9
@@ -222,7 +222,7 @@ internal/gateway/keepalive_internal_test.go  29.7
 internal/gateway/map.go  18.8
 internal/gateway/map_internal_test.go  24.6
 internal/gateway/map_test.go  42.5
-internal/gateway/metadata.go  10.7
+internal/gateway/metadata.go  10.2
 internal/gateway/metadata_test.go  23.1
 internal/gateway/narration_test.go  0.0
 internal/gateway/note_validate.go  12.5
@@ -265,6 +265,7 @@ internal/gateway/qa_ruleset_bound_test.go  0.0
 internal/gateway/qa_ruleset_by_role_test.go  0.6
 internal/gateway/qa_ruleset_route_test.go  0.5
 internal/gateway/qa_seat_test.go  0.0
+internal/gateway/qa_sheet_route_test.go  0.5
 internal/gateway/qa_speaking_test.go  5.6
 internal/gateway/qa_token_texts_test.go  0.0
 internal/gateway/qa_use_unnamed_test.go  0.3
@@ -284,6 +285,7 @@ internal/gateway/server.go  21.2
 internal/gateway/server_internal_test.go  33.5
 internal/gateway/server_test.go  23.9
 internal/gateway/server_visibility_test.go  13.4
+internal/gateway/sheet_route_test.go  3.3
 internal/gateway/static_test.go  15.6
 internal/gateway/token_text_test.go  0.0
 internal/gateway/use_ability_sheet_test.go  6.5
@@ -404,17 +406,19 @@ internal/rules/conformance/conformance.go  22.3
 internal/rules/conformance/conformance_test.go  41.2
 internal/rules/crypto_roller.go  51.0
 internal/rules/crypto_roller_test.go  41.5
+internal/rules/declared_sheet_test.go  1.1
 internal/rules/expr.go  32.2
 internal/rules/expr_fuzz_test.go  24.8
 internal/rules/expr_test.go  27.7
-internal/rules/format.go  57.8
+internal/rules/format.go  56.2
 internal/rules/id_bound_internal_test.go  0.0
-internal/rules/load.go  17.2
+internal/rules/load.go  15.4
 internal/rules/load_dice_test.go  11.2
 internal/rules/load_test.go  8.5
 internal/rules/offers_test.go  0.0
 internal/rules/property_test.go  3.9
 internal/rules/qa_ability_outcomes_test.go  0.0
+internal/rules/qa_declared_sheet_test.go  4.5
 internal/rules/qa_offers_test.go  0.0
 internal/rules/qa_property_format_test.go  0.3
 internal/rules/qa_ruleset_bound_test.go  0.0
