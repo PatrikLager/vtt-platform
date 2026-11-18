@@ -30,6 +30,7 @@ export interface ResourceChip {
 
 export interface ConditionDot {
   id: string;
+  label: string;
 }
 
 export interface TokenDisc {
@@ -101,7 +102,8 @@ export function tokensOnScene(
 
     // Conditions keep APPLIED order — the order the table saw them happen.
     // The fold preserves it deliberately, so the view must not re-sort.
-    const conditions: ConditionDot[] = (st.Conditions[tok.ActorID] ?? []).map((c) => ({ id: c.ID }));
+    const conditions: ConditionDot[] = (st.Conditions[tok.ActorID] ?? [])
+      .map((c) => ({ id: c.ID, label: names.conditionTitle(c.ID) }));
 
     const name = names.token(tok.ID);
     discs.push({

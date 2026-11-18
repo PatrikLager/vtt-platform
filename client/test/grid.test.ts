@@ -173,3 +173,13 @@ test("a long reversed board still sorts, exercising the merge paths", () => {
   expect(got[0]).toBe("t01");
   expect(got[19]).toBe("t20");
 });
+
+// VTT-862
+test("a dot carries its condition's title beside its id, in applied order", () => {
+  const st = worldWith();
+  const names = namer(st, [], false, undefined, undefined, [{ id: "dazed", name: "Dazed", description: "Slow to act." }]);
+  expect(tokensOnScene(st, "s1", undefined, names)[0]!.conditions).toEqual([
+    { id: "marked", label: "marked" },
+    { id: "dazed", label: "Dazed\nSlow to act." },
+  ]);
+});

@@ -2455,3 +2455,29 @@ test("a player's /gm and /togm whisper to the DM, and a /whisper line is refused
   expect([w.sent.length, w.notices.length, w.text.value]).toEqual([0, 1, "/whisper Lera psst"]);
 });
 
+const NAMED_CONDITIONS = [
+  { id: "marked", name: "Marked", description: "" },
+  { id: "dazed", name: "Dazed", description: "Slow to act." },
+];
+
+// VTT-862
+test("a dot is titled by its condition's name and description from the window's list, else by its id", () => {
+  expect((render(world(), [], { conditions: NAMED_CONDITIONS }).querySelector(".dot") as HTMLElement).title)
+    .toBe("Dazed\nSlow to act.");
+  expect((render(world(), [], { conditions: [] }).querySelector(".dot") as HTMLElement).title).toBe("dazed");
+});
+
+// VTT-863
+test("the Story and the Events panel name a condition gained and lost by the window's list, else by its id", () => {
+  const log = [
+    env(1, { case: "conditionApplied", value: create(ConditionAppliedSchema, { actorId: "a1", conditionId: "dazed", source: "dm" }) }),
+    env(2, { case: "conditionRemoved", value: create(ConditionRemovedSchema, { actorId: "a1", conditionId: "dazed" }) }),
+    env(3, { case: "conditionApplied", value: create(ConditionAppliedSchema, { actorId: "a1", conditionId: "prone", source: "dm" }) }),
+  ];
+  const root = render(world(), log, { ticker: true, conditions: NAMED_CONDITIONS });
+  const want = ["Lera gained Dazed", "Lera lost Dazed", "Lera gained prone"];
+  expect(Array.from(root.querySelectorAll(".ticker .tick"), (n) => n.textContent)).toEqual([...want].reverse());
+  const story = root.querySelector(".feed")?.textContent ?? "";
+  for (const line of want) expect(story).toContain(line);
+  expect(story).not.toContain("gained dazed");
+});

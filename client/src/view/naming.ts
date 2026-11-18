@@ -14,6 +14,8 @@ export interface Namer {
   actor(id: string | undefined): string;
   ability(id: string): string;
   resource(key: string): string;
+  condition(id: string): string;
+  conditionTitle(id: string): string;
 }
 
 interface Known {
@@ -24,15 +26,16 @@ interface Known {
 
 type Named = readonly { id: string; name: string }[] | undefined;
 
-const abilityName = (abilities: Named, id: string): string => abilities?.find((a) => a.id === id)?.name || id;
+const nameIn = (list: Named, id: string): string => list?.find((x) => x.id === id)?.name || id;
 
-/** namer builds a window's Namer from its fold, log, role, abilities and properties. */
+/** namer builds a window's Namer from its fold, log, role and ruleset lists. */
 export function namer(
   st: State,
   log: readonly Envelope[],
   dm: boolean,
   abilities: readonly { id: string; name: string }[] | undefined,
   properties?: readonly { key: string; type: string; name: string }[],
+  conditions?: readonly { id: string; name: string; description: string }[] | undefined,
 ): Namer {
   // Keep the newest entry: what the fold has lost is named as the log last named it.
   const pastTokens = new Map<string, Known>();
@@ -62,6 +65,7 @@ export function namer(
     const k = tokenOf(id);
     return k ? own(k, gm) || actorName(k.actor, gm) : UNNAMED;
   };
+  const conditionName = (id: string): string => nameIn(conditions, id);
   const firstNamed = new Map<string, string>();
   for (const tid of [...new Set([...Object.keys(st.Tokens), ...pastTokens.keys()])].sort()) {
     const k = tokenOf(tid)!;
@@ -73,14 +77,19 @@ export function namer(
     token: (id) => tokenBy(id, dm),
     shown: (id) => tokenBy(id, false),
     actor: (id) => firstNamed.get(id!) ?? actorName(id, dm),
-    ability: (id) => abilityName(abilities, id),
+    ability: (id) => nameIn(abilities, id),
     resource: (key) => properties?.find((p) => p.key === key && p.type === "resource")?.name || key,
+    condition: (id) => conditionName(id),
+    conditionTitle: (id) => {
+      const description = conditions?.find((c) => c.id === id)?.description ?? "";
+      return description === "" ? conditionName(id) : `${conditionName(id)}\n${description}`;
+    },
   };
 }
 
 /** sheetNews is a player's toast for what sets changed of their party members' ability ids (VTT-733, VTT-734). */
 export function sheetNews(changes: readonly SheetChange[], abilities: readonly { id: string; name: string }[]): string {
-  const named = (ids: readonly string[]) => ids.map((id) => abilityName(abilities, id)).join(" and ");
+  const named = (ids: readonly string[]) => ids.map((id) => nameIn(abilities, id)).join(" and ");
   const sentences: string[] = [];
   for (const c of changes) {
     const who = c.name || "An unnamed character";

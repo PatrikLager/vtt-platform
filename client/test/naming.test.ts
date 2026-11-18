@@ -163,3 +163,29 @@ test("a disc's initial is the name's first letter in upper case, and ? for a cre
   expect(initialOf("élan")).toBe("É");
   expect(initialOf(UNNAMED)).toBe("?");
 });
+
+const CONDITIONS = [
+  { id: "marked", name: "Marked", description: "" },
+  { id: "dazed", name: "Dazed", description: "Slow to act.\nGrants an opening." },
+  { id: "hushed", name: "", description: "Says nothing." },
+];
+
+// VTT-862 VTT-863
+test("a condition is named by the list's name, else by its id, and by its id undeclared or with no list", () => {
+  const names = namer(table(), [], false, undefined, undefined, CONDITIONS);
+  expect(names.condition("dazed")).toBe("Dazed");
+  expect(names.condition("marked")).toBe("Marked");
+  expect(names.condition("hushed")).toBe("hushed");
+  expect(names.condition("prone")).toBe("prone");
+  expect(namer(table(), [], false, undefined).condition("dazed")).toBe("dazed");
+});
+
+// VTT-862
+test("a condition's title is its name, a line break and its description as written, else its name alone", () => {
+  const names = namer(table(), [], false, undefined, undefined, CONDITIONS);
+  expect(names.conditionTitle("dazed")).toBe("Dazed\nSlow to act.\nGrants an opening.");
+  expect(names.conditionTitle("marked")).toBe("Marked");
+  expect(names.conditionTitle("hushed")).toBe("hushed\nSays nothing.");
+  expect(names.conditionTitle("prone")).toBe("prone");
+  expect(namer(table(), [], false, undefined).conditionTitle("dazed")).toBe("dazed");
+});
