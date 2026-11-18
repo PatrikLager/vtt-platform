@@ -22,7 +22,10 @@ through `readMetadata` in `internal/mcp/door_tools.go`; pinned by
 `qa_ruleset_by_role_test.go`, `use_ability_sheet_test.go`,
 `qa_use_unnamed_test.go`, `artfile_internal_test.go`,
 `qa_art_root_test.go`, `sheet_route_test.go`, `qa_sheet_route_test.go`,
+`ability_description_route_test.go`,
+`qa_ability_description_route_test.go`,
 `internal/mcp/ruleset_tool_test.go`,
+`internal/mcp/qa_ruleset_tool_description_test.go`,
 `cmd/vtt/qa_get_ruleset_test.go`, `cmd/vtt/qa_ruleset_by_role_test.go` and,
 for the default cell size, `cmd/vtt/art_test.go`.
 
@@ -38,12 +41,13 @@ Principles 6, 7, 15 and 35 of `docs/blueprint.md`:
 - **15.** A piece of art is opened from the art directory on every request,
   and nothing is cached.
 - **35.** A ruleset is served as data to whoever may see each part of it: a
-  summary of every ability to the DM and the agent, and to a player of each
-  ability named by the sheets of the actors they control; its conditions,
-  every property it declares with its display name and explanation, and the
-  layout of its sheet, to every role; its guide to the DM and the agent. How
-  an ability resolves, and what a resource carries beyond its words, is not
-  served.
+  summary of every ability, with the ruleset's description of it where it
+  gives one, to the DM and the agent, and to a player of each ability named
+  by the sheets of the actors they control; its conditions, every property
+  it declares with its display name and explanation, the layout of its
+  sheet and its name for an ability that spends no resource, to every
+  role; its guide to the DM and the agent. How an ability resolves, and
+  what a resource carries beyond its words, is not served.
 
 ## How it works
 
@@ -111,8 +115,11 @@ route reveals nothing the caller did not prove by holding the token.
 
 **What `/api/ruleset` answers.** `handleRuleset` writes `rulesetJSON`: the
 ruleset's `id` and `name`, `abilities` as `abilityJSON` (`id`, `name`,
-`range`, `maxTargets` and `usage`, which is `usageJSON` with `kind` `atWill`,
-or `kind` `resource` with `resource` and `cost`), `conditions` as
+`description`, `range`, `maxTargets` and `usage`, which is `usageJSON` with
+`kind` `atWill`, or `kind` `resource` with `resource` and `cost`;
+`description` is the ruleset's description of the ability, VTT-851, and an
+ability whose ruleset declares none has no such field, VTT-852),
+`conditions` as
 `conditionJSON` (`id`, `name`, `description`), `resources` as the keys of
 the ruleset's resource properties (VTT-631), and `properties` as
 `propertyJSON`, each property's `key`, `type`, `name` and `description`
@@ -124,7 +131,9 @@ one list its kind names: `values`, the property keys, in order, for `kind`
 each a `usageJSON` with no cost, `{"kind": "atWill"}` or `{"kind":
 "resource", "resource": <key>}`, for `kind` `abilities` (VTT-831). `sheet`
 is `[]` when no ruleset is loaded or the loaded one declares none
-(VTT-832). A resource's `default_max_expr` and thresholds are not
+(VTT-832). `freeUsageName` is the ruleset's name for an ability that spends
+no resource, and the field is absent when the ruleset names none or none is
+loaded (VTT-859). A resource's `default_max_expr` and thresholds are not
 served. Which abilities it writes is decided on every request by
 `abilitiesReadBy`, from the participant `authed` returned: for the DM and
 the agent, every ability `rules.Ruleset.Compiled` holds (VTT-693); for a
@@ -139,9 +148,11 @@ an ability given to or taken from an actor a player controls is in or out
 of that player's next answer, as a grant, a revocation or a change of role
 is (`TestAPlayersReadFollowsAGiveAndATake`). An id a sheet names that
 `Compiled` does not hold is not written. `conditions`, `resources`,
-`properties` and `sheet` are every role's (VTT-710, VTT-619, VTT-631,
-VTT-831): the sheet names property keys and usages, never an ability, so
-it holds nothing `abilitiesReadBy` would filter. The abilities are
+`properties`, `sheet` and `freeUsageName` are every role's (VTT-710,
+VTT-619, VTT-631, VTT-831, VTT-859): the sheet names property keys and
+usages, never an ability, so it holds nothing `abilitiesReadBy` would
+filter, and an ability's description is written with its ability, so it
+reaches whoever that ability reaches. The abilities are
 filtered as they are read from `Compiled`, and then they and the conditions
 are sorted by id with `slices.SortFunc`, because `rules.Ruleset.Compiled` and
 `Conditions` are maps and Go randomises map iteration; `resources` and
@@ -162,7 +173,12 @@ never as content (VTT-633). `readMetadata` sends through
 that the DM and the agent read every ability and a player only the
 abilities named by the sheets of the actors they control (VTT-694), and
 that it answers, as `sheet`, the ruleset's pages of named sections, what
-each shows by its `kind`, and `[]` when it declares none (VTT-833).
+each shows by its `kind`, and `[]` when it declares none (VTT-833); that
+each ability carries `description`, the ruleset's own words for what it
+does, absent when it gives none (VTT-853); and that it answers, as
+`freeUsageName`, the ruleset's name for an ability that spends no
+resource, to every role, absent when it gives none (VTT-860) or none is
+loaded.
 `get_ruleset_guide`'s description points to `get_ruleset` for what a
 property means. `get_ruleset_guide` (`handleGetRulesetGuide`) reads no
 route: it answers with the guide `vtt mcp --ruleset` loaded from its own
@@ -330,4 +346,5 @@ VTT-121, VTT-122, VTT-123, VTT-124, VTT-125, VTT-126, VTT-127, VTT-128,
 VTT-129, VTT-130, VTT-131, VTT-132, VTT-133, VTT-134, VTT-135, VTT-136,
 VTT-137, VTT-578, VTT-581, VTT-619, VTT-620, VTT-621, VTT-631, VTT-632,
 VTT-633, VTT-682, VTT-691, VTT-692, VTT-693, VTT-694, VTT-702, VTT-709,
-VTT-710, VTT-711, VTT-831, VTT-832, VTT-833.
+VTT-710, VTT-711, VTT-831, VTT-832, VTT-833, VTT-851, VTT-852, VTT-853,
+VTT-859, VTT-860.

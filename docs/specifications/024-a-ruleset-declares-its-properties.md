@@ -5,19 +5,27 @@
 Accepted. Implemented by `internal/rules/format.go` (`Property`,
 `PropertyNumber`, `PropertyResource`, `ResourceDef`, `Ruleset.Properties`,
 `Ruleset.Property`, `Ruleset.Sheet`, `SheetPage`, `SheetSection`,
-`ShownUsage`), `internal/rules/load.go` (`formatVersion`,
+`ShownUsage`, `Ruleset.FreeUsageName`, `CompiledPower.Description`),
+`internal/rules/load.go` (`formatVersion`,
 `formatVersionWant`, `checkFormatVersion`, `loadManifest`, `decodeStrict`,
 `checkPropertyKey`, `loadProperty`, `loadResourceDef`,
 `checkManifestBounds`, `propertyTypes`, `checkPropertyRef`,
 `checkExprRefs`, `crossValidateResources`, `loadAtoms`,
-`validParamKinds`, `checkSheet`, `ShownUsage.UnmarshalJSON`),
+`validParamKinds`, `checkSheet`, `ShownUsage.UnmarshalJSON`,
+`loadCompositions`),
 `internal/rules/compile.go`
 (`compilePower`, `bindAtom`, `compileEffects`, `compileTwoActorExpr`)
-and the schemas `internal/rules/schema/ruleset.schema.json` and
-`atom.schema.json`. Pinned by `internal/rules/property_test.go`,
+and the schemas `internal/rules/schema/ruleset.schema.json`,
+`atom.schema.json` and `ability.schema.json`. Pinned by
+`internal/rules/property_test.go`,
 `internal/rules/qa_property_format_test.go`, `internal/rules/load_test.go`,
-`internal/rules/schema_test.go`, `internal/rules/declared_sheet_test.go`
-and `internal/rules/qa_declared_sheet_test.go`. Every ruleset under
+`internal/rules/schema_test.go`, `internal/rules/declared_sheet_test.go`,
+`internal/rules/qa_declared_sheet_test.go`,
+`internal/rules/ability_description_test.go`,
+`internal/rules/qa_ability_description_test.go`,
+`internal/rules/conformance/conformance_test.go` and
+`internal/rules/conformance/qa_shipped_descriptions_test.go`.
+Every ruleset under
 `rulesets/` is written in this format. How a character's sheet is read
 against the properties is SPEC-025.
 
@@ -29,7 +37,8 @@ Principles 13, 23, 24, 25, 27 and 35 of `docs/blueprint.md`:
   shown it can be told it in the table's words.
 - **23.** A property is declared by its ruleset, never by the engine, which
   knows a property only as a `number` or a `resource` and nothing of any
-  game system's; how a character's sheet is laid out is the ruleset's too.
+  game system's; how a character's sheet is laid out is the ruleset's too,
+  and so is the word for an ability that spends no resource.
 - **24.** A property is a `number` or a `resource`, and a ruleset declares no
   other kind.
 - **25.** A key a ruleset reads that no property declares, or reads as the
@@ -39,18 +48,20 @@ Principles 13, 23, 24, 25, 27 and 35 of `docs/blueprint.md`:
 - **27.** A declared `sheet`'s sections name property keys and usages, never
   an ability, so an ability the ruleset adds stands in its usage's section.
 - **35.** Each property carries its own explanation, which is served to
-  every participant (SPEC-012).
+  every participant, and an ability may carry the ruleset's description of
+  it, which is served with the ability (SPEC-012).
 
 ## How it works
 
 **The manifest.** A ruleset's `ruleset.json` holds `id`, `name`,
-`format_version`, `properties` and, optionally, `sheet`. `loadManifest`
+`format_version`, `properties` and, optionally, `sheet` and
+`free_usage_name`. `loadManifest`
 decodes it with `decodeStrict`, which refuses a field the format does not
 know, in the manifest, in a property or in the sheet, as `rules: <path>:
 json: unknown field "<field>"`, in a usage after `invalid shown usage
 object: `; `encoding/json` matches a field's name
 without regard to case, so a case variant of a defined field is read as it
-(VTT-830).
+(VTT-861).
 Every other refusal of a ruleset below has the form `rules: <path>: field
 "<field>": <message>`, which `fieldErr` writes. `<path>` is the file's path
 as it was loaded, except that `crossValidateResources`' refusals name
@@ -166,6 +177,27 @@ need not stand at all, and a `spends` of a resource no ability spends loads.
 none. `GET /api/ruleset` and `get_ruleset` serve it (SPEC-012), and
 the browser client's panel draws it (SPEC-022).
 
+**An ability's words.** An `abilities/*.json` may hold `description`, the
+ruleset's own words for what the ability does. `loadCompositions` refuses
+one present and empty, as `field "description": must not be empty`
+(VTT-848), and `compilePower` keeps it as `CompiledPower.Description`, none
+for an ability that declares none or declares it `null` (VTT-847).
+`rules.Load` checks nothing of what it says beyond its being non-empty,
+`rules.Resolve` does not read it, and `compiledPowerDump` has no field for
+it, so the compiled goldens do not carry it. `ability.schema.json` describes
+it as an optional string of at least one character (VTT-849). A
+`ruleset.json` may hold `free_usage_name`, what the table calls an ability
+that spends no resource: `loadManifest` refuses one present and empty, as
+`field "free_usage_name": must not be empty` (VTT-857), and `rules.Load`
+keeps it as `Ruleset.FreeUsageName`, none when it is absent or `null`
+(VTT-856); `ruleset.schema.json` describes it as an optional string of at
+least one character (VTT-858). Every ability under `rulesets/` declares a
+description with no digit, so its words stay true whatever figures its
+composition binds (VTT-850). `rulesets/dnd45e-minimal` names an ability that
+spends no resource "At will"; `rulesets/tavern-brawl` names none. `GET
+/api/ruleset` and `get_ruleset` serve both (SPEC-012), and the browser
+client's panel titles an ability's button by them (SPEC-022).
+
 **Where a property's meaning is read.** A property's `description` says
 what it means at the table. `GET /api/ruleset` and the MCP tool
 `get_ruleset` serve every property's key, type, name and description
@@ -193,9 +225,13 @@ them.
   cost, a `number` or `resource` binding, or an atom an ability composes.
 - `rules.Resolve`'s refusals of an ability name a key, and say attribute
   and defense; they are not in the table's words.
+- An ability's description is not read against its composition, so a
+  stat, a defense or a condition it names is a word a change to the
+  composition must carry along, and nothing goes red if it does not.
 
 ## Requirements
 
 VTT-610, VTT-611, VTT-612, VTT-613, VTT-614, VTT-615, VTT-616, VTT-626,
 VTT-628, VTT-629, VTT-630, VTT-824, VTT-825, VTT-826, VTT-827, VTT-828,
-VTT-829, VTT-830.
+VTT-829, VTT-847, VTT-848, VTT-849, VTT-850, VTT-856, VTT-857, VTT-858,
+VTT-861.

@@ -219,11 +219,16 @@ as the window's ruleset declares, by `client/test/panel-sheet.test.ts`,
 `client/test/spectator-view.test.ts`,
 `client/test/qa-panel-sheet.test.ts`, `client/test/sheet.test.ts`,
 `client/test/qa-sheet-model.test.ts`, `client/test/app.test.ts` and
-`client/e2e/table.spec.ts` (VTT-836 to VTT-846).
+`client/e2e/table.spec.ts` (VTT-836 to VTT-846); and that an ability's
+button is titled by its description and its cost line, by
+`client/test/panel-sheet.test.ts`, `client/test/app.test.ts`,
+`client/test/spectator-view.test.ts`, `client/test/qa-panel-sheet.test.ts`,
+`client/test/qa-ability-title.test.ts` and `client/e2e/table.spec.ts`
+(VTT-854, VTT-855).
 
 ## Principles served
 
-Principles 7, 11, 12, 13, 14, 22, 23 and 27 of `docs/blueprint.md`:
+Principles 7, 11, 12, 13, 14, 22, 23, 27 and 35 of `docs/blueprint.md`:
 
 - **7.** A grant, a revocation, a change of role, a give or a take reaches
   the abilities a player's window offers without a reload.
@@ -238,8 +243,12 @@ Principles 7, 11, 12, 13, 14, 22, 23 and 27 of `docs/blueprint.md`:
   other listed member's sends nothing.
 - **22.** A reload keeps the viewpoint.
 - **23.** With a sheet declared, the panel draws a character's sheet as the
-  window's ruleset lays it out, and invents no grouping of its own.
+  window's ruleset lays it out, and invents no grouping of its own; with a
+  sheet or without, it writes no word of its own for an ability that spends
+  no resource.
 - **27.** The panel offers a character only the abilities its sheet names.
+- **35.** An ability's button is titled by the ruleset's description of
+  it, so a player can read what an ability does where they choose it.
 
 ## How it works
 
@@ -743,7 +752,9 @@ draws the sheet `sheetFor` (`client/src/player.ts`) computes for that
 character from the window's abilities and properties and the sheet and
 conditions the window's newest `/api/ruleset` answer gave (`layout` in
 `startSession`; an answer without either reads as none), and an answer to an
-older read arriving after it changes neither (VTT-845).
+older read arriving after it changes neither (VTT-845). It keeps that
+answer's `freeUsageName` in `layout` beside them in the same way, an answer
+without it read as none (VTT-855).
 - **Pages.** With a sheet of more than one page it draws one `.tab` per
   page in `.tabs`, named and ordered as declared, and shows the first page
   until a tab is clicked; it keeps the page shown in `PlayerUIState.page`,
@@ -819,11 +830,17 @@ abilities and the properties with no log, by the role `/api/me` last gave
   token's chips stay sorted by key. Every window draws a disc's condition
   dots, in the order the fold applied them (VTT-835). The Events
   panel's line of a `resourceChanged` reads the actor, the
-  resource so named, ` → ` and the new value. On the panel, a resource
-  ability's button is titled the resource so named, a space and its
-  `current/max` on the acting actor's sheet when the sheet holds it,
-  `, costs ` and the cost, and ` — not enough` when the actor cannot
-  afford it, and an at-will ability's `at will` (VTT-844).
+  resource so named, ` → ` and the new value. On the panel, an ability's
+  button is titled by its non-empty description and its non-empty cost
+  line, joined by a line break, the description first, and is untitled
+  with neither (`buttonTitle`, VTT-854); a description's own line breaks
+  stand as written. A resource ability's cost line is the resource so
+  named, a space and its `current/max` on the acting actor's sheet when
+  the sheet holds it, `, costs ` and the cost, and ` — not enough` when the
+  actor cannot afford it (VTT-844); the cost line of an ability that
+  spends no resource is the `freeUsageName` of `layout`, and none when it
+  is absent or empty, so the panel writes no word of its own for it
+  (VTT-855).
 
 A player's chips and the perch's buttons name a party member as the
 `WatchableChanged` set names it, and a DM's or an agent's chips an actor as
@@ -1155,4 +1172,4 @@ VTT-771, VTT-772, VTT-773, VTT-774, VTT-788, VTT-789, VTT-805,
 VTT-806, VTT-807, VTT-808, VTT-809, VTT-810, VTT-812, VTT-813, VTT-814,
 VTT-815, VTT-816, VTT-817, VTT-818, VTT-819, VTT-820, VTT-821, VTT-822,
 VTT-823, VTT-834, VTT-835, VTT-836, VTT-837, VTT-838, VTT-839, VTT-840,
-VTT-841, VTT-842, VTT-843, VTT-844, VTT-845, VTT-846.
+VTT-841, VTT-842, VTT-843, VTT-844, VTT-845, VTT-846, VTT-854, VTT-855.
