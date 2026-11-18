@@ -1,6 +1,7 @@
 {
   "id": "rally",
   "name": "Rally",
+  "description": "Rally yourself or a creature within reach, with no attack roll: they regain hit points plus their Constitution.",
   "usage": "at_will",
   "compose": [
     { "atom": "melee-delivery", "bind": { "reach": 1 } },

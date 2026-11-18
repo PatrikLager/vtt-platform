@@ -1,6 +1,7 @@
 {
   "id": "crossbow-shot",
   "name": "Crossbow Shot",
+  "description": "Shoot a creature at range with a crossbow, rolling Dexterity against its Armor Class; a hit deals damage.",
   "usage": "at_will",
   "compose": [
     { "atom": "ranged-delivery", "bind": { "distance": 15, "targets": 1 } },

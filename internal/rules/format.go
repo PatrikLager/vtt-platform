@@ -26,7 +26,7 @@ type Ruleset struct {
 	// or nil when the ruleset declares none (VTT-824).
 	Sheet []SheetPage
 
-	// FreeUsageName is the ruleset's word for an ability that spends no resource, or none (VTT-856).
+	// FreeUsageName is the ruleset's name for free usage, or none (VTT-856).
 	FreeUsageName string
 
 	// Conditions is keyed by its declared id. Load rejects duplicate ids

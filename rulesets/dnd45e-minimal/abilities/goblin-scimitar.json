@@ -1,6 +1,7 @@
 {
   "id": "goblin-scimitar",
   "name": "Goblin Scimitar",
+  "description": "Slash a creature within reach with a scimitar, rolling Dexterity against its Armor Class; a hit deals damage.",
   "usage": "at_will",
   "compose": [
     { "atom": "melee-delivery", "bind": { "reach": 1 } },

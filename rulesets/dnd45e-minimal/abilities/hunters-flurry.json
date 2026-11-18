@@ -1,6 +1,7 @@
 {
   "id": "hunters-flurry",
   "name": "Hunter's Flurry",
+  "description": "Loose a volley at range that can strike more than one creature, rolling Dexterity against each one's Armor Class; a hit deals damage plus your Dexterity, and even a miss grazes for part of it.",
   "usage": { "limited": { "resource": "flurry_uses", "cost": 1 } },
   "compose": [
     { "atom": "ranged-delivery", "bind": { "distance": 10, "targets": 2 } },

@@ -1,6 +1,7 @@
 {
   "id": "fists",
   "name": "Fists",
+  "description": "Throw a punch at a patron within reach, rolling Brawn against their Footing; a hit spills Drink on them.",
   "usage": "at_will",
   "compose": [
     { "atom": "brawl-reach", "bind": { "reach": 1 } },

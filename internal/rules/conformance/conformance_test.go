@@ -2,6 +2,7 @@ package conformance_test
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -324,5 +325,34 @@ func TestConformanceOverRulesetsGlob(t *testing.T) {
 				t.Errorf("Run(%s): %v", dir, err)
 			}
 		})
+	}
+}
+
+// VTT-850
+func TestEveryShippedAbilityCarriesADescriptionWithNoDigit(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "..", "..", "rulesets", "*", "abilities", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no ability under rulesets/ to hold to a description")
+	}
+	for _, f := range files {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ability struct {
+			Description *string `json:"description"`
+		}
+		if err := json.Unmarshal(raw, &ability); err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		switch {
+		case ability.Description == nil || *ability.Description == "":
+			t.Errorf("%s declares no description", f)
+		case strings.ContainsAny(*ability.Description, "0123456789"):
+			t.Errorf("%s's description holds a digit: %q", f, *ability.Description)
+		}
 	}
 }

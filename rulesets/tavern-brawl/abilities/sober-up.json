@@ -1,6 +1,7 @@
 {
   "id": "sober-up",
   "name": "Sober Up",
+  "description": "Sober yourself up: all your Drink drains away, which clears Dazed by Ale.",
   "usage": "at_will",
   "compose": [
     { "atom": "brawl-reach", "bind": { "reach": 0 } },

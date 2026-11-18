@@ -1,6 +1,7 @@
 {
   "id": "goblin-shortbow",
   "name": "Goblin Shortbow",
+  "description": "Shoot a creature at range with a shortbow, rolling Dexterity against its Armor Class; a hit deals damage.",
   "usage": "at_will",
   "compose": [
     { "atom": "ranged-delivery", "bind": { "distance": 10, "targets": 1 } },

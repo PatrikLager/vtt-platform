@@ -1,6 +1,7 @@
 {
   "id": "longsword-strike",
   "name": "Longsword Strike",
+  "description": "Swing a longsword at a creature within reach, rolling Strength against its Armor Class; a hit deals damage plus your Strength.",
   "usage": "at_will",
   "compose": [
     { "atom": "melee-delivery", "bind": { "reach": 1 } },

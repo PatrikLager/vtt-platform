@@ -1,6 +1,7 @@
 {
   "id": "chair-swing",
   "name": "Chair Swing",
+  "description": "Swing a chair at a patron within reach, rolling Brawn against their Footing; a hit spills Drink on them and leaves them Dazed by Ale.",
   "usage": { "limited": { "resource": "stamina", "cost": 1 } },
   "compose": [
     { "atom": "brawl-reach", "bind": { "reach": 1 } },

@@ -1,6 +1,7 @@
 {
   "id": "staggering-blow",
   "name": "Staggering Blow",
+  "description": "Swing at a creature within reach, rolling Strength against its Fortitude; a hit deals damage plus your Strength and leaves it Dazed.",
   "usage": "at_will",
   "compose": [
     { "atom": "melee-delivery", "bind": { "reach": 1 } },

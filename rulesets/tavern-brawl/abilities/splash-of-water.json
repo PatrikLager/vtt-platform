@@ -1,6 +1,7 @@
 {
   "id": "splash-of-water",
   "name": "Splash of Water",
+  "description": "Splash water on a patron within reach to clear Dazed by Ale, however much Drink is still on them.",
   "usage": "at_will",
   "compose": [
     { "atom": "brawl-reach", "bind": { "reach": 1 } },
