@@ -6,7 +6,7 @@
 
 import type { State } from "../state";
 import type { Participant } from "../session";
-import type { Ability, AdventureMeta, JoinLink, MapMeta, Property, Roster } from "../metadata";
+import type { Ability, AdventureMeta, ConditionDef, JoinLink, MapMeta, Property, Roster } from "../metadata";
 import { ActorKind, NoteVisibility } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
@@ -247,6 +247,8 @@ export interface DMDeps {
   abilities: readonly Ability[];
   /** The ruleset's properties, naming a resource a give asks the value of (VTT-806). */
   properties?: readonly Property[] | undefined;
+  /** The ruleset's conditions, naming a condition a removal button removes (VTT-864). */
+  conditions?: readonly ConditionDef[] | undefined;
   guideFor: (id: string) => Promise<string | null>;
   /**
    * The shared join link, or null when there is none to show.
@@ -556,11 +558,13 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
   );
 
   // --- conditions, straight off the actors that have them ---
+  const names = namer(d.st, [], true, d.abilities, d.properties, d.conditions);
   const condRow: HTMLElement[] = [];
   for (const [actor, list] of Object.entries(d.st.Conditions)) {
+    const held = d.st.Actors[actor]?.name || actor;
     for (const c of list) {
       condRow.push(
-        button(`${actor}: ${c.ID} ✕`, () => d.send(removeCondition(actor, c.ID)), "remove-condition"),
+        button(`${held}: ${names.condition(c.ID)} ✕`, () => d.send(removeCondition(actor, c.ID)), "remove-condition"),
       );
     }
   }
@@ -568,7 +572,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
 
   // --- abilities: what each sheet names, given and taken (VTT-730) ---
   const abilityRows: HTMLElement[] = [];
-  const named = namer(d.st, [], true, d.abilities, d.properties).resource;
+  const named = names.resource;
   for (const a of Object.values(d.st.Actors).sort((x, y) => (x.actorId < y.actorId ? -1 : 1))) {
     const row = el("div", "ability-actor");
     row.dataset["actor"] = a.actorId;

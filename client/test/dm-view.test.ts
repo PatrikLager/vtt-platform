@@ -3,7 +3,7 @@ import "./support/dom"; // see that module: registers once, keeps real fetch/Web
 import { test, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { newState, type State } from "../src/state";
 import { ActorKind, NoteVisibility } from "../../contract/gen/ts/vtt/v1/events_pb";
-import type { Roster, MapMeta } from "../src/metadata";
+import type { ConditionDef, Roster, MapMeta } from "../src/metadata";
 import { renderDMConsole } from "../src/view/dm";
 import joinURL from "../../contract/testdata/join_url_format.json";
 import {
@@ -21,6 +21,7 @@ function harness(
     participants?: { participantId: string; displayName: string }[];
     roster?: Roster[];
     doorsArmed?: boolean;
+    conditions?: ConditionDef[];
     // What the server answers each command: a result, "held" until the test
     // calls release(), or an Error the send rejects with. ok() when unset.
     answer?: CommandResult | "held" | Error;
@@ -51,6 +52,7 @@ function harness(
     adventures: opts.adventures ?? [{ id: "adv-1", name: "Goblin Ambush" }],
     maps: opts.maps ?? [],
     abilities: [],
+    conditions: opts.conditions,
     guideFor: async () => (opts.guide === undefined ? "# guide" : opts.guide),
     participants: opts.participants ?? [],
     // The sharing panel is exercised by its own tests below; these existing
@@ -178,6 +180,7 @@ test("no control in the DM console retracts anything", () => {
 
 // --- conditions -------------------------------------------------------------
 
+// VTT-864
 test("a condition on an actor gets a removal button that sends removeCondition", () => {
   const st = newState();
   st.Actors["a1"] = {
@@ -185,8 +188,57 @@ test("a condition on an actor gets a removal button that sends removeCondition",
   };
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 3 }];
   const h = harness(st);
-  h.button("a1: dazed ✕")!.click();
+  h.button("A: dazed ✕")!.click();
   expect(h.sent[0]!.command.case).toBe("removeCondition");
+  expect(h.sent[0]!.command.value).toMatchObject({ actorId: "a1", conditionId: "dazed" });
+});
+
+const CONSOLE_CONDITIONS: ConditionDef[] = [
+  { id: "marked", name: "Marked", description: "" },
+  { id: "dazed", name: "Dazed", description: "Slow to act." },
+];
+
+function conditionsOn(names: Record<string, string | undefined>): State {
+  const st = newState();
+  st.Scenes["s1"] = { ID: "s1", Name: "Hall", GridWidth: 4, GridHeight: 4 };
+  for (const [id, name] of Object.entries(names)) {
+    if (name !== undefined) {
+      st.Actors[id] = {
+        actorId: id, name, moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.NON_PARTY, abilityIds: [],
+      };
+    }
+    st.Conditions[id] = [{ ID: "dazed", Source: "dm", AppliedSeq: 3 }, { ID: "prone", Source: "dm", AppliedSeq: 4 }];
+  }
+  return st;
+}
+
+const removalLabels = (h: ReturnType<typeof harness>) =>
+  Array.from(h.node.querySelectorAll<HTMLButtonElement>('[data-action="remove-condition"]'), (b) => b.textContent);
+
+// VTT-864
+test("a removal button names the actor by its name in the fold and the condition by the window's list", () => {
+  const st = conditionsOn({ a1: "Lera" });
+  st.Tokens["t1"] = { ID: "t1", SceneID: "s1", ActorID: "a1", X: 0, Y: 0, GMName: "The Scout" };
+  expect(removalLabels(harness(st, { conditions: CONSOLE_CONDITIONS }))).toEqual(["Lera: Dazed ✕", "Lera: prone ✕"]);
+});
+
+// VTT-864
+test("a removal button names an actor with an empty name, or one the fold lacks, by its id", () => {
+  expect(removalLabels(harness(conditionsOn({ a1: "", a2: undefined }), { conditions: CONSOLE_CONDITIONS })))
+    .toEqual(["a1: Dazed ✕", "a1: prone ✕", "a2: Dazed ✕", "a2: prone ✕"]);
+});
+
+// VTT-864
+test("with no list a removal button names the condition by its id", () => {
+  expect(removalLabels(harness(conditionsOn({ a1: "Lera" })))).toEqual(["Lera: dazed ✕", "Lera: prone ✕"]);
+});
+
+// VTT-864
+test("a removal button named by the list still sends the actor's and the condition's ids", () => {
+  const h = harness(conditionsOn({ a1: "Lera" }), { conditions: CONSOLE_CONDITIONS });
+  h.button("Lera: Dazed ✕")!.click();
+  expect(h.sent[0]!.command.case).toBe("removeCondition");
+  expect(h.sent[0]!.command.value).toMatchObject({ actorId: "a1", conditionId: "dazed" });
 });
 
 test("with no conditions the removal group is absent entirely", () => {

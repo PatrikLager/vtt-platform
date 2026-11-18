@@ -275,8 +275,8 @@ client/src/view/dm.ts  ArrayDeclaration  offset=46  span=2  nth=1  copies=1  ["S
 # kills both, so they have no entry.
 
 client/src/view/dm.ts  BooleanLiteral  offset=31  span=4  nth=1  copies=1  false
-    code: const named = namer(d.st, [], true, d.abilities, d.properties).resource;
-    The namer the Abilities group builds only to name a resource, its `dm` argument `true` -> `false`. The call keeps nothing of the namer but `resource`, and `resource` reads `properties` alone: `dm` reaches only the namer's token and actor names and its `dm` member, and this call reads none of them. Built with either value, the namer runs the same lookups over State.Tokens and over the log, which is `[]` here, and neither throws. So every value field and every refusal of a give names the resource as under the original (VTT-806). WHOEVER MAKES namer's `resource` DEPEND ON `dm`, DIRECTLY OR THROUGH ANYTHING THE NAMER BUILDS FROM IT, RE-JUDGES THIS ENTRY: its premise is in client/src/view/naming.ts, and no gate asks.
+    code: const names = namer(d.st, [], true, d.abilities, d.properties, d.conditions);
+    The namer the console builds to name a resource in the Abilities group and a condition on a removal button, its `dm` argument `true` -> `false`. The console reads nothing of the namer but `resource` and `condition`, and each reads its own list alone, `properties` and `conditions`: `dm` reaches only the namer's token and actor names and its `dm` member, and the console reads none of them. Built with either value, the namer runs the same lookups over State.Tokens and over the log, which is `[]` here, and neither throws. So every value field and every refusal of a give names the resource, and every removal button names the condition, as under the original (VTT-806, VTT-864). WHOEVER MAKES namer's `resource` OR `condition` DEPEND ON `dm`, DIRECTLY OR THROUGH ANYTHING THE NAMER BUILDS FROM IT, RE-JUDGES THIS ENTRY: its premise is in client/src/view/naming.ts, and no gate asks.
 
 client/src/view/dm.ts  StringLiteral  offset=38  span=2  nth=1  copies=1  "Stryker was here!"
     code: const now = int32((draft[current] ?? "").trim());
