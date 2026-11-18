@@ -2,13 +2,18 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PatrikLager/vtt-platform/internal/rules/schema/ability.schema.json",
   "title": "Ability composition (abilities/*.json)",
-  "description": "One usable ability as a composition: id/name/usage (plain fields — spec 2026-07-25-format-v2-composition-design.md §3: \"usage stays a plain ability field\") plus a compose list of atom refs + param bindings, flattened into a CompiledPower at load (internal/rules/load.go's loadCompositions + internal/rules/compile.go). This document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
+  "description": "One usable ability as a composition: id/name/usage and an optional description (plain fields — spec 2026-07-25-format-v2-composition-design.md §3: \"usage stays a plain ability field\") plus a compose list of atom refs + param bindings, flattened into a CompiledPower at load (internal/rules/load.go's loadCompositions + internal/rules/compile.go). This document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
   "type": "object",
   "required": ["id", "name", "usage", "compose"],
   "additionalProperties": false,
   "properties": {
     "id": { "type": "string", "minLength": 1, "description": "At most 128 bytes of UTF-8." },
     "name": { "type": "string", "minLength": 1 },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional. The ruleset's own words for what the ability does, for a player and for the agent. Nothing checks what it says. When present, it must not be empty."
+    },
     "usage": {
       "description": "Either the bare string \"at_will\", or an object spending a declared resource.",
       "oneOf": [

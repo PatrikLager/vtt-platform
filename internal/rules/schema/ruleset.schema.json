@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PatrikLager/vtt-platform/internal/rules/schema/ruleset.schema.json",
   "title": "Ruleset manifest (ruleset.json)",
-  "description": "The top-level manifest of a rulesets/<id>/ directory: identity, format version, every property the ruleset's actors carry, each named in the table's words, and, optionally, how a character's sheet is laid out. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
+  "description": "The top-level manifest of a rulesets/<id>/ directory: identity, format version, every property the ruleset's actors carry, each named in the table's words, and, optionally, how a character's sheet is laid out and the name for an ability that spends no resource. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
   "type": "object",
   "required": [
     "id",
@@ -97,6 +97,11 @@
           }
         }
       }
+    },
+    "free_usage_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional. What the table calls an ability that spends no resource. When present, it must not be empty."
     },
     "sheet": {
       "type": "array",

@@ -236,7 +236,7 @@ func TestAnAbilityWhoseUsageNoSectionShowsIsRefused(t *testing.T) {
 	expectSheetRefusal(t, s, "sheet", `"stand-down"`)
 }
 
-// VTT-830
+// VTT-861
 func TestAFieldTheSheetDoesNotDefineIsRefused(t *testing.T) {
 	cases := []struct {
 		name, word string

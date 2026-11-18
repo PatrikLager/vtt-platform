@@ -143,7 +143,7 @@ func compilePower(rs *Ruleset, atoms map[string]*AtomDef, ca *compositionAbility
 	}
 
 	return &CompiledPower{
-		ID: ca.ID, Name: ca.Name,
+		ID: ca.ID, Name: ca.Name, Description: ca.Description,
 		Usage: ca.Usage, Targeting: targeting,
 		Resolution: resolution, BranchOutcomes: branchOutcomes, Effects: effects,
 	}, nil

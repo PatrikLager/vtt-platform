@@ -26,6 +26,9 @@ type Ruleset struct {
 	// or nil when the ruleset declares none (VTT-824).
 	Sheet []SheetPage
 
+	// FreeUsageName is the ruleset's word for an ability that spends no resource, or none (VTT-856).
+	FreeUsageName string
+
 	// Conditions is keyed by its declared id. Load rejects duplicate ids
 	// (within and across files) before the map is populated, so every
 	// entry here is unique by construction.
@@ -157,6 +160,8 @@ type EffectTemplate struct {
 // AtomDef/Contribution.
 type CompiledPower struct {
 	ID, Name string
+	// Description is the ruleset's words for the ability, or none (VTT-847).
+	Description string
 
 	Usage     Usage
 	Targeting Targeting

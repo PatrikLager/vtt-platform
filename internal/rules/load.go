@@ -94,6 +94,7 @@ func loadV2(dir string, manifest *loadedManifest) (*Ruleset, error) {
 		return nil, err
 	}
 	rs.Sheet = sheet
+	rs.FreeUsageName = manifest.freeUsageName
 	return rs, nil
 }
 
@@ -106,6 +107,8 @@ type manifestJSON struct {
 	Properties    []propertyJSON `json:"properties"`
 	// A pointer, so that "sheet": [] is told apart from no sheet (VTT-825).
 	Sheet *[]sheetPageJSON `json:"sheet"`
+	// A pointer, so that "" is told apart from no name (VTT-857).
+	FreeUsageName *string `json:"free_usage_name"`
 }
 
 type sheetPageJSON struct {
@@ -152,6 +155,7 @@ type loadedManifest struct {
 	properties    []Property
 	path          string
 	sheet         *[]sheetPageJSON
+	freeUsageName string
 }
 
 // checkFormatVersion refuses any format_version but "3" (VTT-616). It reads
@@ -192,6 +196,13 @@ func loadManifest(path string) (*loadedManifest, error) {
 	if raw.Name == "" {
 		return nil, fieldErr(path, "name", "must not be empty")
 	}
+	freeUsageName := ""
+	if raw.FreeUsageName != nil {
+		if *raw.FreeUsageName == "" {
+			return nil, fieldErr(path, "free_usage_name", "must not be empty")
+		}
+		freeUsageName = *raw.FreeUsageName
+	}
 	if err := checkManifestBounds(path, &raw); err != nil {
 		return nil, err
 	}
@@ -213,7 +224,7 @@ func loadManifest(path string) (*loadedManifest, error) {
 
 	return &loadedManifest{
 		ID: raw.ID, Name: raw.Name, FormatVersion: raw.FormatVersion, properties: props,
-		path: path, sheet: raw.Sheet,
+		path: path, sheet: raw.Sheet, freeUsageName: freeUsageName,
 	}, nil
 }
 
@@ -433,7 +444,7 @@ func (u *Usage) UnmarshalJSON(data []byte) error {
 }
 
 // UnmarshalJSON decodes a ShownUsage from the bare string "at_will" or an
-// object {"spends": "<resource key>"}, refusing any other field (VTT-830).
+// object {"spends": "<resource key>"}, refusing any other field (VTT-861).
 func (u *ShownUsage) UnmarshalJSON(data []byte) error {
 	var asString string
 	if err := json.Unmarshal(data, &asString); err == nil {
@@ -1103,14 +1114,15 @@ func decodeOutcomeContribution(path, field string, probe map[string]json.RawMess
 
 // --- abilities/*.json as compositions ---
 
-// compositionAbility is an ability decoded but not yet compiled: id, name
-// and usage are plain fields; Compose is the atom-ref+binding list
+// compositionAbility is an ability decoded but not yet compiled: id, name,
+// description and usage are plain fields; Compose is the atom-ref+binding list
 // compile.go's compileCompositions flattens into a CompiledPower.
 type compositionAbility struct {
-	ID      string
-	Name    string
-	Usage   Usage
-	Compose []composeEntry
+	ID          string
+	Name        string
+	Description string
+	Usage       Usage
+	Compose     []composeEntry
 
 	sourcePath string
 }
@@ -1125,10 +1137,12 @@ type composeEntry struct {
 }
 
 type compositionJSON struct {
-	ID      string             `json:"id"`
-	Name    string             `json:"name"`
-	Usage   Usage              `json:"usage"`
-	Compose []composeEntryJSON `json:"compose"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// A pointer, so that "" is told apart from no description (VTT-848).
+	Description *string            `json:"description"`
+	Usage       Usage              `json:"usage"`
+	Compose     []composeEntryJSON `json:"compose"`
 }
 
 // composeEntryJSON's Bind is json.RawMessage, not map[string]json.RawMessage
@@ -1164,6 +1178,13 @@ func loadCompositions(dir string) (map[string]*compositionAbility, error) {
 		if raw.Name == "" {
 			return nil, fieldErr(path, "name", "must not be empty")
 		}
+		description := ""
+		if raw.Description != nil {
+			if *raw.Description == "" {
+				return nil, fieldErr(path, "description", "must not be empty")
+			}
+			description = *raw.Description
+		}
 		if _, dup := out[raw.ID]; dup {
 			return nil, fieldErr(path, "id", fmt.Sprintf("duplicate ability id %q", raw.ID))
 		}
@@ -1192,7 +1213,7 @@ func loadCompositions(dir string) (map[string]*compositionAbility, error) {
 		}
 
 		out[raw.ID] = &compositionAbility{
-			ID: raw.ID, Name: raw.Name, Usage: raw.Usage, Compose: compose, sourcePath: path,
+			ID: raw.ID, Name: raw.Name, Description: description, Usage: raw.Usage, Compose: compose, sourcePath: path,
 		}
 	}
 	return out, nil

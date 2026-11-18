@@ -1,6 +1,7 @@
 {
   "id": "strike",
   "name": "Strike",
+  "description": "A blow at a creature within reach, against its guard.",
   "usage": "at_will",
   "compose": [
     { "atom": "melee-delivery", "bind": { "reach": 1 } },

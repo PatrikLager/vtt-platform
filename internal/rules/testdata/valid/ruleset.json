@@ -1,6 +1,7 @@
 {
   "id": "test-ruleset",
   "name": "Test Ruleset",
+  "free_usage_name": "Freely",
   "format_version": "3",
   "properties": [
     {
