@@ -25,10 +25,11 @@ export interface PlayerUIState {
   saying?: boolean;
 }
 
-/** PanelLayout is the sheet and the conditions of the window's newest ruleset answer (VTT-845). */
+/** PanelLayout is what the window's newest ruleset answer lays out (VTT-845, VTT-855). */
 export interface PanelLayout {
   sheet?: SheetPage[] | undefined;
   conditions?: ConditionDef[] | undefined;
+  freeUsageName?: string | undefined;
 }
 
 /** A player's switch between the party members the gateway lets them watch (VTT-457). */
@@ -138,7 +139,7 @@ export function renderPlayerPanel(
     const b = el("button", ui.selectedAbilityId === ab.id ? "chip sel" : "chip", ab.name || ab.id);
     // Show an unaffordable ability disabled, never hide it (VTT-695).
     (b as HTMLButtonElement).disabled = !can || tokenId === "";
-    b.title = costTitle(ab, actor, names, can);
+    b.title = buttonTitle(ab.description, costTitle(ab, actor, names, can, layout?.freeUsageName));
     b.addEventListener("click", () => {
       ui.selectedAbilityId = ui.selectedAbilityId === ab.id ? "" : ab.id;
       rerender();
@@ -251,9 +252,14 @@ export function renderPlayerPanel(
   return wrap;
 }
 
-// VTT-844
-function costTitle(ab: Ability, actor: Actor, names: Namer, can: boolean): string {
-  if (ab.usage.kind !== "resource") return "at will";
+// VTT-854
+function buttonTitle(description: string | undefined, costLine: string): string {
+  return [description ?? "", costLine].filter((part) => part !== "").join("\n");
+}
+
+// VTT-844 VTT-855
+function costTitle(ab: Ability, actor: Actor, names: Namer, can: boolean, freeUsageName: string | undefined): string {
+  if (ab.usage.kind !== "resource") return freeUsageName ?? "";
   const key = ab.usage.resource ?? "";
   const held = actor.resources[key];
   const amount = held ? ` ${held.current}/${held.max}` : "";

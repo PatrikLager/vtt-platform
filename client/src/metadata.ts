@@ -8,6 +8,7 @@
 export interface Ability {
   id: string;
   name: string;
+  description?: string;
   range: number;
   maxTargets: number;
   usage: { kind: "atWill" | "resource"; resource?: string; cost?: number };
@@ -50,6 +51,7 @@ export interface RulesetMeta {
   resources: string[];
   properties: Property[];
   sheet: SheetPage[];
+  freeUsageName?: string;
 }
 
 /** Who this token makes you: the participant id every control check is a

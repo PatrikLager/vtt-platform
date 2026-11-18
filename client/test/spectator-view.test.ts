@@ -1709,10 +1709,11 @@ test("the armed ability's chip is marked", () => {
   expect(p.button("Swing").className).toBe("chip sel");
 });
 
-test("an at-will ability is enabled and says so on hover", () => {
+// VTT-855
+test("an ability that spends no resource is enabled, and untitled when the ruleset names no such ability", () => {
   const p = panel(world(), [atWill]);
   expect(p.button("Swing").disabled).toBe(false);
-  expect(p.button("Swing").title).toBe("at will");
+  expect(p.button("Swing").title).toBe("");
 });
 
 test("an affordable resource ability names its cost without the shortfall note", () => {

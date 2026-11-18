@@ -570,7 +570,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
       if (ticket === newestRuleset) {
         abilities = rs.abilities;
         properties = rs.properties;
-        layout = { sheet: rs.sheet, conditions: rs.conditions };
+        layout = { sheet: rs.sheet, conditions: rs.conditions, freeUsageName: rs.freeUsageName };
       }
       tell();
       paint();

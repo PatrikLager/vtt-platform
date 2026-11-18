@@ -203,7 +203,45 @@ test("a resource ability's button names the resource, its current and max, and t
   const none = table();
   delete none.Actors["a1"]!.resources["sparks"];
   expect(btn(none).title).toBe("Sparks, costs 1 — not enough");
-  expect(Array.from(draw().node().querySelectorAll("button")).find((b) => b.textContent === "Rally")!.title).toBe("at will");
+});
+
+const titleOf = (o: Parameters<typeof draw>[0], label: string) =>
+  Array.from(draw(o).node().querySelectorAll("button")).find((b) => b.textContent === label)!.title;
+const described = (descriptions: Record<string, string>): Ability[] =>
+  ABILITIES.map((a) => (a.id in descriptions ? { ...a, description: descriptions[a.id]! } : a));
+
+// VTT-854
+test("a resource ability's title is its description, a line break and its cost line", () => {
+  expect(titleOf({ abilities: described({ flare: "Throws a spark." }) }, "Flare")).toBe("Throws a spark.\nSparks 1/2, costs 1");
+  const spent = table();
+  spent.Actors["a1"]!.resources["sparks"] = { current: 0, max: 2 };
+  expect(titleOf({ st: spent, abilities: described({ flare: "Throws a spark." }) }, "Flare"))
+    .toBe("Throws a spark.\nSparks 0/2, costs 1 — not enough");
+});
+
+// VTT-854
+test("a resource ability with no description, or an empty one, is titled by its cost line alone", () => {
+  expect(titleOf({}, "Flare")).toBe("Sparks 1/2, costs 1");
+  expect(titleOf({ abilities: described({ flare: "" }) }, "Flare")).toBe("Sparks 1/2, costs 1");
+});
+
+// VTT-854 VTT-855
+test("an ability that spends no resource is titled by its description and the name the ruleset gives such an ability", () => {
+  const named = { sheet: SHEET, conditions: CONDS, freeUsageName: "Freely" };
+  const lifts = described({ rally: "Lifts a friend." });
+  expect(titleOf({ layout: named, abilities: lifts }, "Rally")).toBe("Lifts a friend.\nFreely");
+  expect(titleOf({ layout: named }, "Rally")).toBe("Freely");
+  expect(titleOf({ layout: { sheet: SHEET, conditions: CONDS }, abilities: lifts }, "Rally")).toBe("Lifts a friend.");
+  expect(titleOf({ layout: { ...named, freeUsageName: "" }, abilities: lifts }, "Rally")).toBe("Lifts a friend.");
+  expect(titleOf({ layout: { sheet: SHEET, conditions: CONDS } }, "Rally")).toBe("");
+  expect(titleOf({ layout: named, abilities: described({ rally: "" }) }, "Rally")).toBe("Freely");
+  expect(titleOf({ layout: named }, "Flare")).toBe("Sparks 1/2, costs 1");
+  expect(titleOf({ layout: named, abilities: described({ flare: "Throws a spark." }) }, "Flare")).toBe("Throws a spark.\nSparks 1/2, costs 1");
+});
+
+// VTT-854
+test("a description's own line breaks stand in the title as written", () => {
+  expect(titleOf({ abilities: described({ flare: "One.\nTwo." }) }, "Flare")).toBe("One.\nTwo.\nSparks 1/2, costs 1");
 });
 
 // VTT-837 VTT-839

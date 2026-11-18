@@ -483,11 +483,11 @@ test("a resource the window does not declare is named by its key", () => {
   expect(within(section(r.draw(), "Spells"), "button")[0]?.title).toBe("mana 5/8, costs 2");
 });
 
-// VTT-844
-test("an at-will button's title says at will and names no cost", () => {
-  const title = within(section(abilityRig().draw(), "Free"), "button")[0]?.title ?? "";
-  expect(title).toContain("at will");
-  expect(title).not.toContain("costs");
+// VTT-855
+test("a button for an ability that spends no resource is titled by the ruleset's name for it and names no cost", () => {
+  const r = abilityRig();
+  r.layout = { ...r.layout, freeUsageName: "Freely" };
+  expect(within(section(r.draw(), "Free"), "button")[0]?.title).toBe("Freely");
 });
 
 // VTT-846

@@ -1530,6 +1530,54 @@ test("an older ruleset read answering after a newer one sets neither the sheet's
   s?.close();
 });
 
+// VTT-854 VTT-855
+test("a player's ability button is titled by the description and the free-usage name of the newest ruleset answer", async () => {
+  localStorage.setItem("vtt.token", "tok");
+  const reads: ((body: object) => void)[] = [];
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") return json({ participantId: "p", name: "Lera", role: "player" });
+    if (path === "/api/adventures") return json({ adventures: [] });
+    if (path === "/api/ruleset") return new Promise<Response>((answer) => reads.push((body) => answer(json(body))));
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+  const answer = (freeUsageName?: string) => ({
+    id: "r", name: "R", resources: [], properties: [], conditions: [], ...(freeUsageName === undefined ? {} : { freeUsageName }),
+    abilities: [{ id: "jab", name: "Jab", description: "Pokes.", range: 1, maxTargets: 1, usage: { kind: "atWill" } }],
+    sheet: [{ name: "Front", sections: [{ name: "Moves", kind: "abilities", abilities: [{ kind: "atWill" }] }] }],
+  });
+  const title = () => Array.from(r.querySelectorAll<HTMLButtonElement>(".player button")).find((b) => b.textContent === "Jab")?.title;
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  opensOn(sock, "a1");
+  seedTable(sock, "a1", "p", ["jab"]);
+  await settle();
+  reads[0]!(answer("First"));
+  await settle();
+  expect(title()).toBe("Pokes.\nFirst");
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Lera" }, { actorId: "a2", name: "Bo" }] } });
+  await settle();
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Lera" }, { actorId: "a3", name: "Cy" }] } });
+  await settle();
+  expect(reads.length).toBe(3);
+  reads[2]!(answer("Newest"));
+  await settle();
+  reads[1]!(answer("Oldest"));
+  await settle();
+  expect(title()).toBe("Pokes.\nNewest");
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Lera" }, { actorId: "a4", name: "Di" }] } });
+  await settle();
+  expect(reads.length).toBe(4);
+  reads[3]!(answer());
+  await settle();
+  expect(title()).toBe("Pokes.");
+  s?.close();
+});
+
 // VTT-838
 test("a player's switch of viewpoint keeps the sheet's page shown", async () => {
   localStorage.setItem("vtt.token", "tok");

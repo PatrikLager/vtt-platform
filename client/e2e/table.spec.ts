@@ -353,18 +353,24 @@ test("a player's ability reaches the creature they aim it at", async ({ page, br
 
 // After "a DM starts a session and loads an adventure" and "a player's ability
 // reaches the creature they aim it at", whose grant this test reads.
-// VTT-834 VTT-837
+// VTT-834 VTT-837 VTT-854 VTT-855
 test("a player's panel draws the pages the ruleset declares, and only the DM's board draws chips", async ({ page, browser }) => {
-  const declared = JSON.parse(readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), "..", "..", "rulesets", "dnd45e-minimal", "ruleset.json"), "utf8",
-  )) as { sheet: { name: string; sections: { name: string }[] }[] };
+  const shipped = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "rulesets", "dnd45e-minimal");
+  const declared = JSON.parse(readFileSync(join(shipped, "ruleset.json"), "utf8")) as {
+    free_usage_name: string; sheet: { name: string; sections: { name: string }[] }[];
+  };
   expect(declared.sheet.length).toBeGreaterThan(1);
+  const strike = JSON.parse(readFileSync(join(shipped, "abilities", "longsword-strike.json"), "utf8")) as { description: string };
+  expect(strike.description).not.toBe("");
+  expect(declared.free_usage_name).not.toBe("");
 
   await openAs(page, "player");
   const panel = page.locator(".player");
   await panel.locator("button.chip", { hasText: "Human Fighter" }).click();
   await expect(panel.locator("h2")).toHaveText("Human Fighter", { timeout: 10_000 });
   await expect(panel.locator(".tabs .tab")).toHaveText(declared.sheet.map((p) => p.name));
+  await expect(panel.locator("button.chip", { hasText: "Longsword Strike" }))
+    .toHaveAttribute("title", `${strike.description}\n${declared.free_usage_name}`);
   await panel.locator(".tabs .tab", { hasText: declared.sheet[1]!.name }).click();
   await expect(panel.locator(".tabs .tab.sel")).toHaveText(declared.sheet[1]!.name);
   await expect(panel.locator(".sheet h3").first()).toHaveText(declared.sheet[1]!.sections[0]!.name);
