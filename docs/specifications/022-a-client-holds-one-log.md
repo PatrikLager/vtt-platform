@@ -219,8 +219,16 @@ as the window's ruleset declares, by `client/test/panel-sheet.test.ts`,
 `client/test/spectator-view.test.ts`,
 `client/test/qa-panel-sheet.test.ts`, `client/test/sheet.test.ts`,
 `client/test/qa-sheet-model.test.ts`, `client/test/app.test.ts` and
-`client/e2e/table.spec.ts` (VTT-836 to VTT-846); and that an ability's
-button is titled by its description and its cost line, by
+`client/e2e/table.spec.ts` (VTT-836 to VTT-846); that a condition is
+named in its ruleset's words on a disc's dot, in the Story's and the Events
+panel's lines and on the DM console's removal buttons, by the newest read's
+list, by `client/test/naming.test.ts`, `client/test/grid.test.ts`,
+`client/test/spectator-view.test.ts`, `client/test/dm-view.test.ts`,
+`client/test/app.test.ts`, `client/test/qa-condition-names.test.ts`,
+`client/test/qa-console-condition-names.test.ts`,
+`client/test/qa-condition-window.test.ts` and `client/e2e/conditions.spec.ts`
+(VTT-862 to VTT-865); and that an ability's button is titled by its
+description and its cost line, by
 `client/test/panel-sheet.test.ts`, `client/test/app.test.ts`,
 `client/test/spectator-view.test.ts`, `client/test/qa-panel-sheet.test.ts`,
 `client/test/qa-ability-title.test.ts` and `client/e2e/table.spec.ts`
@@ -237,8 +245,8 @@ Principles 7, 11, 12, 13, 14, 22, 23, 27 and 35 of `docs/blueprint.md`:
   ability is given to or taken from a party member they control, and a
   perching player that they play no character.
 - **13.** `namer` never shows a token or an actor by its id, names a resource
-  its ruleset declares by its display name, and `describe` words every
-  payload (VTT-474 to VTT-477, VTT-815).
+  and a condition its ruleset declares by its display name, and `describe`
+  words every payload (VTT-474 to VTT-477, VTT-815, VTT-862, VTT-863).
 - **14.** A player's click on a cell holding the watched one's token and no
   other listed member's sends nothing.
 - **22.** A reload keeps the viewpoint.
@@ -788,18 +796,22 @@ without it read as none (VTT-855).
 ### How the window names what it shows
 
 `namer` in `client/src/view/naming.ts` names each token and actor the window
-shows, except in the panel's chips, its heading and the perch's buttons, and
-a resource
+shows, except where the paragraph after the list below says, and a resource
 as below. `renderSpectator` builds one per paint, from the fold, the log,
-`ViewExtras.dm`, `ViewExtras.abilities` and `ViewExtras.properties`, for a
-disc's initial, its native `title` and its resource chips, its card, and the
-Story and the Events panel; `paint` in `startSession` sets `dm` to `isDM`,
-`properties` to the list the newest `/api/ruleset` read answered, and
-`abilities` to every ability `everRead` holds, those every answer since the
-page loaded gave (above), for every role. `renderPlayerPanel` builds its own
-for its target buttons and its abilities' costs, from the fold, the
-abilities and the properties with no log, by the role `/api/me` last gave
-(VTT-475, VTT-484, by the owner's rulings A-6 and K-1 of 2026-10-22).
+`ViewExtras.dm`, `ViewExtras.abilities`, `ViewExtras.properties` and
+`ViewExtras.conditions`, for a disc's initial, its native `title`, its
+resource chips and its condition dots, its card, and the Story and the
+Events panel; `paint` in `startSession` sets `dm` to `isDM`, `properties`
+to the list the newest `/api/ruleset` read answered, `conditions` to that
+answer's condition list (VTT-865), and `abilities` to every ability
+`everRead` holds, those every answer since the page loaded gave (above),
+for every role. Every role's answer carries every condition the ruleset
+declares (SPEC-012) and a server keeps one ruleset for its life, so no
+earlier answer names a condition the newest does not. `renderPlayerPanel`
+builds its own for its target buttons and its abilities' costs, from the
+fold, the abilities and the properties with no log, by the role `/api/me`
+last gave (VTT-475, VTT-484, by the owner's rulings A-6 and K-1 of
+2026-10-22).
 - **A window that is not a DM's or an agent's** names a token by its `Name`,
   else its actor's name when the actor is a party member, else `a creature`
   (`UNNAMED`).
@@ -823,12 +835,11 @@ abilities and the properties with no log, by the role `/api/me` last gave
   key, and by its key while the window has no properties; a `number`
   property names no resource (VTT-815, VTT-816). The console's value fields
   of a give are named so, by a namer `renderDMConsole` builds from the
-  fold, the abilities and the properties `DMDeps` hands it, with no log
-  (VTT-806). A disc's resource chip, which `tokensOnScene` gives a disc
-  only in a DM's and an agent's window (VTT-834), shows `current/max` and
-  is titled so (`ResourceChip.label`, which `tokensOnScene` sets), and a
-  token's chips stay sorted by key. Every window draws a disc's condition
-  dots, in the order the fold applied them (VTT-835). The Events
+  fold, the abilities, the properties and the conditions `DMDeps` hands it,
+  with no log (VTT-806). A disc's resource chip, which `tokensOnScene`
+  gives a disc only in a DM's and an agent's window (VTT-834), shows
+  `current/max` and is titled so (`ResourceChip.label`, which
+  `tokensOnScene` sets), and a token's chips stay sorted by key. The Events
   panel's line of a `resourceChanged` reads the actor, the
   resource so named, ` → ` and the new value. On the panel, an ability's
   button is titled by its non-empty description and its non-empty cost
@@ -841,12 +852,24 @@ abilities and the properties with no log, by the role `/api/me` last gave
   spends no resource is the `freeUsageName` of `layout`, and none when it
   is absent or empty, so the panel writes no word of its own for it
   (VTT-855).
+- **A condition.** Every window draws a disc's condition dots, in the
+  order the fold applied them (VTT-835). `Namer.condition` names a
+  condition with `nameIn`, the lookup that names an ability: by the name
+  the window's condition list gives it, else, when the list gives it no
+  name or an empty one, by its id, and by its id while the window holds no
+  list. A disc's dot is titled by `ConditionDot.label`, which
+  `tokensOnScene` sets from `Namer.conditionTitle`: the condition so named,
+  then, when the list gives it a non-empty description, a line break and
+  the description as written (VTT-862).
 
 A player's chips and the perch's buttons name a party member as the
 `WatchableChanged` set names it, and a DM's or an agent's chips an actor as
 the fold holds it, each by its id when that name is empty (VTT-404); the
 panel's heading names its character as its chip does, else by the fold's
-name, else by its id (VTT-836). The naming above does not reach them.
+name, else by its id (VTT-836). The naming above does not reach them, nor
+the actor of the console's Abilities rows and removal buttons, which the
+fold names (below), nor a condition on the panel's sheet, which `sheetFor`
+names (VTT-842).
 
 **The card.** Each disc carries a `.token-card`: the naming, then, in a DM's
 or an agent's window, "players see: " and what a player's window names the
@@ -888,8 +911,11 @@ reads
 "The DM whispers to ", its `to_actor_ids` named as the window names actors
 and joined by ", ", then ": " and its text, or its `from_actor_id` so named,
 " whispers to the DM: " and its text, and the Story draws it with the class
-`whisper` (VTT-597). A condition, a note's key and an adventure's id are
-shown as the entry names them, and a resource as `Namer.resource` names it.
+`whisper` (VTT-597). A note's key and an adventure's id are shown as the
+entry names them, a resource as `Namer.resource` names it, and a condition
+as `Namer.condition` names it: a `conditionApplied` line reads the actor,
+` gained ` and the condition, and a `conditionRemoved` line ` lost ` in its
+place (VTT-863).
 
 **The console's rewrite.** `renderDMConsole` in `client/src/view/dm.ts` draws,
 when the world holds a token, a "Describe tokens" group with one row per token
@@ -900,6 +926,16 @@ typed, empty ones included (VTT-464; "Ja, en kontroll i konsolen", the owner's
 ruling of 2026-10-24). Once the server accepts it, the console clears that
 row's drafts and no other row's, so the row's boxes are drawn as with no
 draft (VTT-533).
+
+**The console's conditions.** `renderDMConsole` draws a "Remove condition"
+group whenever an actor of the world holds a condition: one button per
+condition each actor holds (`data-action` `remove-condition`), labelled the
+actor's name in the fold, else its id, `: `, the condition as
+`Namer.condition` names it, and ` ✕`, which sends `removeCondition` with
+the actor's and the condition's ids (VTT-864). Its namer is the one the
+value fields of a give are named by (above), and `app.ts` hands
+`DMDeps.conditions` the conditions of the newest `/api/ruleset` read's
+answer (VTT-865).
 
 **The console's abilities.** `renderDMConsole` draws, after "Remove condition"
 and before "Who controls what", an "Abilities" group whenever the world holds
@@ -1172,4 +1208,5 @@ VTT-771, VTT-772, VTT-773, VTT-774, VTT-788, VTT-789, VTT-805,
 VTT-806, VTT-807, VTT-808, VTT-809, VTT-810, VTT-812, VTT-813, VTT-814,
 VTT-815, VTT-816, VTT-817, VTT-818, VTT-819, VTT-820, VTT-821, VTT-822,
 VTT-823, VTT-834, VTT-835, VTT-836, VTT-837, VTT-838, VTT-839, VTT-840,
-VTT-841, VTT-842, VTT-843, VTT-844, VTT-845, VTT-846, VTT-854, VTT-855.
+VTT-841, VTT-842, VTT-843, VTT-844, VTT-845, VTT-846, VTT-854, VTT-855,
+VTT-862, VTT-863, VTT-864, VTT-865.
