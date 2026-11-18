@@ -194,6 +194,25 @@ func qaRRPropertyCount(t *testing.T, body []byte) int {
 	return len(doc.Properties)
 }
 
+func qaRRServesDescriptionAndFreeUsageName(t *testing.T, body []byte) bool {
+	t.Helper()
+	var doc struct {
+		FreeUsageName string `json:"freeUsageName"`
+		Abilities     []struct {
+			Description string `json:"description"`
+		} `json:"abilities"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		t.Fatalf("route body: %v", err)
+	}
+	for _, a := range doc.Abilities {
+		if a.Description != "" {
+			return doc.FreeUsageName != ""
+		}
+	}
+	return false
+}
+
 // VTT-621
 func TestQARRGetRulesetReturnsTheRouteBodyVerbatim(t *testing.T) {
 	for _, dir := range qaRRRulesetDirs {
@@ -208,6 +227,9 @@ func TestQARRGetRulesetReturnsTheRouteBodyVerbatim(t *testing.T) {
 			}
 			if filepath.Base(dir) == "dnd45e-minimal" && qaRRSheetPageCount(t, want) == 0 {
 				t.Fatalf("degenerate fixture: the route serves no sheet")
+			}
+			if filepath.Base(dir) == "dnd45e-minimal" && !qaRRServesDescriptionAndFreeUsageName(t, want) {
+				t.Fatalf("degenerate fixture: the route serves no ability description or freeUsageName")
 			}
 			if got != string(want) {
 				t.Errorf("get_ruleset text differs from the route body\n got %q\nwant %q", got, want)

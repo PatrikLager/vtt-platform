@@ -97,11 +97,12 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 }
 
 type abilityJSON struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	Range      int       `json:"range"`
-	MaxTargets int       `json:"maxTargets"`
-	Usage      usageJSON `json:"usage"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Range       int       `json:"range"`
+	MaxTargets  int       `json:"maxTargets"`
+	Usage       usageJSON `json:"usage"`
 }
 
 type usageJSON struct {
@@ -117,13 +118,14 @@ type conditionJSON struct {
 }
 
 type rulesetJSON struct {
-	ID         string          `json:"id"`
-	Name       string          `json:"name"`
-	Abilities  []abilityJSON   `json:"abilities"`
-	Conditions []conditionJSON `json:"conditions"`
-	Resources  []string        `json:"resources"`
-	Properties []propertyJSON  `json:"properties"`
-	Sheet      []sheetPageJSON `json:"sheet"`
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	Abilities     []abilityJSON   `json:"abilities"`
+	Conditions    []conditionJSON `json:"conditions"`
+	Resources     []string        `json:"resources"`
+	Properties    []propertyJSON  `json:"properties"`
+	Sheet         []sheetPageJSON `json:"sheet"`
+	FreeUsageName string          `json:"freeUsageName,omitempty"`
 }
 
 // VTT-831
@@ -165,7 +167,7 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.ruleset != nil {
 		rs := s.ruleset
-		out.ID, out.Name = rs.ID, rs.Name
+		out.ID, out.Name, out.FreeUsageName = rs.ID, rs.Name, rs.FreeUsageName
 
 		reads := s.abilitiesReadBy(who)
 		for _, p := range rs.Compiled {
@@ -173,10 +175,11 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			a := abilityJSON{
-				ID:         p.ID,
-				Name:       p.Name,
-				Range:      p.Targeting.Range,
-				MaxTargets: p.Targeting.MaxTargets,
+				ID:          p.ID,
+				Name:        p.Name,
+				Description: p.Description,
+				Range:       p.Targeting.Range,
+				MaxTargets:  p.Targeting.MaxTargets,
 			}
 			switch {
 			case p.Usage.Limited != nil:

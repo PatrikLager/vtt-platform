@@ -100,3 +100,44 @@ func TestGetRulesetSaysItAnswersTheDeclaredSheet(t *testing.T) {
 	}
 	t.Fatal("no get_ruleset tool is served")
 }
+
+func getRulesetToolDescription(t *testing.T) string {
+	t.Helper()
+	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
+	cs, cleanup := startSession(t, fs.wsURL())
+	defer cleanup()
+	list, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	for _, tool := range list.Tools {
+		if tool.Name == "get_ruleset" {
+			return tool.Description
+		}
+	}
+	t.Fatal("no get_ruleset tool is served")
+	return ""
+}
+
+// VTT-853
+func TestGetRulesetSaysAnAbilityCarriesTheRulesetsDescriptionOfIt(t *testing.T) {
+	description := getRulesetToolDescription(t)
+	for _, want := range []string{"`description`", "the ruleset's own words for what the ability does",
+		"absent when it gives none"} {
+		if !strings.Contains(description, want) {
+			t.Errorf("get_ruleset's description = %q, want it to say %q", description, want)
+		}
+	}
+}
+
+// VTT-860
+func TestGetRulesetSaysItAnswersTheRulesetsNameForFreeUsage(t *testing.T) {
+	description := getRulesetToolDescription(t)
+	for _, want := range []string{"`freeUsageName`",
+		"the ruleset's name for an ability that spends no resource",
+		"absent when the ruleset gives none"} {
+		if !strings.Contains(description, want) {
+			t.Errorf("get_ruleset's description = %q, want it to say %q", description, want)
+		}
+	}
+}
