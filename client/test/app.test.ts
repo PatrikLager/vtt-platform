@@ -1578,6 +1578,81 @@ test("a player's ability button is titled by the description and the free-usage 
   s?.close();
 });
 
+// VTT-865 VTT-862 VTT-863
+test("a player's window names a condition on its dot and in its Story by its newest ruleset answer", async () => {
+  localStorage.setItem("vtt.token", "tok");
+  const reads: ((body: object) => void)[] = [];
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/me") return json({ participantId: "p", name: "Lera", role: "player" });
+    if (path === "/api/adventures") return json({ adventures: [] });
+    if (path === "/api/ruleset") return new Promise<Response>((answer) => reads.push((body) => answer(json(body))));
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+  const answer = (name: string) => ({
+    id: "r", name: "R", resources: [], properties: [], abilities: [], sheet: [],
+    conditions: [{ id: "dazed", name, description: `${name} slows you.` }],
+  });
+  const dot = () => r.querySelector('[data-token-id="t1"] .dot')?.getAttribute("title");
+  const story = () => r.querySelector(".feed")?.textContent ?? "";
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  opensOn(sock, "a1");
+  seedTable(sock, "a1", "p");
+  sock.deliver(envelope(6, { conditionApplied: { actorId: "a1", conditionId: "dazed" } }));
+  await settle();
+  reads[0]!(answer("First"));
+  await settle();
+  expect(dot()).toBe("First\nFirst slows you.");
+  expect(story()).toContain("Lera gained First");
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Lera" }, { actorId: "a2", name: "Bo" }] } });
+  await settle();
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Lera" }, { actorId: "a3", name: "Cy" }] } });
+  await settle();
+  expect(reads.length).toBe(3);
+  reads[2]!(answer("Newest"));
+  await settle();
+  reads[1]!(answer("Oldest"));
+  await settle();
+  expect(dot()).toBe("Newest\nNewest slows you.");
+  expect(story()).toContain("Lera gained Newest");
+  expect(story()).not.toContain("Oldest");
+  s?.close();
+});
+
+// VTT-865 VTT-862 VTT-863 VTT-864
+test("a DM's window names a condition on its dot, its Story, its Events panel and its removal button by its answer", async () => {
+  localStorage.setItem("vtt.token", "tok");
+  stubMetadata({
+    "/api/me": { participantId: "p", name: "Dee", role: "dm" },
+    "/api/ruleset": {
+      id: "r", name: "R", resources: [], abilities: [], properties: [], sheet: [],
+      conditions: [{ id: "marked", name: "Marked", description: "" }, { id: "dazed", name: "Dazed", description: "Slow to act." }],
+    },
+    "/api/adventures": { adventures: [] },
+  });
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+  sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 8, gridHeight: 8 } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera" } } }));
+  sock.deliver(envelope(4, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }));
+  sock.deliver(envelope(5, { conditionApplied: { actorId: "a1", conditionId: "dazed" } }));
+  await settle();
+  expect(r.querySelector('[data-token-id="t1"] .dot')?.getAttribute("title")).toBe("Dazed\nSlow to act.");
+  expect(r.querySelector(".feed")?.textContent ?? "").toContain("Lera gained Dazed");
+  expect(Array.from(r.querySelectorAll(".ticker .tick"), (n) => n.textContent)).toContain("Lera gained Dazed");
+  expect(Array.from(r.querySelectorAll('[data-action="remove-condition"]'), (b) => b.textContent)).toEqual(["Lera: Dazed ✕"]);
+  s?.close();
+});
+
 // VTT-838
 test("a player's switch of viewpoint keeps the sheet's page shown", async () => {
   localStorage.setItem("vtt.token", "tok");

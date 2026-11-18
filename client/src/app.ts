@@ -408,6 +408,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
             maps,
             abilities,
             properties,
+            conditions: layout.conditions,
             guideFor: (id) => fetchAdventureGuide(location.origin, token, id),
             joinLink,
             roster,
@@ -452,6 +453,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
       dm: isDM,
       abilities: [...everRead.values()],
       properties,
+      conditions: layout.conditions,
       pinnedCard,
       onCardPin: (id) => {
         pinnedCard = pinnedCard === id ? undefined : id;
