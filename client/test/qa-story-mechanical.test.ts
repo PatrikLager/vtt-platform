@@ -207,7 +207,7 @@ function doorLog(eid: boolean): Envelope[] {
 }
 
 for (const role of ROLES) {
-  // VTT-819
+  // VTT-871
   test(`${role.name}: a door opened and closed with an event id is drawn as an event, naming no square`, () => {
     const d = draw(doorLog(true), role);
     expect(d.story).toEqual(["session started — Night one", "a door opened", "a door closed", "a door opened"]);
@@ -221,7 +221,7 @@ for (const role of ROLES) {
     expect(d.story.some((l) => l.includes("door"))).toBe(false);
   });
 
-  // VTT-819 VTT-820
+  // VTT-871 VTT-820
   test(`${role.name}: a door with an event id is drawn and the one behind it with none is not`, () => {
     const log = [...doorLog(true).slice(0, 3), env(4, false, { case: "doorClosed", value: { sceneId: "s1", at: { x: 4, y: 5 } } })];
     const d = draw(log, role);

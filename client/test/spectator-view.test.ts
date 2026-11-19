@@ -1579,7 +1579,7 @@ test("a party member corrected at its first sight draws no line of its sheet or 
   expect(root.querySelector('[data-token-id="t2"]')).not.toBeNull();
 });
 
-// VTT-819 VTT-820 VTT-447
+// VTT-871 VTT-872 VTT-820 VTT-447
 test("the Story draws a door as an event with no square, and none the log corrected, and the Events panel draws each with its square", () => {
   const own = (seq: number, payload: Envelope["payload"]): Envelope =>
     create(EnvelopeSchema, { sequence: BigInt(seq), payload });
@@ -1595,6 +1595,35 @@ test("the Story draws a door as an event with no square, and none the log correc
   expect(Array.from(root.querySelectorAll(".feed .beat p"), (n) => n.textContent)).toEqual(["a door opened", "a door closed"]);
   expect(Array.from(root.querySelectorAll(".ticker .tick"), (n) => n.textContent)).toEqual([
     "a door closed at 3,1", "a door opened at 3,1", "a door closed at 3,1", "a door opened at 3,1", 'scene "The Hall"',
+  ]);
+});
+
+// VTT-871 VTT-872
+test("a door event naming an actor names it as the window names an actor, in the Story without its square and on the Events panel with it", () => {
+  const at = { x: 3, y: 1 };
+  const far = { x: 4, y: 2 };
+  const actor = (seq: number, actorId: string, name: string, kind: ActorKind) =>
+    env(seq, { case: "actorAdded", value: create(ActorAddedSchema, { actor: { actorId, name, kind } }) });
+  const log = [
+    env(1, { case: "sceneCreated", value: create(SceneCreatedSchema, { sceneId: "s1", name: "The Hall", gridWidth: 6, gridHeight: 4 }) }),
+    actor(2, "act-lera", "Lera", ActorKind.PARTY_MEMBER),
+    actor(3, "act-gob", "Grukk", ActorKind.NON_PARTY),
+    actor(4, "act-lurk", "Lurker", ActorKind.NON_PARTY),
+    env(5, { case: "tokenPlaced", value: create(TokenPlacedSchema, {
+      tokenId: "t-gob", sceneId: "s1", actorId: "act-gob", position: { x: 5, y: 1 }, name: "an angry goblin", gmName: "Goblin Cutter",
+    }) }),
+    env(6, { case: "doorOpened", value: create(DoorOpenedSchema, { sceneId: "s1", at, actorId: "act-lera" }) }),
+    env(7, { case: "doorClosed", value: create(DoorClosedSchema, { sceneId: "s1", at, actorId: "act-gob" }) }),
+    env(8, { case: "doorOpened", value: create(DoorOpenedSchema, { sceneId: "s1", at: far, actorId: "act-lurk" }) }),
+  ];
+  const doors = (root: HTMLElement, where: string) =>
+    Array.from(root.querySelectorAll(where), (n) => n.textContent).filter((t) => t?.includes("door"));
+  const player = render(fold(log), log);
+  expect(doors(player, ".feed .beat p")).toEqual(["Lera opened a door", "an angry goblin closed a door", "a creature opened a door"]);
+  const dm = render(fold(log), log, { ticker: true, dm: true });
+  expect(doors(dm, ".feed .beat p")).toEqual(["Lera opened a door", "Goblin Cutter closed a door", "Lurker opened a door"]);
+  expect(doors(dm, ".ticker .tick")).toEqual([
+    "Lurker opened a door at 4,2", "Goblin Cutter closed a door at 3,1", "Lera opened a door at 3,1",
   ]);
 });
 

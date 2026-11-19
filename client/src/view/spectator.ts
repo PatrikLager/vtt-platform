@@ -152,9 +152,9 @@ export function describe(e: Envelope, names: Namer): string {
     case "actorControlRevoked":
       return `control of ${names.actor(p.value.actorId)} taken back`;
     case "doorOpened":
-      return `a door opened at ${square(p.value.at)}`;
+      return `${door(p.value.actorId, "opened", names)} at ${square(p.value.at)}`;
     case "doorClosed":
-      return `a door closed at ${square(p.value.at)}`;
+      return `${door(p.value.actorId, "closed", names)} at ${square(p.value.at)}`;
     case "sceneSeen":
       return "the view changed";
     case "narrationAdded": {
@@ -179,16 +179,21 @@ export function describe(e: Envelope, names: Namer): string {
   }
 }
 
-// Name no square here: describe keeps it for the Events panel (VTT-819).
+// Name no square here: describe keeps it for the Events panel (VTT-871, VTT-872).
 function tell(e: Envelope, names: Namer): string {
-  switch (e.payload.case) {
+  const p = e.payload;
+  switch (p.case) {
     case "doorOpened":
-      return "a door opened";
+      return door(p.value.actorId, "opened", names);
     case "doorClosed":
-      return "a door closed";
+      return door(p.value.actorId, "closed", names);
     default:
       return describe(e, names);
   }
+}
+
+function door(actorId: string, verb: "opened" | "closed", names: Namer): string {
+  return actorId === "" ? `a door ${verb}` : `${names.actor(actorId)} ${verb} a door`;
 }
 
 // Read outcomes, never outcome_summary: the summary carries what the roll was

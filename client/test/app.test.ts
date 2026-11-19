@@ -3916,7 +3916,7 @@ const EVERY_KIND_BARE: [Frame, string][] = [
 
 const storyLines = (r: HTMLElement) => Array.from(r.querySelectorAll(".feed .beat p"), (n) => n.textContent);
 
-// VTT-809 VTT-810 VTT-818 VTT-819 VTT-820 VTT-822 VTT-823 VTT-446 VTT-447
+// VTT-809 VTT-810 VTT-818 VTT-871 VTT-820 VTT-822 VTT-823 VTT-446 VTT-447
 test("every role's Story draws what happens in the game and no mechanical entry, and the DM's and the agent's Events panel draws each", async () => {
   for (const role of ["dm", "agent", "player", "spectator"]) {
     const { r, s, sock } = await dialAs(role);
