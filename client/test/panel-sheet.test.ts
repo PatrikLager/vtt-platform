@@ -172,13 +172,20 @@ test("a value whose key the ruleset does not declare is named by its key, untitl
   const p = draw({ st, layout: { conditions: CONDS } });
   const v = Array.from(p.node().querySelectorAll(".value")).find((x) => x.textContent === "nerve 5");
   expect(v).toBeDefined();
-  expect(v!.hasAttribute("title") ? v!.getAttribute("title") : "").toBe("");
+  expect(v!.hasAttribute("title")).toBe(false);
 });
 
 // VTT-842
 test("conditions are drawn in the order applied, by name and description, else by id", () => {
-  const cs = Array.from(draw().node().querySelectorAll(".condition"), (c) => [c.textContent, c.getAttribute("title") ?? ""]);
-  expect(cs).toEqual([["glum", ""], ["Dazed", "Slow to act."]]);
+  const cs = Array.from(draw().node().querySelectorAll(".condition"), (c) => [c.textContent, c.getAttribute("title")]);
+  expect(cs).toEqual([["glum", null], ["Dazed", "Slow to act."]]);
+});
+
+// VTT-839 VTT-842
+test("a section's values and conditions stand in the list the stylesheet lays out by its class", () => {
+  const sheet = draw().node().querySelector(".sheet")!;
+  expect(Array.from(sheet.querySelectorAll(".values > .value"), (v) => v.textContent)).toEqual(["Vigor 3/10", "Sparks 1/2"]);
+  expect(Array.from(sheet.querySelectorAll(".conditions > .condition"), (c) => c.textContent)).toEqual(["glum", "Dazed"]);
 });
 
 // VTT-843 VTT-846

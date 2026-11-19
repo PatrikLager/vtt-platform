@@ -103,6 +103,16 @@ test("the undeclared page's values follow the properties' order, then undeclared
   ]);
 });
 
+// VTT-840 VTT-841
+test("with no properties, the undeclared page draws each key the actor holds once, its own name included", () => {
+  const a = actor({ attributes: {}, resources: { undefined: { current: 1, max: 2 }, vigor: { current: 3, max: 10 } } });
+  const values = sheetFor(a, [], ABILITIES, undefined, CONDS, undefined)[0]!.sections[0]!;
+  expect(values.kind === "values" && values.values).toEqual([
+    { key: "undefined", name: "undefined", text: "1/2", title: "" },
+    { key: "vigor", name: "vigor", text: "3/10", title: "" },
+  ]);
+});
+
 // VTT-841
 test("a value reads as its property's name and value, titled by its description", () => {
   const front = sheetFor(actor(), [], ABILITIES, PROPS, CONDS, SHEET)[0]!;
