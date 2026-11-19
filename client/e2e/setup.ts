@@ -7,7 +7,7 @@
 // only a browser can tell us is whether the assembled product actually opens.
 
 import { spawnSync, spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +30,7 @@ const REPO = join(HERE, "..", "..");
 // symlinked single-ruleset fixture, because the loader refused any mismatch.
 const ADVENTURES = join(REPO, "adventures");
 const RULESET = join(REPO, "rulesets", "dnd45e-minimal");
+const CELLAR = join(REPO, "campaigns", "example", "maps", "cellar.json");
 
 const STATE = join(tmpdir(), "vtt-e2e-state.json");
 
@@ -44,7 +45,7 @@ function run(bin: string, args: string[]): string {
 let servers: ChildProcess[] = [];
 let binary = "";
 
-async function startTable(): Promise<Fixture> {
+async function startTable(table: string): Promise<Fixture> {
   const dir = mkdtempSync(join(tmpdir(), "vtt-e2e-"));
   const campaign = join(dir, "campaign.db");
 
@@ -85,6 +86,11 @@ async function startTable(): Promise<Fixture> {
   const spectator = mint("Watcher", "spectator");
   const tokens = { dm: dm.token, player: player.token, spectator: spectator.token };
   const ids = { dm: dm.id, player: player.id, spectator: spectator.id };
+  // Serve the shipped cellar to the doors spec alone: it works its door.
+  if (table === "doors") {
+    mkdirSync(join(campaign, "maps"), { recursive: true });
+    copyFileSync(CELLAR, join(campaign, "maps", "cellar.json"));
+  }
 
   // Sequential from a fixed base rather than random: with one server per spec
   // file a collision is no longer a one-in-ninety curiosity, and a predictable
@@ -153,7 +159,7 @@ async function startTable(): Promise<Fixture> {
 export async function startFixtures(names: string[]): Promise<void> {
   const all: Record<string, Fixture> = {};
   for (const n of names) {
-    all[n] = await startTable();
+    all[n] = await startTable(n);
   }
   writeFileSync(STATE, JSON.stringify(all));
 }
