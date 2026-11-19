@@ -54,19 +54,20 @@ export function tokenForActor(st: State, actorId: string): string {
   return t?.ID ?? "";
 }
 
-/**
- * Whether any door in the current scene is one this player could work, the
- * gate for offering the arm-doors toggle at all. Ask mayWorkDoor per door tile
- * rather than re-deriving its geometry here: the two must never drift.
- */
-function mayWorkAnyDoor(st: State, me: Me): boolean {
+// Ask mayWorkDoor per door tile, never its geometry again (VTT-875).
+function mayWorkAnyDoor(st: State, me: Me, actorId: string): boolean {
   const scene = st.Scenes[currentSceneId(st)];
   if (!scene) return false;
   return Object.entries(scene.Tiles ?? {}).some(([key, tile]) => {
     if (tile.Kind !== "door") return false;
     const [x, y] = key.split(",").map(Number);
-    return mayWorkDoor(st, me, { x: x!, y: y! });
+    return mayWorkDoor(st, me, actorId, { x: x!, y: y! });
   });
+}
+
+/** actingActor is the actor a board click moves and a door click names (VTT-873). */
+export function actingActor(st: State, me: Me, ui: PlayerUIState): string {
+  return ui.selectedActorId || (controlledActors(st, me.participantId)[0]?.actorId ?? "");
 }
 
 export function renderPlayerPanel(
@@ -183,15 +184,9 @@ export function renderPlayerPanel(
     wrap.appendChild(el("p", "hint", "Click the board to move."));
   }
 
-  // --- doors ---
-  //
-  // PLAYER ONLY (Task 4): dm and agent already get this from the DM console,
-  // which they also see beside this very panel (app.ts's canAct/isDM both
-  // admit a DM) — offering it here too would be a second control for the
-  // exact same bit. Gated on mayWorkAnyDoor so a player with no controlled
-  // token near any door gets no toggle at all, rather than one whose every
-  // use mayWorkDoor would refuse.
-  if (me.role === "player" && mayWorkAnyDoor(st, me)) {
+  // Offer a player alone the toggle: the DM console carries the DM's and the
+  // agent's (VTT-875).
+  if (me.role === "player" && mayWorkAnyDoor(st, me, actingActor(st, me, ui))) {
     const armBtn = el(
       "button",
       ui.doorsArmed ? "chip sel" : "chip",
@@ -302,9 +297,8 @@ export function moveCommandFor(
   ui: PlayerUIState,
   cell: { x: number; y: number },
 ): ClientCommand | null {
-  const mine = controlledActors(st, me.participantId);
-  if (mine.length === 0) return null;
-  const actorId = ui.selectedActorId || mine[0]!.actorId;
+  if (controlledActors(st, me.participantId).length === 0) return null;
+  const actorId = actingActor(st, me, ui);
   const tokenId = tokenForActor(st, actorId);
   if (tokenId === "") return null;
   // An armed ability means the click is aimed, not a move; targeting is

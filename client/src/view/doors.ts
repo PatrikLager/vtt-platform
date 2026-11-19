@@ -68,35 +68,17 @@ export function currentSceneId(st: State): string {
 }
 
 /**
- * mayWorkDoor mirrors internal/gateway/authz.go's mayWorkDoor (maps-as-
- * geometry spec §6: "hard for players, free for DM") — but FAILS CLOSED
- * where the Go side's early return does not have to. authz.go's own
- * commandRoles table grants open_door/close_door to dm, agent and player
- * only, so Authorize refuses a spectator (or anything else) before
- * mayWorkDoor ever runs there; its `p.Role != identity.RolePlayer` early
- * return is safe only because a spectator can never reach it. This module
- * has no such upstream gate — it IS the only check standing between a role
- * and the control — so it enumerates explicitly: dm and agent pass
- * unconditionally (they author the world and are free of the adjacency
- * rule, the same bypass move_token's ownership check never applies to them
- * either); player takes the adjacency test below; every other role,
- * spectator included, and any role this build has never heard of, is
- * refused. Offering a control a role can never actually use would be
- * exactly the "affordance whose every use is a refusal" this codebase
- * rejects elsewhere.
- *
- * SPATIAL ONLY, deliberately (CLAUDE.md rule 5): this asks WHERE a
- * participant's tokens are, never what edition or ruleset is in play.
- * Adjacency reuses player.ts's withinRange (Chebyshev distance — a diagonal
- * step costs the same as an orthogonal one), matching the Go side's
- * `abs(dx) <= 1 && abs(dy) <= 1` exactly.
+ * mayWorkDoor is whether this viewer may work the door at cell: a DM and an
+ * agent anywhere; a player when actorId is theirs and its token on the
+ * current scene stands at most one square away on each axis (VTT-874); any
+ * other role never. Keep the geometry authz.go's mayWorkDoor's (SPEC-013).
  */
-export function mayWorkDoor(st: State, me: Me, cell: Point): boolean {
+export function mayWorkDoor(st: State, me: Me, actorId: string, cell: Point): boolean {
   if (me.role === "dm" || me.role === "agent") return true;
   if (me.role !== "player") return false;
   const sceneId = currentSceneId(st);
   return Object.values(st.Tokens).some((tok) => {
-    if (tok.SceneID !== sceneId) return false;
+    if (tok.SceneID !== sceneId || tok.ActorID !== actorId) return false;
     const actor = st.Actors[tok.ActorID];
     if (!actor || !actor.controllerIds.includes(me.participantId)) return false;
     return withinRange({ x: tok.X, y: tok.Y }, cell, 1);
@@ -104,21 +86,16 @@ export function mayWorkDoor(st: State, me: Me, cell: Point): boolean {
 }
 
 /**
- * doorCommandFor is what a board click means when the door tool is armed:
- * open a closed door, close an open one, or nothing when the cell holds no
- * door at all or this viewer may not work it.
- *
- * `!armed` returns null unconditionally — a plain click is a move, and
- * deciding that is not this module's business (view/player.ts's
- * moveCommandFor owns it). Door state is read from the folded scene's
- * Tiles/OpenDoors exactly as fold.ts writes them (doorKey(x, y)), so this
- * and the fold always agree on what "a door here" and "open" mean.
+ * doorCommandFor is what an armed board click on cell sends: open or close
+ * the door there, naming actorId for a player and none for a DM or an agent
+ * (VTT-873, VTT-876); null unarmed, off a door, or where mayWorkDoor refuses.
  */
 export function doorCommandFor(
   st: State,
   me: Me,
   armed: boolean,
   cell: Point,
+  actorId: string,
 ): ClientCommand | null {
   if (!armed) return null;
   const sceneId = currentSceneId(st);
@@ -126,6 +103,7 @@ export function doorCommandFor(
   if (!scene) return null;
   const key = doorKey(cell.x, cell.y);
   if (scene.Tiles?.[key]?.Kind !== "door") return null;
-  if (!mayWorkDoor(st, me, cell)) return null;
-  return scene.OpenDoors?.[key] ? closeDoor(sceneId, cell) : openDoor(sceneId, cell);
+  if (!mayWorkDoor(st, me, actorId, cell)) return null;
+  const opener = me.role === "player" ? actorId : "";
+  return scene.OpenDoors?.[key] ? closeDoor(sceneId, cell, opener) : openDoor(sceneId, cell, opener);
 }

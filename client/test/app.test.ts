@@ -1807,6 +1807,103 @@ test("with doors armed, a click on a door square opens it and sends no move", as
   s?.close();
 });
 
+async function playerWithTwoAtADoor(bramAt = { x: 3, y: 3 }) {
+  localStorage.setItem("vtt.token", "tok");
+  stubMetadata({
+    "/api/me": { participantId: "p", name: "Ola", role: "player" },
+    "/api/ruleset": { id: "r", name: "R", abilities: [], conditions: [], resources: [] },
+    "/api/adventures": { adventures: [] },
+  });
+  useFakeSocket();
+  const r = root();
+  const s = boot(r);
+  const sock = FakeSocket.instances[0]!;
+  sock.open();
+  const table = () => {
+    sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
+    sock.deliver(envelope(2, { sceneCreated: {
+      sceneId: "s1", name: "Hall", gridWidth: 4, gridHeight: 4, tiles: { "0,0": { kind: "door", material: "wood", art: "" } },
+    } }));
+    for (const [seq, actorId, name] of [[3, "a1", "Lera"], [5, "a2", "Bram"]] as const) {
+      sock.deliver(envelope(seq, { actorAdded: { actor: { actorId, name } } }));
+      sock.deliver(envelope(seq + 1, { actorControlGranted: { actorId, participantId: "p", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
+    }
+    sock.deliver(envelope(7, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }));
+    sock.deliver(envelope(8, { tokenPlaced: { tokenId: "t2", sceneId: "s1", actorId: "a2", position: bramAt } }));
+  };
+  opensOn(sock, "a1", [["a1", "Lera"], ["a2", "Bram"]]);
+  table();
+  await settle();
+  const switchTo = async (actorId: string) => {
+    sock.deliver({ viewpointChanged: { actorId } });
+    table();
+    await settle();
+  };
+  return { r, s, sock, switchTo };
+}
+
+// VTT-873 VTT-875 VTT-879
+test("a player's armed door click names the character they watch, and a switch to one far from the door withdraws the toggle and disarms", async () => {
+  const { r, s, sock, switchTo } = await playerWithTwoAtADoor();
+  arm(r);
+  clickBoard(r, 90, 10); // cell (0,0), the door, beside Lera
+  await settle();
+  expect(sock.sent.map((f) => JSON.parse(f).openDoor)).toEqual([{ sceneId: "s1", at: {}, actorId: "a1" }]);
+
+  await switchTo("a2");
+  expect(r.querySelector('[data-action="arm-doors"]')).toBeNull();
+  expect(r.querySelector(".armed-label")).toBeNull();
+  clickBoard(r, 90, 10);
+  await settle();
+  expect(JSON.parse(sock.sent[1]!)).toHaveProperty("moveToken");
+  s?.close();
+});
+
+// VTT-879
+test("a switch to another character beside a door leaves the toggle offered and the door tool disarmed", async () => {
+  const { r, s, switchTo } = await playerWithTwoAtADoor({ x: 1, y: 0 });
+  arm(r);
+  await settle();
+  expect(r.querySelector('[data-action="arm-doors"]')!.textContent).toBe("Doors armed");
+  await switchTo("a2");
+  expect(r.querySelector('[data-action="arm-doors"]')!.textContent).toBe("Arm doors");
+  expect(r.querySelector(".grid")!.classList.contains("armed")).toBe(false);
+  s?.close();
+});
+
+// VTT-874
+test("with doors armed, a player's click on a door the watched character does not stand beside sends nothing, whoever else of theirs does", async () => {
+  const { r, s, sock } = await playerWithTwoAtADoor();
+  arm(r);
+  sock.deliver(envelope(9, { tokenMoved: { tokenId: "t1", sceneId: "s1", from: { x: 1, y: 1 }, to: { x: 3, y: 2 } } }));
+  sock.deliver(envelope(10, { tokenMoved: { tokenId: "t2", sceneId: "s1", from: { x: 3, y: 3 }, to: { x: 1, y: 0 } } }));
+  await settle();
+  clickBoard(r, 90, 10); // the door, beside Bram and not Lera, whom the player watches
+  await settle();
+  expect(sock.sent).toEqual([]);
+  s?.close();
+});
+
+// VTT-876
+test("the DM's armed door click names no actor, though a chip selects an actor of theirs", async () => {
+  const { r, s, sock } = await dmTable({});
+  sock.deliver(envelope(2, { sceneCreated: {
+    sceneId: "s1", name: "Hall", gridWidth: 4, gridHeight: 4, tiles: { "0,0": { kind: "door", material: "wood", art: "" } },
+  } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "g1", name: "Grukk" } } }));
+  sock.deliver(envelope(4, { actorControlGranted: { actorId: "g1", participantId: "p-dm", kind: "ACTOR_KIND_NON_PARTY" } }));
+  sock.deliver(envelope(5, { tokenPlaced: { tokenId: "tg", sceneId: "s1", actorId: "g1", position: { x: 1, y: 1 } } }));
+  await settle();
+  byText(r, "Grukk")!.click();
+  await settle();
+  r.querySelector<HTMLButtonElement>('.dm [data-action="arm-doors"]')!.click();
+  await settle();
+  clickBoard(r, 90, 10);
+  await settle();
+  expect(sock.sent.map((f) => JSON.parse(f).openDoor).filter(Boolean)).toEqual([{ sceneId: "s1", at: {} }]);
+  s?.close();
+});
+
 test("with doors disarmed, the same click moves the token instead", async () => {
   const { r, s, sock } = await playerTableWithDoor();
   // Deliberately NOT armed -- doorsArmed starts false.

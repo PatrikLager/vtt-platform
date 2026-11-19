@@ -1,29 +1,8 @@
-// Command construction.
-//
-// Not every builder here carries the same strength of proof. Four —
-// moveToken, useAbility, upsertNote, loadAdventure — are asserted against
-// COMMITTED protojson fixtures in contract/testdata (client/test/
-// commands.test.ts), the same files the Go and TS contract round-trip tests
-// use. That makes THEIR shape a cross-language claim: if the client's idea
-// of one of those four drifts from what the server parses, a test fails
-// instead of a player getting a rejection nobody can explain.
-//
-// The rest rest on weaker ground: a literal shape written by hand in the
-// same test file (self-consistency — it catches the builder disagreeing
-// with itself, not with the server), or a check further away still, such as
-// a view test that only asserts which command.case was sent. openDoor,
-// closeDoor and loadMap (Task 1, 2026-08-30) are in the self-consistency
-// camp, not the fixture one — command-surface.test.ts only proves a
-// same-named function exists, and commands.test.ts checks their wire shape
-// against a literal this file's own author wrote, which is worth widening
-// to a real fixture if these three ever need the cross-language guarantee.
-//
-// Two protojson facts these builders exist to get right:
-//   * int64 fields travel as STRINGS. anchor_from_seq must be "4", not 4.
-//   * empty scalars are OMITTED. A move with no reason must not carry
-//     `"reason": ""`, which is a different shape than the server's fixtures.
-// The generated types handle both, which is precisely why commands are built
-// through them rather than as hand-written object literals.
+// Build commands through the generated types: protojson writes int64 fields
+// as strings and omits empty scalars, as the server's fixtures do. A builder
+// client/test/commands.test.ts checks against a contract/testdata fixture
+// holds the server's shape; one it checks against its own literal holds only
+// its own.
 
 import { create } from "@bufbuild/protobuf";
 import {
@@ -414,24 +393,21 @@ export function setJoinDoor(open: boolean): ClientCommand {
 }
 
 /**
- * OpenDoor / CloseDoor work a door in a WALL, and are not the join door.
- *
- * view/dm.ts renders buttons labelled "Open the door" and "Close the door"
- * already, and they are setJoinDoor — the admissions door for seating people
- * at the table. Two different doors, one word. These carry a scene and a
- * square; that one carries a policy.
+ * OpenDoor and CloseDoor work a door in a wall, never the join door that
+ * setJoinDoor and the console's "Open the door" buttons work. They carry a
+ * scene, a square and the opener, empty for none (VTT-873).
  */
-export function openDoor(sceneId: string, at: Point): ClientCommand {
+export function openDoor(sceneId: string, at: Point, actorId = ""): ClientCommand {
   return create(ClientCommandSchema, {
     requestId: requestId(),
-    command: { case: "openDoor", value: { sceneId, at } },
+    command: { case: "openDoor", value: { sceneId, at, actorId } },
   });
 }
 
-export function closeDoor(sceneId: string, at: Point): ClientCommand {
+export function closeDoor(sceneId: string, at: Point, actorId = ""): ClientCommand {
   return create(ClientCommandSchema, {
     requestId: requestId(),
-    command: { case: "closeDoor", value: { sceneId, at } },
+    command: { case: "closeDoor", value: { sceneId, at, actorId } },
   });
 }
 

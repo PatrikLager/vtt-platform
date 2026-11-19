@@ -460,6 +460,22 @@ test("clicking the toggle flips ui.doorsArmed and repaints", () => {
   expect(repaints).toBe(1);
 });
 
+// VTT-875
+test("the toggle follows the actor a click moves, whatever else of the player's stands beside a door", () => {
+  const st = worldWithTiles({ "0,0": { Kind: "door", Material: "wood", Art: "" } });
+  st.Tokens["t-also"] = { ID: "t-also", SceneID: "s1", ActorID: "also-mine", X: 7, Y: 7 };
+  const offered = (selectedActorId: string) =>
+    renderPlayerPanel(st, me, [], { ...doorUI(), selectedActorId }, async () => ok(), () => {})
+      .querySelector('[data-action="arm-doors"]') !== null;
+  expect(offered("mine")).toBe(true);
+  expect(offered("also-mine")).toBe(false);
+  expect(offered("")).toBe(false);
+  st.Tokens["t-also"] = { ...st.Tokens["t-also"]!, X: 0, Y: 1 };
+  expect(offered("")).toBe(true);
+  st.Tokens["t-also"] = { ...st.Tokens["t-also"]!, SceneID: "s0" };
+  expect(offered("also-mine")).toBe(false);
+});
+
 // --- fix round 1: eight Stryker survivors, four of them in mayWorkAnyDoor's
 // scene pick and the toggle's own render, none of them decorative -----------
 

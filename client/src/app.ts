@@ -13,7 +13,7 @@ import { Auth } from "./auth";
 import { Session, type SheetChange } from "./session";
 import type { WireStatus } from "./wire";
 import { renderSpectator } from "./view/spectator";
-import { renderPlayerPanel, moveCommandFor, playerClickFor, type PanelLayout, type PlayerUIState } from "./view/player";
+import { renderPlayerPanel, moveCommandFor, playerClickFor, actingActor, type PanelLayout, type PlayerUIState } from "./view/player";
 import { doorCommandFor } from "./view/doors";
 import {
   fetchMe, fetchRuleset, fetchAdventures, fetchAdventureGuide, fetchMaps,
@@ -388,11 +388,12 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     const canAct = me !== null && !perches;
     const isDM = me !== null && (me.role === "dm" || me.role === "agent");
     const isPlayer = me !== null && me.role === "player";
-    // A player acts as the character they watch, and an armed ability is
-    // that character's: both follow the ViewpointChanged (VTT-408).
+    // A player acts as the character they watch; a switch disarms its ability
+    // and the door tool (VTT-408, VTT-879).
     if (isPlayer && ui.selectedActorId !== session.viewpoint) {
       ui.selectedActorId = session.viewpoint;
       ui.selectedAbilityId = "";
+      ui.doorsArmed = false;
     }
     const watchable = session.watchable;
     renderSpectator(root, session.state, [...session.events], status, {
@@ -431,7 +432,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
       onCell: canAct
         ? (cell) => {
             const cmd =
-              doorCommandFor(session.state, me!, ui.doorsArmed, cell) ??
+              doorCommandFor(session.state, me!, ui.doorsArmed, cell, actingActor(session.state, me!, ui)) ??
               (ui.doorsArmed
                 ? null
                 : isPlayer

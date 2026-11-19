@@ -547,6 +547,19 @@ test("closeDoor matches the client's own expected shape, scene and square in ord
   });
 });
 
+// VTT-873
+test("openDoor naming an actor matches the committed open_door_command fixture", () => {
+  const cmd = openDoor("cellar", { x: 4, y: 2 }, "act-lera");
+  sameShape(toJson(ClientCommandSchema, cmd) as Record<string, unknown>, fixture("open_door_command.json"));
+});
+
+test("closeDoor naming an actor carries it beside the scene and the square", () => {
+  const cmd = closeDoor("cellar", { x: 4, y: 2 }, "act-lera");
+  sameShape(toJson(ClientCommandSchema, cmd) as Record<string, unknown>, {
+    closeDoor: { sceneId: "cellar", at: { x: 4, y: 2 }, actorId: "act-lera" },
+  });
+});
+
 test("loadMap matches the client's own expected shape", () => {
   const cmd = loadMap("map-crypt");
   sameShape(toJson(ClientCommandSchema, cmd) as Record<string, unknown>, {
