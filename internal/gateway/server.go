@@ -729,9 +729,14 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	}
 
 	// Keep this after authorize: before it, a player asks of any square of any
-	// scene whether it is a door (SPEC-013).
-	if sceneID, at, ok := doorSquare(cmd); ok && !st.IsDoor(sceneID, at.GetX(), at.GetY()) {
-		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: "There is no door there."}
+	// scene whether it is a door, or of any id whether it is an actor (SPEC-013).
+	if sceneID, at, actorID, ok := doorSquare(cmd); ok {
+		if !st.IsDoor(sceneID, at.GetX(), at.GetY()) {
+			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: "There is no door there."}
+		}
+		if _, held := st.Actors[actorID]; actorID != "" && !held {
+			return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: "There is no such character."}
+		}
 	}
 
 	// Keep the validators here, for every role, before anything is written: not
@@ -813,14 +818,14 @@ func validateForm(cmd *vttv1.ClientCommand, rs *rules.Ruleset) error {
 	return nil
 }
 
-func doorSquare(cmd *vttv1.ClientCommand) (string, *vttv1.GridPosition, bool) {
+func doorSquare(cmd *vttv1.ClientCommand) (string, *vttv1.GridPosition, string, bool) {
 	switch c := cmd.GetCommand().(type) {
 	case *vttv1.ClientCommand_OpenDoor:
-		return c.OpenDoor.GetSceneId(), c.OpenDoor.GetAt(), true
+		return c.OpenDoor.GetSceneId(), c.OpenDoor.GetAt(), c.OpenDoor.GetActorId(), true
 	case *vttv1.ClientCommand_CloseDoor:
-		return c.CloseDoor.GetSceneId(), c.CloseDoor.GetAt(), true
+		return c.CloseDoor.GetSceneId(), c.CloseDoor.GetAt(), c.CloseDoor.GetActorId(), true
 	}
-	return "", nil, false
+	return "", nil, "", false
 }
 
 // announcePresence tells every other connection that pc's participant arrived
