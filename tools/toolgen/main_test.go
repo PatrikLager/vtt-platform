@@ -826,3 +826,32 @@ func TestTheDoorToolsOfferAnActorWithoutRequiringIt(t *testing.T) {
 		}
 	}
 }
+
+// VTT-878
+func TestTheDoorToolsSayWhomTheirActorMayName(t *testing.T) {
+	for name, verb := range map[string]string{"open_door": "opens", "close_door": "closes"} {
+		tool := findTool(t, name)
+		desc, _ := tool["description"].(string)
+		if strings.Contains(desc, "Story") {
+			t.Errorf("%s description = %q, which promises a Story line no row holds", name, desc)
+		}
+		for _, want := range []string{"actorId names the actor that " + verb + " it", "any actor the campaign holds, or none",
+			"An actor the campaign does not hold is refused"} {
+			if !strings.Contains(desc, want) {
+				t.Errorf("%s description = %q, want it to contain %q", name, desc, want)
+			}
+		}
+		props := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+		actorID, ok := props["actorId"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s has no actorId property", name)
+		}
+		doc, _ := actorID["description"].(string)
+		for _, want := range []string{"Optional; omit for none", "any actor the campaign holds, wherever its tokens stand",
+			"An actor the campaign does not hold refuses the command"} {
+			if !strings.Contains(doc, want) {
+				t.Errorf("%s actorId description = %q, want it to contain %q", name, doc, want)
+			}
+		}
+	}
+}

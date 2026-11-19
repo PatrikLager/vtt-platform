@@ -387,19 +387,29 @@ var manifest = []toolSpec{
 	{
 		message:     "vtt.v1.OpenDoor",
 		name:        "open_door",
-		description: "Open the door at a scene square. Refused unless the square's tile is a door (maps-as-geometry spec §3.3, §6).",
+		description: "Open the door at a scene square. Refused unless the square's tile is a door (maps-as-geometry spec §3.3, §6). actorId names the actor that opens it, any actor the campaign holds, or none. A player's door command is refused unless a token of a character of theirs stands beside the door. An actor the campaign does not hold is refused, once those checks pass, with: There is no such character.",
 		descriptor:  (&vttv1.OpenDoor{}).ProtoReflect().Descriptor(),
 		overrides: map[protoreflect.FullName]fieldOverride{
-			"vtt.v1.OpenDoor": {requiredOverride: []string{"sceneId", "at"}},
+			"vtt.v1.OpenDoor": {
+				requiredOverride: []string{"sceneId", "at"},
+				fieldDocs: map[string]string{
+					"actorId": "Optional; omit for none. The actor that opens the door: any actor the campaign holds, wherever its tokens stand. An actor the campaign does not hold refuses the command.",
+				},
+			},
 		},
 	},
 	{
 		message:     "vtt.v1.CloseDoor",
 		name:        "close_door",
-		description: "Close the door at a scene square. Refused unless the square's tile is a door (maps-as-geometry spec §3.3, §6).",
+		description: "Close the door at a scene square. Refused unless the square's tile is a door (maps-as-geometry spec §3.3, §6). actorId names the actor that closes it, any actor the campaign holds, or none. A player's door command is refused unless a token of a character of theirs stands beside the door. An actor the campaign does not hold is refused, once those checks pass, with: There is no such character.",
 		descriptor:  (&vttv1.CloseDoor{}).ProtoReflect().Descriptor(),
 		overrides: map[protoreflect.FullName]fieldOverride{
-			"vtt.v1.CloseDoor": {requiredOverride: []string{"sceneId", "at"}},
+			"vtt.v1.CloseDoor": {
+				requiredOverride: []string{"sceneId", "at"},
+				fieldDocs: map[string]string{
+					"actorId": "Optional; omit for none. The actor that closes the door: any actor the campaign holds, wherever its tokens stand. An actor the campaign does not hold refuses the command.",
+				},
+			},
 		},
 	},
 	{
