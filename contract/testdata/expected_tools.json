@@ -616,6 +616,9 @@
     "description": "Open the door at a scene square. Refused unless the square's tile is a door (maps-as-geometry spec §3.3, §6).",
     "inputSchema": {
       "properties": {
+        "actorId": {
+          "type": "string"
+        },
         "at": {
           "properties": {
             "x": {
@@ -647,6 +650,9 @@
     "description": "Close the door at a scene square. Refused unless the square's tile is a door (maps-as-geometry spec §3.3, §6).",
     "inputSchema": {
       "properties": {
+        "actorId": {
+          "type": "string"
+        },
         "at": {
           "properties": {
             "x": {

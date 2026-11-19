@@ -1389,9 +1389,11 @@ func (x *SceneSeen) GetVisible() []string {
 // encoding openness in the vocabulary would put a mutable fact in an
 // immutable declaration, and terrain is immutable.
 type DoorOpened struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SceneId       string                 `protobuf:"bytes,1,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
-	At            *GridPosition          `protobuf:"bytes,2,opt,name=at,proto3" json:"at,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	SceneId string                 `protobuf:"bytes,1,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
+	At      *GridPosition          `protobuf:"bytes,2,opt,name=at,proto3" json:"at,omitempty"`
+	// The actor that opened the door, or empty for none (SPEC-013).
+	ActorId       string `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1440,12 +1442,21 @@ func (x *DoorOpened) GetAt() *GridPosition {
 	return nil
 }
 
+func (x *DoorOpened) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
+}
+
 // DoorOpened's counterpart; see DoorOpened's comment above — the same
 // folded-state reasoning applies to both directions.
 type DoorClosed struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SceneId       string                 `protobuf:"bytes,1,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
-	At            *GridPosition          `protobuf:"bytes,2,opt,name=at,proto3" json:"at,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	SceneId string                 `protobuf:"bytes,1,opt,name=scene_id,json=sceneId,proto3" json:"scene_id,omitempty"`
+	At      *GridPosition          `protobuf:"bytes,2,opt,name=at,proto3" json:"at,omitempty"`
+	// The actor that closed the door, or empty for none (SPEC-013).
+	ActorId       string `protobuf:"bytes,3,opt,name=actor_id,json=actorId,proto3" json:"actor_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1492,6 +1503,13 @@ func (x *DoorClosed) GetAt() *GridPosition {
 		return x.At
 	}
 	return nil
+}
+
+func (x *DoorClosed) GetActorId() string {
+	if x != nil {
+		return x.ActorId
+	}
+	return ""
 }
 
 type ActorAdded struct {
@@ -3542,15 +3560,17 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\n" +
 	"TilesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12%\n" +
-	"\x05value\x18\x02 \x01(\v2\x0f.vtt.v1.TileRefR\x05value:\x028\x01\"M\n" +
+	"\x05value\x18\x02 \x01(\v2\x0f.vtt.v1.TileRefR\x05value:\x028\x01\"h\n" +
 	"\n" +
 	"DoorOpened\x12\x19\n" +
 	"\bscene_id\x18\x01 \x01(\tR\asceneId\x12$\n" +
-	"\x02at\x18\x02 \x01(\v2\x14.vtt.v1.GridPositionR\x02at\"M\n" +
+	"\x02at\x18\x02 \x01(\v2\x14.vtt.v1.GridPositionR\x02at\x12\x19\n" +
+	"\bactor_id\x18\x03 \x01(\tR\aactorId\"h\n" +
 	"\n" +
 	"DoorClosed\x12\x19\n" +
 	"\bscene_id\x18\x01 \x01(\tR\asceneId\x12$\n" +
-	"\x02at\x18\x02 \x01(\v2\x14.vtt.v1.GridPositionR\x02at\"1\n" +
+	"\x02at\x18\x02 \x01(\v2\x14.vtt.v1.GridPositionR\x02at\x12\x19\n" +
+	"\bactor_id\x18\x03 \x01(\tR\aactorId\"1\n" +
 	"\n" +
 	"ActorAdded\x12#\n" +
 	"\x05actor\x18\x01 \x01(\v2\r.vtt.v1.ActorR\x05actor\"\xee\x01\n" +

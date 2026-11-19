@@ -351,7 +351,7 @@ func TestToEventDeleteNoteProducesNoteDeleted(t *testing.T) {
 func TestToEventOpenDoorProducesDoorOpened(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_OpenDoor{
-		OpenDoor: &vttv1.OpenDoor{SceneId: "cellar", At: &vttv1.GridPosition{X: 0, Y: 1}},
+		OpenDoor: &vttv1.OpenDoor{SceneId: "cellar", At: &vttv1.GridPosition{X: 0, Y: 1}, ActorId: "act-lera"},
 	}}
 
 	env, err := gateway.ToEvent(cmd, p)
@@ -362,8 +362,9 @@ func TestToEventOpenDoorProducesDoorOpened(t *testing.T) {
 	if !ok {
 		t.Fatalf("payload = %T, want *Envelope_DoorOpened", env.Payload)
 	}
-	if do.DoorOpened.GetSceneId() != "cellar" || do.DoorOpened.GetAt().GetX() != 0 || do.DoorOpened.GetAt().GetY() != 1 {
-		t.Fatalf("DoorOpened = %+v, want cellar/(0,1)", do.DoorOpened)
+	if do.DoorOpened.GetSceneId() != "cellar" || do.DoorOpened.GetAt().GetX() != 0 || do.DoorOpened.GetAt().GetY() != 1 ||
+		do.DoorOpened.GetActorId() != "act-lera" {
+		t.Fatalf("DoorOpened = %+v, want cellar/(0,1) opened by act-lera", do.DoorOpened)
 	}
 }
 
@@ -371,7 +372,7 @@ func TestToEventOpenDoorProducesDoorOpened(t *testing.T) {
 func TestToEventCloseDoorProducesDoorClosed(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	cmd := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_CloseDoor{
-		CloseDoor: &vttv1.CloseDoor{SceneId: "cellar", At: &vttv1.GridPosition{X: 0, Y: 1}},
+		CloseDoor: &vttv1.CloseDoor{SceneId: "cellar", At: &vttv1.GridPosition{X: 0, Y: 1}, ActorId: "act-lera"},
 	}}
 
 	env, err := gateway.ToEvent(cmd, p)
@@ -382,8 +383,9 @@ func TestToEventCloseDoorProducesDoorClosed(t *testing.T) {
 	if !ok {
 		t.Fatalf("payload = %T, want *Envelope_DoorClosed", env.Payload)
 	}
-	if dc.DoorClosed.GetSceneId() != "cellar" || dc.DoorClosed.GetAt().GetX() != 0 || dc.DoorClosed.GetAt().GetY() != 1 {
-		t.Fatalf("DoorClosed = %+v, want cellar/(0,1)", dc.DoorClosed)
+	if dc.DoorClosed.GetSceneId() != "cellar" || dc.DoorClosed.GetAt().GetX() != 0 || dc.DoorClosed.GetAt().GetY() != 1 ||
+		dc.DoorClosed.GetActorId() != "act-lera" {
+		t.Fatalf("DoorClosed = %+v, want cellar/(0,1) closed by act-lera", dc.DoorClosed)
 	}
 }
 

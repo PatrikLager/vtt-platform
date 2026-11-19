@@ -400,11 +400,21 @@ message SceneSeen {
 // whether it is open is folded state here, never part of the tile name —
 // encoding openness in the vocabulary would put a mutable fact in an
 // immutable declaration, and terrain is immutable.
-message DoorOpened { string scene_id = 1; GridPosition at = 2; }
+message DoorOpened {
+  string scene_id = 1;
+  GridPosition at = 2;
+  // The actor that opened the door, or empty for none (SPEC-013).
+  string actor_id = 3;
+}
 
 // DoorOpened's counterpart; see DoorOpened's comment above — the same
 // folded-state reasoning applies to both directions.
-message DoorClosed { string scene_id = 1; GridPosition at = 2; }
+message DoorClosed {
+  string scene_id = 1;
+  GridPosition at = 2;
+  // The actor that closed the door, or empty for none (SPEC-013).
+  string actor_id = 3;
+}
 
 message ActorAdded {
   Actor actor = 1;

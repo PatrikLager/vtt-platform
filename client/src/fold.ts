@@ -136,6 +136,7 @@ function apply(st: State, env: Envelope): void {
       const sc = st.Scenes[v.sceneId];
       if (!sc) throw new FoldError(`door opened in unknown scene "${v.sceneId}"`);
       if (!v.at) throw new FoldError(`door opened without position`);
+      if (v.actorId !== "" && !st.Actors[v.actorId]) throw new FoldError(`door opened names unknown actor "${v.actorId}"`);
       ensureOpenDoors(sc)[doorKey(v.at.x, v.at.y)] = true;
       return;
     }
@@ -144,6 +145,7 @@ function apply(st: State, env: Envelope): void {
       const sc = st.Scenes[v.sceneId];
       if (!sc) throw new FoldError(`door closed in unknown scene "${v.sceneId}"`);
       if (!v.at) throw new FoldError(`door closed without position`);
+      if (v.actorId !== "" && !st.Actors[v.actorId]) throw new FoldError(`door closed names unknown actor "${v.actorId}"`);
       // delete rather than set-false: restores the "never toggled" state
       // exactly, matching apply.go's DoorClosed arm — a door that is closed
       // either because it was just shut or because it was never touched

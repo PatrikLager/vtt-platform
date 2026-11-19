@@ -127,11 +127,13 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 		env.Payload = &vttv1.Envelope_DoorOpened{DoorOpened: &vttv1.DoorOpened{
 			SceneId: c.OpenDoor.GetSceneId(),
 			At:      c.OpenDoor.GetAt(),
+			ActorId: c.OpenDoor.GetActorId(),
 		}}
 	case *vttv1.ClientCommand_CloseDoor:
 		env.Payload = &vttv1.Envelope_DoorClosed{DoorClosed: &vttv1.DoorClosed{
 			SceneId: c.CloseDoor.GetSceneId(),
 			At:      c.CloseDoor.GetAt(),
+			ActorId: c.CloseDoor.GetActorId(),
 		}}
 	default:
 		return nil, ErrUnknownCommand

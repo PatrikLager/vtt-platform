@@ -813,3 +813,16 @@ func TestAddActorSaysASpentResourceIsHeldExactlyWhileAnAbilitySpendingItIsNamed(
 		}
 	}
 }
+
+// VTT-877
+func TestTheDoorToolsOfferAnActorWithoutRequiringIt(t *testing.T) {
+	for _, name := range []string{"open_door", "close_door"} {
+		schema := findTool(t, name)["inputSchema"].(map[string]any)
+		if got, want := schema["required"], []any{"sceneId", "at"}; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s required = %v, want %v", name, got, want)
+		}
+		if _, ok := schema["properties"].(map[string]any)["actorId"].(map[string]any); !ok {
+			t.Errorf("%s has no actorId property", name)
+		}
+	}
+}

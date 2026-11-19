@@ -208,7 +208,7 @@ func (m *Model) Step(rng *rand.Rand, idx int) Action {
 	case r < 0.72 && len(m.scenes) > 0:
 		return m.openDoor(rng, idx)
 	case r < 0.76 && len(m.scenes) > 0:
-		return m.closeDoor(rng)
+		return m.closeDoor(rng, idx)
 	case r < 0.79 && len(m.actors) > 0:
 		return m.grantControl(rng)
 	case r < 0.82 && len(m.actors) > 0:
@@ -399,11 +399,18 @@ func (m *Model) openDoor(rng *rand.Rand, idx int) Action {
 		m.openDoors[scene][[2]int32{x, y}] = true
 	}
 	return Action{Env: m.env(&vttv1.DoorOpened{
-		SceneId: scene, At: &vttv1.GridPosition{X: x, Y: y},
+		SceneId: scene, At: &vttv1.GridPosition{X: x, Y: y}, ActorId: m.opener(idx),
 	}), Kind: "openDoor", MustFail: unknown, Anchors: !unknown}
 }
 
-func (m *Model) closeDoor(rng *rand.Rand) Action {
+func (m *Model) opener(idx int) string {
+	if idx%2 != 0 || len(m.actors) == 0 {
+		return ""
+	}
+	return m.actors[(idx/2)%len(m.actors)]
+}
+
+func (m *Model) closeDoor(rng *rand.Rand, idx int) Action {
 	scene := m.scenes[rng.Intn(len(m.scenes))]
 	var at [2]int32
 	if open := m.openDoors[scene]; len(open) > 0 && rng.Float64() < 0.8 {
@@ -425,7 +432,7 @@ func (m *Model) closeDoor(rng *rand.Rand) Action {
 		at = [2]int32{rng.Int31n(20), rng.Int31n(20)}
 	}
 	return Action{Env: m.env(&vttv1.DoorClosed{
-		SceneId: scene, At: &vttv1.GridPosition{X: at[0], Y: at[1]},
+		SceneId: scene, At: &vttv1.GridPosition{X: at[0], Y: at[1]}, ActorId: m.opener(idx),
 	}), Kind: "closeDoor", Anchors: true}
 }
 

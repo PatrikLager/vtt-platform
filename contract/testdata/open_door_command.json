@@ -1,0 +1,8 @@
+{
+  "requestId": "req-01J9ZK8A1B2C3D4E5F6G7H8D01",
+  "openDoor": {
+    "sceneId": "cellar",
+    "at": { "x": 4, "y": 2 },
+    "actorId": "act-lera"
+  }
+}

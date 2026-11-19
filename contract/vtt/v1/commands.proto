@@ -26,11 +26,21 @@ message MoveTokenResponse {
 // A door is one nature, not two (spec §3.3): the tile stays "door" whether
 // it is open or closed, and these commands change only the folded state —
 // they never create or remove a tile.
-message OpenDoor { string scene_id = 1; GridPosition at = 2; }
+message OpenDoor {
+  string scene_id = 1;
+  GridPosition at = 2;
+  // The actor that opens the door, or empty for none (SPEC-013).
+  string actor_id = 3;
+}
 
 // OpenDoor's counterpart; see OpenDoor's comment above — the same
 // folded-state reasoning applies to both directions.
-message CloseDoor { string scene_id = 1; GridPosition at = 2; }
+message CloseDoor {
+  string scene_id = 1;
+  GridPosition at = 2;
+  // The actor that closes the door, or empty for none (SPEC-013).
+  string actor_id = 3;
+}
 
 message AddActor {
   Actor actor = 1;

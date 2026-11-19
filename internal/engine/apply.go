@@ -460,6 +460,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if do.At == nil {
 			return fmt.Errorf("engine: door opened without position")
 		}
+		if _, ok := st.Actors[do.ActorId]; do.ActorId != "" && !ok {
+			return fmt.Errorf("engine: door opened names unknown actor %q", do.ActorId)
+		}
 		// OpenDoors is non-nil for any Scene the SceneCreated arm above
 		// built, but not every Scene in st.Scenes went through that arm:
 		// synthetic test tooling (internal/rules/conformance/conformance.go,
@@ -492,6 +495,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		}
 		if dc.At == nil {
 			return fmt.Errorf("engine: door closed without position")
+		}
+		if _, ok := st.Actors[dc.ActorId]; dc.ActorId != "" && !ok {
+			return fmt.Errorf("engine: door closed names unknown actor %q", dc.ActorId)
 		}
 		// Go's delete() is a documented no-op on a nil map, so this guard
 		// does not fix a crash the way DoorOpened's does — but it is added

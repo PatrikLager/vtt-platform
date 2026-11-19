@@ -105,7 +105,12 @@ func (pr *Projection) Event(eyes Eyes, env *vttv1.Envelope, shown, st *engine.St
 		// what it did to the world is unknown (SPEC-016).
 		return nil
 	}
-	out := pr.transitions(env, env.GetSequence(), now, st)
+	cause := env
+	if v != forwarded {
+		// Pass no cause: doorTransitions skips only a forwarded door's square (VTT-870).
+		cause = nil
+	}
+	out := pr.transitions(cause, env.GetSequence(), now, st)
 	if v == forwarded {
 		f := forwardable(env)
 		if w := f.GetWhisperAdded(); w != nil {
@@ -334,7 +339,7 @@ func (pr *Projection) eyes(st *engine.State) []string {
 // was sent to what it sees now, each carrying seq (SPEC-016). Keep each
 // scene before the doors, tokens and SceneSeen in it, and each actor before
 // its grants, conditions and tokens: both folds refuse them the other way
-// round. cause is nil on a perch (Perch).
+// round. cause is nil on a perch (Perch) and for an event classify withheld.
 func (pr *Projection) transitions(cause *vttv1.Envelope, seq int64, now sightView, st *engine.State) []*vttv1.Envelope {
 	var out []*vttv1.Envelope
 
@@ -573,11 +578,9 @@ func (pr *Projection) classify(env *vttv1.Envelope, now sightView) verdict {
 		id := p.TokenMoved.GetTokenId()
 		return passIf(pr.tokens[id] && now.tokens[id])
 
-	case *vttv1.Envelope_DoorOpened:
-		return passIf(pr.canSeeSquare(now, p.DoorOpened.GetSceneId(), p.DoorOpened.GetAt()))
-
-	case *vttv1.Envelope_DoorClosed:
-		return passIf(pr.canSeeSquare(now, p.DoorClosed.GetSceneId(), p.DoorClosed.GetAt()))
+	case *vttv1.Envelope_DoorOpened, *vttv1.Envelope_DoorClosed:
+		sceneID, at, actorID := doorAct(env)
+		return passIf(pr.canSeeSquare(now, sceneID, at) && saw(actorID))
 
 	// Forward these when the viewer saw every actor they name before the event;
 	// an actor it comes to see is corrected in transitions (SPEC-016).
@@ -641,8 +644,8 @@ func (pr *Projection) canSeeSquare(now sightView, sceneID string, at *vttv1.Grid
 }
 
 // doorTransitions corrects what this viewer believes of the doors it sees
-// now (SPEC-016). Skip the square of the door event being projected:
-// classify forwards that event, and a second frame would repeat it.
+// now (SPEC-016). Skip the square of cause, which Event passes only when it
+// forwards that door event: a second frame would repeat it.
 func (pr *Projection) doorTransitions(cause *vttv1.Envelope, seq int64, now sightView, st *engine.State) []*vttv1.Envelope {
 	var out []*vttv1.Envelope
 	causeScene, causeSquare, causeIsDoor := doorSubject(cause)
@@ -686,8 +689,16 @@ func (pr *Projection) doorTransitions(cause *vttv1.Envelope, seq int64, now sigh
 	return out
 }
 
+func doorAct(env *vttv1.Envelope) (sceneID string, at *vttv1.GridPosition, actorID string) {
+	if d := env.GetDoorOpened(); d != nil {
+		return d.GetSceneId(), d.GetAt(), d.GetActorId()
+	}
+	d := env.GetDoorClosed()
+	return d.GetSceneId(), d.GetAt(), d.GetActorId()
+}
+
 // doorSubject reports the scene and square a door event is about, and none for
-// a perch's nil cause (SPEC-016).
+// a nil cause (SPEC-016).
 func doorSubject(env *vttv1.Envelope) (sceneID, square string, ok bool) {
 	switch p := env.GetPayload().(type) {
 	case *vttv1.Envelope_DoorOpened:

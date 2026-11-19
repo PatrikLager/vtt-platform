@@ -1,0 +1,12 @@
+{
+  "eventId": "01J9ZK7M2N3P4Q5R6S7T8U9D01",
+  "sequence": "47",
+  "occurredAt": "2026-11-19T09:12:00Z",
+  "sessionId": "sess-happy-dragon",
+  "actorRole": "player",
+  "doorOpened": {
+    "sceneId": "cellar",
+    "at": { "x": 4, "y": 2 },
+    "actorId": "act-lera"
+  }
+}

@@ -116,6 +116,32 @@ test("a door closed with no position is rejected", () => {
     "door closed without position");
 });
 
+// VTT-866
+test("a door event naming an actor the fold does not hold is rejected, after its scene and its position", () => {
+  const withActor = [...doorScene, actor(3, "tobbe")];
+  for (const ghost of ["ghost", "hasOwnProperty", "constructor"]) {
+    rejects([...withActor, env(4, { doorOpened: { sceneId: "s1", at: { x: 0, y: 1 }, actorId: ghost } })],
+      `door opened names unknown actor "${ghost}"`);
+    rejects([...withActor, env(4, { doorClosed: { sceneId: "s1", at: { x: 0, y: 1 }, actorId: ghost } })],
+      `door closed names unknown actor "${ghost}"`);
+  }
+  rejects([...withActor, env(4, { doorOpened: { sceneId: "nope", at: { x: 0, y: 1 }, actorId: "ghost" } })],
+    'door opened in unknown scene "nope"');
+  rejects([...withActor, env(4, { doorClosed: { sceneId: "s1", actorId: "ghost" } })],
+    "door closed without position");
+});
+
+// VTT-866
+test("a door event naming an actor the fold holds, or none, folds", () => {
+  const st = fold([...doorScene, actor(3, "tobbe"),
+    env(4, { doorOpened: { sceneId: "s1", at: { x: 0, y: 1 }, actorId: "tobbe" } }),
+    env(5, { doorClosed: { sceneId: "s1", at: { x: 0, y: 1 } } }),
+    env(6, { doorOpened: { sceneId: "s1", at: { x: 2, y: 1 } } }),
+    env(7, { doorClosed: { sceneId: "s1", at: { x: 2, y: 1 }, actorId: "tobbe" } }),
+    env(8, { doorOpened: { sceneId: "s1", at: { x: 3, y: 1 }, actorId: "tobbe" } })]);
+  expect(st.Scenes["s1"]!.OpenDoors).toEqual({ "3,1": true });
+});
+
 // --- tokens -----------------------------------------------------------------
 
 const placeable = [started, scene(2, "s1"), actor(3, "a1")];

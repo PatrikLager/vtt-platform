@@ -389,12 +389,18 @@ var manifest = []toolSpec{
 		name:        "open_door",
 		description: "Open the door at a scene square. Refused unless the square's tile is a door (maps-as-geometry spec §3.3, §6).",
 		descriptor:  (&vttv1.OpenDoor{}).ProtoReflect().Descriptor(),
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.OpenDoor": {requiredOverride: []string{"sceneId", "at"}},
+		},
 	},
 	{
 		message:     "vtt.v1.CloseDoor",
 		name:        "close_door",
 		description: "Close the door at a scene square. Refused unless the square's tile is a door (maps-as-geometry spec §3.3, §6).",
 		descriptor:  (&vttv1.CloseDoor{}).ProtoReflect().Descriptor(),
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.CloseDoor": {requiredOverride: []string{"sceneId", "at"}},
+		},
 	},
 	{
 		message:     "vtt.v1.LoadMap",
