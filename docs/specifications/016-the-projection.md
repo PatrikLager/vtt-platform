@@ -7,7 +7,7 @@ Accepted. Implemented by `internal/perceive/projection.go` (`Eyes`,
 `recall`, `sameIncarnation`, `kindMovesList`, `shownAs`, `unseenAs`,
 `shownWith`, `trueKeys`, `sightView`, `look`, `eyes`, `transitions`,
 `sceneSeenFor`, `objectInSight`, `verdict`, `passIf`, `classify`,
-`sheetActor`, `canSeeSquare`, `doorTransitions`,
+`sheetActor`, `canSeeSquare`, `doorAct`, `doorTransitions`,
 `doorSubject`, `squareAt`, `squareKey`, `sortedSet`, `sortedSceneIDs`,
 `sortedSceneIDsUnion`, `noteTransitions`, `introduce`, `hideTokensOf`,
 `withdraw`, `actorBelief`, `heldResource`, `beliefOf`, `correct`,
@@ -27,7 +27,8 @@ pinned by `internal/perceive/board_test.go`, `roster_test.go`,
 `qa_actor_abilities_shown_test.go`, `qa_ability_forward_test.go`,
 `qa_ability_correction_test.go`, `resource_event_internal_test.go`,
 `resource_correction_test.go`, `qa_resource_forward_test.go`,
-`qa_resource_correction_test.go` and `qa_sees_actor_test.go`, through the
+`qa_resource_correction_test.go`, `qa_sees_actor_test.go`,
+`door_opener_test.go` and `qa_door_opener_test.go`, through the
 harness in `viewer_test.go`, by
 `internal/campaign/character_log_oracle_test.go`, `every_log_told_test.go`,
 `whisper_test.go`, `qa_whisper_test.go`, `qa_append_watch_test.go`,
@@ -293,11 +294,13 @@ then `introduce`'s frames instead, those of an actor the look sees, since
 **Doors.** For each scene in the look, by id, and each visible square, by key,
 where `OpenDoors` in `st` differs from the viewer's belief, `doorTransitions`
 sends a `DoorOpened` or a `DoorClosed` at that square and records the new
-belief. The square of the door event being projected is recorded and sent no
-frame, since `classify` forwards that event when its square is visible. A
-perch has no causing event, so `doorSubject` reports no square and every such
-square is sent. A key `squareAt` cannot read as two whole integers is skipped.
-A door the viewer does not see keeps the viewer's belief, as its terrain does.
+belief. `Event` passes the event as the cause only when `classify` forwards
+it, so the square of a forwarded door event is recorded and sent no frame, and
+eyes that see the square of a door event withheld for its actor are sent the
+door's new state there when it changed, with no event id (VTT-870). A perch
+has no causing event, so `doorSubject` reports no square and every such square
+is sent. A key `squareAt` cannot read as two whole integers is skipped. A door
+the viewer does not see keeps the viewer's belief, as its terrain does.
 `OpenDoors` travels in neither the introduced `SceneCreated` nor `SceneSeen`,
 so these frames are how a door opened before a viewer had eyes reaches its
 board. `squareKey` builds the key `sight.VisibleFrom` builds, column then row.
@@ -336,7 +339,8 @@ before the event and is in the look after it, since a move names both its
 ends. What `Event` sends of it carries no `reason` (`forwardable`), which its
 issuer wrote and the DM and the agent read in the log. It forwards
 `DoorOpened` and `DoorClosed` when `canSeeSquare` finds the square in the
-look. It forwards `AttackRolled` (attacker and target), `AbilityUsed` (actor
+look and the actor the event names, if any, is in `sighted` (`doorAct`,
+VTT-869). It forwards `AttackRolled` (attacker and target), `AbilityUsed` (actor
 and targets), `ActorControlGranted`, `ActorControlRevoked`, `ConditionApplied`
 and `ConditionRemoved` when every non-empty actor id named is in `sighted`, so
 when the viewer saw each of them before the event; what an event brings into
@@ -479,12 +483,12 @@ A client author, and whoever changes the code, are bound by these:
   (VTT-658). Two viewers' rosters can therefore differ; whom a
   connection may watch is not a roster's but `WatchableChanged`'s (SPEC-015).
 - A condition an introduction carries bears the introduction's sequence.
-- A viewer hears of a resource, a condition, a control change, an attack,
-  an ability's use or an ability given or taken only while it sees every
-  actor it names, and of a resource changed, added or removed, or an ability
-  given or taken, only of a party member; what changed meanwhile arrives as
-  one correction when the actor comes into sight, or in its re-introduction
-  when it is reshaped.
+- A viewer hears of a resource, a condition, a control change, an attack, an
+  ability's use, an ability given or taken, or a door opened or closed by an
+  actor only while it sees every actor it names, and of a resource changed,
+  added or removed, or an ability given or taken, only of a party member; what
+  changed meanwhile arrives as one correction when the actor comes into sight,
+  or in its re-introduction when it is reshaped.
 - No character log is sent an `ActorRemoved` or an `ActorAdded` of an actor
   because its ability ids differ from the world's while its kind does not
   change (VTT-744): a give or a take reaches a log forwarded, as a
@@ -575,4 +579,4 @@ VTT-364, VTT-365, VTT-462, VTT-465, VTT-466, VTT-467, VTT-468, VTT-469,
 VTT-478, VTT-481, VTT-486, VTT-488, VTT-582, VTT-583, VTT-584, VTT-658,
 VTT-660, VTT-664, VTT-698, VTT-724, VTT-738, VTT-741, VTT-742, VTT-743,
 VTT-744, VTT-755, VTT-779, VTT-780, VTT-781, VTT-782, VTT-783, VTT-784,
-VTT-793, VTT-796.
+VTT-793, VTT-796, VTT-869, VTT-870.

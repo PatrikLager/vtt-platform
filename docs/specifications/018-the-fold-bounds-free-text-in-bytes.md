@@ -51,6 +51,8 @@ Pinned by
 `resolve_test.go`, `id_bound_internal_test.go`, `qa_ruleset_bound_test.go`,
 `qa_property_format_test.go`,
 `internal/engine/qa_ruleset_bound_test.go`,
+`internal/engine/door_opener_test.go`, `internal/engine/qa_door_opener_test.go`,
+`client/test/qa-door-opener-fold.test.ts`,
 `internal/gateway/qa_ruleset_bound_test.go`,
 `internal/campaign/qa_ruleset_bound_test.go`,
 `client/test/qa-ruleset-bound.test.ts`,
@@ -164,7 +166,7 @@ into `AbilityUsed.outcome_summary` or a reason, and the spectator's one cell,
 
 | Field | What holds it |
 |---|---|
-| `TokenMoved.token_id`, `TokenPlaced.scene_id`, `TokenPlaced.actor_id`, `TokenRemoved.token_id`, `ActorRemoved.actor_id`, `DoorOpened.scene_id`, `DoorClosed.scene_id`, `ResourceChanged.actor_id`, `ResourceChanged.resource`, `ResourceAdded.actor_id`, `ResourceRemoved.actor_id`, `ResourceRemoved.resource`, `ConditionApplied.actor_id`, `ConditionRemoved.actor_id`, `ConditionRemoved.condition_id`, `NoteDeleted.key`, `ActorControlGranted.actor_id`, `ActorControlRevoked.actor_id`, `TokenDescribed.token_id`, `WhisperAdded.to_actor_ids`, `WhisperAdded.from_actor_id`, `AbilityGiven.actor_id`, `AbilityTaken.actor_id` | `engine.Apply` refuses a value that names nothing it has folded, so each equals an id or a name the table bounds |
+| `TokenMoved.token_id`, `TokenPlaced.scene_id`, `TokenPlaced.actor_id`, `TokenRemoved.token_id`, `ActorRemoved.actor_id`, `DoorOpened.scene_id`, `DoorClosed.scene_id`, `DoorOpened.actor_id` when not empty, `DoorClosed.actor_id` when not empty, `ResourceChanged.actor_id`, `ResourceChanged.resource`, `ResourceAdded.actor_id`, `ResourceRemoved.actor_id`, `ResourceRemoved.resource`, `ConditionApplied.actor_id`, `ConditionRemoved.actor_id`, `ConditionRemoved.condition_id`, `NoteDeleted.key`, `ActorControlGranted.actor_id`, `ActorControlRevoked.actor_id`, `TokenDescribed.token_id`, `WhisperAdded.to_actor_ids`, `WhisperAdded.from_actor_id`, `AbilityGiven.actor_id`, `AbilityTaken.actor_id` | `engine.Apply` refuses a value that names nothing it has folded, so each equals an id or a name the table bounds |
 | `Actor.controller_id`, `Actor.controller_ids` | `engine.Apply` refuses an `ActorAdded` that declares either, and fills them from `ActorControlGranted.participant_id` |
 | `AbilityUsed.actor_id`, `AbilityUsed.target_ids`, `AbilityUsed.Outcome.target_id` | `Resolve` refuses a value that names no folded actor |
 | `AbilityUsed.Outcome.result` | `Resolve` writes a branch label, which `internal/rules/load.go` bounds at `maxIDBytes` |
@@ -307,4 +309,4 @@ requires them to state it too. The `add_whisper` tool describes its `text` as
 VTT-264, VTT-265, VTT-266, VTT-274, VTT-275, VTT-276, VTT-277, VTT-278,
 VTT-279, VTT-281, VTT-282, VTT-284, VTT-285, VTT-286, VTT-289, VTT-290,
 VTT-291, VTT-292, VTT-293, VTT-294, VTT-296, VTT-297, VTT-585, VTT-586,
-VTT-624, VTT-625, VTT-770.
+VTT-624, VTT-625, VTT-770, VTT-866.

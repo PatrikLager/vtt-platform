@@ -12,7 +12,15 @@ Held by `contract/contract_test.go`, `contract/roundtrip_test.go`,
 perch appends nothing, by `internal/gateway/server_visibility_test.go` and
 `qa_seat_test.go` (VTT-184); that an empty set arrives with its flag, by
 `TestQACNAnEmptySetSaysOnTheWireThatTheyControlNone` in
-`internal/gateway/qa_controls_none_test.go`; that a player's result names the
+`internal/gateway/qa_controls_none_test.go`; the door commands' and events'
+actor, by `TestOpenDoorCommandRoundTrip` and `TestDoorOpenedEnvelopeRoundTrip`
+in `contract/roundtrip_test.go` and
+`TestQADoorMessagesWriteActorIdOnTheWireAndOmitAnEmptyOne` in
+`internal/gateway/qa_door_opener_test.go`, and its tools by
+`TestTheDoorToolsOfferAnActorWithoutRequiringIt` and
+`TestTheDoorToolsSayWhomTheirActorMayName` in `tools/toolgen/main_test.go`,
+`tools/toolgen/qa_door_tools_test.go` and `qa_door_tool_texts_test.go`
+(VTT-877, VTT-878); that a player's result names the
 world event, by `TestThreeRoleExitScenarioOverLiveWebSockets` in
 `internal/gateway/scenario_test.go`; the `upsert_note` tool's schema, by
 `tools/toolgen/main_test.go` (VTT-232); that `add_actor`'s schema requires a
@@ -271,6 +279,22 @@ among `to_actor_ids` (SPEC-016). `add_whisper`'s tool requires `text` and
 `toActorIds`, and says whom a whisper reaches and that a party member's
 whisper to the DM is answered with `add_whisper`, never `add_narration`.
 
+### Who works a door
+
+`OpenDoor` and `CloseDoor`, arms 28 and 29 of `ClientCommand.command`, and
+`DoorOpened` and `DoorClosed`, arms 28 and 29 of `Envelope.payload`, carry a
+`scene_id` (field 1), a square `at` (field 2) and an `actor_id` (field 3), the
+actor that opens or closes the door, a plain string that is empty for none and
+not proto3 `optional`. The event carries the command's actor as it came
+(VTT-503). A player's window names the character the player watches, and a
+DM's and an agent's window none (SPEC-022); the server accepts any actor the
+campaign holds, or none, and refuses one it does not hold (SPEC-013).
+`open_door`'s and `close_door`'s tools require `sceneId` and `at` and not
+`actorId` (VTT-877), and say that `actorId` names the actor that opens or
+closes the door, any actor the campaign holds, or none, that a player's door
+command needs a token of a character of theirs beside the door, and that an
+actor the campaign does not hold is refused (VTT-878).
+
 ### The ordering contract
 
 Frames are delivered in one order per connection, and events are ordered among
@@ -498,4 +522,4 @@ Those readers are not reading this record.
 
 VTT-184, VTT-232, VTT-473, VTT-479, VTT-480, VTT-505, VTT-559, VTT-560,
 VTT-561, VTT-562, VTT-563, VTT-567, VTT-591, VTT-674, VTT-700, VTT-701,
-VTT-729, VTT-735, VTT-749, VTT-785, VTT-786, VTT-799.
+VTT-729, VTT-735, VTT-749, VTT-785, VTT-786, VTT-799, VTT-877, VTT-878.

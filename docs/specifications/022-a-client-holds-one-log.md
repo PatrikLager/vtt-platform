@@ -7,7 +7,8 @@ Accepted. The browser client implements it in `client/src/wire.ts`,
 `client/src/view/spectator.ts`, `client/src/view/feed.ts`,
 `client/src/view/player.ts`, `client/src/view/naming.ts`,
 `client/src/view/grid.ts`, `client/src/view/dm.ts`, `client/src/view/focus.ts`,
-`client/src/view/join.ts`, `client/src/commands.ts`, `client/src/player.ts`,
+`client/src/view/join.ts`, `client/src/view/doors.ts`, `client/src/commands.ts`,
+`client/src/player.ts`,
 `client/src/fold.ts`, `client/src/state.ts` and `client/src/style.css`;
 the Go readers in `internal/harness/client.go`, `internal/harness/engine.go`,
 `internal/harness/soak.go`, `cmd/vtt/client_run.go`'s `dialerFor`,
@@ -36,7 +37,7 @@ actor, both outside the reason it gives for a log it cannot fold, by
 `client/test/feed.test.ts`, `client/test/qa-events-panel.test.ts`,
 `client/test/qa-companion-first-sight.test.ts` and
 `client/test/qa-story-mechanical.test.ts` (VTT-445 to VTT-448, VTT-809,
-VTT-810, VTT-812, VTT-818 to VTT-820, VTT-822, VTT-823), and that the Events
+VTT-810, VTT-812, VTT-818, VTT-820, VTT-822, VTT-823), and that the Events
 panel labels a move with its reason, by `client/test/spectator-view.test.ts`,
 `client/test/qa-move-reason.test.ts` and `client/test/qa-events-panel.test.ts`
 (VTT-821); that a player and a spectator are offered the party
@@ -227,8 +228,16 @@ list, by `client/test/naming.test.ts`, `client/test/grid.test.ts`,
 `client/test/app.test.ts`, `client/test/qa-condition-names.test.ts`,
 `client/test/qa-console-condition-names.test.ts`,
 `client/test/qa-condition-window.test.ts` and `client/e2e/conditions.spec.ts`
-(VTT-862 to VTT-865); and that an ability's button is titled by its
-description and its cost line, by
+(VTT-862 to VTT-865); that a door's line names its opener and a player's
+door click names the character they watch, by
+`client/test/spectator-view.test.ts`, `client/test/doors.test.ts`,
+`client/test/player.test.ts`, `client/test/app.test.ts`,
+`client/test/commands.test.ts`, `client/test/qa-door-lines.test.ts`,
+`client/test/qa-door-window.test.ts` and `client/e2e/doors.spec.ts`
+(VTT-871 to VTT-876, VTT-879); that the fold refuses a door event naming an
+actor it does not hold, by `client/test/fold-rejections.test.ts` and
+`client/test/qa-door-opener-fold.test.ts` (VTT-866); and that an ability's
+button is titled by its description and its cost line, by
 `client/test/panel-sheet.test.ts`, `client/test/app.test.ts`,
 `client/test/spectator-view.test.ts`, `client/test/qa-panel-sheet.test.ts`,
 `client/test/qa-ability-title.test.ts` and `client/e2e/table.spec.ts`
@@ -497,6 +506,10 @@ the state included (VTT-769 to VTT-773), so the client's fold of a log of
 resources added and removed dumps as `vtt state dump` prints it, its
 refusals included (VTT-774).
 
+Its `doorOpened` and `doorClosed` arms refuse a scene the fold does not hold,
+then an event with no position, then a non-empty `actorId` naming an actor
+the fold does not hold, as `engine.Apply`'s do (VTT-866).
+
 The panel offers abilities for the actor it acts as: a player's the party
 member they watch, a DM's and an agent's the actor its chip selects. It
 offers one button for each ability of the window's list that the actor's
@@ -574,7 +587,12 @@ so such a click moves (`client/test/qa-window-offers.test.ts`'s "a
 player's board click with a carried-over ability the sheet does not name
 moves the watched token"). A player watching nobody holds no log and is
 shown no board, since a seat on nobody is sent no entry (SPEC-015). With
-doors armed, a board click works a door or sends nothing. A player's
+doors armed, a board click works a door or sends nothing: a player's names
+the actor a board click moves (`actingActor`) and is sent only for a door of
+the current scene that actor's token stands beside, and the arm-doors toggle
+is offered only while one stands so (VTT-873 to VTT-875); a DM's and an
+agent's names none (VTT-876). A player's switch of the character they watch
+disarms the door tool (VTT-879). A player's
 selected actor follows the `ViewpointChanged`, whether their window perches
 or not, and a switch disarms their armed ability. A DM's and an agent's
 chips select which of the actors granted them a board click moves and whose
@@ -889,10 +907,12 @@ of `Envelope.payload`, and an envelope with none as "something happened"; it
 has no `default`, so a payload added to the contract fails
 `task client:typecheck` until it is worded (VTT-476). The Events panel's rows
 are `describe`'s words. The Story draws each entry it keeps with
-`tell`, which words a door "a door opened" or "a door closed", naming no
-square (VTT-819), and every other entry as `describe` does. An actor's
+`tell`, which words a door naming an actor "<actor> opened a door" or
+"<actor> closed a door", the actor named as the window names one, and one
+naming none "a door opened" or "a door closed", naming no square (VTT-871),
+and every other entry as `describe` does. An actor's
 arrival reads "<actor> is in the party" or "<actor> comes into sight", and a
-door on the Events panel "a door opened at x,y" or "a door closed at x,y". A
+door on the Events panel as the Story words it, then " at x,y" (VTT-872). A
 token's placement reads "<token> is at x,y", and a move "<token> moved to
 x,y", with " — " and its reason when it has one (VTT-821), on the Events
 panel alone. An ability's line is "<actor> used
@@ -1206,7 +1226,8 @@ VTT-721, VTT-722, VTT-727, VTT-730, VTT-732, VTT-733, VTT-734,
 VTT-737, VTT-752, VTT-753, VTT-758, VTT-759, VTT-769, VTT-770,
 VTT-771, VTT-772, VTT-773, VTT-774, VTT-788, VTT-789, VTT-805,
 VTT-806, VTT-807, VTT-808, VTT-809, VTT-810, VTT-812, VTT-813, VTT-814,
-VTT-815, VTT-816, VTT-817, VTT-818, VTT-819, VTT-820, VTT-821, VTT-822,
+VTT-815, VTT-816, VTT-817, VTT-818, VTT-820, VTT-821, VTT-822,
 VTT-823, VTT-834, VTT-835, VTT-836, VTT-837, VTT-838, VTT-839, VTT-840,
 VTT-841, VTT-842, VTT-843, VTT-844, VTT-845, VTT-846, VTT-854, VTT-855,
-VTT-862, VTT-863, VTT-864, VTT-865.
+VTT-862, VTT-863, VTT-864, VTT-865, VTT-866, VTT-871, VTT-872, VTT-873,
+VTT-874, VTT-875, VTT-876, VTT-879.

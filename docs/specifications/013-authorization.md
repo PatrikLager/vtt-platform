@@ -46,7 +46,9 @@ with `perceive.SeesActor` and `rules.UnknownTarget` for the sight gate,
 `remove_participant_test.go`, `qa_removal_test.go`,
 `qa_remove_roles_test.go`, `whisper_test.go`, `qa_whisper_test.go`,
 `plain_refusal_test.go`, `qa_plain_refusal_test.go`, `door_square_test.go`
-and `qa_door_square_test.go`, and by `internal/engine/terrain_test.go` and
+`qa_door_square_test.go`, `door_opener_test.go`, `qa_door_opener_gate_test.go`,
+`qa_door_tool_claims_test.go` and `qa_door_opener_test.go`, and by
+`internal/engine/terrain_test.go` and
 `cmd/vtt/scenario_goldens_test.go`.
 
 ## Principles served
@@ -60,7 +62,8 @@ Principles 6, 7, 10, 13, 20, 27 and 34 of `docs/blueprint.md`:
   character.
 - **13.** The move gate's and the door gate's refusals name no package and
   no id, and the two that refuse a party member with no name name no package
-  (VTT-601 to VTT-603, VTT-608); this record bounds no other refusal's text.
+  (VTT-601 to VTT-603, VTT-608, VTT-868); this record bounds no other
+  refusal's text.
 - **20.** A player's move onto a square their party member cannot see is
   refused, and so is an ability aimed at an actor it does not see.
 - **27.** A use of an ability its actor's sheet does not name is refused,
@@ -234,7 +237,8 @@ comparison of two empty ids passes, that guard is the refusal. Control is an
 every role but player, and `handleCommand`'s move gate and sight gate run for
 a player only. They act on, and grant and revoke control of, an actor a player
 controls, and acting on it leaves its `controller_ids` as they were; they
-work a door from anywhere, though only a door; they move a token onto any
+work a door from anywhere, though only a door, naming any actor the state
+holds or none (VTT-867); they move a token onto any
 square, a wall and a square no player can see included (VTT-158, VTT-379);
 they aim an ability at an actor no character sees (VTT-482). The table's
 cells, the checks `Authorize` runs for every role, the door gate, the
@@ -360,10 +364,18 @@ wall, a floor, a square with no tile, a square off the grid, a scene the
 state does not hold) the gate refuses with `There is no door there.`, for
 every role, and appends nothing (VTT-608). It runs after `Authorize`, so a
 player's command that `mayWorkDoor` refuses never reaches it and is answered
-with `mayWorkDoor`'s text, one text whatever the square is (VTT-609). It
-asks nothing about sight. `engine.Apply`'s door arms refuse
-only a scene the state does not hold and a missing position, so the gate is
-what holds a door command to a door.
+with `mayWorkDoor`'s text, one text whatever the square is (VTT-609), and
+whatever actor the command names (VTT-880). Where the square is a door, a
+command whose `actor_id` is not empty and names no actor the snapshot holds
+is refused with `There is no such character.`, for every role, and appends
+nothing (VTT-868). It asks nothing about sight, and nothing of a player's
+named actor but that it exists: `mayWorkDoor` asks whether any token of a
+character the player controls stands beside the square, so a player whose
+token stands beside a door may name another's character, or learn whether
+an id names an actor (the owner's ruling of 2026-11-19, a case only a
+command sent by hand reaches). `engine.Apply`'s door arms refuse a scene the
+state does not hold, a missing position and an actor it has not folded
+(SPEC-018), so the gate is what holds a door command to a door.
 
 **`describeBlockage`.** It rewrites the reason `engine.State.Blocked` gives.
 `scenery: <kind>` becomes `something (a <kind>) is in the way`, the kind
@@ -519,6 +531,10 @@ A client or tool author is bound by these:
 - A door command names a door: an `open_door` or a `close_door` at a square
   whose tile is not a door, or in a scene the table has not created, is
   refused for every role, the DM's and the agent's included.
+- A door command names an actor the table holds, or none; the DM and the
+  agent may name any, and so may a player, whose command the door rule
+  judges by whether a token of theirs stands beside the door, never by the
+  actor it names.
 - A player works a door from a controlled token on it or beside it, and moves
   only onto a square the party member SPEC-015 judges the move by can see now;
   a square they remember and cannot see is refused.
@@ -555,12 +571,13 @@ A client or tool author is bound by these:
   actor that is absent, not theirs, or not a party member is answered with
   one text (VTT-506), as is a player's whisper from an actor that is absent,
   not theirs, or not a party member (VTT-589), and a player's door command
-  that `mayWorkDoor` refuses, whatever its square (VTT-609). The move gate's
+  that `mayWorkDoor` refuses, whatever its square (VTT-609) or actor
+  (VTT-880). The move gate's
   two texts name no package and no id (VTT-601, VTT-602), and the two a party
   member with no name is refused with begin `This character has no name.` and
   name no package (VTT-603). The door gate's text, `There is no door there.`,
-  names no package and no id (VTT-608); no other refusal's text is bounded by
-  this record.
+  names no package and no id (VTT-608), and so does `There is no such
+  character.` (VTT-868); no other refusal's text is bounded by this record.
 - A `grant_actor_control` and an `add_actor` state what the actor is; an
   `add_actor` never confers control, and control is granted afterwards.
 - An `upsert_note` states who may read the note.
@@ -592,4 +609,4 @@ VTT-496, VTT-497, VTT-498, VTT-499, VTT-503, VTT-506, VTT-565, VTT-587,
 VTT-588, VTT-589, VTT-590, VTT-601, VTT-602, VTT-603, VTT-608, VTT-609,
 VTT-675, VTT-677, VTT-690, VTT-716, VTT-718, VTT-746, VTT-747, VTT-750,
 VTT-761, VTT-762, VTT-763, VTT-765, VTT-766, VTT-767, VTT-768, VTT-775,
-VTT-778, VTT-800, VTT-801.
+VTT-778, VTT-800, VTT-801, VTT-867, VTT-868, VTT-880.
