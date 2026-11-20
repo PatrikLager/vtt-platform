@@ -481,6 +481,66 @@ test("the toggle follows the actor a click moves, whatever else of the player's 
   expect(offered("also-mine")).toBe(false);
 });
 
+// --- a player's door buttons ------------------------------------------------
+
+import type { ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
+
+const door = { Kind: "door", Material: "wood", Art: "" };
+const workDoors = (node: HTMLElement) =>
+  Array.from(node.querySelectorAll<HTMLButtonElement>('.doors > .chip[data-action="work-door"]'));
+
+// VTT-881 VTT-882
+test("a player beside doors is offered a work-door button per door, below the hint and above the Say form", () => {
+  const node = renderPlayerPanel(worldWithTiles({ "2,1": door, "1,4": door, "0,0": door }), me, [], doorUI(), async () => ok(), () => {});
+  expect(workDoors(node).map((b) => b.textContent)).toEqual(["Open door (north-west)", "Open door (east)"]);
+  const kids = Array.from(node.children);
+  const at = (n: Element | null | undefined) => kids.indexOf(n!);
+  const say = kids.find((k) => k.tagName === "H3" && k.textContent === "Say something");
+  expect(at(node.querySelector(".hint"))).toBeLessThan(at(node.querySelector(".doors")));
+  expect(at(node.querySelector(".doors"))).toBeLessThan(at(say));
+});
+
+// VTT-881
+test("a player beside no door is offered no door row", () => {
+  const node = renderPlayerPanel(worldWithTiles({ "1,4": door }), me, [], doorUI(), async () => ok(), () => {});
+  expect(node.querySelector(".doors")).toBeNull();
+});
+
+// VTT-883
+test("a door button sends its door's command, once", () => {
+  const sent: ClientCommand[] = [];
+  const node = renderPlayerPanel(worldWithTiles({ "2,1": door }), me, [], doorUI(), async (c) => {
+    sent.push(c);
+    return ok();
+  }, () => {});
+  workDoors(node)[0]!.click();
+  expect(sent.map((c) => {
+    const v = c.command.value as { sceneId: string; at?: { x: number; y: number }; actorId: string };
+    return [c.command.case, v.sceneId, v.at?.x, v.at?.y, v.actorId];
+  })).toEqual([["openDoor", "s1", 2, 1, "mine"]]);
+});
+
+// VTT-883
+test("each click on a door button sends a command of its own request id", () => {
+  const sent: ClientCommand[] = [];
+  const node = renderPlayerPanel(worldWithTiles({ "2,1": door }), me, [], doorUI(), async (c) => {
+    sent.push(c);
+    return ok();
+  }, () => {});
+  workDoors(node)[0]!.click();
+  workDoors(node)[0]!.click();
+  expect(sent).toHaveLength(2);
+  expect(sent[0]!.requestId).not.toBe(sent[1]!.requestId);
+});
+
+// VTT-886
+test("a DM's and an agent's panel offers no door button, though its chip selects an actor beside a door", () => {
+  for (const role of ["dm", "agent"] as const) {
+    const node = renderPlayerPanel(worldWithTiles({ "2,1": door }), { ...me, role }, [], doorUI(), async () => ok(), () => {});
+    expect(node.querySelector('[data-action="work-door"]')).toBeNull();
+  }
+});
+
 // --- fix round 1: eight Stryker survivors, four of them in mayWorkAnyDoor's
 // scene pick and the toggle's own render, none of them decorative -----------
 

@@ -9,7 +9,7 @@ import type { Actor, State } from "../state";
 import { affordable, controlledActors, offered, readLine, sheetFor, sheetNames, targetableTokens, type ShownSection } from "../player";
 import { moveToken, useAbility, setViewpoint, speakAs, speakOutOfCharacter, addWhisper } from "../commands";
 import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
-import { currentSceneId, mayWorkDoor } from "./doors";
+import { currentSceneId, doorButtonsFor, mayWorkDoor } from "./doors";
 import { namer, type Namer } from "./naming";
 
 export interface PlayerUIState {
@@ -198,6 +198,19 @@ export function renderPlayerPanel(
       rerender();
     });
     wrap.appendChild(armBtn);
+  }
+
+  // VTT-881 VTT-883 VTT-886
+  const doors = doorButtonsFor(st, me, actingActor(st, me, ui));
+  if (doors.length > 0) {
+    const row = el("div", "row doors");
+    for (const d of doors) {
+      const b = el("button", "chip", d.label);
+      b.dataset["action"] = "work-door";
+      b.addEventListener("click", () => void send(d.command()));
+      row.appendChild(b);
+    }
+    wrap.appendChild(row);
   }
 
   // VTT-532 VTT-540

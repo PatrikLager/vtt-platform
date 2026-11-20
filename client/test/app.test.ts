@@ -1884,6 +1884,28 @@ test("with doors armed, a player's click on a door the watched character does no
   s?.close();
 });
 
+// VTT-881 VTT-882 VTT-883
+test("a player's door button names the character they watch, and a switch shows the new one's buttons", async () => {
+  const { r, s, sock, switchTo } = await playerWithTwoAtADoor({ x: 1, y: 0 });
+  const labels = () => Array.from(r.querySelectorAll('[data-action="work-door"]')).map((b) => b.textContent);
+  expect(labels()).toEqual(["Open door (north-west)"]);
+  r.querySelector<HTMLButtonElement>('[data-action="work-door"]')!.click();
+  await settle();
+  expect(sock.sent.map((f) => JSON.parse(f).openDoor)).toEqual([{ sceneId: "s1", at: {}, actorId: "a1" }]);
+  await switchTo("a2");
+  expect(labels()).toEqual(["Open door (west)"]);
+  s?.close();
+});
+
+// VTT-881
+test("a player's switch to a character beside no door leaves no door button", async () => {
+  const { r, s, switchTo } = await playerWithTwoAtADoor();
+  expect(r.querySelectorAll('[data-action="work-door"]')).toHaveLength(1);
+  await switchTo("a2");
+  expect(r.querySelector('[data-action="work-door"]')).toBeNull();
+  s?.close();
+});
+
 // VTT-876
 test("the DM's armed door click names no actor, though a chip selects an actor of theirs", async () => {
   const { r, s, sock } = await dmTable({});

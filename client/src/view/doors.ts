@@ -75,14 +75,54 @@ export function currentSceneId(st: State): string {
  */
 export function mayWorkDoor(st: State, me: Me, actorId: string, cell: Point): boolean {
   if (me.role === "dm" || me.role === "agent") return true;
-  if (me.role !== "player") return false;
+  return doorDirection(st, me, actorId, cell) !== undefined;
+}
+
+// Keep each word the owner's (VTT-882).
+const DIRECTIONS = [
+  ["north-west", "north", "north-east"],
+  ["west", "here", "east"],
+  ["south-west", "south", "south-east"],
+];
+
+/** doorDirection is the way to cell from a player's token of actorId beside it (VTT-881, VTT-886). */
+export function doorDirection(st: State, me: Me, actorId: string, cell: Point): string | undefined {
+  if (me.role !== "player") return undefined;
   const sceneId = currentSceneId(st);
-  return Object.values(st.Tokens).some((tok) => {
-    if (tok.SceneID !== sceneId || tok.ActorID !== actorId) return false;
-    const actor = st.Actors[tok.ActorID];
+  const tok = Object.values(st.Tokens).find((t) => {
+    if (t.SceneID !== sceneId || t.ActorID !== actorId) return false;
+    const actor = st.Actors[t.ActorID];
     if (!actor || !actor.controllerIds.includes(me.participantId)) return false;
-    return withinRange({ x: tok.X, y: tok.Y }, cell, 1);
+    return withinRange({ x: t.X, y: t.Y }, cell, 1);
   });
+  if (!tok) return undefined;
+  return DIRECTIONS[cell.y - tok.Y + 1]![cell.x - tok.X + 1];
+}
+
+/** DoorButton is one door a player's panel offers: its label and, per click, its command (VTT-882, VTT-883). */
+export interface DoorButton {
+  label: string;
+  command: () => ClientCommand;
+}
+
+/** doorButtonsFor is a player's door buttons for actorId, in the board's reading order (VTT-881, VTT-887). */
+export function doorButtonsFor(st: State, me: Me, actorId: string): DoorButton[] {
+  const sceneId = currentSceneId(st);
+  const scene = st.Scenes[sceneId];
+  if (!scene) return [];
+  const doors: { at: Point; direction: string; open: boolean }[] = [];
+  for (const [key, tile] of Object.entries(scene.Tiles ?? {})) {
+    if (tile.Kind !== "door") continue;
+    const [x, y] = key.split(",").map(Number) as [number, number];
+    const direction = doorDirection(st, me, actorId, { x, y });
+    if (direction !== undefined) doors.push({ at: { x, y }, direction, open: scene.OpenDoors?.[key] === true });
+  }
+  return doors
+    .sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x)
+    .map(({ at, direction, open }) => ({
+      label: `${open ? "Close" : "Open"} door (${direction})`,
+      command: () => (open ? closeDoor(sceneId, at, actorId) : openDoor(sceneId, at, actorId)),
+    }));
 }
 
 /**

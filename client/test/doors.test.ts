@@ -1,9 +1,9 @@
 import { test, expect } from "bun:test";
 import { toJson } from "@bufbuild/protobuf";
 import { newState, type State } from "../src/state";
-import { doorCommandFor, mayWorkDoor } from "../src/view/doors";
+import { doorButtonsFor, doorCommandFor, mayWorkDoor } from "../src/view/doors";
 import type { Me } from "../src/metadata";
-import { ClientCommandSchema } from "../../contract/gen/ts/vtt/v1/commands_pb";
+import { ClientCommandSchema, type ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
 
 /**
@@ -328,4 +328,82 @@ test("a DM's and an agent's door command names no actor, whatever actor it is ha
     const cmd = doorCommandFor(sceneWithToken(4, 4), me, true, { x: 3, y: 3 }, "a1");
     expect((toJson(ClientCommandSchema, cmd!) as Record<string, unknown>)["openDoor"]).toEqual({ sceneId: "scn", at: { x: 3, y: 3 } });
   }
+});
+
+// --- a player's door buttons --------------------------------------------------
+
+/** A token of a1 at (4,4) standing in an open door, a door on every neighbour,
+ * the tiles listed out of the board's reading order. */
+function ringOfDoors(): State {
+  const st = sceneWithToken(4, 4);
+  const door = { Kind: "door", Material: "wood", Art: "" };
+  st.Scenes["scn"]!.Tiles = {};
+  for (const key of ["5,5", "3,4", "4,3", "4,4", "3,5", "5,3", "4,5", "3,3", "5,4"]) st.Scenes["scn"]!.Tiles[key] = door;
+  st.Scenes["scn"]!.OpenDoors = { "4,4": true, "5,3": true };
+  return st;
+}
+
+const sent = (cmd: ClientCommand) => {
+  const json = toJson(ClientCommandSchema, cmd) as Record<string, unknown>;
+  delete json["requestId"];
+  return json;
+};
+
+// VTT-881 VTT-882 VTT-887
+test("a player's door buttons name each door's direction from the watched token, in the board's reading order", () => {
+  expect(doorButtonsFor(ringOfDoors(), player, "a1").map((b) => b.label)).toEqual([
+    "Open door (north-west)", "Open door (north)", "Close door (north-east)",
+    "Open door (west)", "Close door (here)", "Open door (east)",
+    "Open door (south-west)", "Open door (south)", "Open door (south-east)",
+  ]);
+});
+
+// VTT-883
+test("a closed door's button opens it and an open one's closes it, at its square, naming the watched character", () => {
+  const byLabel = new Map(doorButtonsFor(ringOfDoors(), player, "a1").map((b) => [b.label, b.command()]));
+  expect(sent(byLabel.get("Open door (south-east)")!)).toEqual({ openDoor: { sceneId: "scn", at: { x: 5, y: 5 }, actorId: "a1" } });
+  expect(sent(byLabel.get("Close door (north-east)")!)).toEqual({ closeDoor: { sceneId: "scn", at: { x: 5, y: 3 }, actorId: "a1" } });
+  expect(sent(byLabel.get("Close door (here)")!)).toEqual({ closeDoor: { sceneId: "scn", at: { x: 4, y: 4 }, actorId: "a1" } });
+});
+
+// VTT-881
+test("no button for a door two squares off, a wall, a door of another scene, or a door beside another's token", () => {
+  expect(doorButtonsFor(sceneWithToken(5, 4), player, "a1")).toEqual([]);
+  expect(doorButtonsFor(sceneWithToken(5, 3), player, "a1")).toEqual([]);
+  expect(doorButtonsFor(sceneWithToken(3, 5), player, "a1")).toEqual([]);
+  expect(doorButtonsFor(sceneWithToken(4, 4), player, "a1").map((b) => b.label)).toEqual(["Open door (north-west)"]);
+  const elsewhere = sceneWithToken(4, 4, { sceneId: "other" });
+  expect(doorButtonsFor(elsewhere, player, "a1")).toEqual([]);
+  expect(doorButtonsFor(sceneWithToken(4, 4, { controllerId: "p-2" }), player, "a1")).toEqual([]);
+});
+
+// VTT-881
+test("a door beside another of the player's characters gets no button for the one they watch", () => {
+  const st = sceneWithToken(8, 7);
+  st.Actors["a2"] = { ...st.Actors["a1"]!, actorId: "a2", name: "Second" };
+  st.Tokens["t2"] = { ID: "t2", SceneID: "scn", ActorID: "a2", X: 2, Y: 2 };
+  expect(doorButtonsFor(st, player, "a1")).toEqual([]);
+  expect(doorButtonsFor(st, player, "a2").map((b) => b.label)).toEqual(["Open door (south-east)"]);
+});
+
+// VTT-882
+test("a scene with no OpenDoors reads its door closed", () => {
+  const st = sceneWithToken(3, 4);
+  delete (st.Scenes["scn"] as { OpenDoors?: unknown }).OpenDoors;
+  expect(doorButtonsFor(st, player, "a1").map((b) => b.label)).toEqual(["Open door (north)"]);
+});
+
+// VTT-886
+test("a DM and an agent get no door button, whatever actor they ask for", () => {
+  for (const role of ["dm", "agent"] as const) {
+    const me: Me = { participantId: "p-1", role } as Me;
+    expect(doorButtonsFor(sceneWithToken(4, 4), me, "a1")).toEqual([]);
+  }
+});
+
+// VTT-881
+test("no scene, no door button", () => {
+  const st = newState();
+  st.Actors["a1"] = sceneWithToken(4, 4).Actors["a1"]!;
+  expect(doorButtonsFor(st, player, "a1")).toEqual([]);
 });
