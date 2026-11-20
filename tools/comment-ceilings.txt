@@ -4,7 +4,7 @@
 # `python3 tools/check-comments.py --write-ledger`, never by hand and
 # never raised. SPEC-010.
 
-client/src/app.ts  44.0
+client/src/app.ts  43.6
 client/src/auth.ts  44.5
 client/src/commands.ts  34.5
 client/src/fold.ts  29.6
@@ -17,15 +17,15 @@ client/src/state.ts  61.2
 client/src/view/art-assets.ts  68.9
 client/src/view/camera.ts  50.0
 client/src/view/canvas.ts  71.6
-client/src/view/dm.ts  32.6
-client/src/view/doors.ts  64.8
+client/src/view/dm.ts  31.0
+client/src/view/doors.ts  22.0
 client/src/view/feed.ts  15.1
 client/src/view/focus.ts  19.1
 client/src/view/grid.ts  28.4
 client/src/view/join.ts  29.9
 client/src/view/naming.ts  7.3
 client/src/view/pack-assets.ts  62.7
-client/src/view/player.ts  13.0
+client/src/view/player.ts  12.5
 client/src/view/scene-plan.ts  52.9
 client/src/view/spectator.ts  38.4
 client/src/wire.ts  29.6
