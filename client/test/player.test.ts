@@ -545,6 +545,18 @@ test("a DM's and an agent's panel offers no door button, though its chip selects
   }
 });
 
+// VTT-881
+test("a player's panel whose chips name only a party member the player does not control, with none selected, is headed by the first and offers no door", () => {
+  // "theirs" stands at (3,1) beside the door at (4,1); "p-watcher" controls
+  // no actor at all, so none of p-watcher's characters stands beside a door.
+  const watcher: Me = { participantId: "p-watcher", name: "W", role: "player" };
+  const switcher = { actors: [{ actorId: "theirs", name: "THEIRS" }], onSwitch: () => {} };
+  const node = renderPlayerPanel(worldWithTiles({ "4,1": door }), watcher, [], { ...doorUI(), selectedActorId: "" },
+    async () => ok(), () => {}, switcher);
+  expect(node.querySelector("h2")?.textContent).toBe("THEIRS");
+  expect(node.querySelector('[data-action="work-door"]')).toBeNull();
+});
+
 // --- the door buttons' scene pick: kills that stood on the toggle's ----------
 
 // VTT-881
