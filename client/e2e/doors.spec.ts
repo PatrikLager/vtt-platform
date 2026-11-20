@@ -31,18 +31,7 @@ const [dx, dy] = doorKey.split(",").map(Number) as [number, number];
 const west = { x: dx - 1, y: dy };
 const east = { x: dx + 1, y: dy };
 
-// Measure in the page in one step: a repaint replaces the tokens' elements,
-// never their geometry.
-async function between(page: Page, a: string, b: string) {
-  return page.evaluate(([one, two]) => {
-    const at = (id: string) => document.querySelector(`[data-token-id="${id}"]`)!;
-    at(one).scrollIntoView({ block: "center" });
-    const [r1, r2] = [at(one).getBoundingClientRect(), at(two).getBoundingClientRect()];
-    return { x: (r1.x + r1.width / 2 + r2.x + r2.width / 2) / 2, y: (r1.y + r1.height / 2 + r2.y + r2.height / 2) / 2 };
-  }, [a, b] as const);
-}
-
-// VTT-869 VTT-870 VTT-871 VTT-872 VTT-873
+// VTT-869 VTT-870 VTT-871 VTT-872 VTT-882 VTT-883
 test("the Story names who opened and closed a door to whoever saw them, and the DM's Events panel says where", async ({ browser }) => {
   for (const sq of [west, east]) {
     expect(cellar.tiles[`${sq.x},${sq.y}`]).not.toMatch(/wall|door/);
@@ -73,10 +62,8 @@ test("the Story names who opened and closed a door to whoever saw them, and the 
   await asDM(dm, tokens.dm, [{ openDoor: { sceneId: cellar.id, at: { x: dx, y: dy }, actorId: "act-cutpurse" } }]);
   await expect(player.locator('[data-token-id="tok-cutpurse"]')).toBeVisible({ timeout: 10_000 });
 
-  await player.locator('[data-action="arm-doors"]').click();
-  await expect(player.locator(".armed-label")).toBeVisible();
-  const door = await between(player, "tok-fighter", "tok-cutpurse");
-  await player.mouse.click(door.x, door.y);
+  await expect(player.locator('[data-action="arm-doors"]')).toHaveCount(0);
+  await player.getByRole("button", { name: "Close door (east)", exact: true }).click();
   await expect(player.locator(".feed")).toContainText("Brannoc closed a door", { timeout: 10_000 });
   // The close's frames follow the open's on one socket, so the open's line, had
   // it been sent, is drawn by now.
