@@ -547,7 +547,7 @@ test("closeDoor matches the client's own expected shape, scene and square in ord
   });
 });
 
-// VTT-873
+// VTT-883
 test("openDoor naming an actor matches the committed open_door_command fixture", () => {
   const cmd = openDoor("cellar", { x: 4, y: 2 }, "act-lera");
   sameShape(toJson(ClientCommandSchema, cmd) as Record<string, unknown>, fixture("open_door_command.json"));

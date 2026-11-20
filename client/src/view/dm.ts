@@ -295,13 +295,7 @@ export interface DMDeps {
   rerender: () => void;
   notify: (msg: string) => void;
   confirm: (msg: string) => boolean;
-  /**
-   * Whether the door tool is armed on THIS table (Task 4) — a single bit
-   * app.ts's `ui.doorsArmed` owns, not a DM-only setting: the player panel
-   * (view/player.ts) offers the same toggle to a player, and the board
-   * itself (spectator.ts) shows the state on the canvas, because arming
-   * doors changes what a board click means everywhere at once.
-   */
+  /** Whether the door tool is armed: app.ts's `ui.doorsArmed`, which the board shows too (SPEC-022). */
   doorsArmed: boolean;
   /**
    * Flip doorsArmed and repaint. A LOCAL mode change, not a command — it
@@ -483,21 +477,8 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     wrap.appendChild(g);
   }
 
-  // --- doors ---
-  //
-  // A pure UI mode, not a command of its own (Task 4): arming sends nothing
-  // — app.ts's onCell reads this bit to decide what a board click means.
-  // Offered UNCONDITIONALLY, unlike the player panel's own copy of this
-  // toggle. The rejected alternative was reapplying view/player.ts's
-  // mayWorkAnyDoor gate here too, and that is NOT a guard with no branch it
-  // could ever take: mayWorkAnyDoor asks BOTH whether a door exists in the
-  // scene at all AND whether the viewer may work it, and a DM fails the
-  // FIRST half in the ordinary case of a scene with no doors yet, or no
-  // scene at all — doors.ts's mayWorkDoor only ever waives the second half
-  // for dm/agent. Rejected anyway: a DM authoring a map is exactly who
-  // should be able to arm the tool BEFORE the first door tile exists,
-  // unlike a player, who is offered the control only once refusing it would
-  // be pointless rather than merely premature.
+  // Keep the door toggle offered whatever the scene holds: dm-view.test.ts's
+  // "the toggle's label says which state it is in, at render time".
   wrap.appendChild(
     group(
       "Doors",

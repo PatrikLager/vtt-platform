@@ -407,23 +407,20 @@ test("player: after a switch, a move moves the newly watched character", async (
   s?.close();
 });
 
-test("player: with doors armed, a click on a listed party member's token sends nothing, and the door still works", async () => {
-  // VTT-460: armed doors work a door or do nothing.
-  const log = mainLog({ tiles: { "0,0": { kind: "door", material: "wood", art: "" } } });
+test("player: a click on a listed party member's token standing in an open door switches to them, and works no door", async () => {
+  // VTT-460 VTT-882 VTT-884 VTT-885
+  const log = mainLog({
+    tiles: { "2,2": { kind: "door", material: "wood", art: "" } },
+    bram: [2, 2],
+    more: [{ doorOpened: { sceneId: "s1", at: { x: 2, y: 2 } } }],
+  });
   const { r, s, sock } = await openPlayer({ log });
-  r.querySelector<HTMLButtonElement>('.player [data-action="arm-doors"]')!.click();
+  expect(r.querySelector('.player [data-action="arm-doors"]')).toBeNull();
+  expect(r.querySelector('.player [data-action="work-door"]')!.textContent).toBe("Close door (south-east)");
+  const from = sock.sent.length;
+  clickCell(r, 2, 2);
   await settle();
-  let from = sock.sent.length;
-  clickCell(r, 5, 5);
-  await settle();
-  expect(sentSince(sock, from)).toHaveLength(0);
-
-  from = sock.sent.length;
-  clickCell(r, 0, 0);
-  await settle();
-  const door = sentSince(sock, from);
-  expect(door).toHaveLength(1);
-  expect(door[0]).toHaveProperty("openDoor");
+  expect(sentSince(sock, from).map((c) => c.setViewpoint?.actorId)).toEqual(["a-bram"]);
   s?.close();
 });
 

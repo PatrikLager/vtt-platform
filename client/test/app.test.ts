@@ -1747,13 +1747,13 @@ test("a spectator's clicks on the board send nothing", async () => {
   s?.close();
 });
 
-// --- arming doors on the board (Task 4) -------------------------------------
+// --- doors on the board ---------------------------------------------------
 //
 // A live table with a 4x4 scene (fitCamera(4,4,44,640,480) -> scale
 // 2.727273, offsetX 80, offsetY 0 -- boardCamera's own arithmetic, not
 // hand-picked) carrying a door tile at (0,0) and the player's own token at
-// (1,1): Chebyshev distance 1, adjacent, so mayWorkDoor passes and the panel
-// offers the toggle at all. Pixel (90,10) resolves to world ((90-80)/2.727,
+// (1,1): Chebyshev distance 1, adjacent, so the panel offers its door
+// button. Pixel (90,10) resolves to world ((90-80)/2.727,
 // 10/2.727) = (3.67, 3.67) -> cell (0,0), the door. Pixel (210,10) resolves
 // to world ((210-80)/2.727, 3.67) = (47.67, 3.67) -> cell (1,0), a plain
 // square with no Tiles entry at all.
@@ -1790,20 +1790,35 @@ async function playerTableWithDoor() {
   return { r, s, sock };
 }
 
-const arm = (r: HTMLElement) => r.querySelector<HTMLButtonElement>('[data-action="arm-doors"]')!.click();
+const arm = (r: HTMLElement) => r.querySelector<HTMLButtonElement>('.dm [data-action="arm-doors"]')!.click();
 const clickBoard = (r: HTMLElement, clientX: number, clientY: number) =>
   (r.querySelector(".grid") as HTMLElement).dispatchEvent(
     new MouseEvent("click", { clientX, clientY, bubbles: true }),
   );
 
-test("with doors armed, a click on a door square opens it and sends no move", async () => {
-  const { r, s, sock } = await playerTableWithDoor();
+/** A DM at a table with a door at (0,0), their actor Grukk's token at (1,1) and Grukk's chip selected. */
+async function dmTableWithDoor() {
+  const { r, s, sock } = await dmTable({});
+  sock.deliver(envelope(2, { sceneCreated: {
+    sceneId: "s1", name: "Hall", gridWidth: 4, gridHeight: 4, tiles: { "0,0": { kind: "door", material: "wood", art: "" } },
+  } }));
+  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "g1", name: "Grukk" } } }));
+  sock.deliver(envelope(4, { actorControlGranted: { actorId: "g1", participantId: "p-dm", kind: "ACTOR_KIND_NON_PARTY" } }));
+  sock.deliver(envelope(5, { tokenPlaced: { tokenId: "tg", sceneId: "s1", actorId: "g1", position: { x: 1, y: 1 } } }));
+  await settle();
+  byText(r, "Grukk")!.click();
+  await settle();
+  return { r, s, sock };
+}
+
+// VTT-888
+test("with doors armed, a DM's click on a door square opens it and sends no move", async () => {
+  const { r, s, sock } = await dmTableWithDoor();
   arm(r);
+  await settle();
   clickBoard(r, 90, 10); // cell (0,0), the door
   await settle();
-
-  expect(sock.sent).toHaveLength(1);
-  expect(JSON.parse(sock.sent[0]!)).toHaveProperty("openDoor");
+  expect(sock.sent.map((f) => Object.keys(JSON.parse(f)).filter((k) => k !== "requestId"))).toEqual([["openDoor"]]);
   s?.close();
 });
 
@@ -1841,48 +1856,6 @@ async function playerWithTwoAtADoor(bramAt = { x: 3, y: 3 }) {
   };
   return { r, s, sock, switchTo };
 }
-
-// VTT-873 VTT-875 VTT-879
-test("a player's armed door click names the character they watch, and a switch to one far from the door withdraws the toggle and disarms", async () => {
-  const { r, s, sock, switchTo } = await playerWithTwoAtADoor();
-  arm(r);
-  clickBoard(r, 90, 10); // cell (0,0), the door, beside Lera
-  await settle();
-  expect(sock.sent.map((f) => JSON.parse(f).openDoor)).toEqual([{ sceneId: "s1", at: {}, actorId: "a1" }]);
-
-  await switchTo("a2");
-  expect(r.querySelector('[data-action="arm-doors"]')).toBeNull();
-  expect(r.querySelector(".armed-label")).toBeNull();
-  clickBoard(r, 90, 10);
-  await settle();
-  expect(JSON.parse(sock.sent[1]!)).toHaveProperty("moveToken");
-  s?.close();
-});
-
-// VTT-879
-test("a switch to another character beside a door leaves the toggle offered and the door tool disarmed", async () => {
-  const { r, s, switchTo } = await playerWithTwoAtADoor({ x: 1, y: 0 });
-  arm(r);
-  await settle();
-  expect(r.querySelector('[data-action="arm-doors"]')!.textContent).toBe("Doors armed");
-  await switchTo("a2");
-  expect(r.querySelector('[data-action="arm-doors"]')!.textContent).toBe("Arm doors");
-  expect(r.querySelector(".grid")!.classList.contains("armed")).toBe(false);
-  s?.close();
-});
-
-// VTT-874
-test("with doors armed, a player's click on a door the watched character does not stand beside sends nothing, whoever else of theirs does", async () => {
-  const { r, s, sock } = await playerWithTwoAtADoor();
-  arm(r);
-  sock.deliver(envelope(9, { tokenMoved: { tokenId: "t1", sceneId: "s1", from: { x: 1, y: 1 }, to: { x: 3, y: 2 } } }));
-  sock.deliver(envelope(10, { tokenMoved: { tokenId: "t2", sceneId: "s1", from: { x: 3, y: 3 }, to: { x: 1, y: 0 } } }));
-  await settle();
-  clickBoard(r, 90, 10); // the door, beside Bram and not Lera, whom the player watches
-  await settle();
-  expect(sock.sent).toEqual([]);
-  s?.close();
-});
 
 // VTT-881 VTT-882 VTT-883
 test("a player's door button names the character they watch, and a switch shows the new one's buttons", async () => {
@@ -1926,10 +1899,22 @@ test("the DM's armed door click names no actor, though a chip selects an actor o
   s?.close();
 });
 
+// VTT-884 VTT-885
+test("a player beside a door is offered no arm-doors control, and a click on the door square moves the watched character's token", async () => {
+  const { r, s, sock } = await playerTableWithDoor();
+  expect(r.querySelector('[data-action="work-door"]')).not.toBeNull();
+  expect(r.querySelector('[data-action="arm-doors"]')).toBeNull();
+  clickBoard(r, 90, 10); // cell (0,0), the door
+  await settle();
+  expect(sock.sent.map((f) => Object.keys(JSON.parse(f)).filter((k) => k !== "requestId"))).toEqual([["moveToken"]]);
+  expect(JSON.parse(sock.sent[0]!).moveToken.tokenId).toBe("t1");
+  s?.close();
+});
+
+// VTT-884
 test("with doors disarmed, the same click moves the token instead", async () => {
   const { r, s, sock } = await playerTableWithDoor();
-  // Deliberately NOT armed -- doorsArmed starts false.
-  clickBoard(r, 90, 10); // same cell (0,0) as the armed case above
+  clickBoard(r, 90, 10); // cell (0,0), the door
   await settle();
 
   expect(sock.sent).toHaveLength(1);
@@ -1937,17 +1922,20 @@ test("with doors disarmed, the same click moves the token instead", async () => 
   s?.close();
 });
 
-test("with doors armed, a click on a plain square sends nothing at all", async () => {
-  // Armed means a non-door click does NOTHING -- it must not fall through to
-  // a move. This is the behaviour change on the path players already use to
-  // move tokens, so it gets its own direct assertion rather than relying on
-  // the door-square case above to imply it.
-  const { r, s, sock } = await playerTableWithDoor();
+// VTT-888
+test("with doors armed, a DM's click on a plain square sends nothing at all, though unarmed it moves", async () => {
+  // Armed, a non-door click must not fall through to a move.
+  const { r, s, sock } = await dmTableWithDoor();
   arm(r);
+  await settle();
   clickBoard(r, 210, 10); // cell (1,0): no Tiles entry at all, so not a door
   await settle();
-
   expect(sock.sent).toHaveLength(0);
+  arm(r);
+  await settle();
+  clickBoard(r, 210, 10);
+  await settle();
+  expect(sock.sent.map((f) => Object.keys(JSON.parse(f)).filter((k) => k !== "requestId"))).toEqual([["moveToken"]]);
   s?.close();
 });
 
@@ -2012,8 +2000,7 @@ test("with no adventures loaded the console shows no Adventures section", async 
 test("the DM's own console toggle arms doors, board-wide", async () => {
   // Exercises app.ts's real toggleDoors closure end to end, not the isolated
   // one dm-view.test.ts's harness tracks: a click on the CONSOLE's own
-  // control (unlike the player-panel one, which mutates ui.doorsArmed
-  // directly) goes through DMDeps.toggleDoors, which is this function.
+  // control goes through DMDeps.toggleDoors, which is this function.
   const { r, s, sock } = await dmTable({});
   // A scene, so there is a `.grid` at all to carry the class -- dmTable's
   // own default log has none (renderGrid's early "No scene yet." return
@@ -3752,20 +3739,6 @@ test("a player who controls no party member is told so on the perch, and a spect
   expect(watcher.r.querySelector(".perch")).not.toBeNull();
   expect(watcher.r.querySelector(".plays-none")).toBeNull();
   watcher.s?.close();
-});
-
-test("a player who perches while doors are armed is shown no armed board", async () => {
-  const { r, s, sock } = await playerTableWithDoor();
-  arm(r);
-  await settle();
-  expect(r.querySelectorAll(".grid.armed").length).toBe(1);
-
-  sock.deliver(watchableNone([["a1", "Lera"]]));
-  await settle();
-  expect(r.querySelectorAll(".perch").length).toBe(1);
-  expect(r.querySelectorAll(".grid.armed").length).toBe(0);
-  expect(r.textContent).not.toContain("Doors armed");
-  s?.close();
 });
 
 // VTT-461

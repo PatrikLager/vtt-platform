@@ -397,7 +397,7 @@ test("an empty participant matches nothing, even against an empty id in the set"
   expect(got.map((a) => a.actorId)).toEqual([]);
 });
 
-// --- the arm-doors toggle (Task 4) ------------------------------------------
+// --- a player's door buttons: who is offered one ------------------------------
 
 import { renderPlayerPanel } from "../src/view/player";
 import { ok } from "./support/answers";
@@ -411,67 +411,60 @@ function worldWithTiles(tiles: Record<string, { Kind: string; Material: string; 
 
 const doorUI = () => ({ selectedActorId: "mine", selectedAbilityId: "", doorsArmed: false });
 
-test("a player with a controlled token adjacent to a door is offered the toggle", () => {
+// VTT-881
+test("a player with a controlled token adjacent to a door is offered a door button", () => {
   // "mine" sits at (1,1) (world()'s own fixture); a door at (0,0) is
   // Chebyshev distance 1 away -- adjacent.
   const st = worldWithTiles({ "0,0": { Kind: "door", Material: "wood", Art: "" } });
   const node = renderPlayerPanel(st, me, [], doorUI(), async () => ok(), () => {});
-  expect(node.querySelector('[data-action="arm-doors"]')).not.toBeNull();
+  expect(node.querySelector('[data-action="work-door"]')).not.toBeNull();
 });
 
-test("a player with no controlled token near any door gets no toggle at all", () => {
+// VTT-881
+test("a player with no controlled token near any door gets no door button at all", () => {
   // The door is at (9,0); "mine" is at (1,1) -- Chebyshev distance 8, and
-  // nothing else this participant controls is any closer. An offered toggle
-  // whose every use mayWorkDoor would refuse is exactly what this must not
-  // do (doors.ts's own reasoning about mayWorkDoor, one level up).
+  // nothing else this participant controls is any closer. A button the
+  // server would refuse (VTT-149) is exactly what this must not offer.
   const st = worldWithTiles({ "9,0": { Kind: "door", Material: "wood", Art: "" } });
   const node = renderPlayerPanel(st, me, [], doorUI(), async () => ok(), () => {});
-  expect(node.querySelector('[data-action="arm-doors"]')).toBeNull();
+  expect(node.querySelector('[data-action="work-door"]')).toBeNull();
 });
 
-test("a scene with no doors at all offers no toggle", () => {
+// VTT-881
+test("a scene with no doors at all offers no door button", () => {
   // world()'s scene carries no Tiles entry whatsoever (undefined, not {}).
   const node = renderPlayerPanel(world(), me, [], doorUI(), async () => ok(), () => {});
-  expect(node.querySelector('[data-action="arm-doors"]')).toBeNull();
+  expect(node.querySelector('[data-action="work-door"]')).toBeNull();
 });
 
-test("a non-door tile next to a controlled token does not offer the toggle", () => {
+// VTT-881
+test("a non-door tile next to a controlled token does not offer a door button", () => {
   // Kills the mutant that drops (or inverts) the `tile.Kind !== "door"`
   // filter: without it, ANY adjacent tile -- wall included -- would offer a
-  // toggle for working a door that is not there. Same adjacency as the
+  // button for working a door that is not there. Same adjacency as the
   // first test above (door at (0,0)); only the tile's Kind differs.
   const st = worldWithTiles({ "0,0": { Kind: "wall", Material: "stone", Art: "" } });
   const node = renderPlayerPanel(st, me, [], doorUI(), async () => ok(), () => {});
-  expect(node.querySelector('[data-action="arm-doors"]')).toBeNull();
+  expect(node.querySelector('[data-action="work-door"]')).toBeNull();
 });
 
-test("a DM sees no panel toggle -- they already have one in the console", () => {
-  // Avoids offering the SAME bit through two controls: dm/agent get an
-  // unconditional toggle from the DM console (dm.ts), which they also see
-  // beside this very panel (app.ts's canAct/isDM both admit a DM).
+// VTT-886
+test("a DM sees no door button -- they arm doors in the console", () => {
+  // dm/agent get the console's toggle (dm.ts), which they also see beside
+  // this very panel (app.ts's canAct/isDM both admit a DM).
   const st = worldWithTiles({ "0,0": { Kind: "door", Material: "wood", Art: "" } });
   const dm: Me = { participantId: "p-me", name: "DM", role: "dm" };
   const node = renderPlayerPanel(st, dm, [], doorUI(), async () => ok(), () => {});
-  expect(node.querySelector('[data-action="arm-doors"]')).toBeNull();
+  expect(node.querySelector('[data-action="work-door"]')).toBeNull();
 });
 
-test("clicking the toggle flips ui.doorsArmed and repaints", () => {
-  const st = worldWithTiles({ "0,0": { Kind: "door", Material: "wood", Art: "" } });
-  const ui = doorUI();
-  let repaints = 0;
-  const node = renderPlayerPanel(st, me, [], ui, async () => ok(), () => { repaints++; });
-  node.querySelector<HTMLButtonElement>('[data-action="arm-doors"]')!.click();
-  expect(ui.doorsArmed).toBe(true);
-  expect(repaints).toBe(1);
-});
-
-// VTT-875
-test("the toggle follows the actor a click moves, whatever else of the player's stands beside a door", () => {
+// VTT-881
+test("the door buttons follow the actor a click moves, whatever else of the player's stands beside a door", () => {
   const st = worldWithTiles({ "0,0": { Kind: "door", Material: "wood", Art: "" } });
   st.Tokens["t-also"] = { ID: "t-also", SceneID: "s1", ActorID: "also-mine", X: 7, Y: 7 };
   const offered = (selectedActorId: string) =>
     renderPlayerPanel(st, me, [], { ...doorUI(), selectedActorId }, async () => ok(), () => {})
-      .querySelector('[data-action="arm-doors"]') !== null;
+      .querySelector('[data-action="work-door"]') !== null;
   expect(offered("mine")).toBe(true);
   expect(offered("also-mine")).toBe(false);
   expect(offered("")).toBe(false);
@@ -533,6 +526,17 @@ test("each click on a door button sends a command of its own request id", () => 
   expect(sent[0]!.requestId).not.toBe(sent[1]!.requestId);
 });
 
+// VTT-885
+test("a player's panel draws no arm-doors toggle, whether doors are armed or not", () => {
+  for (const doorsArmed of [false, true]) {
+    const node = renderPlayerPanel(worldWithTiles({ "2,1": door }), me, [], { ...doorUI(), doorsArmed }, async () => ok(), () => {});
+    expect(workDoors(node)).toHaveLength(1);
+    expect(node.querySelector('[data-action="arm-doors"]')).toBeNull();
+    expect(node.textContent).not.toContain("Doors armed");
+    expect(node.textContent).not.toContain("Arm doors");
+  }
+});
+
 // VTT-886
 test("a DM's and an agent's panel offers no door button, though its chip selects an actor beside a door", () => {
   for (const role of ["dm", "agent"] as const) {
@@ -541,31 +545,29 @@ test("a DM's and an agent's panel offers no door button, though its chip selects
   }
 });
 
-// --- fix round 1: eight Stryker survivors, four of them in mayWorkAnyDoor's
-// scene pick and the toggle's own render, none of them decorative -----------
+// --- the door buttons' scene pick: kills that stood on the toggle's ----------
 
-test("no scenes at all means no toggle, even with a controlled actor", () => {
-  // Kills the BooleanLiteral mutant that turns `if (!scene) return false`
-  // into `return true` inside mayWorkAnyDoor. A player whose campaign has
-  // not created a scene yet must not be offered a control this file's own
-  // comment on mayWorkAnyDoor calls out by name -- an affordance whose
-  // every use mayWorkDoor would refuse. There is no scene at all here to
-  // even ask mayWorkDoor about, let alone a door in one.
+// VTT-881
+test("no scenes at all means no door button, even with a controlled actor", () => {
+  // A player whose campaign has not created a scene yet must not be offered
+  // a button the server would refuse; there is no scene here, let alone a
+  // door in one.
   const st = newState();
   st.Actors["mine"] = {
     actorId: "mine", name: "MINE", moduleId: "", attributes: {}, resources: {},
     controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED, abilityIds: [],
   };
   const node = renderPlayerPanel(st, me, [], doorUI(), async () => ok(), () => {});
-  expect(node.querySelector('[data-action="arm-doors"]')).toBeNull();
+  expect(node.querySelector('[data-action="work-door"]')).toBeNull();
 });
 
+// VTT-881
 test("the current scene is the lexicographically GREATEST id, not the one inserted last", () => {
   // Insertion order ["zzz", "aaa"] -- the reverse of sort order. Kills the
-  // mutant that drops `.sort()` from mayWorkAnyDoor's
+  // mutant that drops `.sort()` from currentSceneId's
   // `Object.keys(st.Scenes).sort().at(-1)`: without it, Object.keys'
   // insertion-order return resolves to "aaa", which carries no door and no
-  // controlled token, and the toggle would wrongly stay hidden even though
+  // controlled token, and the button would wrongly stay hidden even though
   // "zzz" -- the real current scene -- has a door right next to "mine".
   // Same shape as doors.test.ts's own "resolves the LEXICOGRAPHICALLY
   // GREATEST scene id" test, for the third independent copy of this pick.
@@ -581,27 +583,7 @@ test("the current scene is the lexicographically GREATEST id, not the one insert
   };
   st.Tokens["t-mine"] = { ID: "t-mine", SceneID: "zzz", ActorID: "mine", X: 1, Y: 1 };
   const node = renderPlayerPanel(st, me, [], doorUI(), async () => ok(), () => {});
-  expect(node.querySelector('[data-action="arm-doors"]')).not.toBeNull();
-});
-
-test("the toggle's class and label reflect whether doors are currently armed", () => {
-  // TWO SEPARATE RENDERS, not one panel toggled and re-read: renderPlayerPanel
-  // runs once per call (there is no internal re-render to observe), so this
-  // is what actually exercises BOTH arms of `ui.doorsArmed ? "chip sel" :
-  // "chip"` and BOTH arms of `ui.doorsArmed ? "Doors armed" : "Arm doors"`.
-  // Mirrors dm-view.test.ts's "the toggle's label says which state it is in,
-  // at render time" for the DM console's identically-shaped pair.
-  const st = worldWithTiles({ "0,0": { Kind: "door", Material: "wood", Art: "" } });
-
-  const off = renderPlayerPanel(st, me, [], { ...doorUI(), doorsArmed: false }, async () => ok(), () => {})
-    .querySelector<HTMLButtonElement>('[data-action="arm-doors"]')!;
-  expect(off.className).toBe("chip");
-  expect(off.textContent).toBe("Arm doors");
-
-  const on = renderPlayerPanel(st, me, [], { ...doorUI(), doorsArmed: true }, async () => ok(), () => {})
-    .querySelector<HTMLButtonElement>('[data-action="arm-doors"]')!;
-  expect(on.className).toBe("chip sel");
-  expect(on.textContent).toBe("Doors armed");
+  expect(node.querySelector('[data-action="work-door"]')).not.toBeNull();
 });
 
 // --- fix round 2: the `?? ""` equivalence claim was FALSE ------------------
@@ -617,21 +599,22 @@ test("the toggle's class and label reflect whether doors are currently armed", (
 // identically-shaped claim in doors.ts's currentSceneId. It falsified.
 // Withdrawing the equivalents-file entry; this test is the mutant's kill.
 
+// VTT-881
 test("a prototype-injected empty-string scene defeats the `?? \"\"` equivalence claim -- the entry is WITHDRAWN, not filed", () => {
-  // Kills `Object.keys(st.Scenes).sort().at(-1) ?? ""` mutated to
-  // `?? "Stryker was here!"` inside mayWorkAnyDoor. st.Scenes has ZERO OWN
-  // keys (`.at(-1)` is undefined, so the `??` fires either way), but its
-  // PROTOTYPE resolves "" to a real scene with a door -- a state fold() can
+  // Kills `Object.keys(st.Scenes).sort().at(-1) ?? ""` mutated to `?? "Stryker
+  // was here!"` inside currentSceneId, read by doorButtonsFor. st.Scenes has
+  // ZERO OWN keys (`.at(-1)` is undefined, so the `??` fires either way), but
+  // its PROTOTYPE resolves "" to a real scene with a door -- a state fold() can
   // never build (fold.ts always hands Scenes an `Object.create(null)` via
   // state.ts's emptyMap, so no real campaign log can give it a prototype at
   // all), the same category of hand-built-past-the-fold state doors.test.ts
-  // already uses for this module family ("a Scene with no Tiles", "a token
-  // whose actor is missing") and doors.ts's own currentSceneId doc comment
-  // cites for exactly this shape of claim. `st.Scenes["Stryker was here!"]`
-  // is not on the injected prototype, so the mutant's sceneId finds nothing,
-  // `!scene` is true, and mayWorkAnyDoor returns false where the real code
-  // -- reaching the same scene via the SAME "" the original fallback yields
-  // -- finds the door and returns true.
+  // already uses for this module family ("a Scene with no Tiles", "a token whose
+  // actor is missing") and doors.ts's own currentSceneId doc comment cites for
+  // exactly this shape of claim. `st.Scenes["Stryker was here!"]` is not on the
+  // injected prototype, so the mutant's sceneId finds nothing, `!scene` is true,
+  // and doorButtonsFor offers no button where the real code -- reaching the same
+  // scene via the SAME "" the original fallback yields -- finds the door and
+  // offers one.
   const st = newState();
   const fakeScene = {
     ID: "", Name: "Ghost", GridWidth: 4, GridHeight: 4,
@@ -646,7 +629,7 @@ test("a prototype-injected empty-string scene defeats the `?? \"\"` equivalence 
   // mutant's -- and adjacent (Chebyshev 1) to the door at (0,0).
   st.Tokens["t-mine"] = { ID: "t-mine", SceneID: "", ActorID: "mine", X: 1, Y: 1 };
   const node = renderPlayerPanel(st, me, [], doorUI(), async () => ok(), () => {});
-  expect(node.querySelector('[data-action="arm-doors"]')).not.toBeNull();
+  expect(node.querySelector('[data-action="work-door"]')).not.toBeNull();
 });
 
 // VTT-501

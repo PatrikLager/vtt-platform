@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { toJson } from "@bufbuild/protobuf";
 import { newState, type State } from "../src/state";
-import { doorButtonsFor, doorCommandFor, mayWorkDoor } from "../src/view/doors";
+import { doorButtonsFor, doorCommandFor, doorDirection } from "../src/view/doors";
 import type { Me } from "../src/metadata";
 import { ClientCommandSchema, type ClientCommand } from "../../contract/gen/ts/vtt/v1/commands_pb";
 import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
@@ -101,75 +101,75 @@ function sceneWithToken(
   return st;
 }
 
-const dm: Me = { participantId: "p-dm", role: "dm" } as Me;
 const player: Me = { participantId: "p-1", role: "player" } as Me;
 
+// VTT-888
 test("armed, a closed door opens", () => {
-  const cmd = doorCommandFor(scene(), dm, true, { x: 3, y: 3 }, "");
+  const cmd = doorCommandFor(scene(), true, { x: 3, y: 3 });
   expect(cmd?.command.case).toBe("openDoor");
   const j = toJson(ClientCommandSchema, cmd!) as Record<string, any>;
   expect(j["openDoor"]).toEqual({ sceneId: "scn", at: { x: 3, y: 3 } });
 });
 
+// VTT-888
 test("armed, an open door closes — one control, both verbs", () => {
-  const cmd = doorCommandFor(scene({ open: true }), dm, true, { x: 3, y: 3 }, "");
+  const cmd = doorCommandFor(scene({ open: true }), true, { x: 3, y: 3 });
   expect(cmd?.command.case).toBe("closeDoor");
 });
 
+// VTT-888
 test("armed, cell is floor -> null", () => {
   // (0,0) carries no Tiles entry at all -- a sparse map's default, and legal
   // (state.ts: "Tiles may be empty and that is legal").
-  const cmd = doorCommandFor(scene(), dm, true, { x: 0, y: 0 }, "");
+  const cmd = doorCommandFor(scene(), true, { x: 0, y: 0 });
   expect(cmd).toBeNull();
 });
 
+// VTT-888
 test("armed, cell is wall -> null", () => {
-  const cmd = doorCommandFor(scene(), dm, true, { x: 5, y: 5 }, "");
+  const cmd = doorCommandFor(scene(), true, { x: 5, y: 5 });
   expect(cmd).toBeNull();
 });
 
 test("NOT armed, cell is a closed door -> null (a move is not this module's business)", () => {
-  const cmd = doorCommandFor(scene(), dm, false, { x: 3, y: 3 }, "");
+  const cmd = doorCommandFor(scene(), false, { x: 3, y: 3 });
   expect(cmd).toBeNull();
 });
 
-test("player, no controlled token in scene -> mayWorkDoor false, doorCommandFor null", () => {
-  expect(mayWorkDoor(scene(), player, "a1", { x: 3, y: 3 })).toBe(false);
-  expect(doorCommandFor(scene(), player, true, { x: 3, y: 3 }, "a1")).toBeNull();
+// VTT-881
+test("player, no controlled token in scene -> no direction", () => {
+  expect(doorDirection(scene(), player, "a1", { x: 3, y: 3 })).toBeUndefined();
 });
 
-test("player, controlled token at distance 1 diagonally -> mayWorkDoor true", () => {
+// VTT-881
+test("player, controlled token at distance 1 diagonally -> a direction", () => {
   // Door at (3,3), token at (4,4): dx=1, dy=1 -- the Chebyshev case. A
   // Manhattan distance (summing the deltas to 2) would reject this.
   const st = sceneWithToken(4, 4);
-  expect(mayWorkDoor(st, player, "a1", { x: 3, y: 3 })).toBe(true);
+  expect(doorDirection(st, player, "a1", { x: 3, y: 3 })).toBe("north-west");
 });
 
-test("player, controlled token at distance 2 -> mayWorkDoor false", () => {
+// VTT-881
+test("player, controlled token at distance 2 -> no direction", () => {
   // Door at (3,3), token at (5,5): dx=2, dy=2.
   const st = sceneWithToken(5, 5);
-  expect(mayWorkDoor(st, player, "a1", { x: 3, y: 3 })).toBe(false);
+  expect(doorDirection(st, player, "a1", { x: 3, y: 3 })).toBeUndefined();
 });
 
-test("DM and agent both pass unconditionally, with no token anywhere -> mayWorkDoor true", () => {
-  // Both roles in ONE test, looped, not just "dm": mayWorkDoor's own
-  // `if (me.role === "dm" || me.role === "agent")` is one condition with
-  // two disjuncts. Every other test in this file that passes `dm` covers
-  // the first disjunct, but nothing built a Me with role "agent" until fix
-  // round 2 -- so `|| me.role === "agent"` was silently unguarded: deleting
-  // it (leaving only the dm check) left the suite fully green. authz.go's
-  // authz.go's commandRoles grants open_door/close_door to dm AND agent
-  // identically, so a regression here would silently withhold a control
-  // the server accepts.
+// VTT-886
+test("DM and agent get no direction, though a token of an actor they control stands beside the door", () => {
+  // Both roles looped: the DM console arms their doors, and a direction
+  // would draw a player's door button naming the chip's actor.
   for (const role of ["dm", "agent"] as const) {
-    const me: Me = { participantId: "p-x", role } as Me;
-    expect(mayWorkDoor(scene(), me, "", { x: 3, y: 3 })).toBe(true);
+    const me: Me = { participantId: "p-1", role } as Me;
+    expect(doorDirection(sceneWithToken(4, 4), me, "a1", { x: 3, y: 3 })).toBeUndefined();
   }
 });
 
 // --- fix round 1: I2, I3, I5 ------------------------------------------------
 
-test("player, controlled token adjacent but in a DIFFERENT scene -> mayWorkDoor false", () => {
+// VTT-881
+test("player, controlled token adjacent but in a DIFFERENT scene -> no direction", () => {
   // Same shape as internal/gateway/authz_test.go's
   // TestAuthorizePlayerDoorAdjacencyIgnoresOtherScenes: the token is at
   // (4,4), numerically adjacent to the door at (3,3) (dx=1, dy=1), so this
@@ -177,10 +177,11 @@ test("player, controlled token adjacent but in a DIFFERENT scene -> mayWorkDoor 
   // check alone would wrongly allow this. Kills the mutant that deletes
   // `if (tok.SceneID !== sceneId) return false;`.
   const st = sceneWithToken(4, 4, { sceneId: "a-different-scene" });
-  expect(mayWorkDoor(st, player, "a1", { x: 3, y: 3 })).toBe(false);
+  expect(doorDirection(st, player, "a1", { x: 3, y: 3 })).toBeUndefined();
 });
 
-test("player, a DIFFERENT participant's token is adjacent -> mayWorkDoor false", () => {
+// VTT-881
+test("player, a DIFFERENT participant's token is adjacent -> no direction", () => {
   // Same shape as authz_test.go's ownership tests: a token at (4,4),
   // adjacent to the door and in the right scene, but controlled by
   // "someone-else" rather than "p-1" (player's own id). Kills both the
@@ -188,10 +189,11 @@ test("player, a DIFFERENT participant's token is adjacent -> mayWorkDoor false",
   // `!actor.controllerIds.includes(me.participantId)` entirely -- either
   // mutation would let ANY adjacent token authorize ANY player.
   const st = sceneWithToken(4, 4, { controllerId: "someone-else" });
-  expect(mayWorkDoor(st, player, "a1", { x: 3, y: 3 })).toBe(false);
+  expect(doorDirection(st, player, "a1", { x: 3, y: 3 })).toBeUndefined();
 });
 
-test("spectator with an adjacent token -> mayWorkDoor false (fail closed)", () => {
+// VTT-881
+test("spectator with an adjacent token -> no direction (fail closed)", () => {
   // Patrik's ruling, fix round 1: authz.go's commandRoles never routes
   // open_door/close_door to a spectator at all, so its Go mayWorkDoor's
   // `p.Role != identity.RolePlayer` early return is safe -- a spectator
@@ -202,13 +204,13 @@ test("spectator with an adjacent token -> mayWorkDoor false (fail closed)", () =
   // shape as the two tests above); only the role should refuse it.
   const st = sceneWithToken(4, 4);
   const spectator: Me = { participantId: "p-1", role: "spectator" } as Me;
-  expect(mayWorkDoor(st, spectator, "a1", { x: 3, y: 3 })).toBe(false);
-  expect(doorCommandFor(st, spectator, true, { x: 3, y: 3 }, "a1")).toBeNull();
+  expect(doorDirection(st, spectator, "a1", { x: 3, y: 3 })).toBeUndefined();
 });
 
 // --- fix round 2: agent branch above; missing-actor and empty-scenes below -
 
-test("player, a token references an actor that no longer exists -> mayWorkDoor false", () => {
+// VTT-881
+test("player, a token references an actor that no longer exists -> no direction", () => {
   // No fixture before this one ever left `st.Actors[tok.ActorID]`
   // undefined -- sceneWithToken always creates the actor it points the
   // token at. This one deliberately doesn't: the token below is in the
@@ -220,7 +222,7 @@ test("player, a token references an actor that no longer exists -> mayWorkDoor f
   // this test as surely as a wrong boolean would.
   const st = scene();
   st.Tokens["t-orphan"] = { ID: "t-orphan", SceneID: "scn", ActorID: "ghost", X: 4, Y: 4 };
-  expect(mayWorkDoor(st, player, "ghost", { x: 3, y: 3 })).toBe(false);
+  expect(doorDirection(st, player, "ghost", { x: 3, y: 3 })).toBeUndefined();
 });
 
 test("doorCommandFor with no scenes at all -> null", () => {
@@ -231,7 +233,7 @@ test("doorCommandFor with no scenes at all -> null", () => {
   // `if (!scene) return null;` had nothing forcing it to run. Kills the
   // mutant that deletes that line: without it, the next read
   // (`scene.Tiles?.[key]`) throws on undefined `scene`.
-  const cmd = doorCommandFor(newState(), dm, true, { x: 3, y: 3 }, "");
+  const cmd = doorCommandFor(newState(), true, { x: 3, y: 3 });
   expect(cmd).toBeNull();
 });
 
@@ -263,7 +265,7 @@ test("doorCommandFor resolves the LEXICOGRAPHICALLY GREATEST scene id, not the o
     Tiles: {},
     OpenDoors: {},
   };
-  const cmd = doorCommandFor(st, dm, true, { x: 3, y: 3 }, "");
+  const cmd = doorCommandFor(st, true, { x: 3, y: 3 });
   expect(cmd?.command.case).toBe("openDoor");
   const j = toJson(ClientCommandSchema, cmd!) as Record<string, any>;
   expect(j["openDoor"]).toEqual({ sceneId: "zzz", at: { x: 3, y: 3 } });
@@ -279,7 +281,7 @@ test("armed, a scene with no Tiles map at all -> null, not a throw", () => {
   // actually undefined the mutant throws instead of reading `undefined`.
   const st = newState();
   st.Scenes["bare"] = { ID: "bare", Name: "No terrain recorded", GridWidth: 4, GridHeight: 4 };
-  const cmd = doorCommandFor(st, dm, true, { x: 3, y: 3 }, "");
+  const cmd = doorCommandFor(st, true, { x: 3, y: 3 });
   expect(cmd).toBeNull();
 });
 
@@ -299,35 +301,14 @@ test("armed, a closed door in a scene with no OpenDoors map at all -> opens, not
     ID: "undocumented", Name: "Doors never toggled", GridWidth: 4, GridHeight: 4,
     Tiles: { "3,3": { Kind: "door", Material: "iron", Art: "" } },
   };
-  const cmd = doorCommandFor(st, dm, true, { x: 3, y: 3 }, "");
+  const cmd = doorCommandFor(st, true, { x: 3, y: 3 });
   expect(cmd?.command.case).toBe("openDoor");
 });
 
-// VTT-873 VTT-874
-test("a player's door names the actor a click moves, and only that actor's token beside the door offers it", () => {
-  const st = sceneWithToken(4, 4);
-  st.Actors["a2"] = { ...st.Actors["a1"]!, actorId: "a2", name: "Second" };
-  st.Tokens["t2"] = { ID: "t2", SceneID: "scn", ActorID: "a2", X: 8, Y: 1 };
-  const sent = (actorId: string) => {
-    const cmd = doorCommandFor(st, player, true, { x: 3, y: 3 }, actorId);
-    return cmd ? (toJson(ClientCommandSchema, cmd) as Record<string, unknown>)["openDoor"] : null;
-  };
-  expect(sent("a1")).toEqual({ sceneId: "scn", at: { x: 3, y: 3 }, actorId: "a1" });
-  expect(mayWorkDoor(st, player, "a2", { x: 3, y: 3 })).toBe(false);
-  expect(sent("a2")).toBeNull();
-  st.Tokens["t1"] = { ...st.Tokens["t1"]!, X: 9, Y: 8 };
-  st.Tokens["t2"] = { ...st.Tokens["t2"]!, X: 2, Y: 4 };
-  expect(sent("a1")).toBeNull();
-  expect(sent("a2")).toEqual({ sceneId: "scn", at: { x: 3, y: 3 }, actorId: "a2" });
-});
-
 // VTT-876
-test("a DM's and an agent's door command names no actor, whatever actor it is handed", () => {
-  for (const role of ["dm", "agent"] as const) {
-    const me: Me = { participantId: "p-1", role } as Me;
-    const cmd = doorCommandFor(sceneWithToken(4, 4), me, true, { x: 3, y: 3 }, "a1");
-    expect((toJson(ClientCommandSchema, cmd!) as Record<string, unknown>)["openDoor"]).toEqual({ sceneId: "scn", at: { x: 3, y: 3 } });
-  }
+test("the armed door command names no actor, though a token stands beside the door", () => {
+  const cmd = doorCommandFor(sceneWithToken(4, 4), true, { x: 3, y: 3 });
+  expect((toJson(ClientCommandSchema, cmd!) as Record<string, unknown>)["openDoor"]).toEqual({ sceneId: "scn", at: { x: 3, y: 3 } });
 });
 
 // --- a player's door buttons --------------------------------------------------

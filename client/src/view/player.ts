@@ -9,13 +9,13 @@ import type { Actor, State } from "../state";
 import { affordable, controlledActors, offered, readLine, sheetFor, sheetNames, targetableTokens, type ShownSection } from "../player";
 import { moveToken, useAbility, setViewpoint, speakAs, speakOutOfCharacter, addWhisper } from "../commands";
 import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
-import { currentSceneId, doorButtonsFor, mayWorkDoor } from "./doors";
+import { currentSceneId, doorButtonsFor } from "./doors";
 import { namer, type Namer } from "./naming";
 
 export interface PlayerUIState {
   selectedActorId: string;
   selectedAbilityId: string;
-  /** Whether a board click works a door instead of moving a token (SPEC-022). */
+  /** Whether a DM's or an agent's board click works a door instead of moving a token (SPEC-022). */
   doorsArmed: boolean;
   /** The name of the sheet's page the panel shows (VTT-838). */
   page?: string;
@@ -54,18 +54,7 @@ export function tokenForActor(st: State, actorId: string): string {
   return t?.ID ?? "";
 }
 
-// Ask mayWorkDoor per door tile, never its geometry again (VTT-875).
-function mayWorkAnyDoor(st: State, me: Me, actorId: string): boolean {
-  const scene = st.Scenes[currentSceneId(st)];
-  if (!scene) return false;
-  return Object.entries(scene.Tiles ?? {}).some(([key, tile]) => {
-    if (tile.Kind !== "door") return false;
-    const [x, y] = key.split(",").map(Number);
-    return mayWorkDoor(st, me, actorId, { x: x!, y: y! });
-  });
-}
-
-/** actingActor is the actor a board click moves and a door click names (VTT-873). */
+/** actingActor is the actor a board click moves and a door button names (VTT-408, VTT-883). */
 export function actingActor(st: State, me: Me, ui: PlayerUIState): string {
   return ui.selectedActorId || (controlledActors(st, me.participantId)[0]?.actorId ?? "");
 }
@@ -182,22 +171,6 @@ export function renderPlayerPanel(
     wrap.appendChild(list);
   } else if (tokenId !== "") {
     wrap.appendChild(el("p", "hint", "Click the board to move."));
-  }
-
-  // Offer a player alone the toggle: the DM console carries the DM's and the
-  // agent's (VTT-875).
-  if (me.role === "player" && mayWorkAnyDoor(st, me, actingActor(st, me, ui))) {
-    const armBtn = el(
-      "button",
-      ui.doorsArmed ? "chip sel" : "chip",
-      ui.doorsArmed ? "Doors armed" : "Arm doors",
-    );
-    armBtn.dataset["action"] = "arm-doors";
-    armBtn.addEventListener("click", () => {
-      ui.doorsArmed = !ui.doorsArmed;
-      rerender();
-    });
-    wrap.appendChild(armBtn);
   }
 
   // VTT-881 VTT-883 VTT-886

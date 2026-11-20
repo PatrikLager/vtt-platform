@@ -71,11 +71,12 @@
 #
 # Fix round 1's own review separately found eight UNADJUDICATED survivors (not
 # stale entries) in that arc's new code, accounted for here rather than left an
-# open question: six were killed with tests added that round — see
-# player.test.ts's "no scenes at all means no toggle", "the current scene is the
-# lexicographically GREATEST id" and "the toggle's class and label reflect
-# whether doors are currently armed" — one was adjudicated equivalent at the
-# time (the view/player.ts `?? ""` claim above, later disproven and withdrawn),
+# open question: six were killed with tests added that round — two stand in
+# player.test.ts as "no scenes at all means no door button" and "the current
+# scene is the lexicographically GREATEST id", and the toggle's label test left
+# with the player's toggle on 2026-11-20 (a-door-has-a-button) — one was
+# adjudicated equivalent at the time (the view/player.ts `?? ""` claim above,
+# later disproven and withdrawn),
 # and one was removed outright as dead code rather than tested or excused:
 # spectator.ts's renderGrid losing its unreachable `doorsArmed = false` default
 # parameter (a mutant with no observable is still a mutant if nothing forces the
@@ -462,8 +463,8 @@ client/src/player.ts  EqualityOperator  offset=55  span=5  nth=1  copies=1  a <=
 # fallback ("") find that scene while the mutant ("Stryker was here!") finds
 # nothing -- a genuine, reproduced divergence. The mutant is now KILLED, not
 # excused: see player.test.ts's "a prototype-injected empty-string scene defeats
-# the `?? ""` equivalence claim". player.ts's own doc comment on mayWorkAnyDoor
-# carries the corrected reasoning inline.
+# the `?? ""` equivalence claim", which since 2026-11-20 (a-door-has-a-button)
+# reaches currentSceneId through doorButtonsFor, mayWorkAnyDoor being gone.
 #
 # WHAT THIS MEANS FOR read_equivalents/this table's own promise: an
 # adjudication that stood for one fix round, was independently challenged,
@@ -473,7 +474,7 @@ client/src/player.ts  EqualityOperator  offset=55  span=5  nth=1  copies=1  a <=
 
 client/src/view/player.ts  StringLiteral  offset=85  span=2  nth=1  copies=1  "Stryker was here!"
     code: return ui.selectedActorId || (controlledActors(st, me.participantId)[0]?.actorId ?? "");
-    actingActor's fallback. In a folded state it is reached only when no actor is selected and controlledActors finds none, and then no reader tells "" from any other string. moveCommandFor returns null before it calls actingActor when controlledActors finds none. mayWorkDoor accepts a DM and an agent whatever actor is passed, and doorCommandFor names no opener for them; mayWorkDoor refuses every role but those and a player. For a player, doorCommandFor and mayWorkAnyDoor ask mayWorkDoor, which needs a token naming that actor whose actor in st.Actors lists the participant among its controllers. A window's state is the fold's: its actor map has no prototype (emptyMap) and holds each actor under its own actorId, and the fold refuses an actor with an empty id, a token for an actor it does not hold, a grant naming no participant and an actor added with controllers, so any actor mayWorkDoor could accept is one controlledActors returns. Only a state the fold cannot build tells the two apart: an Actors prototype answering an id, a controller set holding "" for a participant id of "", an actor stored without its actorId. No window holds one, so no DOM does, and the mutant is equivalent by the owner's rule of 2026-11-17 that equivalent means no observation at all in the DOM, which the 2026-08-30 kill above predates. Do not kill it with such a state.
+    actingActor's fallback. In a folded state it is reached only when no actor is selected and controlledActors finds none, and then no reader tells "" from any other string. moveCommandFor returns null before it calls actingActor when controlledActors finds none. renderPlayerPanel hands it to doorButtonsFor, whose doorDirection refuses every role but a player, and for a player needs a token naming that actor whose actor in st.Actors lists the participant among its controllers. A window's state is the fold's: its actor map has no prototype (emptyMap) and holds each actor under its own actorId, and the fold refuses an actor with an empty id, a token for an actor it does not hold, a grant naming no participant and an actor added with controllers, so any actor doorDirection could accept is one controlledActors returns. Only a state the fold cannot build tells the two apart: an Actors prototype answering an id, a controller set holding "" for a participant id of "", an actor stored without its actorId. No window holds one, so no DOM does, and the mutant is equivalent by the owner's rule of 2026-11-17 that equivalent means no observation at all in the DOM, which the 2026-08-30 kill above predates. Do not kill it with such a state.
 
 # --- client/src/view/spectator.ts --------------------------------------------
 #
@@ -653,7 +654,7 @@ client/src/app.ts  ArrayDeclaration  offset=28  span=2  nth=1  copies=1  ["Stryk
 
 client/src/app.ts  ObjectLiteral  offset=27  span=65  nth=1  copies=1  {}
     code: const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "", doorsArmed: false };
-    Its fields start undefined instead of "", "" and false, and short of the distinguisher above every reader treats undefined as it treats the original. doorsArmed is read only for truth: `ui.doorsArmed ? ...`, `!ui.doorsArmed`, doorCommandFor's `if (!armed)`, renderDMConsole's `d.doorsArmed ? ...`, and `canAct && ui.doorsArmed` reaches renderSpectator, which reads `extras.doorsArmed ?? false`. selectedActorId: a player's window overwrites it, and resets selectedAbilityId to "", on its first paint with `me` known, because `undefined !== session.viewpoint` and session.viewpoint is always a string; a DM's and an agent's window read it through `ui.selectedActorId || mine[0]!.actorId`, where undefined and "" are both falsy, and `ui.selectedActorId === a.actorId`, false for both because no folded actor's id is empty (the fold's actorAdded arm throws on one, as engine.Apply refuses one). selectedAbilityId undefined is inert by the premise above, short of the distinguisher above: no chip or target matches it, a chip's click sets `ab.id`, and `sheetNames(actor, undefined)` is false, so a board click moves.
+    Its fields start undefined instead of "", "" and false, and short of the distinguisher above every reader treats undefined as it treats the original. doorsArmed is read only for truth: toggleDoors' `!ui.doorsArmed`, onCell's `ui.doorsArmed ? null : ...` and doorCommandFor's `if (!armed)`, renderDMConsole's `d.doorsArmed ? ...`, and `ui.doorsArmed` reaches renderSpectator, which reads `extras.doorsArmed ?? false`. selectedActorId: a player's window overwrites it, and resets selectedAbilityId to "", on its first paint with `me` known, because `undefined !== session.viewpoint` and session.viewpoint is always a string; a DM's and an agent's window read it through `ui.selectedActorId || mine[0]!.actorId`, where undefined and "" are both falsy, and `ui.selectedActorId === a.actorId`, false for both because no folded actor's id is empty (the fold's actorAdded arm throws on one, as engine.Apply refuses one). selectedAbilityId undefined is inert by the premise above, short of the distinguisher above: no chip or target matches it, a chip's click sets `ab.id`, and `sheetNames(actor, undefined)` is false, so a board click moves.
 
 client/src/app.ts  StringLiteral  offset=69  span=2  nth=1  copies=1  "Stryker was here!"
     code: const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "", doorsArmed: false };

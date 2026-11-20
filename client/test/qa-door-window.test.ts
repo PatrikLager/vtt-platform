@@ -6,7 +6,7 @@ import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { newState, type State } from "../src/state";
 import type { Me } from "../src/metadata";
 import { openDoor, closeDoor } from "../src/commands";
-import { doorCommandFor, mayWorkDoor } from "../src/view/doors";
+import { doorButtonsFor, doorCommandFor, doorDirection } from "../src/view/doors";
 import { actingActor, renderPlayerPanel, type PlayerUIState } from "../src/view/player";
 import { boot } from "../src/app";
 import { ok, settle } from "./support/answers";
@@ -19,7 +19,6 @@ const j = (c: ClientCommand | null) => {
 
 const player: Me = { participantId: "p1", name: "Pia", role: "player" };
 const dm: Me = { participantId: "d1", name: "Dag", role: "dm" };
-const agent: Me = { participantId: "g1", name: "Age", role: "agent" };
 
 // "z-near" stands beside the door; "a-far" two squares off on x.
 const DOOR = { x: 2, y: 1 };
@@ -47,78 +46,74 @@ function ui(selected: string, armed = true): PlayerUIState {
 }
 
 describe("module level", () => {
-  // VTT-873
+  // VTT-883
   test("a player's window acts as the selected actor, else the first controlled by id", () => {
     const st = world();
     expect(actingActor(st, player, ui("z-near"))).toBe("z-near");
     expect(actingActor(st, player, ui(""))).toBe("a-far");
   });
 
-  // VTT-873
+  // VTT-883
   test("a player's open door command names the selected actor beside the door", () => {
     const st = world();
     const actor = actingActor(st, player, ui("z-near"));
-    expect(j(doorCommandFor(st, player, true, DOOR, actor))).toEqual({
+    expect(doorButtonsFor(st, player, actor).map((b) => j(b.command()))).toEqual([{
       openDoor: { sceneId: "s1", at: { x: 2, y: 1 }, actorId: "z-near" },
-    });
+    }]);
   });
 
-  // VTT-873
+  // VTT-883
   test("a player's close door command names the actor", () => {
     const st = world();
     st.Scenes["s1"]!.OpenDoors = { "2,1": true };
-    expect(j(doorCommandFor(st, player, true, DOOR, "z-near"))).toEqual({
+    expect(doorButtonsFor(st, player, "z-near").map((b) => j(b.command()))).toEqual([{
       closeDoor: { sceneId: "s1", at: { x: 2, y: 1 }, actorId: "z-near" },
-    });
+    }]);
   });
 
-  // VTT-874
-  test("a player's click on a door the acting actor is not beside sends nothing, though another is", () => {
+  // VTT-881
+  test("a player is offered no door the acting actor is not beside, though another is", () => {
     const st = world();
-    expect(doorCommandFor(st, player, true, DOOR, "a-far")).toBeNull();
-    expect(doorCommandFor(st, player, true, DOOR, actingActor(st, player, ui("")))).toBeNull();
+    expect(doorButtonsFor(st, player, "a-far")).toEqual([]);
+    expect(doorButtonsFor(st, player, actingActor(st, player, ui("")))).toEqual([]);
   });
 
-  // VTT-874
-  test("a player's door command needs the actor's token on the current scene", () => {
+  // VTT-881
+  test("a player's door button needs the actor's token on the current scene", () => {
     const st = world();
     st.Scenes["s0"] = { ID: "s0", Name: "Old", GridWidth: 4, GridHeight: 4, Tiles: {}, Objects: [], OpenDoors: {} } as never;
     st.Tokens["t-near"]!.SceneID = "s0";
-    expect(doorCommandFor(st, player, true, DOOR, "z-near")).toBeNull();
+    expect(doorButtonsFor(st, player, "z-near")).toEqual([]);
   });
 
   test("unarmed, a door click sends nothing", () => {
-    expect(doorCommandFor(world(), player, false, DOOR, "z-near")).toBeNull();
+    expect(doorCommandFor(world(), false, DOOR)).toBeNull();
   });
 
-  // VTT-874
+  // VTT-881
   test("the actor's token one square away on x and two on y is too far", () => {
     const st = world();
     st.Tokens["t-near"]!.X = 3;
     st.Tokens["t-near"]!.Y = 3;
-    expect(doorCommandFor(st, player, true, DOOR, "z-near")).toBeNull();
-    expect(mayWorkDoor(st, player, "z-near", DOOR)).toBe(false);
+    expect(doorButtonsFor(st, player, "z-near")).toEqual([]);
+    expect(doorDirection(st, player, "z-near", DOOR)).toBeUndefined();
   });
 
-  // VTT-874 VTT-875
-  test("mayWorkDoor is true only for the actor beside the door", () => {
+  // VTT-881 VTT-882
+  test("doorDirection answers only for the actor beside the door", () => {
     const st = world();
-    expect(mayWorkDoor(st, player, "z-near", DOOR)).toBe(true);
-    expect(mayWorkDoor(st, player, "a-far", DOOR)).toBe(false);
+    expect(doorDirection(st, player, "z-near", DOOR)).toBe("north-west");
+    expect(doorDirection(st, player, "a-far", DOOR)).toBeUndefined();
   });
 
   // VTT-876
-  test("a DM's and an agent's door commands name no actor whatever actor is handed", () => {
+  test("the armed door command names no actor, open or closed", () => {
     const st = world();
-    for (const me of [dm, agent]) {
-      for (const actor of ["z-near", "a-far", ""]) {
-        expect(j(doorCommandFor(st, me, true, DOOR, actor))).toEqual({
-          openDoor: { sceneId: "s1", at: { x: 2, y: 1 } },
-        });
-      }
-    }
+    expect(j(doorCommandFor(st, true, DOOR))).toEqual({
+      openDoor: { sceneId: "s1", at: { x: 2, y: 1 } },
+    });
     st.Scenes["s1"]!.OpenDoors = { "2,1": true };
-    expect(j(doorCommandFor(st, dm, true, DOOR, "z-near"))).toEqual({
+    expect(j(doorCommandFor(st, true, DOOR))).toEqual({
       closeDoor: { sceneId: "s1", at: { x: 2, y: 1 } },
     });
   });
@@ -131,12 +126,12 @@ describe("module level", () => {
     expect(j(closeDoor("s1", DOOR, "z-near"))).toEqual({ closeDoor: { sceneId: "s1", at: { x: 2, y: 1 }, actorId: "z-near" } });
   });
 
-  // VTT-875
-  test("the panel offers the toggle only for a selected actor beside a door", () => {
+  // VTT-881
+  test("the panel offers a door button only for a selected actor beside a door", () => {
     const st = world();
     const draw = (sel: string) =>
       renderPlayerPanel(st, player, [], ui(sel, false), async () => ok(), () => {})
-        .querySelector('[data-action="arm-doors"]');
+        .querySelector('[data-action="work-door"]');
     expect(draw("z-near")).not.toBeNull();
     expect(draw("a-far")).toBeNull();
     expect(draw("")).toBeNull();
@@ -228,8 +223,8 @@ const doorCmds = (s: FakeSocket) =>
   s.sent.map((x) => { const c = JSON.parse(x); delete c.requestId; return c; }).filter((c) => c.openDoor || c.closeDoor);
 
 describe("the window", () => {
-  // VTT-873 VTT-874 VTT-875 VTT-879
-  test("a player watching the character beside the door names it; switching to the far one removes the tool", async () => {
+  // VTT-881 VTT-883 VTT-884
+  test("a player watching the character beside the door works it by its button; switching to the far one removes the button", async () => {
     const root = install(player);
     await pump();
     const s = FakeSocket.last;
@@ -239,13 +234,10 @@ describe("the window", () => {
     sceneLog(true);
     await pump();
 
-    const toggle = root.querySelector('[data-action="arm-doors"]') as HTMLElement;
-    expect(toggle).not.toBeNull();
-    toggle.click();
-    await pump();
-    expect(root.querySelector(".grid")!.classList.contains("armed")).toBe(true);
-
-    clickCell(root, 2, 1);
+    expect(root.querySelector('[data-action="arm-doors"]')).toBeNull();
+    const button = root.querySelector('[data-action="work-door"]') as HTMLElement;
+    expect(button.textContent).toBe("Open door (north-west)");
+    button.click();
     await pump();
     expect(doorCmds(s)).toEqual([{ openDoor: { sceneId: "s1", at: { x: 2, y: 1 }, actorId: "z-near" } }]);
 
@@ -253,13 +245,13 @@ describe("the window", () => {
     deliver({ viewpointChanged: { actorId: "a-far" } });
     sceneLog(true);
     await pump();
-    expect(root.querySelector('[data-action="arm-doors"]')).toBeNull();
-    expect(root.querySelector(".grid")!.classList.contains("armed")).toBe(false);
+    expect(root.querySelector('[data-action="work-door"]')).toBeNull();
     clickCell(root, 2, 1);
     await pump();
     expect(doorCmds(s)).toEqual([]);
   });
 
+  // VTT-876 VTT-888
   test("a DM's armed click on a door names no actor", async () => {
     const root = install(dm);
     await pump();

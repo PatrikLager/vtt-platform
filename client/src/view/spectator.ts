@@ -651,7 +651,7 @@ export interface ViewExtras {
    * comment on the parameter this threads into for the full reasoning.
    */
   getContext?: ((canvas: HTMLCanvasElement) => CanvasRenderingContext2D | null) | undefined;
-  /** Whether this board shows the door tool armed: false where it cannot act. */
+  /** Whether this board shows the DM console's door tool armed. */
   doorsArmed?: boolean | undefined;
   /** Whether the window names and shows as a DM's or an agent's does (VTT-484). */
   dm?: boolean | undefined;

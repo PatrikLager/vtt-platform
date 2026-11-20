@@ -13,7 +13,7 @@ import { Auth } from "./auth";
 import { Session, type SheetChange } from "./session";
 import type { WireStatus } from "./wire";
 import { renderSpectator } from "./view/spectator";
-import { renderPlayerPanel, moveCommandFor, playerClickFor, actingActor, type PanelLayout, type PlayerUIState } from "./view/player";
+import { renderPlayerPanel, moveCommandFor, playerClickFor, type PanelLayout, type PlayerUIState } from "./view/player";
 import { doorCommandFor } from "./view/doors";
 import {
   fetchMe, fetchRuleset, fetchAdventures, fetchAdventureGuide, fetchMaps,
@@ -319,12 +319,8 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
   };
   const ui: PlayerUIState = { selectedActorId: "", selectedAbilityId: "", doorsArmed: false };
 
-  /**
-   * Flip the shared arm-doors bit and repaint. A LOCAL mode change, not a
-   * command: it sends nothing over the wire, so unlike act() below there is
-   * no server round trip to await before the DM console or player panel can
-   * show the new state — this just mutates `ui` and calls paint().
-   */
+  // Keep it local: dm-view.test.ts's "arming doors sends nothing over the
+  // wire — it is a local mode, not a command".
   const toggleDoors = (): void => {
     ui.doorsArmed = !ui.doorsArmed;
     paint();
@@ -389,11 +385,10 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     const isDM = me !== null && (me.role === "dm" || me.role === "agent");
     const isPlayer = me !== null && me.role === "player";
     // A player acts as the character they watch; a switch disarms its ability
-    // and the door tool (VTT-408, VTT-879).
+    // (VTT-408).
     if (isPlayer && ui.selectedActorId !== session.viewpoint) {
       ui.selectedActorId = session.viewpoint;
       ui.selectedAbilityId = "";
-      ui.doorsArmed = false;
     }
     const watchable = session.watchable;
     renderSpectator(root, session.state, [...session.events], status, {
@@ -426,18 +421,14 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
           })
         : undefined,
       ticker: isDM,
-      // Keep armed doors a door command or nothing, never a move or a switch:
-      // doorCommandFor returns null unarmed, and an armed click it finds no
-      // workable door for must end at null.
+      // Keep a player's click off the door tool (VTT-884) and a DM's or an
+      // agent's armed click a door command or nothing (VTT-888).
       onCell: canAct
         ? (cell) => {
-            const cmd =
-              doorCommandFor(session.state, me!, ui.doorsArmed, cell, actingActor(session.state, me!, ui)) ??
-              (ui.doorsArmed
-                ? null
-                : isPlayer
-                  ? playerClickFor(session.state, me!, ui, watchable.map((a) => a.actorId), cell)
-                  : moveCommandFor(session.state, me!, ui, cell));
+            const cmd = isPlayer
+              ? playerClickFor(session.state, me!, ui, watchable.map((a) => a.actorId), cell)
+              : doorCommandFor(session.state, ui.doorsArmed, cell) ??
+                (ui.doorsArmed ? null : moveCommandFor(session.state, me!, ui, cell));
             if (cmd) act(cmd);
           }
         : undefined,
@@ -460,10 +451,8 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
         pinnedCard = pinnedCard === id ? undefined : id;
         paint();
       },
-      // BOARD-VISIBLE, not only console/panel-visible (Task 4, spec §8): a DM
-      // who arms doors, walks away and comes back must be able to see why
-      // their clicks have stopped moving tokens, from the board alone.
-      doorsArmed: canAct && ui.doorsArmed,
+      // app.test.ts: "the DM's own console toggle arms doors, board-wide".
+      doorsArmed: ui.doorsArmed,
     });
   };
 

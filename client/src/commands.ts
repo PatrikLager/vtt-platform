@@ -395,7 +395,7 @@ export function setJoinDoor(open: boolean): ClientCommand {
 /**
  * OpenDoor and CloseDoor work a door in a wall, never the join door that
  * setJoinDoor and the console's "Open the door" buttons work. They carry a
- * scene, a square and the opener, empty for none (VTT-873).
+ * scene, a square and the opener, empty for none (VTT-876, VTT-883).
  */
 export function openDoor(sceneId: string, at: Point, actorId = ""): ClientCommand {
   return create(ClientCommandSchema, {

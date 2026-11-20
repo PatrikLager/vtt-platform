@@ -1652,11 +1652,11 @@ test("a prototype-injected empty-string scene defeats the renderSpectator `?? \"
   // scene pick, immediately above where it calls renderGrid) arguing that
   // whatever string the fallback yields is "looked up in st.Scenes and
   // missed either way". That argument is the SAME SHAPE that turned out
-  // false for view/player.ts's mayWorkAnyDoor (same fallback expression,
-  // fix round 2): it misses the PROTOTYPE CHAIN. `st.Scenes[key]` for a key
-  // outside `Object.keys(st.Scenes)` still resolves through whatever
-  // `st.Scenes` inherits from, and "zero own keys" says nothing about what
-  // is inherited.
+  // false for the scene pick view/player.ts once held (same fallback
+  // expression, fix round 2): it misses the PROTOTYPE CHAIN. A key outside
+  // `Object.keys(st.Scenes)` still resolves through whatever `st.Scenes`
+  // inherits from, and "zero own keys" says nothing about what is
+  // inherited.
   //
   // st.Scenes here has ZERO OWN keys (`.at(-1)` is undefined, so the `??`
   // fires either way) but a PROTOTYPE that answers "" with a real scene --
