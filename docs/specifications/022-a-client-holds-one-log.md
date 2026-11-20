@@ -228,14 +228,19 @@ list, by `client/test/naming.test.ts`, `client/test/grid.test.ts`,
 `client/test/app.test.ts`, `client/test/qa-condition-names.test.ts`,
 `client/test/qa-console-condition-names.test.ts`,
 `client/test/qa-condition-window.test.ts` and `client/e2e/conditions.spec.ts`
-(VTT-862 to VTT-865); that a door's line names its opener and a player's
-door click names the character they watch, by
-`client/test/spectator-view.test.ts`, `client/test/doors.test.ts`,
-`client/test/player.test.ts`, `client/test/app.test.ts`,
-`client/test/commands.test.ts`, `client/test/qa-door-lines.test.ts`,
-`client/test/qa-door-window.test.ts` and `client/e2e/doors.spec.ts`
-(VTT-871 to VTT-876, VTT-879); that the fold refuses a door event naming an
-actor it does not hold, by `client/test/fold-rejections.test.ts` and
+(VTT-862 to VTT-865); that a door's line names its opener, by
+`client/test/spectator-view.test.ts`, `client/test/app.test.ts`,
+`client/test/qa-door-lines.test.ts` and `client/e2e/doors.spec.ts`
+(VTT-871, VTT-872); that a player works a
+door by its button and a board click of theirs never works one, and that a
+DM's or an agent's armed click works a door naming no actor, by
+`client/test/doors.test.ts`, `client/test/player.test.ts`,
+`client/test/app.test.ts`, `client/test/commands.test.ts`,
+`client/test/qa-door-window.test.ts`, `client/test/qa-door-buttons.test.ts`,
+`client/test/qa-door-mode.test.ts`, `client/test/qa-switch.test.ts` and
+`client/e2e/doors.spec.ts` (VTT-876, VTT-881 to VTT-888); that the fold
+refuses a door event naming an actor it does not hold, by
+`client/test/fold-rejections.test.ts` and
 `client/test/qa-door-opener-fold.test.ts` (VTT-866); and that an ability's
 button is titled by its description and its cost line, by
 `client/test/panel-sheet.test.ts`, `client/test/app.test.ts`,
@@ -574,29 +579,53 @@ chain's call and `rereadIfStale`'s, which catches every failure.
 
 A perching window's board click sends nothing (VTT-461; for a spectator, the
 owner's ruling "Bara knappar", 2026-10-20), and its board shows no door tool
-armed: `paint` sets `canAct` false for it, hands the board
-`canAct && ui.doorsArmed` as its doors bit, and keeps `ui.doorsArmed` itself.
-In a player's window that does not perch, with doors not armed, a board click
-on a cell of the current scene holding a token of a listed party member other
-than the one they watch sends `set_viewpoint` naming the lowest such id, an
-armed ability notwithstanding (VTT-460). A click on a cell holding the watched
-one's token and no other listed member's sends nothing. Any other click, with
-no ability armed, moves the watched one's token, if it has one, to that cell
-(VTT-408); a selection the watched one's sheet does not name is not armed,
-so such a click moves (`client/test/qa-window-offers.test.ts`'s "a
-player's board click with a carried-over ability the sheet does not name
-moves the watched token"). A player watching nobody holds no log and is
-shown no board, since a seat on nobody is sent no entry (SPEC-015). With
-doors armed, a board click works a door or sends nothing: a player's names
-the actor a board click moves (`actingActor`) and is sent only for a door of
-the current scene that actor's token stands beside, and the arm-doors toggle
-is offered only while one stands so (VTT-873 to VTT-875); a DM's and an
-agent's names none (VTT-876). A player's switch of the character they watch
-disarms the door tool (VTT-879). A player's
-selected actor follows the `ViewpointChanged`, whether their window perches
-or not, and a switch disarms their armed ability. A DM's and an agent's
-chips select which of the actors granted them a board click moves and whose
-abilities the panel offers, and send nothing.
+armed: `paint` hands the board `ui.doorsArmed` as its doors bit, whose one
+writer is `toggleDoors` (`grep -rn 'doorsArmed =' client/src`), which `paint`
+hands to `renderDMConsole` alone, drawn in a DM's or an agent's window, which
+`mayPerch` never perches. The
+current scene is the scene whose id sorts greatest (`currentSceneId` in
+`client/src/view/doors.ts`). In a player's window that does not perch, a
+board click on a cell of the current scene holding a token of a listed party
+member other than the one they watch sends `set_viewpoint` naming the lowest
+such id, an armed ability notwithstanding (VTT-460). A click on a cell holding
+the watched one's token and no other listed member's sends nothing. Any other
+click, with no ability armed, moves the watched one's token, if it has one, to
+that cell (VTT-408); a selection the watched one's sheet does not name is not
+armed, so such a click moves (`client/test/qa-window-offers.test.ts`'s "a
+player's board click with a carried-over ability the sheet does not name moves
+the watched token"). A player watching nobody holds no log and is shown no
+board, since a seat on nobody is sent no entry (SPEC-015). A player's board
+click on a door square sends what the same click sends on a square with no
+door (`playerClickFor`), never `open_door` or `close_door`, whatever the
+window's arming bit holds, and a player's panel draws no arm-doors toggle
+(VTT-884, VTT-885). With
+doors armed in a DM's or an agent's window, a board click on a door of the
+current scene sends `open_door` for a closed door and `close_door` for an open
+one, naming no actor, and a click on any other square sends nothing
+(`doorCommandFor`; VTT-876, VTT-888); the console offers the arming whatever
+the scene holds.
+
+A player works a door by its button (`doorButtonsFor` and `doorDirection` in
+`client/src/view/doors.ts`). The panel draws one `work-door` button for each
+door of the current scene that a token on that scene of the character they
+watch, one whose actor they control, stands at most one square from on each
+axis, its own square included (VTT-881), in the board's reading order, by row,
+then by column (VTT-887). A button reads "Open door" for a door the window
+holds closed and "Close door" for one it holds open, then in parentheses the
+door's direction from that token, one of north, north-east, east, south-east,
+south, south-west, west and north-west, north toward the top of the board, or
+"here" for the square the token stands on (VTT-882). A click sends `open_door`
+for a closed door and `close_door` for an open one, at that door's square,
+naming the watched character, built at the click, so each click carries its
+own request id (VTT-883). Where two tokens of that character stand beside one
+door, the direction is measured from the first in `State.Tokens`' order. A
+DM's or an agent's window draws no `work-door` button, whatever actor its
+chips select (VTT-886).
+
+A player's selected actor follows the `ViewpointChanged`, whether their
+window perches or not, and a switch disarms their armed ability. A DM's and an
+agent's chips select which of the actors granted them a board click moves and
+whose abilities the panel offers, and send nothing.
 
 The client rebuilds the tree it draws at every paint, and the box being typed
 in keeps its focus and its selection (the owner's rulings "Återställ fokus",
@@ -808,8 +837,8 @@ without it read as none (VTT-855).
   properties in their order, then every key no property declares as that
   type, in key order, an attribute before a resource of one key (VTT-840).
 - **Outside the page.** The target buttons, or "Click the board to move.",
-  the arm-doors toggle and the Say form are drawn below the page on every
-  page, so an ability armed on one page keeps its targets on another.
+  the door buttons and the Say form are drawn below the page on every page,
+  so an ability armed on one page keeps its targets on another.
 
 ### How the window names what it shows
 
@@ -1229,5 +1258,5 @@ VTT-806, VTT-807, VTT-808, VTT-809, VTT-810, VTT-812, VTT-813, VTT-814,
 VTT-815, VTT-816, VTT-817, VTT-818, VTT-820, VTT-821, VTT-822,
 VTT-823, VTT-834, VTT-835, VTT-836, VTT-837, VTT-838, VTT-839, VTT-840,
 VTT-841, VTT-842, VTT-843, VTT-844, VTT-845, VTT-846, VTT-854, VTT-855,
-VTT-862, VTT-863, VTT-864, VTT-865, VTT-866, VTT-871, VTT-872, VTT-873,
-VTT-874, VTT-875, VTT-876, VTT-879.
+VTT-862, VTT-863, VTT-864, VTT-865, VTT-866, VTT-871, VTT-872, VTT-876,
+VTT-881, VTT-882, VTT-883, VTT-884, VTT-885, VTT-886, VTT-887, VTT-888.
