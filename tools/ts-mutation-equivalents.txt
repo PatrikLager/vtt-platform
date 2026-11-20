@@ -441,8 +441,8 @@ client/src/player.ts  EqualityOperator  offset=55  span=5  nth=1  copies=1  a <=
 # --- client/src/view/player.ts -----------------------------------------------
 #
 # NOT client/src/player.ts above -- a different file, the view module for the
-# player panel. NO ENTRY HERE, deliberately, after one stood briefly and was
-# WITHDRAWN.
+# player panel. No entry for the `?? ""` scene pick mayWorkAnyDoor once held,
+# deliberately, after one stood briefly and was WITHDRAWN.
 #
 # WITHDRAWN 2026-08-30 (Task 4 fix round 2). Fix round 1 filed a
 # client/src/view/player.ts StringLiteral `"Stryker was here!"` against
@@ -470,6 +470,10 @@ client/src/player.ts  EqualityOperator  offset=55  span=5  nth=1  copies=1  a <=
 # and was found wrong -- exactly the risk this file's header names two of
 # four Go-side entries for. The difference this time is it was caught before
 # landing on branch HEAD as a false all-clear rather than after.
+
+client/src/view/player.ts  StringLiteral  offset=85  span=2  nth=1  copies=1  "Stryker was here!"
+    code: return ui.selectedActorId || (controlledActors(st, me.participantId)[0]?.actorId ?? "");
+    actingActor's fallback. In a folded state it is reached only when no actor is selected and controlledActors finds none, and then no reader tells "" from any other string. moveCommandFor returns null before it calls actingActor when controlledActors finds none. mayWorkDoor accepts a DM and an agent whatever actor is passed, and doorCommandFor names no opener for them; mayWorkDoor refuses every role but those and a player. For a player, doorCommandFor and mayWorkAnyDoor ask mayWorkDoor, which needs a token naming that actor whose actor in st.Actors lists the participant among its controllers. A window's state is the fold's: its actor map has no prototype (emptyMap) and holds each actor under its own actorId, and the fold refuses an actor with an empty id, a token for an actor it does not hold, a grant naming no participant and an actor added with controllers, so any actor mayWorkDoor could accept is one controlledActors returns. Only a state the fold cannot build tells the two apart: an Actors prototype answering an id, a controller set holding "" for a participant id of "", an actor stored without its actorId. No window holds one, so no DOM does, and the mutant is equivalent by the owner's rule of 2026-11-17 that equivalent means no observation at all in the DOM, which the 2026-08-30 kill above predates. Do not kill it with such a state.
 
 # --- client/src/view/spectator.ts --------------------------------------------
 #

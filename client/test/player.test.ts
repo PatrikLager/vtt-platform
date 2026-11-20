@@ -147,6 +147,11 @@ test("a participant controlling nothing cannot move anything by clicking", () =>
   expect(moveCommandFor(world(), spectator, { selectedActorId: "", selectedAbilityId: "", doorsArmed: false }, { x: 1, y: 1 })).toBeNull();
 });
 
+test("a player who controls no actor moves nothing, though the window still has one selected", () => {
+  const stranger: Me = { participantId: "p-stranger", name: "S", role: "player" };
+  expect(moveCommandFor(world(), stranger, { selectedActorId: "mine", selectedAbilityId: "", doorsArmed: false }, { x: 4, y: 5 })).toBeNull();
+});
+
 test("an actor with no token on the board cannot be moved", () => {
   const cmd = moveCommandFor(world(), me, { selectedActorId: "also-mine", selectedAbilityId: "", doorsArmed: false }, { x: 1, y: 1 });
   expect(cmd).toBeNull();
