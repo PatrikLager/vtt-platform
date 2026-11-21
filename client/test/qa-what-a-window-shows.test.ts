@@ -296,7 +296,7 @@ test("qaWS: VTT-474 a right-click hands the page its disc's token id", () => {
   disc(root, "tok-c1b").dispatchEvent(ev);
   expect(pins).toEqual(["tok-c1b"]);
   expect(ev.defaultPrevented).toBe(true);
-  expect(cells).toEqual([]);
+  expect(cells).toHaveLength(0);
 });
 
 // VTT-474
@@ -323,12 +323,17 @@ test("qaWS: a right-click on the pinned disc goes to the page with its id", () =
 test("qaWS: a left click on a disc or its card reaches the board", () => {
   const { root, cells, pins } = draw(seen(world()), false);
   const d = disc(root, "tok-c1b");
-  d.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+  // At the disc's centre: a click with no position lands beside the grid (VTT-934).
+  const at = {
+    clientX: parseFloat(d.style.left) + parseFloat(d.style.width) / 2,
+    clientY: parseFloat(d.style.top) + parseFloat(d.style.height) / 2,
+  };
+  d.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0, ...at }));
   expect(cells.length).toBe(1);
   d.querySelector(".token-card")
-    ?.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+    ?.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0, ...at }));
   expect(cells.length).toBe(2);
-  expect(pins).toEqual([]);
+  expect(pins).toHaveLength(0);
 });
 
 // VTT-475

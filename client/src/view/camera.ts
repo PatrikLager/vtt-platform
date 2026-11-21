@@ -37,14 +37,9 @@ export function fitCamera(
 }
 
 /**
- * worldFromScreen undoes the camera's scale and offset, returning WORLD
- * PIXELS -- the same units `cell` is measured in, not a grid cell index.
- *
- * It deliberately stops there. `cellFromPoint` (grid.ts:52) already divides
- * a point by `geom.cell` to find the cell underneath it; this function is the
- * camera transform that composes in front of that call, not a second place
- * that also knows about cell size. Two functions computing the same division
- * is exactly how they drift.
+ * worldFromScreen undoes the camera's scale and offset, returning world pixels,
+ * not a cell index. Divide by the cell size in `cellFromPoint` (grid.ts) alone:
+ * a second place that knows the cell size is how the two drift.
  */
 export function worldFromScreen(px: number, py: number, cam: Camera): { x: number; y: number } {
   return { x: (px - cam.offsetX) / cam.scale, y: (py - cam.offsetY) / cam.scale };

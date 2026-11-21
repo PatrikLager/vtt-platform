@@ -3,6 +3,7 @@ import "./support/dom";
 import { test, expect, beforeEach, afterEach } from "bun:test";
 import { boot } from "../src/app";
 import { Session } from "../src/session";
+import { boardCamera, CELL } from "../src/view/spectator";
 
 function setURL(url: string) {
   (globalThis as unknown as { happyDOM: { setURL(u: string): void } }).happyDOM.setURL(url);
@@ -496,9 +497,15 @@ test("a player's command result carries a world sequence, which a redial's after
   deliverAll(sock, leraLog("p"));
   await settle();
 
-  r.querySelector(".grid")!.dispatchEvent(new MouseEvent("click", { clientX: 5, clientY: 5, bubbles: true }));
+  // Square (4, 4) of the 8x8 hall, through the board's camera: a click beside
+  // the grid sends nothing (VTT-934).
+  const cam = boardCamera(8, 8);
+  const clientX = cam.offsetX + 4.5 * CELL * cam.scale;
+  const clientY = cam.offsetY + 4.5 * CELL * cam.scale;
+  r.querySelector(".grid")!.dispatchEvent(new MouseEvent("click", { clientX, clientY, bubbles: true }));
   await settle();
   expect(sock.sent.length).toBeGreaterThan(0);
+  expect(JSON.parse(sock.sent[0]!).moveToken).toMatchObject({ to: { x: 4, y: 4 } });
   const requestId = JSON.parse(sock.sent[0]!).requestId as string;
   sock.deliver({ result: { requestId, ok: true, sequence: "40" } });
   await settle();

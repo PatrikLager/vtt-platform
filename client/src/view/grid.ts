@@ -52,19 +52,15 @@ export interface TokenDisc {
 }
 
 /**
- * cellFromPoint converts a click in board pixels to a cell.
- *
- * Floor, not round: rounding would make the right half of every cell select
- * its neighbour, so a player aiming at a token would move past it. Clamped,
- * because a click in the margin must land on the board rather than produce a
- * negative coordinate the server rejects with a confusing error.
+ * cellFromPoint converts a point in world pixels to a cell, or to none off the
+ * grid (VTT-934). Floor, not round: rounding would make the right half of every
+ * cell select its neighbour, so a player aiming at a token would move past it.
  */
-export function cellFromPoint(px: number, py: number, geom: Geometry): Cell {
-  const clamp = (v: number, hi: number) => Math.min(Math.max(v, 0), hi);
-  return {
-    x: clamp(Math.floor(px / geom.cell), geom.width - 1),
-    y: clamp(Math.floor(py / geom.cell), geom.height - 1),
-  };
+export function cellFromPoint(px: number, py: number, geom: Geometry): Cell | undefined {
+  const x = Math.floor(px / geom.cell);
+  const y = Math.floor(py / geom.cell);
+  if (x < 0 || y < 0 || x >= geom.width || y >= geom.height) return undefined;
+  return { x, y };
 }
 
 /**

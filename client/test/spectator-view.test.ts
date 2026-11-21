@@ -828,28 +828,42 @@ test("a board click maps to the cell under the pointer, offset by the board's bo
 
   const cam = boardCamera(6, 4);
   const geom: Geometry = { cell: CELL, width: 6, height: 4 };
-  const world_ = worldFromScreen(190 - 100, 58 - 40, cam);
+  const world_ = worldFromScreen(290 - 100, 200 - 40, cam);
   const want = cellFromPoint(world_.x, world_.y, geom);
+  expect(want).toBeDefined();
 
-  clickAt(el, 190, 58);
-  expect(cells).toEqual([want]);
+  clickAt(el, 290, 200);
+  expect(cells).toStrictEqual([want!]);
 });
 
 test("the same pixel maps to a DIFFERENT cell when the board moves", () => {
   // Pins that the offset is actually subtracted rather than ignored.
   const a: { x: number; y: number }[] = [];
   const b: { x: number; y: number }[] = [];
-  clickAt(board(world(), (c) => a.push(c), { left: 0, top: 0 }).el, 190, 58);
-  clickAt(board(world(), (c) => b.push(c), { left: 100, top: 40 }).el, 190, 58);
+  clickAt(board(world(), (c) => a.push(c), { left: 0, top: 0 }).el, 290, 200);
+  clickAt(board(world(), (c) => b.push(c), { left: 100, top: 40 }).el, 290, 200);
+  expect([a.length, b.length]).toEqual([1, 1]);
   expect(a[0]).not.toEqual(b[0]!);
 });
 
-test("a click past the last cell is clamped onto the board", () => {
+// VTT-934
+test("a click beside the grid calls no onCell, on each of its four sides", () => {
   const cells: { x: number; y: number }[] = [];
   const { el } = board(world(), (c) => cells.push(c));
-  clickAt(el, 9999, 9999);
-  // The scene is 6x4, so the far corner is (5, 3).
-  expect(cells).toEqual([{ x: 5, y: 3 }]);
+  // The 6x4 scene's grid through the board's own camera, the box at (100, 40).
+  const cam = boardCamera(6, 4);
+  const step = CELL * cam.scale;
+  const [left, top] = [100 + cam.offsetX, 40 + cam.offsetY];
+  const [right, bottom] = [left + 6 * step, top + 4 * step];
+  const half = step / 2;
+  clickAt(el, left - 1, top + half);
+  clickAt(el, left + half, top - 1);
+  clickAt(el, right + 1, bottom - half);
+  clickAt(el, right - half, bottom + 1);
+  expect(cells).toHaveLength(0);
+  // The other direction: the far corner square, just inside both edges.
+  clickAt(el, right - half, bottom - half);
+  expect(cells).toStrictEqual([{ x: 5, y: 3 }]);
 });
 
 test("the board draws no CSS lattice — the canvas owns the grid", () => {
@@ -1027,9 +1041,10 @@ test("a click resolves through the camera, not raw pixels, at a non-unit scale a
   // camera is actually wired in -- that is precisely the failure mode this
   // fix round is closing, so assert they differ before relying on either.
   expect(wantThroughCamera).not.toEqual(wantRawPixels);
+  expect(wantThroughCamera).toBeDefined();
 
   clickAt(el, clientX, clientY);
-  expect(cells).toEqual([wantThroughCamera]);
+  expect(cells).toStrictEqual([wantThroughCamera!]);
 });
 
 // --- canvas.ts's paint(): the thin drawImage loop --------------------------

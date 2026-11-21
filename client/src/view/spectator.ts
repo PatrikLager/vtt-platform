@@ -350,7 +350,9 @@ function renderGrid(
       // scale-1/offset-0 case where skipping this step is invisible.
       const r = board.getBoundingClientRect();
       const world = worldFromScreen(ev.clientX - r.left, ev.clientY - r.top, cam);
-      onCell(cellFromPoint(world.x, world.y, geom));
+      // VTT-934
+      const cell = cellFromPoint(world.x, world.y, geom);
+      if (cell) onCell(cell);
     });
   }
 

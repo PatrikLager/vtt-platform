@@ -78,7 +78,7 @@ test("clicking maps back to the square under the cursor at any zoom", () => {
   const cam = fitCamera(10, 10, 44, 440, 440); // 1:1
   const geom = { cell: 44, width: 10, height: 10 };
   // worldFromScreen undoes scale+offset to WORLD PIXELS; cellFromPoint is
-  // the piece that turns those into a cell index (grid.ts:52 already does
+  // the piece that turns those into a cell index (it already does
   // this division -- composing with it, not duplicating its /cell here, is
   // the whole reason worldFromScreen does not take a cell argument).
   const hit = worldFromScreen(45, 45, cam);

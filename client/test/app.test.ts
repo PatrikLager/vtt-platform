@@ -7,6 +7,7 @@ import { boot } from "../src/app";
 // just 'something non-empty was drawn'", and a copy here would go on agreeing
 // with itself after the real one moved.
 import { missingTileColors, plainObjectColors } from "../src/view/canvas";
+import { boardCamera, CELL } from "../src/view/spectator";
 import { forgetTheSay } from "./support/say";
 
 // happy-dom starts at about:blank and does NOT move location on
@@ -1714,11 +1715,11 @@ test("clicking the board moves the player's token", async () => {
 
   const board = r.querySelector(".grid") as HTMLElement;
   expect(board).not.toBeNull();
-  board.dispatchEvent(new MouseEvent("click", { clientX: 5, clientY: 5, bubbles: true }));
+  clickBoard(r, ...squareAt(3, 2));
   await settle();
 
   expect(sock.sent.length).toBeGreaterThan(0);
-  expect(JSON.parse(sock.sent[0]!)).toHaveProperty("moveToken");
+  expect(JSON.parse(sock.sent[0]!).moveToken).toMatchObject({ tokenId: "t1", to: { x: 3, y: 2 } });
   s?.close();
 });
 
@@ -1796,6 +1797,26 @@ const clickBoard = (r: HTMLElement, clientX: number, clientY: number) =>
     new MouseEvent("click", { clientX, clientY, bubbles: true }),
   );
 
+/** The centre of square (cx, cy) of a w-by-h scene, through the board's own camera. */
+function squareAt(cx: number, cy: number, w = 8, h = 8): [number, number] {
+  const cam = boardCamera(w, h);
+  return [cam.offsetX + (cx + 0.5) * CELL * cam.scale, cam.offsetY + (cy + 0.5) * CELL * cam.scale];
+}
+
+/** A point just past each edge of a w-by-h scene's grid, beside a corner square. */
+function besideTheGrid(w: number, h: number): [number, number][] {
+  const cam = boardCamera(w, h);
+  const half = (CELL * cam.scale) / 2;
+  const [right, bottom] = [cam.offsetX + w * CELL * cam.scale, cam.offsetY + h * CELL * cam.scale];
+  return [
+    [cam.offsetX - 1, cam.offsetY + half], [cam.offsetX + half, cam.offsetY - 1],
+    [right + 1, bottom - half], [right - half, bottom + 1],
+  ];
+}
+
+const sentKinds = (sock: FakeSocket) =>
+  sock.sent.map((f) => Object.keys(JSON.parse(f)).filter((k) => k !== "requestId"));
+
 /** A DM at a table with a door at (0,0), their actor Grukk's token at (1,1) and Grukk's chip selected. */
 async function dmTableWithDoor() {
   const { r, s, sock } = await dmTable({});
@@ -1821,6 +1842,38 @@ test("with doors armed, a DM's click on a door square opens it and sends no move
   expect(sock.sent.map((f) => Object.keys(JSON.parse(f)).filter((k) => k !== "requestId"))).toEqual([["openDoor"]]);
   s?.close();
 });
+
+// VTT-934
+test("a player's click beside the grid sends nothing, on each of its four sides", async () => {
+  const { r, s, sock } = await tableAs("player");
+  for (const [x, y] of besideTheGrid(8, 8)) clickBoard(r, x, y);
+  await settle();
+  expect(sock.sent).toHaveLength(0);
+  clickBoard(r, ...squareAt(7, 7));
+  await settle();
+  expect(sentKinds(sock)).toEqual([["moveToken"]]);
+  s?.close();
+});
+
+/** A DM's clicks beside the door table's grid, then on its door square. */
+async function dmClicksBesideTheGrid(armed: boolean) {
+  const { r, s, sock } = await dmTableWithDoor();
+  if (armed) arm(r);
+  await settle();
+  for (const [x, y] of besideTheGrid(4, 4)) clickBoard(r, x, y);
+  await settle();
+  expect(sock.sent).toHaveLength(0);
+  clickBoard(r, ...squareAt(0, 0, 4, 4));
+  await settle();
+  expect(sentKinds(sock)).toEqual([[armed ? "openDoor" : "moveToken"]]);
+  s?.close();
+}
+
+// VTT-934
+test("a DM's click beside the grid sends nothing, doors unarmed", () => dmClicksBesideTheGrid(false));
+
+// VTT-934
+test("a DM's click beside the grid sends nothing, doors armed", () => dmClicksBesideTheGrid(true));
 
 async function playerWithTwoAtADoor(bramAt = { x: 3, y: 3 }) {
   localStorage.setItem("vtt.token", "tok");
@@ -2167,8 +2220,7 @@ test("a null move command is never handed to send, even before the socket opens"
   );
   await settle();
 
-  const board = r.querySelector(".grid") as HTMLElement;
-  board?.dispatchEvent(new MouseEvent("click", { clientX: 5, clientY: 5, bubbles: true }));
+  clickBoard(r, ...squareAt(3, 3));
   await settle();
 
   expect(sock.sent).toHaveLength(0);
@@ -3493,18 +3545,18 @@ test("a DM's chips pick from the fold and send nothing, and the board moves the 
   await settle();
   expect(sock.sent).toHaveLength(0);
   expect(chips(r).find((b) => b.textContent === "Lera")!.className).toBe("chip sel");
-  clickBoard(r, 5, 5);
+  clickBoard(r, ...squareAt(3, 3));
   await settle();
-  expect(JSON.parse(sock.sent[0]!).moveToken).toMatchObject({ tokenId: "t1" });
+  expect(JSON.parse(sock.sent[0]!).moveToken).toMatchObject({ tokenId: "t1", to: { x: 3, y: 3 } });
   s?.close();
 });
 
 test("a DM's board click before any chip moves the actor granted to them", async () => {
   const { r, s, sock } = await tableAs("dm");
-  clickBoard(r, 5, 5);
+  clickBoard(r, ...squareAt(3, 3));
   await settle();
   expect(sock.sent).toHaveLength(1);
-  expect(JSON.parse(sock.sent[0]!).moveToken).toMatchObject({ tokenId: "t1" });
+  expect(JSON.parse(sock.sent[0]!).moveToken).toMatchObject({ tokenId: "t1", to: { x: 3, y: 3 } });
   s?.close();
 });
 

@@ -18,11 +18,16 @@ test("a click inside a cell maps to that cell, not the nearest edge", () => {
   expect(cellFromPoint(40, 40, geom)).toEqual({ x: 1, y: 1 });
 });
 
-test("clicks outside the board are clamped, never negative or past the edge", () => {
-  // A negative cell would be sent to the server as a legal-looking move and
-  // rejected with a confusing error; clamping keeps the click on the board.
-  expect(cellFromPoint(-5, -5, geom)).toEqual({ x: 0, y: 0 });
-  expect(cellFromPoint(9999, 9999, geom)).toEqual({ x: 9, y: 7 });
+// VTT-934
+test("a point off the grid is no square, on each side and at the far edges", () => {
+  for (const [px, py] of [
+    [-0.5, 100], [-5, -5], [100, -0.5],
+    [400, 100], [100, 320], [400, 320], [9999, 9999],
+  ] as const) {
+    expect([px, py, cellFromPoint(px, py, geom)]).toStrictEqual([px, py, undefined]);
+  }
+  // The other direction: the last pixel inside the far edges is the last square.
+  expect(cellFromPoint(399.9, 319.9, geom)).toStrictEqual({ x: 9, y: 7 });
 });
 
 function worldWith(): State {

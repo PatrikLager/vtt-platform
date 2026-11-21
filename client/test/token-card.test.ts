@@ -122,7 +122,11 @@ test("a right-click on a window that pins nothing is still prevented", () => {
 test("a click on a disc still reaches the board's click handler", () => {
   const cells: { x: number; y: number }[] = [];
   const root = render(table(), { onCell: (c) => cells.push(c) });
-  disc(root, "tok-gob").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  const d = disc(root, "tok-gob");
+  // At the disc's centre: a click with no position lands beside the grid (VTT-934).
+  const clientX = parseFloat(d.style.left) + parseFloat(d.style.width) / 2;
+  const clientY = parseFloat(d.style.top) + parseFloat(d.style.height) / 2;
+  d.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX, clientY }));
   expect(cells).toHaveLength(1);
 });
 
