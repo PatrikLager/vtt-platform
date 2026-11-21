@@ -37,7 +37,7 @@ Principles 6, 7, 15 and 35 of `docs/blueprint.md`:
   request, and never by a client hiding what it was sent.
 - **7.** Which abilities a participant reads is decided against their role
   and the fold as they stand at each request, so a grant, a revocation, a
-  change of role, a give or a take reaches their next read.
+  give or a take reaches their next read.
 - **15.** A piece of art is opened from the art directory on every request,
   and nothing is cached.
 - **35.** A ruleset is served as data to whoever may see each part of it: a
@@ -106,11 +106,14 @@ answers 404 with `gateway: no guide for that adventure` when the id names no
 guide or an empty one, because an empty document would read as a broken one
 (VTT-711).
 
-**What `/api/me` answers.** `handleMe` writes `meJSON`: the `participantId`,
-`name` and `role` of the `identity.Participant` `authed` returned, and
-nothing else. It answers nothing about what the caller controls: control is
-an `ActorControlGranted` in the log, decided in `authz.go` against the fold
-(SPEC-009), and a client reads it from the folded actors' controller ids. The
+**What `/api/me` answers.** `handleMe` writes `meJSON`: the `participantId`
+and `name` of the `identity.Participant` `authed` returned, and the `role`
+`roleIn` judges for them against `campaign.Actors()` (SPEC-013, VTT-889), and
+nothing else; for anyone but the DM and the agent that is `spectator` while
+the campaign is poisoned, since `Actors` then holds none. It names no actor
+the caller controls: control is an `ActorControlGranted` in the log, decided in
+`authz.go` against the fold (SPEC-009), and a client reads it from the folded
+actors' controller ids. The
 route reveals nothing the caller did not prove by holding the token.
 
 **What `/api/ruleset` answers.** `handleRuleset` writes `rulesetJSON`: the
@@ -136,17 +139,18 @@ no resource, and the field is absent when the ruleset names none or none is
 loaded (VTT-859). A resource's `default_max_expr` and thresholds are not
 served. Which abilities it writes is decided on every request by
 `abilitiesReadBy`, from the participant `authed` returned: for the DM and
-the agent, every ability `rules.Ruleset.Compiled` holds (VTT-693); for a
-player, each ability that `rules.Offers` finds named by the sheet of an
+the agent, every ability `rules.Ruleset.Compiled` holds (VTT-693); for
+anyone else, each ability that `rules.Offers` finds named by the sheet of an
 actor of `campaign.State()` whose controllers include them (`controls`),
-whatever the actor's kind, so none when they control none, and none, with
-status 200, when the state is nil, as it is for a poisoned campaign
-(VTT-691); for a spectator, the role left of those `identity.ParseRole`
-accepts, none (VTT-692). For a player it reads the sheets of
-`campaign.State()` at each request and keeps nothing between requests, so
-an ability given to or taken from an actor a player controls is in or out
-of that player's next answer, as a grant, a revocation or a change of role
-is (`TestAPlayersReadFollowsAGiveAndATake`). An id a sheet names that
+whatever the actor's kind (VTT-691), so none for a spectator, who controls
+none (VTT-692), and none, with status 200, when the state is nil, as it is
+for a poisoned campaign. It reads the stored role only to tell the DM and
+the agent apart (`runsTheTable`): what anyone else reads follows from what
+they control. It reads the sheets
+of `campaign.State()` at each request and keeps nothing between requests, so
+an ability given to or taken from an actor a player controls is in or out of
+that player's next answer, as a grant or a revocation is
+(`TestAPlayersReadFollowsAGiveAndATake`). An id a sheet names that
 `Compiled` does not hold is not written. `conditions`, `resources`,
 `properties`, `sheet` and `freeUsageName` are every role's (VTT-710,
 VTT-619, VTT-631, VTT-831, VTT-859): the sheet names property keys and
@@ -347,4 +351,4 @@ VTT-129, VTT-130, VTT-131, VTT-132, VTT-133, VTT-134, VTT-135, VTT-136,
 VTT-137, VTT-578, VTT-581, VTT-619, VTT-620, VTT-621, VTT-631, VTT-632,
 VTT-633, VTT-682, VTT-691, VTT-692, VTT-693, VTT-694, VTT-702, VTT-709,
 VTT-710, VTT-711, VTT-831, VTT-832, VTT-833, VTT-851, VTT-852, VTT-853,
-VTT-859, VTT-860.
+VTT-859, VTT-860, VTT-889.

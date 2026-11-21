@@ -20,8 +20,14 @@ pinned by the checks the rows under Requirements name, in
 `internal/gateway/qa_promotion_revoked_test.go`,
 `internal/gateway/qa_seat_test.go`, `internal/gateway/seat_internal_test.go`,
 `internal/gateway/qa_promotion_rejudge_test.go`,
-`internal/gateway/qa_promotion_opening_test.go`,
 `internal/gateway/qa_promotion_queued_test.go`,
+`internal/gateway/make_spectator_test.go`,
+`internal/gateway/role_internal_test.go`,
+`internal/gateway/qa_role_from_log_test.go`,
+`internal/gateway/grantee_test.go`, `internal/gateway/qa_grantee_test.go`,
+`internal/gateway/reannounce_test.go`,
+`internal/gateway/qa_reannounce_test.go`,
+`internal/identity/qa_mint_test.go`, `cmd/vtt/qa_invite_role_test.go`,
 `internal/gateway/remove_participant_test.go`,
 `internal/gateway/qa_removal_test.go`,
 `internal/gateway/qa_remove_roles_test.go`, `client/test/dm-view.test.ts`,
@@ -33,8 +39,9 @@ pinned by the checks the rows under Requirements name, in
 
 Principles 7, 8, 9, 10 and 22 of `docs/blueprint.md`:
 
-- **7.** Authentication happens once and authorization continuously: the role
-  is looked up again before every command.
+- **7.** Authentication happens once and authorization continuously: the
+  participant is looked up again before every command, and their role is
+  judged from the log the command is judged against.
 - **8.** The door and revocation live in the identity store, so replaying a
   campaign can neither reopen a door nor bring a revoked participant back.
 - **9.** A join refused at the door, or for a name, writes nothing.
@@ -45,12 +52,16 @@ Principles 7, 8, 9, 10 and 22 of `docs/blueprint.md`:
 
 ## How it works
 
-**Identity is not event-sourced.** Participants, their roles, their credential
-hashes and the campaign's join door live in two SQLite tables, `participants`
-and `join_access`, in the campaign file the event log also uses;
-`identity.Open` takes its own handle on that file, independent of `store.Open`.
+**Identity is not event-sourced.** Participants, their stored roles, their
+credential hashes and the campaign's join door live in two SQLite tables,
+`participants` and `join_access`, in the campaign file the event log also
+uses; `identity.Open` takes its own handle on that file, independent of
+`store.Open`. A stored role of dm or agent is the participant's role. Of
+anyone else, identity holds only that they are neither: whether they are a
+player or a spectator is the log's, judged by `roleIn` as SPEC-013 states.
 `engine.State` names no role and `internal/engine` reads none (`grep -rn Role
-internal/engine/` prints nothing). An envelope carries `actor_role`, the
+internal/engine/ | grep -v _test.go` prints nothing). An envelope carries
+`actor_role`, the
 issuer's role at the moment of the command, stamped by the gateway (`ToEvent`
 in `internal/gateway/convert.go` and the batch handlers beside it) and by
 `internal/eventgen`; nothing outside a test file in `internal/engine`,
@@ -71,16 +82,17 @@ through `pumpState.revoked`, when it starts, on every append wake and every
 perch and every `rejudge` signal it takes, before and after `admit` decides
 each envelope it takes, and after every switch (SPEC-015); and through
 `revoked` before every presence announcement: an arrival or a departure in
-`announcePresence` and `announceDeparture`, and a promotion in
-`announcePromotion`. An announcement skips a revoked participant's connections
+`announcePresence` and `announceDeparture`, and a re-announcement in
+`reannounce`. An announcement skips a revoked participant's connections
 and leaves them open; their next command, or the pump's next wake, `rejudge`
 signal, perch or envelope, closes them, so a log seat's connection is closed
 at the next append whether or not it sends that connection an entry (VTT-352).
 A lookup that answers `identity.ErrInvalidToken` ends the connection with a
 policy-violation close, from the read loop and from the pump alike (VTT-376).
-A successful lookup on the pump replaces the seat's participant, so the pump
-judges by the current role (VTT-340, SPEC-015), as the read loop does for a
-command (VTT-031). Any other lookup error is operational: `answerCommand`
+A successful lookup on the pump changes nothing: what a connection may watch
+is judged by the role the actors give it at each check (SPEC-015), as a
+command is judged by the role its snapshot gives it (SPEC-013). Any other
+lookup error is operational: `answerCommand`
 refuses that one command with `gateway: identity unavailable` and the
 connection stays; the delivery and presence checks match `ErrInvalidToken`
 alone and let an operational failure through. The `/api/*` routes verify the
@@ -91,9 +103,9 @@ credential, and confirms the match with `subtle.ConstantTimeCompare`. A stored
 role that does not parse is refused by `Verify`, `Lookup` and `List`, never
 skipped or defaulted.
 
-**One shared link admits people; the DM promotes them afterwards.** `POST
-/join` is unauthenticated. It reads at most `maxJoinBody` bytes, trims the
-display name of surrounding white space before anything judges or stores it,
+**One shared link admits people; the DM gives them characters afterwards.**
+`POST /join` is unauthenticated. It reads at most `maxJoinBody` bytes, trims
+the display name of surrounding white space before anything judges or stores it,
 refuses a name `usableDisplayName` rejects with its own 400 before the door is
 consulted, and asks `identity.JoinAdmits` with the secret the body carries and
 the trimmed name. `JoinAdmits` answers `identity.ErrNameTaken` for a name a
@@ -155,33 +167,32 @@ which is what an absent row already reads as. `migrateLocked` gives a door that
 stands open with no budget the default, keyed on that state and not on which
 column it added.
 
-**Promotion is a command.** `promote_participant` is ruled by `commandRoles`
-like every other command (`TestEveryClientCommandHasRoleCells` holds that no
-command is missing from it). The role it may grant is bounded in
-`authorizePromotionTarget`, to player or spectator; the role it may act upon
-is bounded in `handlePromotion`, which looks the target up and refuses one
-`identity.Lookup` does not answer, a revoked participant among them, and one
-whose current role is dm or agent, because `Authorize` performs no I/O and
-cannot read the target's row. `identity.SetRole` changes the role column and
-nothing else, reports a participant it did not find, and leaves a revoked
-participant revoked. The handler then signals each of the promoted
-participant's connections through `presenceRegistry.rejudge`, so each
-re-judges what it watches by the new role (SPEC-015). When the promoted
-participant is connected, the handler then sends a `PresenceChanged` frame
-naming them through `announcePromotion` to every connection whose participant
-is not revoked, theirs included (VTT-309); when they are not, nothing is sent
-(VTT-310). It appends nothing; SPEC-007 names the commands that append nothing
-and this is one of them.
+**"Make spectator" is a command.** `promote_participant` is ruled by
+`commandRoles` like every other command (`TestEveryClientCommandHasRoleCells`
+holds that no command is missing from it). The role it may name is bounded in
+`authorizePromotionTarget` to spectator (SPEC-013). The participant it may act
+upon is bounded in `handlePromotion`, which looks the target up and refuses
+one `identity.Lookup` does not answer, a revoked participant among them, and
+one whose stored role is dm or agent, because `Authorize` performs no I/O and
+cannot read the target's row. It writes nothing to identity: it builds,
+through `controlRevocations`, the batch of revocations SPEC-007 states, appends
+it through `campaign.AppendBatch`, or nothing when the target controls no
+actor, and after an append re-announces the target through `reannounce`
+(SPEC-011). A target granted nothing meanwhile controls no actor afterwards,
+and is a spectator until the next grant. The console offers the command as
+"Make spectator" on a player's row (SPEC-022).
 
 **Removal is a command.** `remove_participant` is ruled dm-and-agent in
 `commandRoles`, so a player and a spectator are refused it, and since a dm
 or an agent cannot be its target, nobody can remove themselves. The role it
 may act upon is bounded in `handleRemoval`, which looks the target up and
 refuses one `identity.Lookup` does not answer, a revoked participant among
-them, and one whose current role is dm or agent, for the reason
-`handlePromotion` does (VTT-564). It then builds one `ActorControlRevoked`
-for each actor whose controllers include the target, in actor-id order
-(SPEC-007), and only then writes: `identity.Revoke`, then a signal to each
+them, and one whose stored role is dm or agent, for the reason
+`handlePromotion` does (VTT-564). It then builds, through
+`controlRevocations`, one `ActorControlRevoked` for each actor whose
+controllers include the target, in actor-id order (SPEC-007), and only then
+writes: `identity.Revoke`, which reports a participant it does not hold
+(VTT-929), then a signal to each
 of the target's connections through `presenceRegistry.rejudge`, then the
 batch through `campaign.AppendBatch`, or nothing when the target controls
 no actor. Each signalled pump re-resolves through `pumpState.revoked`, whose
@@ -202,7 +213,9 @@ and that they can come back only through the share link while it is open
 
 **Revoked participants are not listed.** `identity.List` reads `WHERE revoked =
 0`, ordered by display name and then id, and `GET /api/participants`, open to
-the roles in `participantRoles`, is built on it.
+the roles in `participantRoles`, is built on it. Each row's `role` is the one
+`roleIn` judges against `campaign.Actors()` (SPEC-013), as `/api/me`'s is
+(VTT-890, SPEC-012).
 
 **A display name a participant who is not revoked holds is refused to anyone
 new.** `CreateInvite` and `JoinAdmits` read the names of every participant who
@@ -254,13 +267,14 @@ with its own 400, after the door, and writes nothing; to a caller the door
 refuses, a held name and a free one get the same answer. `vtt invite` naming a
 held name exits non-zero and prints no token.
 
-A promotion to dm or agent is refused, and so is a promotion of a dm or an
-agent. A removal of a dm or an agent is refused, and a removal cannot be
-undone: no statement sets `revoked` back to 0 (`grep -n 'SET revoked'
-internal/identity/identity.go` finds `Revoke`'s `revoked = 1` alone), so the
-person comes back only as a new participant, through the share link or a
-new `vtt invite`. A
-`set_join_door` that says neither open nor closed is refused.
+A promotion to any role but spectator is refused, and so is a promotion of a
+dm or an agent; no promotion makes a player, since `authorizePromotionTarget`
+refuses one to player (SPEC-013). A removal of a dm or an agent is refused, and
+a removal cannot be undone: no statement sets
+`revoked` back to 0 (`grep -n 'SET revoked' internal/identity/identity.go`
+finds `Revoke`'s `revoked = 1` alone), so the person comes back only as a new
+participant, through the share link or a new `vtt invite`. A `set_join_door`
+that says neither open nor closed is refused.
 
 A join refused on the read takes no write lock on the campaign file, which is
 what lets `POST /join` run with no rate limiting: a stranger without the
@@ -273,21 +287,29 @@ A role never travels in a presence frame: `PresenceChanged` in
 /api/participants`.
 
 Control of a character is not identity's: it is an `ActorControlGranted` in the
-log, decided by `internal/gateway/authz.go` against the fold. `set_join_door`,
+log, decided by `internal/gateway/authz.go` against the fold, and it is what
+makes a participant who is neither the DM nor the agent a player. A grant
+naming a participant identity does not hold, or holds revoked, is refused
+(SPEC-013). `set_join_door`,
 `rotate_join_link`, `promote_participant` and `remove_participant` are ruled
 dm-and-agent in `commandRoles`. Which commands append nothing is SPEC-007's.
-A campaign's DM is minted out of band, by `vtt invite`.
+A campaign's DM is minted out of band, by `vtt invite`. `CreateInvite`, and so
+`vtt invite`, mints dm, agent and spectator and refuses player with
+`identity: a participant becomes a player when given a character; invite them
+as a spectator`, minting nothing (VTT-911); `mintInvites` mints a scenario's
+player as a spectator. `ParseRole` accepts player (VTT-912), so a stored
+`player` row parses, and `roleIn` judges it as it judges a stored
+spectator.
 
 ## Requirements
 
 VTT-005, VTT-006, VTT-007, VTT-008, VTT-009, VTT-010, VTT-011, VTT-013,
 VTT-014, VTT-015, VTT-016, VTT-017, VTT-018, VTT-020, VTT-021, VTT-022,
-VTT-025, VTT-026, VTT-027, VTT-028, VTT-029, VTT-030, VTT-031, VTT-032,
-VTT-033, VTT-034, VTT-036, VTT-037, VTT-038, VTT-039, VTT-040, VTT-041,
-VTT-043, VTT-045, VTT-046, VTT-047, VTT-048, VTT-049, VTT-060, VTT-061,
-VTT-062, VTT-063, VTT-064, VTT-065, VTT-066, VTT-067, VTT-068, VTT-069,
-VTT-070, VTT-071, VTT-072, VTT-073, VTT-074, VTT-075, VTT-076, VTT-077,
-VTT-256, VTT-309, VTT-310, VTT-352, VTT-376, VTT-542, VTT-543, VTT-544,
-VTT-545, VTT-546, VTT-548, VTT-549, VTT-550, VTT-551, VTT-552, VTT-553,
-VTT-554, VTT-555, VTT-556, VTT-557, VTT-558, VTT-564, VTT-566, VTT-568,
-VTT-569, VTT-570, VTT-571, VTT-667.
+VTT-026, VTT-027, VTT-028, VTT-032, VTT-033, VTT-034, VTT-038, VTT-039,
+VTT-040, VTT-041, VTT-043, VTT-045, VTT-046, VTT-048, VTT-049, VTT-060,
+VTT-061, VTT-062, VTT-063, VTT-064, VTT-065, VTT-069, VTT-070, VTT-071,
+VTT-072, VTT-073, VTT-074, VTT-075, VTT-076, VTT-077, VTT-256, VTT-352,
+VTT-376, VTT-542, VTT-543, VTT-544, VTT-545, VTT-546, VTT-548, VTT-549,
+VTT-550, VTT-551, VTT-552, VTT-553, VTT-554, VTT-555, VTT-556, VTT-557,
+VTT-558, VTT-564, VTT-566, VTT-568, VTT-569, VTT-570, VTT-571, VTT-667,
+VTT-890, VTT-911, VTT-912, VTT-929.

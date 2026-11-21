@@ -4,7 +4,10 @@
 
 Accepted. Implemented by `internal/gateway/server.go` (`handleRemoveActor`,
 dispatched from `handleCommand`), over `internal/campaign`'s `AppendBatch` and
-`internal/engine`'s `Apply`; pinned by `internal/gateway/remove_actor_test.go`.
+`internal/engine`'s `Apply`; pinned by `internal/gateway/remove_actor_test.go`
+and, for its announcements, by
+`TestARemovedActorIsAnnouncedNamingEachOfItsControllers` in
+`internal/gateway/reannounce_test.go`.
 
 ## Principles served
 
@@ -38,6 +41,12 @@ atomicity SPEC-007 states. An ok result carries `Sequence`, the first sequence
 `AppendBatch` assigned; a refusal answers ok=false with the fold's message as
 `Error`.
 
+**The controllers are announced after the append.** Once `AppendBatch`
+accepts the batch, `handleRemoveActor` calls `reannounce` for each id in the
+removed actor's `controller_ids`, read from the snapshot, since the state after
+the append holds no actor (SPEC-011, VTT-906). A refused batch announces
+nothing (VTT-924).
+
 **The fold refuses in the handler's place.** `handleRemoveActor` checks
 nothing about the actor. `engine.Apply`'s `ActorRemoved` arm refuses an actor
 the state does not hold (`engine: removed unknown actor "<id>"`) and an actor
@@ -69,10 +78,11 @@ refuses in general, and that an actor's conditions leave with it, is
   and nothing is appended.
 - A removal refused because a token was placed for the actor meanwhile can be
   sent again; it then reads the new snapshot.
-- Control need not be revoked before an actor is removed.
+- Control need not be revoked before an actor is removed, and a player whose
+  last actor it was is a spectator from the next command on (SPEC-013).
 - Whoever changes `handleRemoveActor` adds no check the fold already makes,
   and appends the batch in one call.
 
 ## Requirements
 
-VTT-254, VTT-255, VTT-258, VTT-259, VTT-307.
+VTT-254, VTT-255, VTT-258, VTT-259, VTT-307, VTT-906, VTT-924.

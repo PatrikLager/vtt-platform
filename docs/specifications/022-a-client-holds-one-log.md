@@ -44,16 +44,20 @@ panel labels a move with its reason, by `client/test/spectator-view.test.ts`,
 members a `WatchableChanged` names and switch between them, by
 `client/test/app.test.ts`, `client/test/player.test.ts`,
 `client/test/spectator-view.test.ts` and `client/test/qa-switch.test.ts`
-(VTT-403 to VTT-405, VTT-408, VTT-457, VTT-460); that a player whose set says
-they control no party member is drawn the perch and no panel, that its "No
-shoulder" sends nobody, and that their board click sends nothing, by
-`client/test/app.test.ts` and `client/test/qa-perched-player.test.ts` (VTT-458,
-VTT-459, VTT-461); that a spectator chooses a shoulder and a player switches in
+(VTT-403 to VTT-405, VTT-408, VTT-918, VTT-919); that a window perches
+exactly while the role the page last read is `spectator`, and a player's is
+drawn the panel whatever its set says, by `client/test/app.test.ts`,
+`client/test/qa-perched-player.test.ts`,
+`client/test/qa-console-perch.test.ts` and
+`client/test/qa-refusal-words.test.ts` (VTT-917); that a spectator chooses a
+shoulder and a player switches in
 the browser, and that a reload keeps either, by `client/e2e/table.spec.ts`
 (VTT-394, VTT-403, VTT-405, VTT-444, VTT-579) and `client/e2e/handover.spec.ts`
-(VTT-579); that a player whose last party member the DM takes back keeps
-watching it with the perch, chooses nobody by "No shoulder" and then another
-shoulder, by `client/e2e/handover.spec.ts` (VTT-458, VTT-459); and that a
+(VTT-579); that a player whose last character the DM takes back is a
+spectator, keeps watching it with the perch, chooses nobody by "No shoulder"
+and then another shoulder, and that one the DM makes a spectator perches, by
+`client/e2e/handover.spec.ts`, and that a spectator given a character is
+drawn the player panel, by `client/e2e/joining.spec.ts` (VTT-917); and that a
 player's and a spectator's page shows no Events panel and a DM's does, by
 `client/e2e/table.spec.ts` (VTT-445, VTT-446); that a window names what it
 shows by its role's chain and never a token or actor by its id, shows a token's
@@ -123,20 +127,25 @@ panel draw a whisper, by `client/test/player.test.ts`,
 (VTT-593 to VTT-597, VTT-599, VTT-600, VTT-666, VTT-668); and that a window
 shows a refusal as the server words it, tells a player each party member a
 set stops naming as controlled, and nothing at any other set or in any other
-window, and tells a perching player that they play no character, by
-`client/test/app.test.ts`, `client/test/session.test.ts`,
-`client/test/spectator-view.test.ts`, `client/test/qa-refusal-words.test.ts`
-and `client/e2e/handover.spec.ts` (VTT-604 to VTT-607). That the panel
+window, by `client/test/app.test.ts`, `client/test/session.test.ts`,
+`client/test/qa-refusal-words.test.ts` and `client/e2e/handover.spec.ts`
+(VTT-604 to VTT-606); and that the console's "Make spectator" asks first,
+sends one promotion to spectator and reads the roster again once it is
+answered, that no row offers a promotion to player, and that a grant, a
+revocation and a removal of an actor read the roster again once answered, by
+`client/test/dm-view.test.ts`, `client/test/qa-console-perch.test.ts` and
+`client/e2e/handover.spec.ts` (VTT-901 to VTT-905, VTT-930). That the panel
 offers, for the actor it acts as, only the abilities of the window's list
 that the actor's sheet names, in a player's, a DM's and an agent's window,
 is held by `client/test/panel-offers.test.ts`,
 `client/test/qa-window-offers.test.ts`,
 `client/test/qa-ability-target.test.ts`, `client/test/qa-panel-say.test.ts`
 and `client/test/spectator-view.test.ts` (VTT-695); that a window reads
-`/api/ruleset` again when a player's set or its flag changes, or when a
-change of role makes it a player's window or stops it being one, and that
-its panel offers from its newest read's answer, by `client/test/app.test.ts`
-and `client/test/qa-window-reread.test.ts` (VTT-696, VTT-712, VTT-753); and
+`/api/ruleset` again when a player's set changes, or when a change of role
+makes it a player's window or stops it being one, and that its panel offers
+from its newest read's answer, by `client/test/app.test.ts`,
+`client/test/qa-console-perch.test.ts` and
+`client/test/qa-window-reread.test.ts` (VTT-712, VTT-753, VTT-920); and
 that the fold holds an actor's ability ids as its `actorAdded` gave them
 until a give or a take changes them and its dump writes them as
 `vtt state dump` does, by `client/test/fold-dump.test.ts` and
@@ -255,9 +264,8 @@ Principles 7, 11, 12, 13, 14, 22, 23, 27 and 35 of `docs/blueprint.md`:
 - **7.** A grant, a revocation, a change of role, a give or a take reaches
   the abilities a player's window offers without a reload.
 - **11.** A reader folds one log, from its first entry, and never splices two.
-- **12.** A player is told when a party member stops being theirs, when an
-  ability is given to or taken from a party member they control, and a
-  perching player that they play no character.
+- **12.** A player is told when a party member stops being theirs, and when
+  an ability is given to or taken from a party member they control.
 - **13.** `namer` never shows a token or an actor by its id, names a resource
   and a condition its ruleset declares by its display name, and `describe`
   words every payload (VTT-474 to VTT-477, VTT-815, VTT-862, VTT-863).
@@ -305,7 +313,12 @@ none, nor one whose first read has not answered or has failed (VTT-445). A page
 whose last read answered `dm` or `agent` draws it (VTT-446). The page reads its
 role when its session starts (`startSession`) and again at a presence frame
 naming its own participant, once a first read has answered; while a re-read is
-pending, and after one fails, it keeps the role last read. While the window
+pending, and after one fails, it keeps the role last read. The gateway sends
+such a frame after each accepted grant or revocation naming the participant,
+each accepted removal of an actor they control and each promotion of theirs
+that appends (SPEC-011, VTT-906), and `/api/me` answers a player's or a
+spectator's role from the actors they control (SPEC-012, VTT-889), so the
+role the page reads follows control. While the window
 gives the reason it cannot fold its log, that reason is all `paint` draws, so
 neither the Story nor the panel is shown (VTT-446, VTT-822).
 
@@ -416,30 +429,27 @@ the chain other than a 401, forget nothing and draw no removal (VTT-576,
 VTT-580). With no credential stored, the share link opens the join form
 (VTT-577).
 
-A window perches when the role the page last read is `spectator`, or `player`
-with a last `WatchableChanged` that says they control no party member, by the
-owner's ruling B-4 of 2026-10-22 (`mayPerch` in `client/src/app.ts`). A
-perching window is drawn the perch and no player panel (VTT-403, VTT-458).
-The DM's and the agent's windows never perch.
+A window perches exactly while the role the page last read is `spectator`,
+whatever its last `WatchableChanged` says, except while it shows the reason it
+cannot fold its log, which `paint` draws in place of everything else
+(`mayPerch` in `client/src/app.ts`, VTT-917, by the owner's ruling OD-4 of
+2026-11-20). A perching window is
+drawn the perch and no player panel (VTT-403, VTT-917). The DM's, the
+agent's and a player's windows never perch.
 
-A player whose window does not perch is drawn the panel, which offers a chip
-for each party member the last `WatchableChanged` names, in its order, and
-marks the one they watch (VTT-457). While it offers none it reads "You do not
-control an actor yet.": before the client is sent a set, since a set the
-gateway sends naming none says the participant controls no party member
-(SPEC-007), which perches the window. The perch offers a button for each party
-member the set names, and "No shoulder" for nobody (VTT-403, VTT-458).
-Under its heading, a player's perch reads "You play no character; the DM can
-give you one." and a spectator's does not: `app.ts` sets
-`PerchControl.playsNone` from the role, so a reload draws it again
-(VTT-607). Its buttons are ordered by label and then by id, each compared by
+A player's window is drawn the panel, which offers a chip for each party
+member the last `WatchableChanged` names, in its order, and marks the one
+they watch (VTT-918). While it offers none it reads "You do not control an
+actor yet.", as it does before the client is sent a set. The perch offers a
+button for each party member the set names, and "No shoulder" for nobody
+(VTT-403). Its buttons are ordered by label and then by id, each compared by
 `<`, which is UTF-16 code unit order rather than a locale's. It reads "No
 party members yet." for a set naming none, and "Perched on: " with the
 watched one's name from the set, its id when the set gives no name or does
 not name it, and "nobody" for nobody. A chip or a button is labelled by the
 name the set gives it, or by its id when that name is empty (VTT-404). A
 click sends `set_viewpoint` naming its party member, the watched one
-included, or nobody for "No shoulder" (VTT-405, VTT-459); the gateway
+included, or nobody for "No shoulder" (VTT-405); the gateway
 applies nothing for the one already shown (SPEC-015). `switchTo` shows a
 refusal of it as the toast of its error, with nothing before it (VTT-604).
 
@@ -539,22 +549,20 @@ presence frame naming its participant starts. `rereadIfStale` reads again
 when the window's key differs from the key it held when it issued its
 newest read: for a window whose role the page last read is `player`, each
 actor of the last `WatchableChanged` set, in its order, by its id and the
-ability ids the set gives it, in their order, and whether the set says the
-participant controls no party member; for any other window, the empty key.
-So a player's window reads again when a set changes which party members it
-names or its flag (VTT-696), or the ability ids of a party member it names
+ability ids the set gives it, in their order; for any other window, the
+empty key. So a player's window reads again when a set changes which party
+members it names (VTT-920), or the ability ids of a party member it names
 (VTT-732), as at a give or a take to a party member the player controls
 (SPEC-015), and a window reads again when the role `/api/me` answers makes
 it a player's window or stops it being one (VTT-712); an equal set, a
 renamed set and a redial sent the same set issue no read, a set whose ids
 differ from the last only in their order issues one, and a window that is
-not a player's reads once, at start-up, until a promotion makes it one, a
-set that changes ability ids included (VTT-752). A grant or a revocation
-that leaves its actor not a party member, and a give or a take to an actor
-that is not one, change neither the set nor its flag, so they issue no read
-and tell nothing, and the window's list keeps, or lacks, the abilities that
-actor's sheet alone names until a change of the key or a reload reads again; a
-player's panel never acts as such an actor. The newest read's answer sets the
+not a player's reads once, at start-up, until a grant makes it one, a set
+that changes ability ids included (VTT-752). A give or a take to an actor
+that is not a party member changes neither the set nor its flag, so it
+issues no read and tells nothing; no grant leaves a player holding such an
+actor, save two grants racing (SPEC-013), so, save that race, no player's
+list holds what its sheet alone names. The newest read's answer sets the
 window's abilities, from which the panel offers and the console gives, and its
 properties, and an answer to an older read arriving after it sets neither
 (VTT-753). Every answer, an older read's included, adds the abilities it gives
@@ -577,24 +585,24 @@ credential on a
 401 (above), since `grep -n 'readRuleset()' client/src/app.ts` finds the
 chain's call and `rereadIfStale`'s, which catches every failure.
 
-A perching window's board click sends nothing (VTT-461; for a spectator, the
-owner's ruling "Bara knappar", 2026-10-20), and its board shows no door tool
+A perching window's board click sends nothing (the owner's ruling "Bara
+knappar", 2026-10-20; `a spectator's clicks on the board send nothing` in
+`client/test/app.test.ts`), and its board shows no door tool
 armed: `paint` hands the board `ui.doorsArmed` as its doors bit, whose one
 writer is `toggleDoors` (`grep -rn 'doorsArmed =' client/src`), which `paint`
 hands to `renderDMConsole` alone, drawn in a DM's or an agent's window, which
 `mayPerch` never perches. The
 current scene is the scene whose id sorts greatest (`currentSceneId` in
-`client/src/view/doors.ts`). In a player's window that does not perch, a
-board click on a cell of the current scene holding a token of a listed party
-member other than the one they watch sends `set_viewpoint` naming the lowest
-such id, an armed ability notwithstanding (VTT-460). A click on a cell holding
+`client/src/view/doors.ts`). In a player's window, a board click on a cell
+of the current scene holding a token of a listed party member other than the
+one they watch sends `set_viewpoint` naming the lowest such id, an armed
+ability notwithstanding (VTT-919). A click on a cell holding
 the watched one's token and no other listed member's sends nothing. Any other
 click, with no ability armed, moves the watched one's token, if it has one, to
 that cell (VTT-408); a selection the watched one's sheet does not name is not
 armed, so such a click moves (`client/test/qa-window-offers.test.ts`'s "a
 player's board click with a carried-over ability the sheet does not name moves
-the watched token"). A player watching nobody holds no log and is shown no
-board, since a seat on nobody is sent no entry (SPEC-015). A player's board
+the watched token"). A player's board
 click on a door square sends what the same click sends on a square with no
 door (`playerClickFor`), never `open_door` or `close_door`, whatever the
 window's arming bit holds, and a player's panel draws no arm-doors toggle
@@ -622,8 +630,8 @@ door, the direction is measured from the first in `State.Tokens`' order. A
 DM's or an agent's window draws no `work-door` button, whatever actor its
 chips select (VTT-886).
 
-A player's selected actor follows the `ViewpointChanged`, whether their
-window perches or not, and a switch disarms their armed ability. A DM's and an
+A player's selected actor follows the `ViewpointChanged`, and a switch
+disarms their armed ability. A DM's and an
 agent's chips select which of the actors granted them a board click moves and
 whose abilities the panel offers, and send nothing.
 
@@ -1023,6 +1031,22 @@ properties, so with no ruleset served the console
 offers no give and still offers a take of each id a sheet names. Whether the
 server accepts either is SPEC-013's.
 
+**The console's roster.** `renderDMConsole` draws "Who may do what" whenever
+the roster was read: one row per participant `/api/participants` answered,
+with their name and the role it answered (SPEC-009). A player's row offers
+"Make spectator", which asks the DM first through `DMDeps.confirm`: "Make
+<name> a spectator? They no longer control <actors>.", each actor the
+console's fold counts the player among the controllers of shown by its name,
+else its id, sorted, and joined by " and " (VTT-901, VTT-902). A no sends
+nothing; a yes sends one `promoteParticipant`, which names `spectator`
+(`client/src/commands.ts`, VTT-903), and reads the roster again once it is
+answered (VTT-904). No row offers a promotion to player: a grant makes one
+(VTT-905). Boot is SPEC-009's. Since a role follows control, a Grant on a
+"Who controls what" row and a removal of an actor, both sent through
+`sending`, read the roster again
+once the server accepts them, and a held actor's revoke button once its
+revocation is answered; none reads it when its command is sent (VTT-930).
+
 ### What a Go reader holds
 
 `internal/harness`'s `Client` hands its reader on `Events()`, a `Delivery`
@@ -1241,16 +1265,16 @@ VTT-405, VTT-407, VTT-408, VTT-409, VTT-410, VTT-411, VTT-412, VTT-413,
 VTT-414, VTT-415, VTT-416, VTT-418, VTT-419, VTT-420, VTT-421, VTT-422,
 VTT-423, VTT-424, VTT-425, VTT-426, VTT-427, VTT-428, VTT-429, VTT-430,
 VTT-431, VTT-432, VTT-433, VTT-434, VTT-435, VTT-443, VTT-444,
-VTT-445, VTT-446, VTT-447, VTT-448, VTT-457, VTT-458, VTT-459,
-VTT-460, VTT-461, VTT-464, VTT-474, VTT-475, VTT-476, VTT-477, VTT-483,
+VTT-445, VTT-446, VTT-447, VTT-448,
+VTT-464, VTT-474, VTT-475, VTT-476, VTT-477, VTT-483,
 VTT-484, VTT-489, VTT-490, VTT-491, VTT-492, VTT-494, VTT-500, VTT-501,
 VTT-502, VTT-517, VTT-518, VTT-520, VTT-521, VTT-522, VTT-523, VTT-524,
 VTT-526, VTT-527, VTT-528, VTT-530, VTT-531, VTT-532, VTT-533, VTT-534,
 VTT-535, VTT-536, VTT-537, VTT-538, VTT-540, VTT-541, VTT-572, VTT-573,
 VTT-574, VTT-575, VTT-576, VTT-577, VTT-579, VTT-580, VTT-593, VTT-594,
 VTT-595, VTT-596, VTT-597, VTT-599, VTT-600, VTT-604, VTT-605, VTT-606,
-VTT-607, VTT-666, VTT-668, VTT-672, VTT-679,
-VTT-695, VTT-696, VTT-704, VTT-705, VTT-712, VTT-715, VTT-717, VTT-720,
+VTT-666, VTT-668, VTT-672, VTT-679,
+VTT-695, VTT-704, VTT-705, VTT-712, VTT-715, VTT-717, VTT-720,
 VTT-721, VTT-722, VTT-727, VTT-730, VTT-732, VTT-733, VTT-734,
 VTT-737, VTT-752, VTT-753, VTT-758, VTT-759, VTT-769, VTT-770,
 VTT-771, VTT-772, VTT-773, VTT-774, VTT-788, VTT-789, VTT-805,
@@ -1259,4 +1283,6 @@ VTT-815, VTT-816, VTT-817, VTT-818, VTT-820, VTT-821, VTT-822,
 VTT-823, VTT-834, VTT-835, VTT-836, VTT-837, VTT-838, VTT-839, VTT-840,
 VTT-841, VTT-842, VTT-843, VTT-844, VTT-845, VTT-846, VTT-854, VTT-855,
 VTT-862, VTT-863, VTT-864, VTT-865, VTT-866, VTT-871, VTT-872, VTT-876,
-VTT-881, VTT-882, VTT-883, VTT-884, VTT-885, VTT-886, VTT-887, VTT-888.
+VTT-881, VTT-882, VTT-883, VTT-884, VTT-885, VTT-886, VTT-887, VTT-888,
+VTT-901, VTT-902, VTT-903, VTT-904, VTT-905, VTT-917, VTT-918, VTT-919,
+VTT-920, VTT-930.

@@ -5,7 +5,7 @@
 Accepted. Implemented by `internal/gateway/server.go` (`handleWS`, `Handler`,
 `serve`, `writeUntilFlushed`, `pump`, `pumpState`, `lost`, `queueFrame`,
 `deliver`, `enqueueEvents`, `announcePresence`, `announceDeparture`,
-`announcePromotion`, `revoked`), `internal/gateway/keepalive.go`,
+`reannounce`, `revoked`), `internal/gateway/keepalive.go`,
 `internal/gateway/presence.go`, `internal/gateway/codec.go`,
 `internal/gateway/seat.go` (`openSeat`, `watch`) and
 `cmd/vtt/serve_compose.go` (`composeServer`); pinned by
@@ -14,7 +14,9 @@ Accepted. Implemented by `internal/gateway/server.go` (`handleWS`, `Handler`,
 `server_visibility_test.go`,
 `presence_internal_test.go`, `keepalive_internal_test.go`,
 `keepalive_conn_internal_test.go`, `static_test.go`,
-`remove_participant_test.go` and `cmd/vtt/serve_e2e_test.go`.
+`remove_participant_test.go`, `reannounce_test.go`,
+`reannounce_internal_test.go`, `qa_reannounce_test.go` and
+`cmd/vtt/serve_e2e_test.go`.
 
 ## Principles served
 
@@ -169,17 +171,23 @@ connection gone; `announceDeparture` then runs `announceIfAbsent`, which under
 takes its targets in the same critical section, and otherwise sends nothing; a
 participant who reconnected before that check is never announced gone, and one
 who reconnects after it is put right by their own `CONNECTED`, whose broadcast
-queues behind this fan-out on `fanOut`. `announcePromotion` runs
+queues behind this fan-out on `fanOut`. `reannounce` runs
 `announceIfPresent`, one fan-out under `fanOut`, to every connection outside
-its deny set, the promoted participant's own included. Every fan-out takes
+its deny set, the named participant's own included, and sends nothing when
+that participant has no connection. Its callers (`git grep -n 'reannounce('
+-- internal/gateway ':!*_test.go'`) are an accepted grant or revocation of
+control, naming the participant the command names; a `remove_actor`, once per
+controller of the removed actor (SPEC-017); and a promotion that appended
+(SPEC-009). Every fan-out takes
 `fanOut` first and `mu` only to read the membership, so announcements reach
 every connection in one order and a
 joiner, who takes `mu` alone, never waits for a fan-out in progress.
 `rejudge` takes `mu` alone and puts a signal on the `rejudge` channel,
 capacity one, of each connection of the participant it names without
-blocking on it, dropping it when one already waits; the pump re-judges the
-seat on it (SPEC-015), and its callers, a promotion and a removal, are
-SPEC-009's. A connection that has
+blocking on it, dropping it when one already waits; the pump re-resolves the
+participant's credential on it. Its one caller (`git grep -n 'rejudge(' --
+internal/gateway ':!*_test.go'`), a removal, revokes that credential first, so
+the connection closes (SPEC-009). A connection that has
 left is not in the registry, so no signal reaches it. `send`
 hands a frame to a connection and waits at most `presenceSendBudget`, 3
 seconds, or until that connection's `done`, then drops the frame for that
@@ -190,7 +198,7 @@ included, and ends no connection: `announcePresence` returns, and
 nil frame. `broadcast` excludes by connection pointer, so a participant's other
 devices receive what one of them caused. `broadcast`, `announceIfAbsent` and
 `announceIfPresent` skip the participants in `revoked`, which
-`announcePresence`, `announceDeparture` and `announcePromotion` resolve through
+`announcePresence`, `announceDeparture` and `reannounce` resolve through
 `identity.Lookup` before taking `fanOut`, so no identity read happens under the
 registry's locks; a revocation written after that resolution and before the
 sends is not seen by that announcement. SPEC-007 owns that
@@ -258,4 +266,4 @@ VTT-080, VTT-081, VTT-082, VTT-083, VTT-084, VTT-085, VTT-087,
 VTT-088, VTT-089, VTT-090, VTT-091, VTT-092, VTT-093, VTT-094, VTT-095,
 VTT-096, VTT-097, VTT-098, VTT-099, VTT-100, VTT-101, VTT-102, VTT-103,
 VTT-104, VTT-105, VTT-106, VTT-107, VTT-108, VTT-109, VTT-110, VTT-378,
-VTT-384.
+VTT-384, VTT-906, VTT-907, VTT-924.

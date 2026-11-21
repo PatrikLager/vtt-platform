@@ -20,7 +20,9 @@ and over `perceive`'s `New`, `Resume`, `Event` and `Perch` (SPEC-016).
 `ActorControlGranted` and `ActorControlRevoked` arms, and the descriptions of
 `add_actor`, `grant_actor_control` and `revoke_actor_control` in
 `tools/toolgen/main.go` tell the agent how a creature a player runs is
-granted and taken back.
+granted and taken back, and `internal/gateway/grantee.go`'s `granteeRefusal`
+refuses a non-party grant to anyone who is neither the DM nor the agent, or
+of an actor a player controls.
 Pinned by `internal/store/character_log_test.go`,
 `character_subscribe_test.go`, `qa_character_subscribe_test.go` and
 `store_failure_test.go`,
@@ -33,8 +35,9 @@ Pinned by `internal/store/character_log_test.go`,
 `ability_reopen_test.go`, `qa_ability_reopen_test.go`,
 `resource_reopen_test.go` and `poison_internal_test.go`, by
 `internal/perceive/resume_from_fold_test.go`, and, for a creature a player
-runs, by `internal/gateway/creature_test.go` and `qa_creature_test.go`,
-`tools/toolgen/main_test.go` and `internal/engine/actor_control_test.go`.
+runs, by `internal/gateway/creature_test.go`, `qa_creature_test.go`,
+`grantee_test.go` and `qa_grantee_test.go`, `tools/toolgen/main_test.go` and
+`internal/engine/actor_control_test.go`.
 
 ## Principles served
 
@@ -107,30 +110,32 @@ introduced afresh, or corrected, by the comparison SPEC-016 states (VTT-783,
 VTT-784).
 
 **A creature a player runs.** By the owner's rulings, of 2026-08-23 for a
-creature charmed into a player's service and of 2026-10-19 for one they
-summon or possess, a creature a player runs for a while is granted
+creature charmed into a player's service and of 2026-10-19 for one they summon
+or possess, a creature a player runs for a while is granted
 `ACTOR_KIND_PARTY_MEMBER` for the run, and `ActorKind` in
 `contract/vtt/v1/events.proto` has no other value for it: its values are
-`ACTOR_KIND_UNSPECIFIED`, `ACTOR_KIND_PARTY_MEMBER` and
-`ACTOR_KIND_NON_PARTY`. When the run ends it is granted
-`ACTOR_KIND_NON_PARTY` and the player's control is revoked, or it is
-removed. Nothing in the code tells such a creature from any other actor: its
-kind is the last one stated for it, by its `ActorAdded` or by a grant, which
-writes it even when the participant already controls the actor (VTT-391),
-and a revocation alone leaves a party member a party member (VTT-392). Its
-log is therefore a party member's: it opens at the first event after which
-the creature is a party member (VTT-663), is paused by an event after which
-it is not, the non-party grant or the removal (VTT-316), and resumes without
-a second opening when it is one again (VTT-318). `grant_actor_control`'s
-description tells the agent to grant such a creature
-`ACTOR_KIND_PARTY_MEMBER` and how to end the run (VTT-389);
-`revoke_actor_control`'s tells it that revoking alone leaves the creature a
-party member (`TestRevokeActorControlSaysItEndsAPlayersRunOfACreature`); and
-`add_actor`'s tells it never to reuse an actor's id (VTT-390). Either grant
-changes what every other log may hold of the creature, its name, with its
-statblock once the log's eyes see it, or its id, module and kind alone, so a
-log that sees it then is sent it again, and one that does not is sent it
-again when it next sees it (SPEC-016, VTT-468, VTT-481).
+`ACTOR_KIND_UNSPECIFIED`, `ACTOR_KIND_PARTY_MEMBER` and `ACTOR_KIND_NON_PARTY`.
+When the run ends the player's control is revoked and the creature is then
+granted `ACTOR_KIND_NON_PARTY`, or it is removed: a player is granted only a
+party member, and a non-party grant of an actor a player controls is refused
+(VTT-913, VTT-926), so no grant leaves a player holding a creature, save two
+grants racing (SPEC-013). Nothing in the code tells such a creature from any
+other actor: its kind is the last one stated for it, by its `ActorAdded` or by
+a grant, which writes it even when the participant already controls the actor
+(VTT-391), and a revocation alone leaves a party member a party member
+(VTT-392). Its log is therefore a party member's: it opens at the first event
+after which the creature is a party member (VTT-663), is paused by an event
+after which it is not, the non-party grant or the removal (VTT-316), and
+resumes without a second opening when it is one again (VTT-318).
+`grant_actor_control`'s `kind` tells the agent to grant such a creature
+`ACTOR_KIND_PARTY_MEMBER`, and to end the run by revoking the player before
+making it non-party (VTT-931); `revoke_actor_control`'s description tells it to
+revoke the player first, since revoking alone leaves the creature a party
+member (VTT-909); and `add_actor`'s tells it never to reuse an actor's id
+(VTT-390). Either grant changes what every other log may hold of the creature,
+its name, with its statblock once the log's eyes see it, or its id, module and
+kind alone, so a log that sees it then is sent it again, and one that does not
+is sent it again when it next sees it (SPEC-016, VTT-468, VTT-481).
 
 **Frames that would not fold.** Each actor's frames are folded first onto a
 copy of its log, each stamped with the sequence it will have. A set that does
@@ -246,11 +251,11 @@ bound by these:
   an adventure's actor ids are checked against the live actors alone.
 - Revoking a creature's last controller leaves it a party member, and its
   log is written on (VTT-392, VTT-319).
-- A non-party creature left in a player's control is still theirs to move:
-  `internal/gateway/authz.go` reads no kind (`grep -n 'Kind'
-  internal/gateway/authz.go` prints nothing), and the move is judged by the
-  move gate (SPEC-013), through the eyes SPEC-015 names. A player who
-  controls no party member moves it nowhere (VTT-370).
+- A creature is made non-party only once no player controls it, save two grants
+  racing: the agent revokes the player before the non-party grant, which is
+  refused while a player controls it (VTT-926, SPEC-013). While a player runs
+  it, it is moved as any party member of theirs is, by the move gate
+  (SPEC-013), through the eyes SPEC-015 names.
 - Entries of one log share `event_id`s with the world and with other logs;
   nothing may treat `character_events.event_id` as unique.
 - An entry's `world_seq` is provenance and the anchors' key, never folded and
@@ -275,5 +280,5 @@ bound by these:
 VTT-315, VTT-316, VTT-318, VTT-319, VTT-320, VTT-321, VTT-322, VTT-323,
 VTT-324, VTT-325, VTT-326, VTT-327, VTT-328, VTT-329, VTT-330, VTT-331,
 VTT-332, VTT-333, VTT-334, VTT-335, VTT-336, VTT-337, VTT-353, VTT-354,
-VTT-355, VTT-356, VTT-357, VTT-371, VTT-372, VTT-373, VTT-389, VTT-390,
-VTT-391, VTT-392, VTT-663.
+VTT-355, VTT-356, VTT-357, VTT-371, VTT-372, VTT-373, VTT-390, VTT-391,
+VTT-392, VTT-663, VTT-909, VTT-931.

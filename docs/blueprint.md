@@ -173,9 +173,8 @@ table's secrets then rest on the player's restraint.
 **Effect.** A player is sent exactly what the character they control and
 currently follow perceived, and what the table was told, nothing more and
 nothing less; they cannot follow a character they do not control, and when
-control of it ends, so does their view through it. A spectator, and a player
-who controls no character, follows a party member of their choosing in the
-same way. Only the DM is sent the world.
+control of it ends, so does their view through it. A spectator follows a
+party member of their choosing in the same way. Only the DM is sent the world.
 
 ### 17. Beyond what a character perceives, only the DM's story reaches its player.
 

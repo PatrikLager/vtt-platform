@@ -6,9 +6,10 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `Authorize`, `mayVoice`, `mayWhisper`, `authorizePlayer`, `playerRules`,
 `errUndecided`, `unrestricted`, `mayWorkDoor`, `authorizeTokenOwnership`,
 `authorizeActorOwnership`, `controls`, `authorizeSelfRevoke`,
-`authorizePromotionTarget`, `commandName`, `ErrUnauthorized`,
+`authorizePromotionTarget`, `roleIn`, `commandName`, `ErrUnauthorized`,
 `plainRefusal`),
 `internal/gateway/viewpoint.go` (`ownPartyMember`),
+`internal/gateway/grantee.go` (`granteeRefusal`, `runsTheTable`),
 `internal/gateway/grant_validate.go`
 (`validateGrantActorControl`), `internal/gateway/add_actor_validate.go`
 (`validateAddActor`, `validateAddActorWith`, `validateAddActorSheet`,
@@ -21,7 +22,7 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 sheet does not name) and
 `internal/gateway/server.go` (`answerCommand`, `authorize`,
 `handleSetViewpoint`, `handleCommand`, `validateForm`, `describeBlockage`,
-`doorSquare`),
+`doorSquare`, `reannounceControlChange`),
 with `perceive.SeesActor` and `rules.UnknownTarget` for the sight gate,
 `rules.Ruleset.SheetKeyFault`, `rules.Ruleset.SheetAbilityFault` and
 `rules.Ruleset.SheetSpendFault` for `add_actor`'s sheet,
@@ -45,7 +46,9 @@ with `perceive.SeesActor` and `rules.UnknownTarget` for the sight gate,
 `qa_ability_sight_test.go`, `narration_test.go`, `qa_speaking_test.go`,
 `remove_participant_test.go`, `qa_removal_test.go`,
 `qa_remove_roles_test.go`, `whisper_test.go`, `qa_whisper_test.go`,
-`plain_refusal_test.go`, `qa_plain_refusal_test.go`, `door_square_test.go`
+`plain_refusal_test.go`, `qa_plain_refusal_test.go`, `role_internal_test.go`,
+`qa_role_from_log_test.go`, `grantee_test.go`, `grantee_internal_test.go`,
+`qa_grantee_test.go`, `reannounce_test.go`, `door_square_test.go`
 `qa_door_square_test.go`, `door_opener_test.go`, `qa_door_opener_gate_test.go`,
 `qa_door_tool_claims_test.go` and `qa_door_opener_test.go`, and by
 `internal/engine/terrain_test.go` and
@@ -137,6 +140,14 @@ to resolve through `commandName` to a name with a row, and
 above. The role maps the HTTP routes consult are not cells of this
 table (SPEC-012).
 
+**The role is the log's.** `Authorize` first judges the participant's role
+through `roleIn` against the snapshot's actors. A participant stored as the DM
+or the agent keeps that role; anyone else is a player while an actor of the
+snapshot counts them among its controllers, and a spectator otherwise
+(VTT-891). Every cell, check and rule below reads the role so judged, and
+`authorize` hands `handleCommand` the participant with that role, so its
+gates, its handlers and `ToEvent`'s `actor_role` read it too (VTT-892).
+
 **Refusal by default.** `Authorize` refuses when `commandRoles` holds no row
 for the name or the row holds no cell for the participant's role
 (`!known || !roles[p.Role]`), and the message names the role and the command.
@@ -145,9 +156,10 @@ refused for every role the same way.
 
 **Four checks for every role.** After the table and before the player half,
 `Authorize` runs `authorizePromotionTarget` for `promote_participant`, which
-accepts a target role of player or spectator and refuses every other, for
-the DM's promotions as for anyone's; SPEC-009 states that bound and
-`handlePromotion`'s bound on the target's current role. For `set_viewpoint`
+accepts a target role of spectator alone, refusing player with `A participant
+becomes a player when given a character.` and any other role as unauthorized,
+for the DM's promotions as for anyone's (VTT-899, VTT-900); SPEC-009 states
+`handlePromotion`'s bound on the target's stored role. For `set_viewpoint`
 it runs `MayWatch` against the snapshot's actors, whose rule is SPEC-015's.
 For `add_narration` it runs `mayVoice` against the snapshot's actors, which
 decides whom a line may speak as:
@@ -273,23 +285,28 @@ runs, in this order, and stops at the first refusal:
    the keys it carries against the served ruleset;
    `validateUpsertNote` for an `upsert_note`; and nothing for any other
    command;
-5. the dispatch of `use_ability`, `give_ability`, `take_ability`,
+5. for a `grant_actor_control`, the grantee step below (`granteeRefusal`);
+6. the dispatch of `use_ability`, `give_ability`, `take_ability`,
    `load_adventure`, `load_map`, `remove_actor`, `remove_participant`,
    `promote_participant`, `set_join_door` and `rotate_join_link` to their
    handlers, where `handleUseAbility` refuses a use with no ruleset served
    and then the sheet's refusal below runs, and `handleGiveAbility` reads a
    give against the actor's sheet (below);
-6. `ToEvent`, which makes every other command one envelope stamped with the
+7. `ToEvent`, which makes every other command one envelope stamped with the
    participant's id and role;
-7. for a `TokenMoved`, the backfill of `SceneId` and `From` from the
+8. for a `TokenMoved`, the backfill of `SceneId` and `From` from the
    snapshot's token; for a `NarrationAdded`, `voice`, which writes `as`: the
    named actor's name from the same snapshot for a player's line in character
    (VTT-496), and the sender's display name for any line out of character
    (VTT-497); otherwise it leaves the `as` the DM or the agent gave
    (VTT-498);
-8. `campaign.Append`, which folds a clone of the envelope and returns the
+9. `campaign.Append`, which folds a clone of the envelope and returns the
    fold's refusal before anything is persisted;
-9. an ok=true result carrying the sequence `campaign.Append` assigned.
+10. for a `grant_actor_control` or a `revoke_actor_control` the append
+    accepted, `reannounceControlChange`, which re-announces the participant
+    the command names (SPEC-011, VTT-906); a refusal at any step before it
+    announces nothing (VTT-924);
+11. an ok=true result carrying the sequence `campaign.Append` assigned.
 
 Every refusal is an ok=false `CommandResult` whose `Error` is the refusal's
 text. The read loop queues it on the issuing connection and reads the next
@@ -333,9 +350,7 @@ more targets than the ability allows
 command whose every target is seen goes on to `handleUseAbility` (VTT-487),
 which answers the sheet's refusal below before `Resolve`. The eyes
 are the ones the move gate judges by, so a party member of the player's out of
-that character's sight cannot be aimed at, not even by itself as caster, and a
-player who controls only a creature has no eyes and names no target that is
-not refused.
+that character's sight cannot be aimed at, not even by itself as caster.
 
 **The sheet's refusal of a use.** `handleUseAbility` first refuses a use
 with no ruleset served (SPEC-012). Then, when the snapshot `authorize` took
@@ -390,7 +405,8 @@ the map file, and the one author-written string `describeBlockage` renders.
 anything is written, and their refusals do not wrap `ErrUnauthorized`: they
 refuse a command's form, not its issuer. `validateGrantActorControl` refuses
 a grant whose `kind` is `ACTOR_KIND_UNSPECIFIED` and accepts every other
-value, so the enum may grow without a grant being refused; SPEC-007 states
+value, so the enum may grow without a grant being refused by the form check;
+SPEC-007 states
 the requirement as the wire's promise. `engine.Apply` accepts an
 `ActorControlGranted` with no kind and leaves the actor's kind as it was, so
 this refusal too exists at the command boundary alone. `validateAddActor`
@@ -426,6 +442,34 @@ every other value, so the enum may grow without a note being refused.
 `engine.Apply` accepts a `NoteUpserted` with no visibility, which the
 projection writes to no character log (SPEC-016), so this refusal too
 exists at the command boundary alone.
+
+**The grantee step.** For a `grant_actor_control` that `Authorize` and its
+form check accepted, `granteeRefusal` looks the named participant up through
+`identity.Lookup` (VTT-928). A grant naming a participant identity does not
+hold, or holds revoked, is refused with `There is no such participant.`
+(VTT-894, VTT-895), and one whose lookup fails otherwise with the error's text.
+A grant whose kind is party member is then accepted. A grant of any other kind
+is refused with `<name> can only be given a party member.`, the grantee by
+display name, when the grantee is neither the DM nor the agent
+(`runsTheTable`; VTT-913, VTT-915). To the DM or the agent it is refused when
+the actor's `controller_ids` include a participant identity holds, not
+revoked, who is neither, with `<names> controls <actor>: revoke it from them
+before you make it a non-party actor.`, `control` when there are several, the
+players by display name in `controller_ids` order joined by ` and `, and the
+actor by its name, or by its id when it has none (VTT-926, VTT-927). A
+refusal appends nothing. The step runs after `Authorize`, so a player, whom
+the table refuses every grant, learns from it nothing of which ids identity
+holds.
+
+**No grant leaves a player holding a creature in its own snapshot.** The
+grant arm of
+`engine.Apply` is the one place an actor's kind changes (`git grep -n '\.Kind
+= ' -- internal/engine ':!*_test.go'`), and the grantee step judges each grant
+against its command's snapshot, so no grant leaves a player, in that
+snapshot, holding an actor that is not a party member: a creature is taken
+back from a player by a revocation first (VTT-926). Two grants from two
+connections, each judged before the other lands, can leave one; a player who
+then holds no party member watches nobody (SPEC-015).
 
 **The give's validator.** `validateGiveAbility` runs where the three do, and
 its refusal does not wrap `ErrUnauthorized` either. Its refusals, and
@@ -489,10 +533,12 @@ SPEC-007 states what the `load_map`, `remove_actor`, `remove_participant`,
 Each of those handlers appends a whole batch through
 `campaign.AppendBatch`, but a removal of a participant who controls no actor
 appends nothing, and its ok=true result carries no sequence.
-`promote_participant` (`handlePromotion`),
-`set_join_door` (`handleJoinDoor`) and `rotate_join_link`
-(`handleRotateJoinLink`) are SPEC-009's and append nothing (SPEC-007), so
-their ok=true result carries no sequence. Every other command reaches
+`promote_participant` (`handlePromotion`) is SPEC-009's and appends a batch
+of revocations the same way, or nothing when its target controls no actor,
+and then its ok=true result carries no sequence. `set_join_door`
+(`handleJoinDoor`) and `rotate_join_link` (`handleRotateJoinLink`) are
+SPEC-009's and append nothing (SPEC-007), so their ok=true result carries no
+sequence. Every other command reaches
 `ToEvent` and becomes one envelope, carrying every field of the command that
 the event also has, a grant's `kind` and a move's `reason` included, but a
 narration's `as` where `voice` writes it (VTT-503); a move that gave no
@@ -510,8 +556,8 @@ does with it is SPEC-015's. It appends nothing (SPEC-007). An ok result means
 the choice is recorded, not that the switch is sent. `serve` makes `perches`
 per connection, so a choice ends with its connection.
 
-**What this record does not decide.** Promotion's bounds and the
-re-resolution before every command are SPEC-009's; who may watch whom, the
+**What this record does not decide.** The target a promotion may act upon and
+the re-resolution before every command are SPEC-009's; who may watch whom, the
 viewpoint the move gate judges by, and what a seat is sent are SPEC-015's;
 the other batch handlers are SPEC-012's, SPEC-014's
 and SPEC-017's; the join door and promotion handlers are
@@ -522,10 +568,18 @@ SPEC-018's.
 
 A client or tool author is bound by these:
 
-- A spectator's only command is `set_viewpoint`. A player who controls a
-  party member chooses by it which of their party members they watch, and a
-  player who controls none chooses as a spectator does (SPEC-015, the
-  owner's ruling B-4 of 2026-10-22). The DM and the agent may not issue it.
+- A participant who is neither the DM nor the agent is judged a player from
+  the first command after a grant to them, and a spectator from the first
+  command after their last actor is revoked or removed. Every read of
+  `.Role` in `internal/gateway` outside its tests (`git grep -n '\.Role\b' --
+  internal/gateway ':!*_test.go'`) reads a role `roleIn` judged, or tells the
+  DM and the agent apart.
+- A spectator's only command is `set_viewpoint`, by which they choose the
+  party member they watch; a player chooses by it which of their party
+  members they watch (SPEC-015). The DM and the agent may not issue it.
+- A grant names a participant the table holds. Only the DM and the agent are
+  granted an actor as anything but a party member, and only an actor no
+  player controls.
 - A player acts only through an actor that counts them among its
   controllers; an actor nobody controls is the DM's and the agent's.
 - A door command names a door: an `open_door` or a `close_door` at a square
@@ -588,8 +642,8 @@ A client or tool author is bound by these:
   name (SPEC-022) and the agent names itself, as `add_whisper`'s tool tells
   it (SPEC-007).
 - The DM and the agent are bound by the table's cells, by promotion's bound,
-  by `mayVoice`, by `mayWhisper`, by the door gate, by the validators and
-  by the sheet's refusal of a use, and by no player rule.
+  by `mayVoice`, by `mayWhisper`, by the door gate, by the validators, by the
+  grantee step and by the sheet's refusal of a use, and by no player rule.
 - What a reconnect opens on is SPEC-015's.
 
 And whoever changes the code:
@@ -602,11 +656,13 @@ And whoever changes the code:
 ## Requirements
 
 VTT-138, VTT-139, VTT-140, VTT-142, VTT-143, VTT-144, VTT-145, VTT-146,
-VTT-147, VTT-148, VTT-149, VTT-150, VTT-151, VTT-152, VTT-153, VTT-154,
-VTT-156, VTT-157, VTT-158, VTT-159, VTT-160, VTT-161, VTT-162, VTT-231,
-VTT-261, VTT-344, VTT-379, VTT-463, VTT-472, VTT-482, VTT-487, VTT-495,
-VTT-496, VTT-497, VTT-498, VTT-499, VTT-503, VTT-506, VTT-565, VTT-587,
-VTT-588, VTT-589, VTT-590, VTT-601, VTT-602, VTT-603, VTT-608, VTT-609,
-VTT-675, VTT-677, VTT-690, VTT-716, VTT-718, VTT-746, VTT-747, VTT-750,
-VTT-761, VTT-762, VTT-763, VTT-765, VTT-766, VTT-767, VTT-768, VTT-775,
-VTT-778, VTT-800, VTT-801, VTT-867, VTT-868, VTT-880.
+VTT-147, VTT-148, VTT-149, VTT-150, VTT-152, VTT-153, VTT-154, VTT-156,
+VTT-157, VTT-158, VTT-159, VTT-160, VTT-161, VTT-162, VTT-231, VTT-261,
+VTT-344, VTT-379, VTT-463, VTT-472, VTT-482, VTT-487, VTT-495, VTT-496,
+VTT-497, VTT-498, VTT-499, VTT-503, VTT-506, VTT-565, VTT-587, VTT-588,
+VTT-589, VTT-590, VTT-601, VTT-602, VTT-603, VTT-608, VTT-609, VTT-675,
+VTT-677, VTT-690, VTT-716, VTT-718, VTT-746, VTT-747, VTT-750, VTT-761,
+VTT-762, VTT-763, VTT-765, VTT-766, VTT-767, VTT-768, VTT-775, VTT-778,
+VTT-800, VTT-801, VTT-867, VTT-868, VTT-880, VTT-891, VTT-892, VTT-894,
+VTT-895, VTT-899, VTT-900, VTT-906, VTT-913, VTT-915, VTT-924, VTT-925,
+VTT-926, VTT-927, VTT-928.

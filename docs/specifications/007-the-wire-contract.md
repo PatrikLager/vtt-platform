@@ -373,14 +373,16 @@ are sent none.
 carrying the actor's id and name, in id order (SPEC-015), and, for a party
 member the participant controls, the ability ids its sheet names, in the
 sheet's order, as `ability_ids` (field 3), which is empty for every other
-actor, by the owner's ruling OD-3 of 2026-11-14. Its
-`controls_no_party_member` says whether the participant controls no party
-member, by the owner's ruling "Field on the list" of 2026-10-23, and a client
-draws a player the perch by a true one (SPEC-022). It comes after the
+actor, by the owner's ruling OD-3 of 2026-11-14. Its `controls_no_party_member`
+says whether the participant controls no party member, by the owner's ruling
+"Field on the list" of 2026-10-23. No grant leaves a player holding an actor
+that is not a party member, save two grants racing (SPEC-013), so the flag is
+true for every spectator and, save that race, for no player; a client perches
+by the role it reads, not by the flag (SPEC-022). It comes after the
 `PresenceSnapshot` and before the opening `ViewpointChanged`, including when it
-names none. protojson omits an empty list, an actor's empty `ability_ids` and
-a false flag. A list is empty only with the flag true, since a party member
-the participant controls is one `MayWatch` accepts for them, so an empty set
+names none. protojson omits an empty list, an actor's empty `ability_ids` and a
+false flag. A list is empty only with the flag true, since a party member the
+participant controls is one `MayWatch` accepts for them, so an empty set
 arrives as `{"watchableChanged":{"controlsNoPartyMember":true}}`. Each later
 one replaces the last whole, is sent when SPEC-015 says, and comes before the
 `ViewpointChanged` of the same change, if it moves the seat, and before any
@@ -393,10 +395,14 @@ The log only goes forward. Nothing retracts, and nothing rewrites what is
 already in it.
 
 These commands APPEND NOTHING: `set_viewpoint`, `set_join_door`,
-`rotate_join_link`, `promote_participant`. A viewpoint is a choice of which
-character's log a connection is sent, a
-door is operational state, and a role lives in the participants table — none is
-a fact about the campaign, and a replay must not reconstruct them.
+`rotate_join_link`. A viewpoint is a choice of which character's log a
+connection is sent, and a door is operational state — neither is a fact about
+the campaign, and a replay must not reconstruct them. No event payload names a
+role (`git grep -n -i role -- 'contract/vtt/v1/*.proto'` finds, beside
+comments, `Envelope.actor_role`, outside the payload, and
+`PromoteParticipant.role`, a command's):
+whether a participant who is neither the DM nor the agent is a player is read
+from the control the log records (SPEC-013).
 
 `PresenceChanged` and `PresenceSnapshot` are FRAMES, never Envelopes. Who
 happened to be online is not campaign history.
@@ -428,9 +434,18 @@ arrive identically under protojson and "admit nobody" is undebuggable rather
 than dangerous. On a close it is stored, and `GET /api/join-link` reports it as
 the limit; a shut door admits nobody whatever it says.
 
-`promote_participant` accepts ONLY "player" or "spectator". A shared join link
-mints spectators, and letting promotion reach "dm" or "agent" would make that
-link a path to full authority in two steps.
+`promote_participant` accepts ONLY "spectator". One naming "player" is
+refused, since a grant makes a player, and so is one naming any other role
+(VTT-899, VTT-900; SPEC-013 states the texts): a shared join link mints
+spectators, and letting promotion reach "dm" or "agent" would make that link a
+path to full authority in two steps.
+
+`grant_actor_control` naming a participant the table does not hold, or has
+removed, is refused (VTT-894, VTT-895). One stating a kind other than party
+member is refused unless it names the DM or the agent (VTT-913), and, naming
+either, when a participant the table holds, not removed, who is neither
+controls the actor (VTT-926); SPEC-013 states the texts. Each refusal appends
+nothing.
 
 `remove_participant` refuses a target who is a dm, an agent, unknown or
 already revoked, and a removal refused for its target revokes nobody and
@@ -443,8 +458,9 @@ player as well, who may revoke only control they themselves hold
 
 ### The commands that yield a batch
 
-`remove_actor`, `load_map` and `remove_participant` each produce an ordered
-batch, accepted or rejected atomically through `campaign.AppendBatch`; so do
+`remove_actor`, `load_map`, `remove_participant` and `promote_participant`
+each produce an ordered batch, accepted or rejected atomically through
+`campaign.AppendBatch`; so do
 `use_ability` and `load_adventure`, whose batches are SPEC-012's, and
 `give_ability` and `take_ability`, whose batches are above.
 
@@ -467,6 +483,14 @@ issued the removal (VTT-562), and the result carries the batch's first
 sequence (VTT-563). A removal of a participant who controls no actor appends
 nothing (VTT-561), and its ok result carries no sequence. The participant's
 own revocation is a write to identity, not an event (SPEC-009).
+
+`promote_participant`, "Make spectator", emits the same revocations for its
+target: one `ActorControlRevoked` naming them for each actor whose controllers
+include them, in actor-id order, and no other event (VTT-896), each carrying
+the participant id and the role of whoever issued it (VTT-897). Its result
+carries the batch's first sequence, and no sequence when the target controls
+no actor and nothing is appended (VTT-898). It writes nothing to identity
+(SPEC-009).
 
 ### Evolution
 
@@ -522,4 +546,6 @@ Those readers are not reading this record.
 
 VTT-184, VTT-232, VTT-473, VTT-479, VTT-480, VTT-505, VTT-559, VTT-560,
 VTT-561, VTT-562, VTT-563, VTT-567, VTT-591, VTT-674, VTT-700, VTT-701,
-VTT-729, VTT-735, VTT-749, VTT-785, VTT-786, VTT-799, VTT-877, VTT-878.
+VTT-729, VTT-735, VTT-749, VTT-785, VTT-786, VTT-799, VTT-877, VTT-878,
+VTT-894, VTT-895, VTT-896, VTT-897, VTT-898, VTT-899, VTT-900, VTT-913,
+VTT-926.
