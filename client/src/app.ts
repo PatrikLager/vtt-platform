@@ -311,7 +311,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
   };
 
   // Return the promise and the CommandResult itself: the console re-reads the
-  // roster and the door after an answer (VTT-930), and a success can carry
+  // roster and the door after an answer (VTT-933), and a success can carry
   // CommandResult.warnings that the toast shows.
   const act = (cmd: ClientCommand): Promise<CommandResult> =>
     session.send(cmd).then((res) => {

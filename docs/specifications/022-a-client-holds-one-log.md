@@ -132,9 +132,11 @@ window, by `client/test/app.test.ts`, `client/test/session.test.ts`,
 (VTT-604 to VTT-606); and that the console's "Make spectator" asks first,
 sends one promotion to spectator and reads the roster again once it is
 answered, that no row offers a promotion to player, and that a grant, a
-revocation and a removal of an actor read the roster again once answered, by
+revocation and a removal of an actor read the roster again once accepted and
+a Say, an Add actor and a Place at no answer, by
 `client/test/dm-view.test.ts`, `client/test/qa-console-perch.test.ts` and
-`client/e2e/handover.spec.ts` (VTT-901 to VTT-905, VTT-930). That the panel
+`client/e2e/handover.spec.ts` (VTT-901 to VTT-905, VTT-932, VTT-933). That
+the panel
 offers, for the actor it acts as, only the abilities of the window's list
 that the actor's sheet names, in a player's, a DM's and an agent's window,
 is held by `client/test/panel-offers.test.ts`,
@@ -1043,9 +1045,11 @@ nothing; a yes sends one `promoteParticipant`, which names `spectator`
 answered (VTT-904). No row offers a promotion to player: a grant makes one
 (VTT-905). Boot is SPEC-009's. Since a role follows control, a Grant on a
 "Who controls what" row and a removal of an actor, both sent through
-`sending`, read the roster again
-once the server accepts them, and a held actor's revoke button once its
-revocation is answered; none reads it when its command is sent (VTT-930).
+`sending`, read the roster again once the server accepts them, and a held
+actor's revoke button once its revocation is answered; none reads it when its
+command is sent (VTT-933). Of the commands sent through `sending`, only those
+two set `rereads` (`git grep -n 'rereads' -- client/src`): a Say, an Add actor
+and a Place read it at no answer (VTT-932).
 
 ### What a Go reader holds
 
@@ -1285,4 +1289,4 @@ VTT-841, VTT-842, VTT-843, VTT-844, VTT-845, VTT-846, VTT-854, VTT-855,
 VTT-862, VTT-863, VTT-864, VTT-865, VTT-866, VTT-871, VTT-872, VTT-876,
 VTT-881, VTT-882, VTT-883, VTT-884, VTT-885, VTT-886, VTT-887, VTT-888,
 VTT-901, VTT-902, VTT-903, VTT-904, VTT-905, VTT-917, VTT-918, VTT-919,
-VTT-920, VTT-930.
+VTT-920, VTT-932, VTT-933.

@@ -281,7 +281,7 @@ export interface DMDeps {
   /**
    * Issue a command, resolving to its CommandResult once answered. Keep the
    * promise: the roster and the door are read over HTTP, and a re-read fired
-   * beside the command races it (VTT-904, VTT-930). Keep the result, not void:
+   * beside the command races it (VTT-904, VTT-933). Keep the result, not void:
    * it carries CommandResult.warnings.
    */
   send: (c: ClientCommand) => Promise<CommandResult>;

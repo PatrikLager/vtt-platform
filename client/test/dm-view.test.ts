@@ -2717,8 +2717,8 @@ test("a confirmed Make spectator sends one promotion of its row's player to spec
   expect(c.sent).toHaveLength(1);
 });
 
-// VTT-930
-test("a grant, a revocation and a removal of an actor each read the roster again once answered", async () => {
+// VTT-933
+test("a grant, a revocation and a removal of an actor each read the roster again once accepted", async () => {
   const press = async (c: ReturnType<typeof rosterConsole>, act: () => void) => {
     act();
     expect(c.sent).toHaveLength(1);
@@ -2748,6 +2748,30 @@ test("a grant, a revocation and a removal of an actor each read the roster again
     id.dispatchEvent(new Event("input"));
     removal.node.querySelector<HTMLButtonElement>('[data-action="remove-actor"]')!.click();
   });
+});
+
+// VTT-932
+test("a Say, an Add actor and a Place, once answered, do not read the roster again", async () => {
+  const presses: [Record<string, string>, string, string][] = [
+    [{ '[data-field="say-text"]': "the torch gutters" }, "add-narration", "addNarration"],
+    [{ '[data-field="actor-id"]': "a9", ".actor-kind": "ACTOR_KIND_PARTY_MEMBER" },
+      "add-actor", "addActor"],
+    [{ '[data-field="token-id"]': "t9", '[data-field="token-scene"]': "s1",
+      '[data-field="token-actor"]': "a1" }, "place-token", "placeToken"],
+  ];
+  for (const [fields, action, sent] of presses) {
+    const c = rosterConsole(true, leraTable());
+    for (const [at, value] of Object.entries(fields)) {
+      c.node.querySelector<HTMLInputElement | HTMLSelectElement>(at)!.value = value;
+    }
+    for (const answer of [refused("no"), ok()]) {
+      c.node.querySelector<HTMLButtonElement>(`[data-action="${action}"]`)!.click();
+      c.release(answer);
+      await settle();
+    }
+    expect([action, c.sent.map((s) => String(s.command.case))]).toEqual([action, [sent, sent]]);
+    expect([action, c.refreshes()]).toEqual([action, 0]);
+  }
 });
 
 // --- whispers ---------------------------------------------------------------

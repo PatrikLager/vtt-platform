@@ -678,6 +678,9 @@ client/src/session.ts  EqualityOperator  offset=4  span=33  nth=1  copies=1  a.p
 client/src/session.ts  EqualityOperator  offset=4  span=29  nth=1  copies=1  a.displayName <= b.displayName
     code: : (a.displayName < b.displayName ? -1 : 1),
     Display-name comparison, reached ONLY on the else branch of `a.displayName === b.displayName` — so by construction the two names differ, and `<` and `<=` agree on every input that reaches it. Not a claim about names being unique (they are not, which is why the tie-break above exists); a claim about which branch this expression lives on.
+client/src/session.ts  BooleanLiteral  offset=16  span=5  nth=1  copies=1  true
+    code: private none = false;
+    The flag's value before the first set arrives. Nothing under client/src reads the `controlsNoPartyMember` getter that returns it (`git grep -n 'controlsNoPartyMember' -- client/src` names only that getter and Wire's watchable plumbing: its handler list's type, `onWatchable`'s signature, and the dispatch that hands the frame's flag to Session as the `none` it stores), so no window draws it. The field's other reads are the onWatchable handler's, and only the first set's reads see the initial value: `(this.none ? [] : this.set)` is empty either way because the set starts empty, and `sheetChanges(this.set, actors)` over that empty set is empty because it skips every actor the set before did not name. So the first set tells the left and sheet handlers nothing under both, and writes `this.none` before any later read.
 
 client/src/view/dm.ts  EqualityOperator  offset=22  span=7  nth=1  copies=1  ai <= bi
     code: a.name === b.name ? (ai < bi ? -1 : 1) : (a.name < b.name ? -1 : 1));
