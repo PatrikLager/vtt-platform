@@ -86,8 +86,8 @@ async function startTable(table: string): Promise<Fixture> {
   const spectator = mint("Watcher", "spectator");
   const tokens = { dm: dm.token, player: player.token, spectator: spectator.token };
   const ids = { dm: dm.id, player: player.id, spectator: spectator.id };
-  // Serve the shipped cellar to the doors spec alone: it works its door.
-  if (table === "doors") {
+  // Serve the shipped cellar to the specs played on it: doors and board-clicks.
+  if (table === "doors" || table === "board-clicks") {
     mkdirSync(join(campaign, "maps"), { recursive: true });
     copyFileSync(CELLAR, join(campaign, "maps", "cellar.json"));
   }
