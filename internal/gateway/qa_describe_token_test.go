@@ -308,7 +308,7 @@ func TestQADTPlaceTokenToolKeepsTheFourTextsOptional(t *testing.T) {
 func TestQADTPlaceTokenToolDocsTheFourTexts(t *testing.T) {
 	tool := qadtTools(t)["place_token"]
 	want := map[string]string{
-		"name":    "Optional; what every player and spectator whose character sees this token is told it is, such as \"a sleeping creature\". Never the creature's true name unless the characters know it.",
+		"name":    "Optional; what every participant whose watched character sees this token is told it is, such as \"a sleeping creature\". Never the creature's true name unless the characters know it.",
 		"notes":   "Optional; what they are told of it beside its name.",
 		"gmName":  "Optional; the DM's and the agent's alone: no player or spectator is ever sent it.",
 		"gmNotes": "Optional; the DM's and the agent's alone: no player or spectator is ever sent it.",
