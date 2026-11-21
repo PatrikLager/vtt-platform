@@ -575,7 +575,12 @@
       leaves the player holding an actor that is not a party member, which
       D25's rule forbids: it takes two of the DM's or the agent's connections
       granting one actor at once; the player then fails closed as D25 says,
-      and a further grant mends it.
+      and a further grant mends it;
+    - a grant of an actor landing between a `remove_actor`'s snapshot and its
+      batch leaves that grantee unannounced (D8 reads the controllers from the
+      snapshot, the only place they still are), so their window keeps its
+      role until a reload: two of the DM's or the agent's connections at once,
+      found by Task 1's review.
 11. **D11. The console (rule 4, rule 5).** A spectator's roster row offers
     Boot alone. A player's row offers "Make spectator", which asks
     `d.confirm` with R14's sentence, built from `d.st`: the actors whose
@@ -863,6 +868,17 @@ The decisions the answers add, continuing the list under "Decisions":
   watch any PARTY MEMBER") and `commands.proto`'s `WatchableChanged` field
   comment ("a client draws a player the perch by true") and
   `PresenceChanged`'s "roles live in identity" follow too (D15).
+- **Task 3** also changes Task 1's tests: `qa_reannounce_test.go`'s
+  promotions to `player` (refused by R11) become "Make spectator" or go, and
+  VTT-906's cell gains the appending promotion's test (its promotion clause
+  has none until then). **Task 5** rewrites the player mints in
+  `reannounce_test.go`, `qa_reannounce_test.go` and the qaPR harness they
+  share.
+- **Task 9**: SPEC-009 and SPEC-011 name `announcePromotion`, which is now
+  `reannounce`; SPEC-011 says a `remove_actor` re-announces once per
+  controller, each fan-out bounded by `presenceSendBudget`; SPEC-013's
+  command path gains the re-announcement after the append; SPEC-017 gains
+  `handleRemoveActor`'s announcements.
 - **Every task**: a pointer to a row the task withdraws (`git grep` of the
   id across `internal/`, `cmd/`, `client/`, `contract/vtt` and `tools/`) is
   re-pointed to its successor in the commit that withdraws it (D22); the
@@ -919,7 +935,7 @@ leave them; the register's words are the ones that bind. Every new row reads
 | R23 | OD-1 A | `identity.CreateInvite` mints dm, agent and spectator, and refuses every other role, `player` included, minting nothing. | a player minted; a row inserted before the refusal |
 | R24 | VTT-066 | `ParseRole` accepts exactly dm, agent, player and spectator, and refuses any other. | a fifth role accepted; one of the four refused |
 
-**Allocated at Task 0, 2026-11-21:** R1 = VTT-889, R2 = VTT-890, R3 = VTT-891, R4 = VTT-892, R5 = VTT-893, R6 = VTT-894, R7 = VTT-895, R8 = VTT-896, R9 = VTT-897, R10 = VTT-898, R11 = VTT-899, R12 = VTT-900, R13 = VTT-901, R14 = VTT-902, R15 = VTT-903, R16 = VTT-904, R17 = VTT-905, R18 = VTT-906, R19 = VTT-907, R20 = VTT-908, R21 = VTT-909, R22 = VTT-910, R23 = VTT-911, R24 = VTT-912, R25 = VTT-913, R26 = VTT-914, R27 = VTT-915, R28 = VTT-916, R29 = VTT-917, R30 = VTT-918, R31 = VTT-919, R32 = VTT-920, R33 = VTT-921, R34 = VTT-922, R35 = VTT-923.
+**Allocated at Task 0, 2026-11-21:** R1 = VTT-889, R2 = VTT-890, R3 = VTT-891, R4 = VTT-892, R5 = VTT-893, R6 = VTT-894, R7 = VTT-895, R8 = VTT-896, R9 = VTT-897, R10 = VTT-898, R11 = VTT-899, R12 = VTT-900, R13 = VTT-901, R14 = VTT-902, R15 = VTT-903, R16 = VTT-904, R17 = VTT-905, R18 = VTT-906, R19 = VTT-907, R20 = VTT-908, R21 = VTT-909, R22 = VTT-910, R23 = VTT-911, R24 = VTT-912, R25 = VTT-913, R26 = VTT-914, R27 = VTT-915, R28 = VTT-916, R29 = VTT-917, R30 = VTT-918, R31 = VTT-919, R32 = VTT-920, R33 = VTT-921, R34 = VTT-922, R35 = VTT-923. Added in Task 1, from Phase 4a: VTT-924, a refused grant, revocation or `remove_actor` sends no `PresenceChanged`.
 
 **Candidates the sort may refuse:**
 - **A row that `/api/ruleset` follows the derived role.** Refused: VTT-691

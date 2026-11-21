@@ -800,7 +800,19 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
+	// After the append, never before: a refused change announces nothing (VTT-924).
+	s.reannounceControlChange(cmd)
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: seq}
+}
+
+// reannounceControlChange re-announces whom a grant or revocation names (VTT-906).
+func (s *Server) reannounceControlChange(cmd *vttv1.ClientCommand) {
+	if g, ok := cmd.GetCommand().(*vttv1.ClientCommand_GrantActorControl); ok {
+		s.reannounce(g.GrantActorControl.GetParticipantId())
+	}
+	if r, ok := cmd.GetCommand().(*vttv1.ClientCommand_RevokeActorControl); ok {
+		s.reannounce(r.RevokeActorControl.GetParticipantId())
+	}
 }
 
 // Add each command's form validator here, for every role (SPEC-013).
@@ -888,9 +900,9 @@ func (s *Server) revoked() map[string]bool {
 	return out
 }
 
-// announcePromotion re-announces a promoted participant to every connection of
-// a participant not revoked, theirs included (SPEC-009, VTT-032, VTT-047).
-func (s *Server) announcePromotion(participantID string) {
+// reannounce re-announces a participant to every unrevoked connection, theirs
+// included (SPEC-009, VTT-032, VTT-047, VTT-906).
+func (s *Server) reannounce(participantID string) {
 	// Resolve revoked out here, never under the registry's locks; resolve the name,
 	// encode and send inside, or an unwinding connection leaves a ghost (SPEC-011).
 	s.presence.announceIfPresent(participantID, s.revoked(), func(name string) []byte {
@@ -948,6 +960,10 @@ func (s *Server) handleRemoveActor(requestID string, cmd *vttv1.RemoveActor,
 	firstSeq, err := s.campaign.AppendBatch(envs)
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	}
+	// Read st's controllers: the state after the append holds no actor (VTT-906).
+	for _, id := range st.Actors[cmd.GetActorId()].GetControllerIds() {
+		s.reannounce(id)
 	}
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq}
 }
@@ -1059,7 +1075,7 @@ func (s *Server) handlePromotion(requestID string, req *vttv1.PromoteParticipant
 	}
 	// Signal after SetRole: the pump that takes it must look up the new role.
 	s.presence.rejudge(req.GetParticipantId())
-	s.announcePromotion(req.GetParticipantId())
+	s.reannounce(req.GetParticipantId())
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
 }
 
