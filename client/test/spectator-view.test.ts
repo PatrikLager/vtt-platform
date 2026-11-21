@@ -2142,16 +2142,6 @@ function perched(
   return root;
 }
 
-// VTT-607
-test("the perch says you play no character when told to, and nothing when not", () => {
-  const told = document.createElement("div");
-  renderSpectator(told, party(), [], "connected", {
-    perch: { actors: asmeAndArmak, current: "", onPerch: () => {}, playsNone: true },
-  });
-  expect(told.querySelector(".perch .plays-none")?.textContent).toBe("You play no character; the DM can give you one.");
-  expect(perched(party(), "", asmeAndArmak).querySelector(".plays-none")).toBeNull();
-});
-
 test("the perch control says what choosing a name from it does", () => {
   // The heading is the only thing on the control that says these names are
   // points of view rather than a party roster.

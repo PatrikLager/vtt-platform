@@ -68,9 +68,9 @@ export const COMMAND_SURFACE: Record<
     /**
      * True for the entries whose control's data-action is not a single
      * literal string: dm.ts renders promoteParticipant and removeParticipant
-     * per roster row as `promote-${participantId}` / `demote-${participantId}`
-     * and `boot-${participantId}` (dm-view.test.ts pins those exact dynamic
-     * strings), so no fixed action string ever appears in the DOM for them.
+     * per roster row as `demote-${participantId}` and `boot-${participantId}`
+     * (dm-view.test.ts pins those exact dynamic strings), so no fixed action
+     * string ever appears in the DOM for them.
      * `action` for such an entry is a PATTERN PREFIX, matched by
      * controlExistsFor as `^${action}.+` (at least one character after the
      * prefix, so the bare prefix itself — a row nobody renders — does not
@@ -100,7 +100,7 @@ export const COMMAND_SURFACE: Record<
   takeAbility: { surface: "dm-console", action: "take-ability" },
   grantActorControl: { surface: "dm-console", action: "grant-actor-control" },
   revokeActorControl: { surface: "dm-console", action: "revoke-actor-control" },
-  promoteParticipant: { surface: "dm-console", action: "promote-", dynamic: true },
+  promoteParticipant: { surface: "dm-console", action: "demote-", dynamic: true },
   removeParticipant: { surface: "dm-console", action: "boot-", dynamic: true },
   setJoinDoor: { surface: "join-flow" },
   rotateJoinLink: { surface: "join-flow" },
@@ -254,12 +254,12 @@ function richState(): State {
 
 /**
  * The DM console, rendered with adventures, maps, a joinLink, and a roster
- * holding one SPECTATOR (so the promote-* row renders — a player's row would
- * only ever show demote-*, and one row is enough to prove the command has a
- * reachable control at all). `open` picks which of the mutually exclusive
- * session groups shows: startSession and endSession can never both render
- * from one state (renderDMConsole's own `openSession ? [...] : [...]`), so
- * controlExistsFor below renders this fixture BOTH ways and searches across
+ * holding one PLAYER, the one who controls a1 (so the demote-* row renders —
+ * no row offers a promotion to player, and one row is enough to prove the
+ * command has a reachable control at all). `open` picks which of the mutually
+ * exclusive session groups shows: startSession and endSession can never both
+ * render from one state (renderDMConsole's own `openSession ? [...] : [...]`),
+ * so controlExistsFor below renders this fixture BOTH ways and searches across
  * both, rather than trying to make one state show both at once.
  */
 function dmFixture(open: boolean): HTMLElement {
@@ -277,7 +277,7 @@ function dmFixture(open: boolean): HTMLElement {
     guideFor: async () => null,
     participants: [{ participantId: "p-me", displayName: "Hero's Player" }],
     joinLink: { open: false, secret: "s3cret" },
-    roster: [{ participantId: "p-watch", name: "Watcher", role: "spectator" }],
+    roster: [{ participantId: "p-me", name: "Hero's Player", role: "player" }],
     origin: "https://table.example",
     refreshSharing: () => {},
     // ok=true, not void: renderDMConsole's send field resolves to a real

@@ -50,9 +50,9 @@ function mayShare(who: Me): boolean {
   return who.role === "dm" || who.role === "agent";
 }
 
-/** Whether this window chooses a shoulder by the perch control (SPEC-022, VTT-458). */
-function mayPerch(who: Me, controlsNone: boolean): boolean {
-  return who.role === "spectator" || (who.role === "player" && controlsNone);
+/** Whether this window chooses a shoulder by the perch control (SPEC-022, VTT-917). */
+function mayPerch(who: Me): boolean {
+  return who.role === "spectator";
 }
 
 export function boot(root: HTMLElement): Session | null {
@@ -259,27 +259,11 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     }
   };
 
-  // Re-read the door, the link and the roster.
-  //
-  // Needed because these commands produce NO EVENT, deliberately: a role and a
-  // door are identity state, not campaign history (spec §3.1, §4). Nothing
-  // broadcasts, so nothing re-renders — without this the DM opens the door and
-  // the console goes on saying "closed" until something unrelated happens, and
-  // promotes a spectator who stays listed as one.
-  //
-  // Fired unconditionally rather than only for dm/agent: the routes are
-  // role-gated server-side and answer null for anyone else, so a player's
-  // console simply keeps no sharing panel.
-  // A MONOTONIC TICKET PER REFRESH, so a slow answer cannot overwrite a fast
-  // one. Two refreshes can be in flight at once — a promotion and an arrival a
-  // moment apart — and both assignments below are last-writer-wins on
-  // COMPLETION, not on issue order. A stale roster landing second repaints a
-  // promoted player as the spectator they were.
-  // An IDENTITY, not a counter. "Is this still the newest request?" is a
-  // question about sameness, and a number answers it only by convention — any
-  // strictly monotonic sequence behaves identically, so counting up and
-  // counting down are indistinguishable and the direction is a detail no test
-  // could ever justify. A fresh object per call has no direction to get wrong.
+  // Re-read the door, the link and the roster: the door and the link broadcast
+  // nothing, and the roster's roles follow control (VTT-890).
+  // Keep one ticket per refresh, compared by identity: two can be in flight at
+  // once, and a stale roster landing second repaints a player as the spectator
+  // they were.
   let newest: object = {};
   const refreshSharing = () => {
     const ticket = {};
@@ -326,21 +310,9 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     paint();
   };
 
-  // Returns the promise rather than swallowing it, so a caller that must read
-  // server state back AFTER a command lands can wait for it. The DM console
-  // does: the door and role commands produce no event, so an HTTP re-read
-  // issued beside the command races it on a different transport and can repaint
-  // the panel with the state the command was about to change.
-  //
-  // RESOLVES TO THE CommandResult ITSELF, not void. A command that SUCCEEDED
-  // can still carry non-fatal facts — CommandResult.warnings, which load_map
-  // fills when a map names art the loader could not resolve
-  // (2026-09-02-art-is-a-flat-library Task 2/3). Before this, `act`'s own
-  // return type erased that field before it reached dm.ts's `send` prop
-  // (client/src/view/dm.ts), which declared Promise<void> — an MCP agent's
-  // tool result carries a CommandResult verbatim and genuinely sees a
-  // warning, but the DM's browser threw it away one frame short of the
-  // person the warning exists for. Widened together with dm.ts's `send`.
+  // Return the promise and the CommandResult itself: the console re-reads the
+  // roster and the door after an answer (VTT-930), and a success can carry
+  // CommandResult.warnings that the toast shows.
   const act = (cmd: ClientCommand): Promise<CommandResult> =>
     session.send(cmd).then((res) => {
       // The result is shown verbatim on failure, and now on a warning too: a
@@ -380,7 +352,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
       root.appendChild(p);
       return;
     }
-    const perches = me !== null && mayPerch(me, session.controlsNoPartyMember);
+    const perches = me !== null && mayPerch(me);
     const canAct = me !== null && !perches;
     const isDM = me !== null && (me.role === "dm" || me.role === "agent");
     const isPlayer = me !== null && me.role === "player";
@@ -435,7 +407,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
       toast: toast || undefined,
       participants: session.participants,
       perch: perches
-        ? { actors: watchable, current: session.viewpoint, onPerch: (id) => void switchTo(id), playsNone: isPlayer }
+        ? { actors: watchable, current: session.viewpoint, onPerch: (id) => void switchTo(id) }
         : undefined,
       onReconnect: () => {
         void session.reconnect().catch(() => undefined);
@@ -461,49 +433,22 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     paint();
   });
   session.onError(() => paint());
-  // TWO THINGS FOLLOW FROM A PRESENCE FRAME, and both are invisible without
-  // one because neither produces an event.
-  //
-  // Hooked to presence rather than to onChange, which fires per FRAME — a
-  // table in play is a frame a second, and a roster read behind every token
-  // move is not a feature. An earlier version watched onChange and kept a key
-  // of the participant set to tell a real change from an event; the key, its
-  // sort and its separator were all machinery for a question presence already
-  // answers.
-  //
-  // MY OWN ROLE CAN MOVE WHILE I AM SITTING HERE.
-  //
-  // /api/me is read once at connect, and a promotion changes what this person
-  // may do without changing anything they can see: the server starts accepting
-  // their commands and their screen still offers none. The server re-announces
-  // a promoted participant for exactly this reason, so a presence batch naming
-  // ME means "read your role again".
-  //
-  // Watching the participant LIST cannot serve here: a promotion re-announces
-  // somebody already present, so the list does not change.
+  // Hook these to presence, never to onChange, which fires per frame. A control
+  // change re-announces whom it names (VTT-906), so a batch naming me means my
+  // role may have moved: read /api/me again (VTT-712). The participant list
+  // cannot serve: a re-announcement names somebody already present.
   session.onPresence((batch) => {
     if (me === null) return;
 
-    // WHO ELSE IS HERE HAS CHANGED, so the roster the console renders is out
-    // of date — a joiner with no promote button beside their name, or a
-    // revoked participant still offered one. Fires on any presence frame,
-    // including the re-announcement a promotion sends.
+    // Any presence frame may change the roster the console renders.
     if (mayShare(me)) refreshSharing();
 
-    // AND MY OWN ROLE MAY HAVE MOVED. /api/me is read once at connect, and a
-    // promotion changes what this person may do without changing anything
-    // they can see: the server starts accepting their commands and their
-    // screen still offers none. The server re-announces a promoted
-    // participant for exactly this reason, so a batch naming ME means "read
-    // your role again".
     const mine = me.participantId;
     if (!batch.some((p) => p.participantId === mine)) return;
     void fetchMe(location.origin, token).then((m) => {
       me = m;
       paint();
-      // Keep the sharing refresh above alone: a promotion is bounded to player
-      // and spectator, so no new role widens the sharing panel. A promotion or
-      // a demotion changes the abilities the window reads (VTT-712).
+      // A grant or a revocation changes the abilities the window reads (VTT-712).
       rereadIfStale();
     });
   });
@@ -537,12 +482,12 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
   });
 
   // Keep the ticket: two reads can be in flight, and only the newest may set
-  // the abilities the panel offers (VTT-696, VTT-753).
+  // the abilities the panel offers (VTT-920, VTT-753).
   let rulesetKey = "";
   let newestRuleset: object = {};
   // Key a window that is not a player's as "": its read does not follow its set.
   const watchKey = () => me?.role === "player"
-    ? JSON.stringify([session.watchable.map((a) => [a.actorId, a.abilityIds]), session.controlsNoPartyMember])
+    ? JSON.stringify(session.watchable.map((a) => [a.actorId, a.abilityIds]))
     : "";
   const rereadIfStale = () => {
     if (watchKey() !== rulesetKey) void readRuleset().catch(() => undefined);
@@ -592,15 +537,9 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
     .then((m) => {
       me = m;
       paint();
-      // As soon as the ROLE is known, and deliberately not later in this
-      // chain. It sat after the ruleset and adventure fetches at first, which
-      // meant a table with no ruleset — a perfectly ordinary state this client
-      // already degrades gracefully for — threw before reaching it, and the DM
-      // silently never got a sharing panel or a promote control. Found by the
-      // test below, not by reading it.
-      //
-      // Gated on the role so a player never asks for a link the server would
-      // refuse them.
+      // Keep this before the ruleset and adventure fetches: a table with no
+      // ruleset throws there, and the DM would get no sharing panel. Gate it on
+      // the role, so a player never asks for a link the server refuses.
       if (mayShare(me)) refreshSharing();
       return readRuleset();
     })

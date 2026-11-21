@@ -1543,10 +1543,11 @@ test("rotating asks first, because it locks out a link already sent", () => {
   expect(sent).toHaveLength(0); // answered no
 });
 
-test("a spectator can be promoted, and a player is not offered promotion again", () => {
+// VTT-905
+test("everyone is shown, a player can be made a spectator, and nobody is offered promotion to player", () => {
   // The client half of promote_participant, which J3 shipped WITHOUT one: the
   // command reached the contract, authz and the MCP tool list, and no console
-  // could issue it.
+  // could issue it. A grant makes a player, so no row promotes to one.
   const c = shareConsole({
     roster: [
       { participantId: "p-watch", name: "Zoe", role: "spectator" },
@@ -1558,19 +1559,14 @@ test("a spectator can be promoted, and a player is not offered promotion again",
   const rows = c.node.querySelectorAll(".roster-row");
   expect(rows.length).toBe(3); // everyone is SHOWN, including the DM
 
-  c.node.querySelector<HTMLButtonElement>('[data-action="promote-p-watch"]')!.click();
-  expect(c.sent).toHaveLength(1);
-  expect(c.sent[0]!.command.value).toMatchObject({ participantId: "p-watch", role: "player" });
-
-  // A player gets the reverse control, not a second promotion.
+  expect(c.node.querySelector('[data-action="promote-p-watch"]')).toBeNull();
   expect(c.node.querySelector('[data-action="promote-p-play"]')).toBeNull();
   c.node.querySelector<HTMLButtonElement>('[data-action="demote-p-play"]')!.click();
-  expect(c.sent[1]!.command.value).toMatchObject({ participantId: "p-play", role: "spectator" });
+  expect(c.sent).toHaveLength(1);
+  expect(c.sent[0]!.command.value).toMatchObject({ participantId: "p-play", role: "spectator" });
 
-  // A DM is offered NEITHER. promote_participant may only ever name player or
-  // spectator (spec §3.1a) — a button that reached dm would make the shared
-  // link a route to full authority in two steps, and the server refuses it, so
-  // offering it would only ever produce a confusing failure.
+  // A DM is offered NEITHER: promote_participant names spectator alone, and a
+  // DM is no player to be made one.
   expect(c.node.querySelector('[data-action="promote-p-dm"]')).toBeNull();
   expect(c.node.querySelector('[data-action="demote-p-dm"]')).toBeNull();
 });
@@ -1686,7 +1682,7 @@ test("the roster names each person, their role, and what the button will do", ()
   const watcher = c.node.querySelector('.roster-row[data-participant="p-w"]')!;
   expect(watcher.querySelector(".who")!.textContent).toBe("Zoe");
   expect(watcher.querySelector(".role")!.textContent).toBe("spectator");
-  expect(watcher.querySelector("button")!.textContent).toBe("Make player");
+  expect(watcher.querySelector("button")!.textContent).toBe("Boot");
 
   const player = c.node.querySelector('.roster-row[data-participant="p-p"]')!;
   expect(player.querySelector(".role")!.textContent).toBe("player");
@@ -2605,13 +2601,30 @@ test("what was typed in the console's say-text survives a render, before a line 
   expect(harness().field("say-text").value).toBe("Bye");
 });
 
-function bootConsole(answer: boolean) {
+/** Lera (p-play) plays Gobo (a1), Ash (a2) and an unnamed a3, so ids and names sort apart; Kim plays Dax (a4). */
+function leraTable(): State {
+  const st = newState();
+  const actor = (id: string, name: string, who: string) => {
+    st.Actors[id] = {
+      actorId: id, name, moduleId: "", attributes: {}, resources: {},
+      controllerId: who, controllerIds: [who], kind: ActorKind.PARTY_MEMBER, abilityIds: [],
+    };
+  };
+  actor("a1", "Gobo", "p-play");
+  actor("a2", "Ash", "p-play");
+  actor("a3", "", "p-play");
+  actor("a4", "Dax", "p-kim");
+  return st;
+}
+
+/** The roster panel over st: each send is held until release, and confirm answers `answer`. */
+function rosterConsole(answer: boolean, st: State = emptyState()) {
   const sent: ClientCommand[] = [];
   const asked: string[] = [];
   let refreshes = 0;
   let release: (r: CommandResult) => void = () => {};
   const node = renderDMConsole({
-    st: emptyState(), adventures: [], maps: [], abilities: [], guideFor: async () => null,
+    st, adventures: [], maps: [], abilities: [], guideFor: async () => null,
     doorsArmed: false, toggleDoors: () => {}, participants: [],
     joinLink: { open: false, secret: "s3cret" },
     roster: [
@@ -2619,6 +2632,7 @@ function bootConsole(answer: boolean) {
       { participantId: "p-play", name: "Lera", role: "player" },
       { participantId: "p-dm", name: "Ari", role: "dm" },
       { participantId: "p-agent", name: "Oracle", role: "agent" },
+      { participantId: "p-kim", name: "Kim", role: "player" },
     ],
     origin: "https://table.example",
     refreshSharing: () => refreshes++,
@@ -2637,7 +2651,7 @@ function bootConsole(answer: boolean) {
 
 test("Boot is offered on a player's and a spectator's row, and on no dm's or agent's", () => {
   // VTT-568
-  const c = bootConsole(true);
+  const c = rosterConsole(true);
   for (const id of ["p-watch", "p-play"]) {
     expect(c.node.querySelector(`[data-action="boot-${id}"]`)!.textContent).toBe("Boot");
   }
@@ -2648,7 +2662,7 @@ test("Boot is offered on a player's and a spectator's row, and on no dm's or age
 
 test("Boot asks first, naming the participant, and a no sends nothing", () => {
   // VTT-569
-  const c = bootConsole(false);
+  const c = rosterConsole(false);
   c.node.querySelector<HTMLButtonElement>('[data-action="boot-p-play"]')!.click();
   expect(c.asked).toHaveLength(1);
   expect(c.asked[0]).toContain("Lera");
@@ -2657,7 +2671,7 @@ test("Boot asks first, naming the participant, and a no sends nothing", () => {
 
 test("a confirmed Boot removes its row's participant and reads the roster again once answered", async () => {
   // VTT-570 VTT-571
-  const c = bootConsole(true);
+  const c = rosterConsole(true);
   c.node.querySelector<HTMLButtonElement>('[data-action="boot-p-play"]')!.click();
   expect(c.sent).toHaveLength(1);
   expect(c.sent[0]!.command.case).toBe("removeParticipant");
@@ -2666,6 +2680,74 @@ test("a confirmed Boot removes its row's participant and reads the roster again 
   c.release(ok());
   await settle();
   expect(c.refreshes()).toBe(1);
+});
+
+// --- Make spectator ---------------------------------------------------------
+
+// VTT-905
+test("a spectator's row offers Boot and nothing else, and no row offers a promotion", () => {
+  const c = rosterConsole(true, leraTable());
+  const zoe = c.node.querySelector('.roster-row[data-participant="p-watch"]')!;
+  expect(Array.from(zoe.querySelectorAll("button"), (b) => b.textContent)).toEqual(["Boot"]);
+  expect(c.node.querySelectorAll('[data-action^="promote-"]').length).toBe(0);
+  expect(Array.from(c.node.querySelectorAll(".roster-row button"), (b) => b.textContent)).not.toContain("Make player");
+});
+
+// VTT-901 VTT-902
+test("Make spectator asks first, naming the player and what they control by name, else id, in that order, and a no sends nothing", () => {
+  const c = rosterConsole(false, leraTable());
+  c.node.querySelector<HTMLButtonElement>('[data-action="demote-p-play"]')!.click();
+  expect(c.asked).toEqual(["Make Lera a spectator? They no longer control Ash and Gobo and a3."]);
+  expect(c.sent).toHaveLength(0);
+  expect(c.refreshes()).toBe(0);
+});
+
+// VTT-903 VTT-904
+test("a confirmed Make spectator sends one promotion of its row's player to spectator, and reads the roster again once answered", async () => {
+  const c = rosterConsole(true, leraTable());
+  c.node.querySelector<HTMLButtonElement>('[data-action="demote-p-play"]')!.click();
+  expect(c.asked).toHaveLength(1);
+  expect(c.sent).toHaveLength(1);
+  expect(c.sent[0]!.command.case).toBe("promoteParticipant");
+  expect(c.sent[0]!.command.value).toMatchObject({ participantId: "p-play", role: "spectator" });
+  expect(c.refreshes()).toBe(0);
+  c.release(ok());
+  await settle();
+  expect(c.refreshes()).toBe(1);
+  expect(c.sent).toHaveLength(1);
+});
+
+// VTT-930
+test("a grant, a revocation and a removal of an actor each read the roster again once answered", async () => {
+  const press = async (c: ReturnType<typeof rosterConsole>, act: () => void) => {
+    act();
+    expect(c.sent).toHaveLength(1);
+    expect(c.refreshes()).toBe(0);
+    c.release(ok());
+    await settle();
+    expect(c.refreshes()).toBe(1);
+  };
+  const revoke = rosterConsole(true, leraTable());
+  await press(revoke, () => revoke.node.querySelector<HTMLButtonElement>(
+    '.control-actor[data-actor="a1"] [data-action="revoke-actor-control"]')!.click());
+  const grant = rosterConsole(true, leraTable());
+  await press(grant, () => {
+    const row = grant.node.querySelector('.control-actor[data-actor="a4"]')!;
+    const target = row.querySelector(".grant-target") as HTMLSelectElement;
+    target.value = "p-watch";
+    target.dispatchEvent(new Event("change"));
+    const kind = row.querySelector(".grant-kind") as HTMLSelectElement;
+    kind.value = "ACTOR_KIND_PARTY_MEMBER";
+    kind.dispatchEvent(new Event("change"));
+    row.querySelector<HTMLButtonElement>('[data-action="grant-actor-control"]')!.click();
+  });
+  const removal = rosterConsole(true, leraTable());
+  await press(removal, () => {
+    const id = removal.node.querySelector<HTMLInputElement>('input[data-field="actor-id"]')!;
+    id.value = "a4";
+    id.dispatchEvent(new Event("input"));
+    removal.node.querySelector<HTMLButtonElement>('[data-action="remove-actor"]')!.click();
+  });
 });
 
 // --- whispers ---------------------------------------------------------------

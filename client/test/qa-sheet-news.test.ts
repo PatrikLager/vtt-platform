@@ -559,7 +559,7 @@ describe("qa sheet news: a player's window", () => {
     ws.frame(viewpoint("a1"));
     introduce(ws, "a1", "Alda", "p1", ["slash", "dodge"]);
     await settle();
-    // The first set may itself issue a read (VTT-696); answer every read so far.
+    // The first set may itself issue a read (VTT-920); answer every read so far.
     for (let i = 1; i < server.held.length; i++) {
       server.answer(i, [
         { id: "dodge", name: "Dodge" },

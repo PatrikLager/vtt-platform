@@ -445,18 +445,11 @@ export function rotateJoinLink(): ClientCommand {
   });
 }
 
-/**
- * Change what a participant is allowed to do (spec §3.1a).
- *
- * Only "player" and "spectator" are reachable: a shared link mints spectators,
- * so letting promotion reach dm or agent would make the link a route to full
- * authority in two steps. The server enforces that too — this signature is the
- * near reminder, not the guard.
- */
-export function promoteParticipant(participantId: string, role: "player" | "spectator"): ClientCommand {
+/** Make a player a spectator: the server revokes every actor they control (VTT-896). */
+export function promoteParticipant(participantId: string): ClientCommand {
   return create(ClientCommandSchema, {
     requestId: requestId(),
-    command: { case: "promoteParticipant", value: { participantId, role } },
+    command: { case: "promoteParticipant", value: { participantId, role: "spectator" } },
   });
 }
 

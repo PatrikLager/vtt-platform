@@ -9,7 +9,7 @@ import { newState, type State } from "../src/state";
 import type { Me } from "../src/metadata";
 import { ok, settle } from "./support/answers";
 
-// Requirements: VTT-884, VTT-885, VTT-888, VTT-876, VTT-886, VTT-460, VTT-408,
+// Requirements: VTT-884, VTT-885, VTT-888, VTT-876, VTT-886, VTT-919, VTT-408,
 // and the ticket's Done item 6 (the DM's arming stands).
 
 const ARM_DOORS = '[data-action="arm-doors"]';
@@ -234,7 +234,7 @@ for (const [label, cell] of [["a closed door", CLOSED_DOOR], ["an open door", OP
   });
 }
 
-test("VTT-884 VTT-460: a player's click on an open door square holding a listed party member's token switches to them, as the same click does where no door is", async () => {
+test("VTT-884 VTT-919: a player's click on an open door square holding a listed party member's token switches to them, as the same click does where no door is", async () => {
   const doored = await playerWindow(true);
   const onDoor = await clickCell(doored, OCCUPIED_OPEN_DOOR);
   const plain = await playerWindow(false);
@@ -242,25 +242,6 @@ test("VTT-884 VTT-460: a player's click on an open door square holding a listed 
   expect(onDoor.filter((s) => s.startsWith("open ") || s.startsWith("close "))).toEqual([]);
   expect(onDoor).toEqual(["viewpoint act-bren"]);
   expect(onDoor).toEqual(onFloor);
-});
-
-test("VTT-461: a perching player's click on a closed door, an open door or a plain square sends nothing", async () => {
-  seq = 0;
-  const w = await openWindow(PLAYER);
-  await w.deliver({ watchableChanged: { actors: [{ actorId: "act-lera", name: "Lera" }, { actorId: "act-bren", name: "Bren" }], controlsNoPartyMember: true } });
-  await w.deliver({ viewpointChanged: { actorId: "act-lera" } });
-  const p = "p-dm";
-  await w.deliver(ev(p, sceneFrame(true)));
-  await w.deliver(ev(p, actorFrame("act-lera", "Lera", "ACTOR_KIND_PARTY_MEMBER")));
-  await w.deliver(ev(p, actorFrame("act-bren", "Bren", "ACTOR_KIND_PARTY_MEMBER")));
-  await w.deliver(ev(p, { tokenPlaced: { tokenId: "tok-lera", sceneId: SCENE, actorId: "act-lera", position: { x: 1, y: 2 } } }));
-  await w.deliver(ev(p, { tokenPlaced: { tokenId: "tok-bren", sceneId: SCENE, actorId: "act-bren", position: OCCUPIED_OPEN_DOOR } }));
-  await w.deliver(ev(p, { doorOpened: { sceneId: SCENE, at: OPEN_DOOR } }));
-  expect(w.root.querySelector(".grid")).not.toBeNull();
-  expect(await clickCell(w, CLOSED_DOOR)).toEqual([]);
-  expect(await clickCell(w, OPEN_DOOR)).toEqual([]);
-  expect(await clickCell(w, OCCUPIED_OPEN_DOOR)).toEqual([]);
-  expect(await clickCell(w, PLAIN_LOW)).toEqual([]);
 });
 
 // ---- a player's panel ----------------------------------------------------

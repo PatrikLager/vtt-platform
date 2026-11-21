@@ -86,7 +86,7 @@ export class Wire {
     this.restartHandlers.push(fn);
   }
 
-  /** Called with each set the gateway sends this connection (VTT-454, VTT-458). */
+  /** Called with each set the gateway sends this connection (VTT-454, VTT-918). */
   onWatchable(fn: (actors: WatchableActor[], controlsNoPartyMember: boolean) => void): void {
     this.watchableHandlers.push(fn);
   }

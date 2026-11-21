@@ -238,12 +238,9 @@ export async function fetchJoinLink(base: string, token: string): Promise<JoinLi
 }
 
 /**
- * Read the table's roster: who exists, and what each of them may do.
- *
- * NOT derived from presence. Presence answers "who is connected right now" and
- * carries no role, deliberately — a role folded into a presence frame would go
- * stale the moment somebody was promoted without reconnecting, which is
- * exactly what live re-resolution made possible (spec §3.2).
+ * Read the table's roster: who exists, and what each of them may do. Never
+ * derive it from presence, which carries no role: the server answers each role
+ * from the log, and a grant or a revocation moves it (VTT-890).
  */
 export async function fetchParticipants(base: string, token: string): Promise<Roster[] | null> {
   // null on failure rather than [], because the two mean different things and

@@ -1386,8 +1386,8 @@ async function playerAwaitingReads(role = "player") {
 const offeredChips = (r: HTMLElement) =>
   Array.from(r.querySelector(".player")?.querySelectorAll("button") ?? []).map((b) => b.textContent);
 
-// VTT-696
-test("a player's window reads the ruleset again when its watchable set or flag changes, and only then", async () => {
+// VTT-920
+test("a player's window reads the ruleset again when its watchable set changes, and only then", async () => {
   const { r, s, sock, reads } = await playerAwaitingReads();
   expect(reads.length).toBe(1);
   reads[0]!(["poke"]);
@@ -2477,7 +2477,7 @@ test("a DM's roster learns about somebody who joins after the console loaded", a
   // The gap the e2e found, and the only test that could: every layer worked —
   // /join minted the spectator, presence announced them, the console rendered
   // a roster — and the roster was read ONCE at boot, so the one person who
-  // needed a promote button was the one person who never had one.
+  // needed a row of their own was the one person who never had one.
   setURL("http://localhost/?token=tok-dm");
   useFakeSocket();
   let rosterCalls = 0;
@@ -2518,7 +2518,7 @@ test("a DM's roster learns about somebody who joins after the console loaded", a
   await settle();
 
   expect(rosterCalls).toBe(2);
-  expect(r.querySelector('[data-action="promote-p-new"]')).not.toBeNull();
+  expect(r.querySelector('[data-action="boot-p-new"]')).not.toBeNull();
 
   // And it does NOT re-read on every subsequent frame: a console that fetched
   // per event would put a request behind every token move at the table.
@@ -2530,14 +2530,14 @@ test("a DM's roster learns about somebody who joins after the console loaded", a
   session?.close();
 });
 
-test("a promoted spectator's own screen catches up without reconnecting", async () => {
+test("a granted spectator's own screen catches up without reconnecting", async () => {
   // The half of promotion that live re-resolution does NOT reach. The server
   // starts accepting this person's commands the moment the DM promotes them —
   // and their browser read its role once, at connect. Without this they can
   // act and their own client offers them nothing to act with: the server says
   // yes to a screen with no controls on it.
   //
-  // The server re-announces a promoted participant for exactly this reason, so
+  // The server re-announces whom a control change names for this reason, so
   // a presence frame naming ME means "read your role again". Watching the
   // participant LIST cannot serve: they were already present, so it does not
   // change.
@@ -2764,7 +2764,7 @@ test("a batch naming me AND somebody else still re-reads my own role", async () 
 
   expect(meCalls).toBe(before + 1);
   expect(r.querySelector(".player")).not.toBeNull();
-  // Promoted to PLAYER, not to dm — so the re-read must not go on to ask for
+  // Made a PLAYER, not a dm — so the re-read must not go on to ask for
   // the sharing panel. A role change is a reason to re-check what you may do,
   // not a reason to assume it grew.
   expect(r.querySelector('[data-field="join-link"]')).toBeNull();
@@ -2824,7 +2824,7 @@ test("a network blip keeps the DM's panels; only a refusal takes them away", asy
 });
 
 test("a slow roster answer cannot overwrite a fresher one", async () => {
-  // Two refreshes can be in flight at once — a promotion and an arrival a
+  // Two refreshes can be in flight at once — a grant and an arrival a
   // moment apart — and both assignments are last-writer-wins on COMPLETION,
   // not on issue order. The first read describes the table BEFORE the
   // promotion; if it lands second it repaints a promoted player as the
@@ -3082,9 +3082,9 @@ async function tableAs(role: string) {
 }
 
 test("a player who controls a party member, the DM and the agent are offered no shoulder", async () => {
-  // A window chooses a shoulder by this control as a spectator, or as a player
-  // who controls no party member (SPEC-022): the DM and the agent are sent the
-  // world, and a player who controls one switches by chip or by token.
+  // A window chooses a shoulder by this control as a spectator (SPEC-022): the
+  // DM and the agent are sent the world, and a player switches by chip or by
+  // token.
   //
   // All four roles in one test on purpose: the positive and the negative
   // differ by one branch, and a test that only asserted the spectator's
@@ -3434,7 +3434,7 @@ async function twoMemberTable(viewpoint: string, set: [string, string][], abilit
 const chips = (r: HTMLElement) =>
   Array.from(r.querySelector(".player .row")?.querySelectorAll("button") ?? []);
 
-// VTT-457, VTT-404
+// VTT-918, VTT-404
 test("a player is offered exactly the party members the set names", async () => {
   // The fold shows Bram under this player's control, and the set names a Quill
   // the fold has never introduced: the chips are the set's.
@@ -3444,7 +3444,7 @@ test("a player is offered exactly the party members the set names", async () => 
   s?.close();
 });
 
-// VTT-457 VTT-606
+// VTT-918 VTT-606
 test("sets that drop a party member before /api/me answers leave the window offering the last one, and no toast", async () => {
   localStorage.setItem("vtt.token", "tok");
   let answerMe: (r: Response) => void = () => {};
@@ -3472,7 +3472,7 @@ test("sets that drop a party member before /api/me answers leave the window offe
   s?.close();
 });
 
-// VTT-405, VTT-460
+// VTT-405, VTT-919
 test("a player switches by a button and by a click on the token", async () => {
   const { r, s, sock } = await twoMemberTable("a1", [["a1", "Lera"], ["a2", "Bram"]]);
   chips(r).find((b) => b.textContent === "Bram")!.click();
@@ -3586,7 +3586,7 @@ test("no role's window shows a log sequence number", async () => {
   }
 });
 
-// --- a player who controls no party member perches -------------------------
+// --- a window perches by its role, whatever its set says ---------------------
 
 /** Boot a player whose sets are delivered by the caller, and return the socket. */
 async function playerWithSets() {
@@ -3607,37 +3607,22 @@ async function playerWithSets() {
 const watchableNone = (actors: [string, string][]) =>
   ({ watchableChanged: { actors: actors.map(([actorId, name]) => ({ actorId, name })), controlsNoPartyMember: true } });
 
-// VTT-458 VTT-459
-test("a player whose set says they control no party member is offered the perch, and no player panel", async () => {
+// VTT-917
+test("a player's window sent a set saying it controls no party member draws the player panel and no perch", async () => {
   const { r, s, sock } = await playerWithSets();
   sock.deliver(watchableNone([["a1", "Lera"], ["a2", "Bram"]]));
   sock.deliver({ viewpointChanged: {} });
   await settle();
 
-  const perch = r.querySelector(".perch");
-  expect(perch?.querySelector("h2")?.textContent).toBe("Whose eyes");
-  expect(Array.from(perch!.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Bram", "Lera", "No shoulder"]);
-  expect(r.querySelectorAll(".player").length).toBe(0);
-
-  (Array.from(perch!.querySelectorAll(".shoulder")).find((b) => b.textContent === "Lera") as HTMLButtonElement).click();
-  await settle();
-  (perch!.querySelector(".unperch") as HTMLButtonElement).click();
-  await settle();
-  const sent = sock.sent.map((raw) => JSON.parse(raw));
-  expect(sent).toHaveLength(2);
-  expect(sent[0].setViewpoint).toMatchObject({ actorId: "a1" });
-  expect(sent[1].setViewpoint.actorId ?? "").toBe("");
-
-  sock.deliver({ viewpointChanged: { actorId: "a1" } });
-  seedTable(sock, "a1", "q");
-  await settle();
-  expect(r.querySelector(".perch .perched-on")?.textContent).toBe("Perched on: Lera");
-  expect(r.querySelectorAll(".player").length).toBe(0);
+  expect(r.querySelectorAll(".player").length).toBe(1);
+  expect(r.querySelectorAll(".perch").length).toBe(0);
+  expect(r.querySelectorAll(".shoulder, .unperch").length).toBe(0);
+  expect(r.textContent).not.toContain("Whose eyes");
   s?.close();
 });
 
-// VTT-457 VTT-458
-test("the set's flag moves a player between the perch and the player panel", async () => {
+// VTT-917
+test("the set's flag leaves a player's window on the player panel", async () => {
   const { r, s, sock } = await playerWithSets();
   opensOn(sock, "a1");
   seedTable(sock);
@@ -3647,12 +3632,34 @@ test("the set's flag moves a player between the perch and the player panel", asy
 
   sock.deliver(watchableNone([["a1", "Lera"]]));
   await settle();
-  expect(r.querySelectorAll(".perch").length).toBe(1);
-  expect(r.querySelectorAll(".player").length).toBe(0);
+  expect(r.querySelectorAll(".player").length).toBe(1);
+  expect(r.querySelectorAll(".perch").length).toBe(0);
 
   sock.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Lera" }] } });
   await settle();
   expect(r.querySelectorAll(".player").length).toBe(1);
+  expect(r.querySelectorAll(".perch").length).toBe(0);
+  s?.close();
+});
+
+// VTT-917
+test("a spectator's window perches whatever its set says, and not while it shows why its log cannot fold", async () => {
+  const { r, s, sock } = await tableAs("spectator");
+  expect(r.querySelectorAll(".perch").length).toBe(1);
+
+  sock.deliver(watchableNone([["a1", "Lera"]]));
+  await settle();
+  expect(r.querySelectorAll(".perch").length).toBe(1);
+  expect(r.querySelectorAll(".player").length).toBe(0);
+
+  sock.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Lera" }], controlsNoPartyMember: false } });
+  await settle();
+  expect(r.querySelectorAll(".perch").length).toBe(1);
+  expect(r.querySelectorAll(".player").length).toBe(0);
+
+  sock.deliver(envelope(1, { tokenMoved: { tokenId: "ghost", sceneId: "s", to: { x: 1, y: 1 } } }));
+  await settle();
+  expect(r.querySelector(".fatal")).not.toBeNull();
   expect(r.querySelectorAll(".perch").length).toBe(0);
   s?.close();
 });
@@ -3672,7 +3679,6 @@ test("a player is told You no longer play and the names of the party members tha
   sock.deliver(watchableNone([["a1", "Ama"], ["a2", "Bo"]]));
   await settle();
   expect(r.querySelector(".toast")?.textContent).toBe("You no longer play Bo.");
-  expect(r.querySelectorAll(".perch").length).toBe(1);
 
   sock.deliver({ watchableChanged: { actors: [
     { actorId: "a3", name: "Cy" }, { actorId: "a4", name: "" }, { actorId: "a5", name: "Di" },
@@ -3723,49 +3729,6 @@ test("a fresh page and a redial sent the same set show no toast", async () => {
   redial.deliver({ watchableChanged: { actors: [{ actorId: "a1", name: "Ama" }] } });
   await settle();
   expect(r.querySelector(".toast")?.textContent).toBe("You no longer play Bo.");
-  s?.close();
-});
-
-// VTT-607
-test("a player who controls no party member is told so on the perch, and a spectator is not", async () => {
-  const { r, s, sock } = await playerWithSets();
-  sock.deliver(watchableNone([["a1", "Lera"]]));
-  sock.deliver({ viewpointChanged: {} });
-  await settle();
-  expect(r.querySelector(".perch .plays-none")?.textContent).toBe("You play no character; the DM can give you one.");
-  s?.close();
-
-  const watcher = await tableAs("spectator");
-  expect(watcher.r.querySelector(".perch")).not.toBeNull();
-  expect(watcher.r.querySelector(".plays-none")).toBeNull();
-  watcher.s?.close();
-});
-
-// VTT-461
-test("a perched player's board click sends nothing, on a listed party member's token or on an empty square", async () => {
-  const { r, s, sock } = await playerWithSets();
-  sock.deliver(watchableNone([["a1", "Lera"], ["a2", "Bram"]]));
-  sock.deliver({ viewpointChanged: { actorId: "a2" } });
-  sock.deliver(envelope(1, { sessionStarted: { name: "Night" } }));
-  sock.deliver(envelope(2, { sceneCreated: { sceneId: "s1", name: "Hall", gridWidth: 4, gridHeight: 4 } }));
-  sock.deliver(envelope(3, { actorAdded: { actor: { actorId: "a1", name: "Lera" } } }));
-  sock.deliver(envelope(4, { actorControlGranted: { actorId: "a1", participantId: "q", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
-  sock.deliver(envelope(5, { actorAdded: { actor: { actorId: "a2", name: "Bram" } } }));
-  sock.deliver(envelope(6, { actorControlGranted: { actorId: "a2", participantId: "q2", kind: "ACTOR_KIND_PARTY_MEMBER" } }));
-  sock.deliver(envelope(7, { actorAdded: { actor: { actorId: "np", name: "Pet" } } }));
-  sock.deliver(envelope(8, { actorControlGranted: { actorId: "np", participantId: "p", kind: "ACTOR_KIND_NON_PARTY" } }));
-  sock.deliver(envelope(9, { tokenPlaced: { tokenId: "t1", sceneId: "s1", actorId: "a1", position: { x: 1, y: 1 } } }));
-  sock.deliver(envelope(10, { tokenPlaced: { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 1, y: 0 } } }));
-  sock.deliver(envelope(11, { tokenPlaced: { tokenId: "t3", sceneId: "s1", actorId: "np", position: { x: 3, y: 3 } } }));
-  await settle();
-  expect(r.querySelectorAll(".perch").length).toBe(1);
-  expect(r.querySelectorAll('[data-token-id="t1"]').length).toBe(1);
-
-  clickBoard(r, 210, 130);
-  await settle();
-  clickBoard(r, 330, 250);
-  await settle();
-  expect(sock.sent).toHaveLength(0);
   s?.close();
 });
 

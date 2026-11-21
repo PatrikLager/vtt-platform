@@ -106,12 +106,12 @@ export class Session {
     return this.wire.viewpoint ?? "";
   }
 
-  /** The party members the gateway last said this connection may watch; a reset keeps them (VTT-457). */
+  /** The party members the gateway last said this connection may watch; a reset keeps them (VTT-918). */
   get watchable(): readonly WatchableActor[] {
     return this.set;
   }
 
-  /** Whether the last set said this participant controls no party member; a reset keeps it (VTT-458). */
+  /** Whether the last set said this participant controls no party member; a reset keeps it (VTT-454). */
   get controlsNoPartyMember(): boolean {
     return this.none;
   }
@@ -156,13 +156,9 @@ export class Session {
   }
 
   /**
-   * Raw presence batches, for a caller that needs more than the resulting
-   * list.
-   *
-   * onChange cannot serve this: a promotion re-announces somebody who is
-   * ALREADY present, so the participant list is unchanged and a listener
-   * watching the list sees nothing at all. The batch is the only place that
-   * frame is visible.
+   * Raw presence batches. onChange cannot serve a caller of this: a control
+   * change re-announces somebody ALREADY present (VTT-906), so the participant
+   * list is unchanged; the batch is the only place that frame is visible.
    */
   onPresence(fn: (batch: PresenceEvent[]) => void): void {
     this.presenceHandlers.push(fn);

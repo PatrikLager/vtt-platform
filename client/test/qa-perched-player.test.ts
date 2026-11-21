@@ -179,10 +179,6 @@ function switchButtons(): number {
   return count(".perch button.shoulder") + count("button.unperch") + count(".player .row button");
 }
 
-function perchedOn(): string {
-  return (root.querySelector(".perch .perched-on")?.textContent ?? "").trim();
-}
-
 function cmds(ws: FakeWS): Cmd[] {
   return ws.sent.map((s) => JSON.parse(s));
 }
@@ -197,19 +193,6 @@ function click(x: number, y: number): void {
   grid.dispatchEvent(new MouseEvent("click", { clientX: 80 + 120 * x + 10, clientY: 120 * y + 10, bubbles: true }));
 }
 
-function press(sel: string, label: string): void {
-  const b = Array.from(root.querySelectorAll(sel)).find((e) => (e.textContent ?? "").trim() === label) as HTMLElement | undefined;
-  if (!b) throw new Error(`no ${sel} labelled ${label}`);
-  b.click();
-}
-
-async function perchedPlayer(): Promise<FakeWS> {
-  const ws = await start();
-  await send(ws, watchable(SET, true), viewpoint("a1"), ...board());
-  await until(() => count(".perch") === 1 && count(`[data-token-id="t1"]`) === 1, "the perch and the board");
-  return ws;
-}
-
 async function listedPlayer(flag?: boolean): Promise<FakeWS> {
   const ws = await start();
   await send(ws, watchable(SET, flag), viewpoint("a1"), ...board());
@@ -217,72 +200,20 @@ async function listedPlayer(flag?: boolean): Promise<FakeWS> {
   return ws;
 }
 
-// VTT-458 VTT-404 VTT-445
-test("qaNP: a player whose set says they control no party member draws the perch with exactly the set and nobody, and no player panel", async () => {
-  await perchedPlayer();
-  expect(count(".perch h2")).toBe(1);
-  expect((root.querySelector(".perch h2")?.textContent ?? "").trim()).toBe("Whose eyes");
-  expect(shoulders()).toEqual(["Bram", "Lera", "a3"].sort());
-  expect(labels("button.unperch")).toEqual(["No shoulder"]);
-  expect(count(".player")).toBe(0);
-  expect(count(".player .row button")).toBe(0);
+// VTT-917 VTT-918 VTT-404 VTT-445
+test("qaNP: a player whose set says they control no party member draws the player panel with exactly the set, and no perch", async () => {
+  await listedPlayer(true);
+  expect(count(".perch")).toBe(0);
+  expect(count(".perch h2")).toBe(0);
+  expect(count("button.unperch")).toBe(0);
+  expect(count(".player")).toBe(1);
+  expect(chips()).toEqual(["Bram", "Lera", "a3"].sort());
   expect(count("section.ticker")).toBe(0);
 });
 
-// VTT-407
-test("qaNP: a perched player's perch shows as watched the actor each ViewpointChanged names, not a command's result", async () => {
-  const ws = await perchedPlayer();
-  expect(perchedOn()).toBe("Perched on: Lera");
-  press(".perch button.shoulder", "Bram");
-  await settle();
-  const sent = cmds(ws).filter((c) => c.setViewpoint !== undefined);
-  expect(sent.length).toBe(1);
-  await send(ws, { result: { requestId: sent[0]!.requestId, ok: true } });
-  expect(perchedOn()).toBe("Perched on: Lera");
-  await send(ws, viewpoint("a2"), ...board());
-  expect(perchedOn()).toBe("Perched on: Bram");
-  await send(ws, viewpoint(""));
-  expect(perchedOn()).toBe("Perched on: nobody");
-  expect(count(".player")).toBe(0);
-});
-
-// VTT-459
-test("qaNP: No shoulder in a player's perch sends set_viewpoint naming nobody", async () => {
-  const ws = await perchedPlayer();
-  const before = ws.sent.length;
-  press("button.unperch", "No shoulder");
-  await settle();
-  expect(viewpointsSent(ws, before)).toEqual([""]);
-});
-
-// VTT-405
-test("qaNP: a shoulder in a player's perch sends set_viewpoint naming it, the watched one and one the log has not shown included", async () => {
-  const ws = await perchedPlayer();
-  const before = ws.sent.length;
-  press(".perch button.shoulder", "Bram");
-  await settle();
-  press(".perch button.shoulder", "Lera");
-  await settle();
-  press(".perch button.shoulder", "a3");
-  await settle();
-  expect(viewpointsSent(ws, before)).toEqual(["a2", "a1", "a3"]);
-});
-
-// VTT-461 VTT-460 VTT-408
-test("qaNP: a perched player's board click sends nothing, where a listed player's same click switches or moves", async () => {
-  const ws = await perchedPlayer();
-  const before = ws.sent.length;
-  click(2, 1);
-  await settle();
-  click(1, 2);
-  await settle();
-  click(3, 3);
-  await settle();
-  click(0, 0);
-  await settle();
-  expect(ws.sent.length).toBe(before);
-  await send(ws, watchable(SET));
-  await until(() => count(".player") === 1 && count(".grid") === 1, "the player panel after the flag drops");
+// VTT-919 VTT-408 VTT-917
+test("qaNP: a player whose set says they control no party member switches or moves by a board click as a listed player does", async () => {
+  const ws = await listedPlayer(true);
   const live = ws.sent.length;
   click(2, 1);
   await settle();
@@ -295,7 +226,7 @@ test("qaNP: a perched player's board click sends nothing, where a listed player'
   expect(moves[0]!.moveToken.tokenId).toBe("t1");
 });
 
-// VTT-457
+// VTT-918
 test("qaNP: a player whose set does not say they control no party member is offered exactly the set, and no nobody", async () => {
   await listedPlayer();
   expect(chips()).toEqual(["Bram", "Lera", "a3"].sort());
@@ -304,7 +235,7 @@ test("qaNP: a player whose set does not say they control no party member is offe
   expect(count("section.ticker")).toBe(0);
 });
 
-// VTT-457
+// VTT-918 VTT-917
 test("qaNP: a set that says controlsNoPartyMember false keeps the player panel with exactly the set", async () => {
   await listedPlayer(false);
   expect(chips()).toEqual(["Bram", "Lera", "a3"].sort());
@@ -312,7 +243,7 @@ test("qaNP: a set that says controlsNoPartyMember false keeps the player panel w
   expect(count(".perch")).toBe(0);
 });
 
-// VTT-457
+// VTT-918
 test("qaNP: a player is offered no switch button before a set, whatever the log shows them controlling", async () => {
   const ws = await start();
   await until(() => count(".player") === 1, "the player panel");
@@ -324,9 +255,9 @@ test("qaNP: a player is offered no switch button before a set, whatever the log 
   expect(chips()).toEqual(["Bram", "Lera", "a3"].sort());
 });
 
-// VTT-457 VTT-458
-test("qaNP: each set's flag moves a player between the perch and the player panel", async () => {
-  const ws = await perchedPlayer();
+// VTT-917 VTT-918
+test("qaNP: each set's flag leaves a player on the player panel, offered exactly that set", async () => {
+  const ws = await listedPlayer(true);
   await send(ws, watchable(SET));
   await until(() => count(".player") === 1, "the player panel");
   expect(count(".perch")).toBe(0);
@@ -334,27 +265,30 @@ test("qaNP: each set's flag moves a player between the perch and the player pane
   expect(chips()).toEqual(["Bram", "Lera", "a3"].sort());
   const SET2 = [{ actorId: "a2", name: "Bram" }, { actorId: "a4", name: "Dara" }];
   await send(ws, watchable(SET2, true));
-  await until(() => count(".perch") === 1, "the perch again");
-  expect(count(".player")).toBe(0);
-  expect(shoulders()).toEqual(["Bram", "Dara"]);
-  expect(count("button.unperch")).toBe(1);
+  await until(() => chips().length === 2, "the second set's chips");
+  expect(count(".player")).toBe(1);
+  expect(count(".perch")).toBe(0);
+  expect(chips()).toEqual(["Bram", "Dara"]);
+  expect(count("button.unperch")).toBe(0);
 });
 
-// VTT-458
-test("qaNP: after a log that cannot fold, a discard keeps the set, so the player is drawn the perch again", async () => {
-  const ws = await perchedPlayer();
+// VTT-917 VTT-918
+test("qaNP: after a log that cannot fold, a discard keeps the set, so the player is drawn the player panel with it again", async () => {
+  const ws = await listedPlayer(true);
   await send(ws, { event: { eventId: "e-99", sequence: "15", sessionId: "s", sessionStarted: { name: "Again" } } });
   await until(() => count("p.fatal") === 1, "the reason the log cannot fold");
-  await send(ws, viewpoint("a2"), ...board());
-  await until(() => count(".perch") === 1, "the perch after the discard");
-  expect(count("p.fatal")).toBe(0);
   expect(count(".player")).toBe(0);
-  expect(shoulders()).toEqual(["Bram", "Lera", "a3"].sort());
-  expect(count("button.unperch")).toBe(1);
+  expect(count(".perch")).toBe(0);
+  await send(ws, viewpoint("a2"), ...board());
+  await until(() => count(".player") === 1, "the player panel after the discard");
+  expect(count("p.fatal")).toBe(0);
+  expect(count(".perch")).toBe(0);
+  expect(chips()).toEqual(["Bram", "Lera", "a3"].sort());
+  expect(count("button.unperch")).toBe(0);
 });
 
-// VTT-458 VTT-445
-test("qaNP: a set sent before /api/me answers player still draws the perch once it does", async () => {
+// VTT-917 VTT-918 VTT-445
+test("qaNP: a set saying no party member, sent before /api/me answers player, draws the player panel with exactly the set once it does", async () => {
   let release: () => void = () => {};
   meGate = new Promise<void>((r) => { release = r; });
   const ws = await start();
@@ -362,15 +296,15 @@ test("qaNP: a set sent before /api/me answers player still draws the perch once 
   await until(() => count(`[data-token-id="t1"]`) === 1, "the board");
   expect(count("section.ticker")).toBe(0);
   release();
-  await until(() => count(".perch") === 1 && count(".perch button.shoulder") > 0, "the perch once the role is read");
-  expect(count(".player")).toBe(0);
-  expect(shoulders()).toEqual(["Bram", "Lera", "a3"].sort());
-  expect(count("button.unperch")).toBe(1);
+  await until(() => count(".player .row button") > 0, "the chips once the role is read");
+  expect(count(".perch")).toBe(0);
+  expect(chips()).toEqual(["Bram", "Lera", "a3"].sort());
+  expect(count("button.unperch")).toBe(0);
   expect(count("section.ticker")).toBe(0);
 });
 
-// VTT-458 VTT-457
-test("qaNP: a spectator re-read as player keeps the perch while the set says no party member, and gets the panel once it does not", async () => {
+// VTT-917 VTT-918
+test("qaNP: a spectator re-read as player leaves the perch for the player panel at the re-read, whatever its set says", async () => {
   role = "spectator";
   const ws = await start();
   await send(ws, watchable(SET, true), viewpoint("a1"), ...board());
@@ -379,18 +313,17 @@ test("qaNP: a spectator re-read as player keeps the perch while the set says no 
   const reads = meCalls;
   await send(ws, { presenceChanged: { participantId: ME, displayName: "Me", state: "PRESENCE_STATE_CONNECTED" } });
   await until(() => meCalls === reads + 1, "the re-read of /api/me");
-  await settle();
-  expect(count(".perch")).toBe(1);
-  expect(count(".player")).toBe(0);
-  expect(shoulders()).toEqual(["Bram", "Lera", "a3"].sort());
-  expect(count("button.unperch")).toBe(1);
+  await until(() => count(".player") === 1, "the player panel once the role is read");
+  expect(count(".perch")).toBe(0);
+  expect(chips()).toEqual(["Bram", "Lera", "a3"].sort());
+  expect(count("button.unperch")).toBe(0);
   await send(ws, watchable(SET));
-  await until(() => count(".player") === 1, "the player panel once the set has no flag");
+  expect(count(".player")).toBe(1);
   expect(count(".perch")).toBe(0);
   expect(chips()).toEqual(["Bram", "Lera", "a3"].sort());
 });
 
-// VTT-403
+// VTT-403 VTT-917
 test("qaNP: a spectator is drawn the perch with exactly the set and nobody, whether or not the set carries the flag", async () => {
   role = "spectator";
   const ws = await start();
@@ -406,7 +339,7 @@ test("qaNP: a spectator is drawn the perch with exactly the set and nobody, whet
   expect(count(".player")).toBe(0);
 });
 
-// VTT-460
+// VTT-919
 test("qaNP: a listed player's click on a cell of set members switches to one of them, never to one the set does not name", async () => {
   const ws = await listedPlayer();
   const before = ws.sent.length;
@@ -432,17 +365,7 @@ test("qaNP: a listed player's click on an empty cell moves the watched character
   expect(viewpointsSent(ws, before)).toEqual([]);
 });
 
-// VTT-458
-test("qaNP: a perched player whose set names no party member is offered only nobody, and no player panel", async () => {
-  const ws = await start();
-  await send(ws, watchable([], true), viewpoint(""));
-  await until(() => count(".perch") === 1 && count("button.unperch") === 1, "the perch");
-  expect(count(".perch button.shoulder")).toBe(0);
-  expect(labels("button.unperch")).toEqual(["No shoulder"]);
-  expect(count(".player")).toBe(0);
-});
-
-// VTT-457
+// VTT-918
 test("qaNP: a player whose set names no party member and no flag is offered no switch button at all", async () => {
   const ws = await start();
   await send(ws, watchable([]), viewpoint("a1"), ...board());

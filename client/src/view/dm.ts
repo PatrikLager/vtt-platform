@@ -68,6 +68,8 @@ const unanswered = new Set<string>();
 interface Sending {
   command: ClientCommand;
   clears: string[];
+  /** Re-read the roster once answered: the command changes control (VTT-890). */
+  rereads?: boolean;
 }
 
 /**
@@ -85,6 +87,7 @@ function sending(d: DMDeps, key: string, press: () => Sending | undefined): () =
         if (!res.ok) return;
         clearDraft(...out.clears);
         d.rerender();
+        if (out.rereads) d.refreshSharing();
       }, (e: unknown) => console.error(e))
       .finally(() => unanswered.delete(key));
   };
@@ -259,10 +262,10 @@ export interface DMDeps {
    */
   joinLink: JoinLink | null;
   /**
-   * Everyone at the table and what they may do, read from identity rather
+   * Everyone at the table and what they may do, read from the server rather
    * than presence: presence is connection-scoped and carries no role, so a
-   * role taken from it would go stale the moment somebody was promoted
-   * without reconnecting (spec §3.2).
+   * role taken from it would go stale the moment a grant or a revocation
+   * moved it (VTT-890).
    */
   roster: Roster[] | null;
   /** Where this table lives, for building the link a DM can actually paste. */
@@ -276,19 +279,10 @@ export interface DMDeps {
    */
   refreshSharing: () => void;
   /**
-   * Issue a command, resolving once the server has answered.
-   *
-   * The promise is load-bearing for the controls below that read state back:
-   * a role change and a door change produce NO EVENT, so an HTTP re-read fired
-   * beside the command races it on a different transport, and losing that race
-   * repaints the panel with exactly the state the command was changing — with
-   * nothing left to correct it.
-   *
-   * Resolves to the CommandResult, not void: this used to declare Promise<void>,
-   * which erased CommandResult.warnings at this exact boundary — app.ts's `act`
-   * (the function every caller here is actually given) already carries a
-   * warning into the toast, but nothing calling through THIS field's old type
-   * could have read one back (2026-09-02-art-is-a-flat-library Task 2).
+   * Issue a command, resolving to its CommandResult once answered. Keep the
+   * promise: the roster and the door are read over HTTP, and a re-read fired
+   * beside the command races it (VTT-904, VTT-930). Keep the result, not void:
+   * it carries CommandResult.warnings.
    */
   send: (c: ClientCommand) => Promise<CommandResult>;
   /** Repaint the table, once an accepted command has cleared its form (VTT-533). */
@@ -390,7 +384,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
       // removal lands on the log every seat at this table can see.
       button("Remove", sending(d, "remove-actor", () => {
         if (actorId.value.trim() === "") return void d.notify("name the actor to remove");
-        return { command: removeActor(actorId.value.trim()), clears: ["actor-id"] };
+        return { command: removeActor(actorId.value.trim()), clears: ["actor-id"], rereads: true };
       }), "remove-actor"),
     ),
   );
@@ -689,7 +683,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
       // The id is captured per BUTTON, not read back from the row: a handler
       // that recomputed it would revoke controllerIds[0] every time, which
       // looks right and takes the wrong character from the wrong person.
-      off.addEventListener("click", () => d.send(revokeActorControl(a.actorId, id)));
+      off.addEventListener("click", () => void d.send(revokeActorControl(a.actorId, id)).then(d.refreshSharing));
       held.appendChild(off);
       row.appendChild(held);
     }
@@ -757,7 +751,7 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
         d.notify("Say what it is: a party member, or a monster the party has to find.");
         return;
       }
-      return { command: grantActorControl(a.actorId, target.value, kind), clears: [field, kindField] };
+      return { command: grantActorControl(a.actorId, target.value, kind), clears: [field, kindField], rereads: true };
     }));
     row.appendChild(give);
     controlRows.push(row);
@@ -766,14 +760,10 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
 
   // --- who may do what ---
   //
-  // Beside "Who controls what" on purpose (spec §4): promoting somebody and
-  // handing them a character are one thought, and two screens apart is how a
-  // DM promotes a spectator and then wonders why they still cannot act.
-  // Rendered whenever the roster was READ, even if it came back empty — which
-  // it cannot, since it always holds the caller. A panel that disappeared on
-  // an empty list would make a failed fetch look like a deliberately absent
-  // feature. Built INSIDE the branch: outside it, a null roster still built
-  // rows and discarded them, so nothing could observe what went into them.
+  // Beside "Who controls what" on purpose: a grant there is what makes the
+  // player here (VTT-890). Render it whenever the roster was READ, even empty,
+  // or a failed fetch looks like an absent feature; build the rows inside the
+  // branch, where something can observe them.
   const roster = d.roster;
   if (roster !== null) {
     const rosterRows: HTMLElement[] = [];
@@ -783,22 +773,18 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
       row.appendChild(el("span", "who", person.name));
       row.appendChild(el("span", "role", person.role));
 
-      // ONLY player and spectator are offered, because promote_participant may
-      // only ever name those two (spec §3.1a): a control that reached dm or
-      // agent would make the shared link a route to full authority in two steps,
-      // and the server refuses it — so the button could only ever fail.
-      if (person.role === "spectator") {
-        row.appendChild(
-          button("Make player", () => void d.send(
-            promoteParticipant(person.participantId, "player"),
-          ).then(d.refreshSharing), `promote-${person.participantId}`),
-        );
-      } else if (person.role === "player") {
-        row.appendChild(
-          button("Make spectator", () => void d.send(
-            promoteParticipant(person.participantId, "spectator"),
-          ).then(d.refreshSharing), `demote-${person.participantId}`),
-        );
+      // Offer no "Make player": a grant makes a player (VTT-905).
+      if (person.role === "player") {
+        row.appendChild(button("Make spectator", () => {
+          const held = Object.values(d.st.Actors)
+            .filter((a) => a.controllerIds.includes(person.participantId))
+            .map((a) => a.name || a.actorId)
+            .sort();
+          if (!d.confirm(`Make ${person.name} a spectator? They no longer control ${held.join(" and ")}.`)) {
+            return;
+          }
+          void d.send(promoteParticipant(person.participantId)).then(d.refreshSharing);
+        }, `demote-${person.participantId}`));
       }
       if (person.role === "spectator" || person.role === "player") {
         row.appendChild(button("Boot", () => {

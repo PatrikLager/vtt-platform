@@ -503,13 +503,13 @@ test("the empty actor id is a COMMAND, not a silence", () => {
   expect(json["setViewpoint"]).not.toHaveProperty("actorId");
 });
 
-test("promotion names the participant and the role", () => {
+test("promotion names the participant and spectator, the one role it may name", () => {
   // The client half of promote_participant, which shipped without one: the
   // command reached the contract, authz and the MCP tool list in J3 and no
   // console could issue it.
-  const cmd = promoteParticipant("p-7", "player");
+  const cmd = promoteParticipant("p-7");
   expect(cmd.command.case).toBe("promoteParticipant");
-  expect(cmd.command.value).toMatchObject({ participantId: "p-7", role: "player" });
+  expect(cmd.command.value).toMatchObject({ participantId: "p-7", role: "spectator" });
 });
 
 test("a removal names the participant and carries a request id", () => {

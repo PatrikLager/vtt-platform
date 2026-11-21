@@ -2,8 +2,6 @@ import "./support/dom";
 import { afterEach, expect, test } from "bun:test";
 import { boot } from "../src/app";
 import { Session } from "../src/session";
-import { newState } from "../src/state";
-import { renderSpectator } from "../src/view/spectator";
 import { forgetTheSay } from "./support/say";
 
 type Actor = { actorId: string; name: string };
@@ -11,7 +9,6 @@ type Actor = { actorId: string; name: string };
 const LERA: Actor = { actorId: "a1", name: "Lera" };
 const BRAM: Actor = { actorId: "a2", name: "Bram" };
 const QUILL: Actor = { actorId: "a3", name: "Quill" };
-const PLAYS_NONE = "You play no character; the DM can give you one.";
 
 class FakeSocket {
   static OPEN = 1;
@@ -168,7 +165,7 @@ afterEach(() => {
 
 // VTT-604, VTT-407
 test("a refused switch shows the error alone and keeps the perch", async () => {
-  const t = await openTable("player");
+  const t = await openTable("spectator");
   await t.frames(watch([LERA, BRAM], true), viewpoint("a1"));
   t.root.querySelector<HTMLElement>(".shoulder")?.click();
   expect(lastCommand(t).setViewpoint).toEqual({ actorId: "a2" });
@@ -213,7 +210,7 @@ test("an accepted command clears a refusal or shows its warnings", async () => {
   }
 });
 
-// VTT-605, VTT-457
+// VTT-605, VTT-918
 test("a player who loses one of two party members is told which", async () => {
   const t = await openTable("player");
   await t.frames(watch([LERA, BRAM]), viewpoint("a1"));
@@ -225,15 +222,12 @@ test("a player who loses one of two party members is told which", async () => {
   expect(labels(t, ".player .chip")).toEqual(["Bram"]);
 });
 
-// VTT-605, VTT-458
+// VTT-605
 test("three lost at once are named in the previous set's order", async () => {
   const t = await openTable("player");
   await t.frames(watch([QUILL, LERA, BRAM]), viewpoint("a1"));
   await t.frames(watch([], true));
   expect(t.toast()).toBe("You no longer play Quill and Lera and Bram.");
-  expect(t.root.querySelector(".player")).toBeNull();
-  expect(labels(t, ".perch .shoulder")).toEqual([]);
-  expect(labels(t, ".perch .unperch")).toHaveLength(1);
 });
 
 // VTT-605, VTT-404
@@ -246,16 +240,13 @@ test("a lost party member with no name is an unnamed character", async () => {
   expect(t.toast()).toBe("You no longer play an unnamed character and Quill.");
 });
 
-// VTT-605, VTT-607, VTT-458
+// VTT-605
 test("a set saying the player controls none names none as controlled", async () => {
   const t = await openTable("player");
   await t.frames(watch([LERA]), viewpoint("a1"));
   expect(t.root.querySelector(".perch")).toBeNull();
   await t.frames(watch([LERA], true));
   expect(t.toast()).toBe("You no longer play Lera.");
-  expect(t.perch()).toContain(PLAYS_NONE);
-  expect(labels(t, ".perch .shoulder")).toEqual(["Lera"]);
-  expect(t.root.querySelector(".player")).toBeNull();
 });
 
 // VTT-605, VTT-606
@@ -280,16 +271,14 @@ test("only a party member the set named as controlled is told as lost", async ()
   expect(t.toast()).toBe("You no longer play Lera.");
 });
 
-// VTT-606, VTT-607, VTT-457
+// VTT-606, VTT-918
 test("a page's first set tells nothing, though it controls none", async () => {
   const t = await openTable("player");
   await t.frames(watch([LERA], true), viewpoint("a1"));
   expect(t.root.querySelector(".toast")).toBeNull();
-  expect(t.perch()).toContain(PLAYS_NONE);
   await t.frames(watch([LERA]));
   expect(t.root.querySelector(".perch")).toBeNull();
   expect(labels(t, ".player .chip")).toEqual(["Lera"]);
-  expect(t.root.textContent).not.toContain(PLAYS_NONE);
   await t.frames(watch([LERA], true));
   expect(t.toast()).toBe("You no longer play Lera.");
 });
@@ -417,32 +406,13 @@ test("Session tells who left, not for a first, equal or renamed set", async () =
   }
 });
 
-// VTT-607
-test("the perch says the window plays no character only when told to", () => {
-  const perchWith = (playsNone?: boolean): string => {
-    const root = document.createElement("div");
-    const perch = { actors: [LERA], current: "a1", onPerch: () => {} };
-    renderSpectator(root, newState(), [], "open", {
-      perch: playsNone === undefined ? perch : { ...perch, playsNone },
-    });
-    return root.querySelector(".perch")?.textContent ?? "";
-  };
-  expect(perchWith(true)).toContain(PLAYS_NONE);
-  expect(perchWith(false)).toContain("Whose eyes");
-  expect(perchWith(false)).not.toContain(PLAYS_NONE);
-  expect(perchWith()).not.toContain(PLAYS_NONE);
-});
-
-// VTT-607, VTT-403
-test("the perch tells a player they play none, not a spectator", async () => {
-  const player = await openTable("player");
-  await player.frames(watch([LERA, BRAM], true), viewpoint("a1"));
-  expect(player.perch()).toContain(PLAYS_NONE);
+// VTT-403, VTT-917
+test("a spectator's perch offers the set whether or not it says they control none", async () => {
   const spectator = await openTable("spectator");
   await spectator.frames(watch([LERA, BRAM], true), viewpoint("a1"));
   expect(spectator.perch()).toContain("Whose eyes");
-  expect(spectator.perch()).not.toContain(PLAYS_NONE);
+  expect(labels(spectator, ".perch .shoulder")).toEqual(["Bram", "Lera"]);
   await spectator.frames(watch([LERA, BRAM]));
-  expect(spectator.perch()).not.toContain(PLAYS_NONE);
+  expect(spectator.perch()).toContain("Whose eyes");
   expect(labels(spectator, ".perch .shoulder")).toEqual(["Bram", "Lera"]);
 });

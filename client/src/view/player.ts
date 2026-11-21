@@ -32,7 +32,7 @@ export interface PanelLayout {
   freeUsageName?: string | undefined;
 }
 
-/** A player's switch between the party members the gateway lets them watch (VTT-457). */
+/** A player's switch between the party members the gateway lets them watch (VTT-918). */
 export interface Switcher {
   actors: readonly { actorId: string; name: string }[];
   onSwitch: (actorId: string) => void;
@@ -298,7 +298,7 @@ export function moveCommandFor(
 /**
  * A player's board click: a switch to a party member the gateway lets them
  * watch whose token is on the cell, nothing on the watched one's own token,
- * else a move of it (VTT-460, VTT-408).
+ * else a move of it (VTT-919, VTT-408).
  */
 export function playerClickFor(
   st: State,
