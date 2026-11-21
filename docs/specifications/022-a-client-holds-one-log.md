@@ -7,7 +7,8 @@ Accepted. The browser client implements it in `client/src/wire.ts`,
 `client/src/view/spectator.ts`, `client/src/view/feed.ts`,
 `client/src/view/player.ts`, `client/src/view/naming.ts`,
 `client/src/view/grid.ts`, `client/src/view/dm.ts`, `client/src/view/focus.ts`,
-`client/src/view/join.ts`, `client/src/view/doors.ts`, `client/src/commands.ts`,
+`client/src/view/join.ts`, `client/src/view/doors.ts`,
+`client/src/view/terrain.ts`, `client/src/commands.ts`,
 `client/src/player.ts`,
 `client/src/fold.ts`, `client/src/state.ts` and `client/src/style.css`;
 the Go readers in `internal/harness/client.go`, `internal/harness/engine.go`,
@@ -44,7 +45,7 @@ panel labels a move with its reason, by `client/test/spectator-view.test.ts`,
 members a `WatchableChanged` names and switch between them, by
 `client/test/app.test.ts`, `client/test/player.test.ts`,
 `client/test/spectator-view.test.ts` and `client/test/qa-switch.test.ts`
-(VTT-403 to VTT-405, VTT-408, VTT-918, VTT-919); that a window perches
+(VTT-403 to VTT-405, VTT-408, VTT-918, VTT-940); that a window perches
 exactly while the role the page last read is `spectator`, and a player's is
 drawn the panel whatever its set says, by `client/test/app.test.ts`,
 `client/test/qa-perched-player.test.ts`,
@@ -249,7 +250,20 @@ DM's or an agent's armed click works a door naming no actor, by
 `client/test/app.test.ts`, `client/test/commands.test.ts`,
 `client/test/qa-door-window.test.ts`, `client/test/qa-door-buttons.test.ts`,
 `client/test/qa-door-mode.test.ts`, `client/test/qa-switch.test.ts` and
-`client/e2e/doors.spec.ts` (VTT-876, VTT-881 to VTT-888); that the fold
+`client/e2e/doors.spec.ts` (VTT-876, VTT-881 to VTT-883, VTT-885 to
+VTT-888, VTT-938); that a board click beside the grid sends nothing in any
+window, by `client/test/grid.test.ts`, `client/test/spectator-view.test.ts`,
+`client/test/app.test.ts`, `client/test/qa-click-off-grid.test.ts` and
+`client/e2e/board-margin.spec.ts` (VTT-934); that a player's click sends
+nothing on a square the window does not see, moves nothing onto one it holds
+blocked, and moves onto a seen open one, by `client/test/player.test.ts`,
+`client/test/app.test.ts`, `client/test/qa-door-mode.test.ts`,
+`client/test/qa-seen-open-square.test.ts` and
+`client/e2e/board-clicks.spec.ts` (VTT-935, VTT-936, VTT-939); that the
+client's reading of a blocked square and the server's answer one fixture
+alike, by `client/test/terrain.test.ts`,
+`client/test/qa-seen-open-square.test.ts` and `internal/engine/terrain_test.go`
+(VTT-937); that the fold
 refuses a door event naming an actor it does not hold, by
 `client/test/fold-rejections.test.ts` and
 `client/test/qa-door-opener-fold.test.ts` (VTT-866); and that an ability's
@@ -261,7 +275,7 @@ button is titled by its description and its cost line, by
 
 ## Principles served
 
-Principles 7, 11, 12, 13, 14, 22, 23, 27 and 35 of `docs/blueprint.md`:
+Principles 7, 11, 12, 13, 14, 20, 22, 23, 27 and 35 of `docs/blueprint.md`:
 
 - **7.** A grant, a revocation, a change of role, a give or a take reaches
   the abilities a player's window offers without a reload.
@@ -273,6 +287,8 @@ Principles 7, 11, 12, 13, 14, 22, 23, 27 and 35 of `docs/blueprint.md`:
   words every payload (VTT-474 to VTT-477, VTT-815, VTT-862, VTT-863).
 - **14.** A player's click on a cell holding the watched one's token and no
   other listed member's sends nothing.
+- **20.** A player's board click on a square the `Visible` their window
+  holds for the scene does not name sends nothing, whatever stands on it.
 - **22.** A reload keeps the viewpoint.
 - **23.** With a sheet declared, the panel draws a character's sheet as the
   window's ruleset lays it out, and invents no grouping of its own; with a
@@ -587,28 +603,51 @@ credential on a
 401 (above), since `grep -n 'readRuleset()' client/src/app.ts` finds the
 chain's call and `rereadIfStale`'s, which catches every failure.
 
-A perching window's board click sends nothing (the owner's ruling "Bara
-knappar", 2026-10-20; `a spectator's clicks on the board send nothing` in
+A board click beside the drawn grid sends nothing, in any window, with doors
+armed or not: `cellFromPoint` in `client/src/view/grid.ts` answers no square
+for a point whose column or row lies outside the scene's grid, and
+`renderGrid`'s click handler in `client/src/view/spectator.ts`, which alone
+calls it (`git grep -n 'cellFromPoint(' client/src`) and alone calls the
+board's `onCell` (`git grep -n 'onCell(' client/src`), hands `onCell` only a
+square (VTT-934). A perching
+window's board click sends nothing (the owner's ruling "Bara knappar",
+2026-10-20; `a spectator's clicks on the board send nothing` in
 `client/test/app.test.ts`), and its board shows no door tool
 armed: `paint` hands the board `ui.doorsArmed` as its doors bit, whose one
 writer is `toggleDoors` (`grep -rn 'doorsArmed =' client/src`), which `paint`
 hands to `renderDMConsole` alone, drawn in a DM's or an agent's window, which
 `mayPerch` never perches. The
 current scene is the scene whose id sorts greatest (`currentSceneId` in
-`client/src/view/doors.ts`). In a player's window, a board click on a cell
-of the current scene holding a token of a listed party member other than the
-one they watch sends `set_viewpoint` naming the lowest such id, an armed
-ability notwithstanding (VTT-919). A click on a cell holding
-the watched one's token and no other listed member's sends nothing. Any other
-click, with no ability armed, moves the watched one's token, if it has one, to
-that cell (VTT-408); a selection the watched one's sheet does not name is not
+`client/src/view/doors.ts`). In a player's window, `playerClickFor` in
+`client/src/view/player.ts` answers a board click on a square of the current
+scene, in this order. A click on a square the window does not see, one the
+`Scene.Visible` it holds for that scene does not name, remembered or never
+seen, sends nothing (VTT-935). A scene the window holds no `Visible` for
+reads as every square seen, as the board draws it (VTT-939, VTT-940). A
+click on a seen square holding a token of a listed party member other than
+the one they watch sends `set_viewpoint` naming the lowest such id, an armed
+ability, or a wall, a door or scenery on that square, notwithstanding
+(VTT-940). Else a click on a square holding the watched one's token sends
+nothing, and so does one on a square the window holds as a wall, as a door
+its `OpenDoors` does not hold open, or as covered by an object whose
+`BlocksMove` is set (`blocksMove` in `client/src/view/terrain.ts`;
+VTT-936). Any other click, with no ability
+armed, moves the watched one's token, if it has one, to that square
+(VTT-408, VTT-939); a selection the watched one's sheet does not name is not
 armed, so such a click moves (`client/test/qa-window-offers.test.ts`'s "a
 player's board click with a carried-over ability the sheet does not name moves
-the watched token"). A player's board
-click on a door square sends what the same click sends on a square with no
-door (`playerClickFor`), never `open_door` or `close_door`, whatever the
-window's arming bit holds, and a player's panel draws no arm-doors toggle
-(VTT-884, VTT-885). With
+the watched token"). A click that sends nothing draws nothing either: no
+command reaches the server, so no refusal comes back. A player's board click
+never sends `open_door` or `close_door`, whatever the window's arming bit
+holds: `onCell` hands it to `playerClickFor` alone, which answers nothing,
+`set_viewpoint` or `moveCommandFor`'s `move_token`; a seen open door
+answers as a square with no door does and a closed one is a square it moves
+nothing onto (VTT-938), and a player's panel draws no
+arm-doors toggle (VTT-885). `blocksMove` repeats `engine.State.Blocked`'s
+arms inside the grid (`internal/engine/terrain.go`), rotation unread as
+there; both answer every square `contract/testdata/blocked_squares.json`
+lists, on the scene `blocked_squares_log.json` folds to, as that file says
+(VTT-937), and a warning in each points at the other and the fixture. With
 doors armed in a DM's or an agent's window, a board click on a door of the
 current scene sends `open_door` for a closed door and `close_door` for an open
 one, naming no actor, and a click on any other square sends nothing
@@ -934,7 +973,8 @@ token (`Namer.shown`, VTT-490), then the token's notes, then, in a DM's or an
 agent's window, its GM notes, each only when non-empty (VTT-474, VTT-483).
 `client/src/style.css` shows it on `.token:hover` and on `.token.pinned`, with
 `pointer-events: none`, so a left click still reaches the board's handler and
-moves as before (VTT-408; the owner's ruling "Ja, som i dag" of 2026-10-24). A
+answers as a click on the square under the pointer does (VTT-408; the owner's
+ruling "Ja, som i dag" of 2026-10-24). A
 disc in the right or the bottom half of its scene opens its card toward the
 middle (`card-left`, `card-up`), since `.grid` clips what crosses its edge. A
 right-click on a disc is prevented and hands its token's id to
@@ -1250,6 +1290,15 @@ each entry it is sent, and no switch.
   it shows as watched (VTT-407). `vtt mcp`'s `set_viewpoint` tool takes any
   id, and the gateway refuses a perch the participant may not watch
   (SPEC-015).
+- A player's window answers a board click by the last `SceneSeen` it
+  folded for the scene, not by what the server sees now: between a move the
+  server accepts and the frames that follow it, a click on a square just
+  seen sends nothing, and a move onto a square no longer seen reaches the
+  server, which refuses it (VTT-601, SPEC-013).
+- An arm added to `engine.State.Blocked` inside the grid needs the same arm
+  in `blocksMove` and a square of `contract/testdata/blocked_squares.json`
+  that it decides; added to one side alone, no test holds the two alike
+  until the fixture holds such a square.
 - VTT-394 to VTT-398 are the browser client's, held by its tests. A Go
   reader's rules are rows of their own; those this record carries are listed
   below.
@@ -1287,6 +1336,7 @@ VTT-815, VTT-816, VTT-817, VTT-818, VTT-820, VTT-821, VTT-822,
 VTT-823, VTT-834, VTT-835, VTT-836, VTT-837, VTT-838, VTT-839, VTT-840,
 VTT-841, VTT-842, VTT-843, VTT-844, VTT-845, VTT-846, VTT-854, VTT-855,
 VTT-862, VTT-863, VTT-864, VTT-865, VTT-866, VTT-871, VTT-872, VTT-876,
-VTT-881, VTT-882, VTT-883, VTT-884, VTT-885, VTT-886, VTT-887, VTT-888,
-VTT-901, VTT-902, VTT-903, VTT-904, VTT-905, VTT-917, VTT-918, VTT-919,
-VTT-920, VTT-932, VTT-933.
+VTT-881, VTT-882, VTT-883, VTT-885, VTT-886, VTT-887, VTT-888,
+VTT-901, VTT-902, VTT-903, VTT-904, VTT-905, VTT-917, VTT-918,
+VTT-920, VTT-932, VTT-933, VTT-934, VTT-935, VTT-936, VTT-937, VTT-938,
+VTT-939, VTT-940.
