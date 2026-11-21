@@ -179,7 +179,7 @@ export type PlaceToken = Message<"vtt.v1.PlaceToken"> & {
   position?: GridPosition | undefined;
 
   /**
-   * What a player or spectator whose character sees the token is told it is.
+   * What a participant whose watched character sees the token is told it is.
    *
    * @generated from field: string name = 5;
    */
@@ -633,8 +633,7 @@ export const LoadMapSchema: GenMessage<LoadMap> = /*@__PURE__*/
 /**
  * SetViewpoint names the character log a player's or a spectator's connection
  * is sent from here on, and appends nothing. An empty actor_id is nobody,
- * which a player who controls a party member may not ask for (SPEC-007,
- * SPEC-015).
+ * which a player may not ask for (SPEC-007, SPEC-015).
  *
  * @generated from message vtt.v1.SetViewpoint
  */
@@ -914,9 +913,10 @@ export const RotateJoinLinkSchema: GenMessage<RotateJoinLink> = /*@__PURE__*/
   messageDesc(file_vtt_v1_commands, 24);
 
 /**
- * GrantActorControl adds participant_id to actor_id's controller set.
- * DM and agent only: a player may not hand their character to someone else,
- * nor claim one.
+ * GrantActorControl adds participant_id to actor_id's controller set, which
+ * makes a spectator a player (SPEC-009). Such a participant may be given only a
+ * party member, and an id the table does not hold is refused. DM and agent
+ * only: a player may not hand their character to someone else, nor claim one.
  *
  * @generated from message vtt.v1.GrantActorControl
  */
@@ -992,21 +992,10 @@ export const RevokeActorControlSchema: GenMessage<RevokeActorControl> = /*@__PUR
   messageDesc(file_vtt_v1_commands, 26);
 
 /**
- * PromoteParticipant changes what a participant is ALLOWED to do.
- *
- * It changes IDENTITY rather than campaign state, and so produces NO EVENT: a
- * role lives in the participants table beside the token, one source of truth,
- * never in the log (joining-a-table spec §3.1). The gateway's ToEvent allowlist
- * names it for that reason.
- *
- * role may be ONLY "player" or "spectator" (spec §3.1a). A shared join link
- * mints spectators, and letting promotion reach "dm" or "agent" would make
- * that link a path to full authority in two steps — which is exactly what
- * admitting-as-spectator exists to prevent. Minting a DM stays with
- * `vtt invite`, deliberately out of band.
- *
- * DM and agent only. A spectator promoting itself would make the default
- * meaningless.
+ * PromoteParticipant makes a player a spectator: the gateway appends one
+ * ActorControlRevoked per actor they control, as one batch, and nothing for a
+ * participant who controls none (SPEC-009). role may be ONLY "spectator"; a
+ * grant makes a player. DM and agent only, and never naming a dm or an agent.
  *
  * @generated from message vtt.v1.PromoteParticipant
  */
@@ -1174,8 +1163,7 @@ export type WatchableChanged = Message<"vtt.v1.WatchableChanged"> & {
   actors: WatchableActor[];
 
   /**
-   * Keep false meaning the participant controls a party member: a client draws
-   * a player the perch by true (SPEC-022).
+   * Keep false meaning the participant controls a party member (SPEC-015).
    *
    * @generated from field: bool controls_no_party_member = 2;
    */
@@ -1310,17 +1298,11 @@ export const ServerFrameSchema: GenMessage<ServerFrame> = /*@__PURE__*/
   messageDesc(file_vtt_v1_commands, 34);
 
 /**
- * PresenceChanged reports one participant joining or leaving — or, since the
- * joining-a-table branch, being PROMOTED.
- *
- * The promotion case sends CONNECTED for somebody who never left, as a nudge:
- * their client read its own role once at connect and nothing else would ever
- * tell it that role moved. So this is also the first frame a client can
- * receive NAMING ITSELF for a reason other than its own arrival, and a client
- * that treats every CONNECTED as an arrival will simply re-add somebody it
- * already has, which is harmless. It carries no role: roles live in identity
- * (joining-a-table spec §3.1) and a role in a connection-scoped frame would go
- * stale the moment somebody was promoted without reconnecting.
+ * PresenceChanged reports one participant joining or leaving, or re-announces
+ * one a control change named: CONNECTED for somebody who never left, so their
+ * client reads its role again, since a role follows control (SPEC-009). It
+ * carries no role: a role in a connection-scoped frame would go stale at the
+ * next grant or revocation.
  *
  * A FRAME, never an Envelope: who happened to be online is not campaign
  * history. Appending it would make every replay reconstruct session noise and

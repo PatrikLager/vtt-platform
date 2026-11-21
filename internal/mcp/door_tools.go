@@ -112,7 +112,8 @@ const getParticipantsDescription = "List everyone at the table: participant id, 
 	"remove_participant, grant_actor_control and revoke_actor_control all require — somebody who joined through the " +
 	"shared link arrives as a spectator controlling no actor, so their id appears nowhere in " +
 	"get_state. Revoked participants are omitted. Roles are \"dm\", \"agent\", \"player\" or " +
-	"\"spectator\"."
+	"\"spectator\": a participant who is neither the DM nor the agent is a player exactly while " +
+	"they control an actor, and promote_participant makes a player a spectator."
 
 // emptyObjectSchema is the input schema for a tool that takes no arguments.
 var emptyObjectSchema = map[string]any{

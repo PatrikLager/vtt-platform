@@ -101,13 +101,9 @@ func newJoinLinkCmd() *cobra.Command {
 			if err := ids.SetJoinOpen(true, admit); err != nil {
 				return fmt.Errorf("vtt join-link open: %w", err)
 			}
-			// Named for what it actually admits. "Open" alone invites the
-			// reading that the link now grants access to the game; it grants
-			// the right to WATCH, and the DM promotes from there.
-			//
-			// The NUMBER is printed, always, including the default. A budget
-			// nobody was told about is one they find out about when the last
-			// player is turned away with the same message a stranger gets.
+			// Name what it admits: the right to WATCH; a grant makes a player
+			// (SPEC-009). Print the number, always, the default included: an
+			// untold budget is found out when the last player is turned away.
 			n := admit
 			if n <= 0 {
 				n = identity.DefaultAdmitLimit

@@ -121,7 +121,7 @@ var manifest = []toolSpec{
 				requiredOverride: []string{"tokenId", "sceneId", "actorId", "position"},
 				fieldDocs: map[string]string{
 					"tokenId": "The new token's id, unique in the campaign. At most 128 bytes of UTF-8; a longer id refuses the command.",
-					"name":    "Optional; what every player and spectator whose character sees this token is told it is, such as \"a sleeping creature\". Never the creature's true name unless the characters know it.",
+					"name":    "Optional; what every participant whose watched character sees this token is told it is, such as \"a sleeping creature\". Never the creature's true name unless the characters know it.",
 					"notes":   "Optional; what they are told of it beside its name.",
 					"gmName":  "Optional; the DM's and the agent's alone: no player or spectator is ever sent it.",
 					"gmNotes": "Optional; the DM's and the agent's alone: no player or spectator is ever sent it.",
@@ -322,7 +322,7 @@ var manifest = []toolSpec{
 	{
 		message:     "vtt.v1.GrantActorControl",
 		name:        "grant_actor_control",
-		description: "Give a participant control of an actor, so they may move its token and use its abilities, AND state what that actor is while doing it. Control is a SET — granting does not take control away from anyone who already has it, and an actor may be controlled by several participants at once. DM/agent only. Note the DM never needs this to act: DM authority is independent of control, so a DM already moves and uses any actor while a player controls it.",
+		description: "Give a participant control of an actor, so they may move its token and use its abilities, AND state what that actor is while doing it. A grant makes a spectator a player: a participant who is neither the DM nor the agent is a player exactly while they control an actor. Such a participant may be granted only a party member (ACTOR_KIND_PARTY_MEMBER). A grant naming a participant the table does not hold, or has removed, is refused. Control is a SET — granting does not take control away from anyone who already has it, and an actor may be controlled by several participants at once. DM/agent only. Note the DM never needs this to act: DM authority is independent of control, so a DM already moves and uses any actor while a player controls it.",
 		descriptor:  (&vttv1.GrantActorControl{}).ProtoReflect().Descriptor(),
 		// All THREE fields are genuinely required — there is no meaning to
 		// granting control of nothing, or to nobody, and a grant that does
@@ -334,7 +334,7 @@ var manifest = []toolSpec{
 		overrides: map[protoreflect.FullName]fieldOverride{
 			"vtt.v1.GrantActorControl": {
 				fieldDocs: map[string]string{
-					"kind": "REQUIRED. What this actor IS **right now**, which decides whether the whole party is told it exists. ACTOR_KIND_PARTY_MEMBER when you are assigning a character to the player who will run it, and when you are handing a player a creature to run for a while, such as one they summoned, one they possessed or one charmed into their service: while a player runs it, it is a party member, with a character log of its own that they may watch. ACTOR_KIND_NON_PARTY for a monster or NPC you run yourself, including one you take over to run. This is NOT about who is holding it: a character whose player is away is still a party member, and a goblin you are running yourself is still a goblin. It describes standing RIGHT NOW and it can change: when a player's run of a creature ends, grant it to them again with ACTOR_KIND_NON_PARTY and then revoke_actor_control them, or remove_actor it. Revoking alone leaves it a party member.",
+					"kind": "REQUIRED. What this actor IS **right now**, which decides whether the whole party is told it exists. ACTOR_KIND_PARTY_MEMBER when you are assigning a character to the player who will run it, and when you are handing a player a creature to run for a while, such as one they summoned, one they possessed or one charmed into their service: while a player runs it, it is a party member, with a character log of its own that they may watch. ACTOR_KIND_NON_PARTY for a monster or NPC you run yourself, including one you take over to run. This is NOT about who is holding it: a character whose player is away is still a party member, and a goblin you are running yourself is still a goblin. It describes standing RIGHT NOW and it can change: when a player's run of a creature ends, revoke_actor_control them first and then grant it to yourself with ACTOR_KIND_NON_PARTY, or remove_actor it — a player may hold only a party member, so a non-party grant of an actor a player controls is refused. Revoking alone leaves it a party member.",
 				},
 			},
 		},
@@ -342,13 +342,13 @@ var manifest = []toolSpec{
 	{
 		message:     "vtt.v1.RevokeActorControl",
 		name:        "revoke_actor_control",
-		description: "Take a participant out of an actor's control set. Used to REASSIGN a character — when a player leaves the table for good, or a character changes hands — and to take a creature back when a player's run of it ends, after granting it ACTOR_KIND_NON_PARTY: revoking alone leaves it a party member. Never used to let the DM act, which needs no revocation. DM/agent may revoke anyone; a player may revoke only themselves.",
+		description: "Take a participant out of an actor's control set. Used to REASSIGN a character — when a player leaves the table for good, or a character changes hands — and to take a creature back when a player's run of it ends: revoke them first, then grant it to yourself with ACTOR_KIND_NON_PARTY, since revoking alone leaves it a party member. A player whose last actor is revoked is a spectator. Never used to let the DM act, which needs no revocation. DM/agent may revoke anyone; a player may revoke only themselves.",
 		descriptor:  (&vttv1.RevokeActorControl{}).ProtoReflect().Descriptor(),
 	},
 	{
 		message:     "vtt.v1.PromoteParticipant",
 		name:        "promote_participant",
-		description: "Change what a participant is ALLOWED to do. Someone who joined through the shared link arrives as a spectator and can only watch; promote them to \"player\" so they can be given a character and act. role accepts ONLY \"player\" or \"spectator\" — promotion can never reach dm or agent, because the join link would otherwise be a route to full authority in two steps. Minting a DM is a deliberate out-of-band act (`vtt invite`). This changes IDENTITY, not the campaign, so it writes no event.",
+		description: "Make a player a spectator: it revokes their control of every actor they control, one actor-control revocation per actor, as remove_participant does, and writes nothing for a participant who controls none. role accepts ONLY \"spectator\". A participant becomes a player when granted an actor (grant_actor_control), never by a promotion; someone who joined through the shared link arrives as a spectator and can only watch until then. A dm or an agent cannot be made a spectator. DM/agent only.",
 		descriptor:  (&vttv1.PromoteParticipant{}).ProtoReflect().Descriptor(),
 	},
 	{
@@ -426,7 +426,7 @@ var manifest = []toolSpec{
 	{
 		message:     "vtt.v1.SetViewpoint",
 		name:        "set_viewpoint",
-		description: "Choose the character log this connection is sent: a spectator, and a player who controls no party member, may watch any PARTY MEMBER, or nobody with an empty actor_id; a player who controls a party member may watch only the party members they control. The DM and the agent are refused, since they are sent the world. A monster or NPC is refused whoever controls it, with one message whether the actor exists or not. The switch is announced by a ViewpointChanged frame and followed by that log from its first entry. This is a view preference, not campaign history: it writes no event and is not visible to anyone else at the table.",
+		description: "Choose the character log this connection is sent: a spectator may watch any PARTY MEMBER, or nobody with an empty actor_id; a player may watch only the party members they control. The DM and the agent are refused, since they are sent the world. A monster or NPC is refused whoever controls it, with one message whether the actor exists or not. The switch is announced by a ViewpointChanged frame and followed by that log from its first entry. This is a view preference, not campaign history: it writes no event and is not visible to anyone else at the table.",
 		descriptor:  (&vttv1.SetViewpoint{}).ProtoReflect().Descriptor(),
 		// requiredOverride check (the fabrication-trap lesson — see
 		// add_actor/add_narration above): SetViewpoint has exactly one

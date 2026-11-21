@@ -247,7 +247,7 @@ func TestAddActorFieldDocsNameOptionalFieldsAgainstFabrication(t *testing.T) {
 	}
 }
 
-// VTT-389
+// VTT-931
 func TestGrantActorControlSaysACreatureAPlayerRunsIsAPartyMember(t *testing.T) {
 	tool := findTool(t, "grant_actor_control")
 	props := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
@@ -264,7 +264,8 @@ func TestGrantActorControlSaysACreatureAPlayerRunsIsAPartyMember(t *testing.T) {
 		"possessed",
 		"charmed into their service",
 		"when a player's run of a creature ends",
-		"ACTOR_KIND_NON_PARTY and then revoke_actor_control them, or remove_actor it",
+		"revoke_actor_control them first and then grant it to yourself with ACTOR_KIND_NON_PARTY, or remove_actor it",
+		"a non-party grant of an actor a player controls is refused",
 		"Revoking alone leaves it a party member",
 	} {
 		if !strings.Contains(desc, want) {
@@ -277,15 +278,50 @@ func TestGrantActorControlSaysACreatureAPlayerRunsIsAPartyMember(t *testing.T) {
 	}
 }
 
+// VTT-909
 func TestRevokeActorControlSaysItEndsAPlayersRunOfACreature(t *testing.T) {
 	desc, _ := findTool(t, "revoke_actor_control")["description"].(string)
 	for _, want := range []string{
-		"to take a creature back when a player's run of it ends, after granting it ACTOR_KIND_NON_PARTY",
+		"to take a creature back when a player's run of it ends: revoke them first, then grant it to yourself with ACTOR_KIND_NON_PARTY",
 		"revoking alone leaves it a party member",
+		"A player whose last actor is revoked is a spectator.",
 		"Never used to let the DM act",
 	} {
 		if !strings.Contains(desc, want) {
 			t.Fatalf("revoke_actor_control description = %q, want it to contain %q", desc, want)
+		}
+	}
+}
+
+// VTT-908
+func TestGrantActorControlSaysAGrantMakesAPlayerOfAPartyMemberOnly(t *testing.T) {
+	desc, _ := findTool(t, "grant_actor_control")["description"].(string)
+	for _, want := range []string{
+		"A grant makes a spectator a player",
+		"Such a participant may be granted only a party member",
+		"A grant naming a participant the table does not hold, or has removed, is refused.",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("grant_actor_control description = %q, want it to contain %q", desc, want)
+		}
+	}
+}
+
+// VTT-910
+func TestPromoteParticipantSaysItMakesAPlayerASpectator(t *testing.T) {
+	desc, _ := findTool(t, "promote_participant")["description"].(string)
+	for _, want := range []string{
+		"Make a player a spectator: it revokes their control of every actor they control, one actor-control revocation per actor",
+		"role accepts ONLY \"spectator\"",
+		"A participant becomes a player when granted an actor",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Fatalf("promote_participant description = %q, want it to contain %q", desc, want)
+		}
+	}
+	for _, gone := range []string{"writes no event", "promote them to \"player\""} {
+		if strings.Contains(desc, gone) {
+			t.Fatalf("promote_participant description = %q, still says %q", desc, gone)
 		}
 	}
 }
@@ -755,7 +791,7 @@ func TestPlaceTokenOffersTheFourTextsAsOptional(t *testing.T) {
 	}
 	props := schema["properties"].(map[string]any)
 	for field, wants := range map[string][]string{
-		"name":    {"Optional", "every player and spectator"},
+		"name":    {"Optional", "every participant whose watched character"},
 		"notes":   {"Optional", "what they are told of it"},
 		"gmName":  {"Optional", "no player or spectator is ever sent it"},
 		"gmNotes": {"Optional", "no player or spectator is ever sent it"},

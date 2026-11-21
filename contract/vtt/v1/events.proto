@@ -64,7 +64,7 @@ message Resource {
 // A third case is foreseeable — a neutral, say — and a bool would have to be
 // RENAMED to admit it, which ADR-007 forbids. A creature a player runs for a
 // while, summoned or possessed, is not that case: it is a party member while
-// they run it (VTT-389). Growing this enum is additive; every future value is
+// they run it (VTT-913). Growing this enum is additive; every future value is
 // "not a party member" to the rule below until something deliberately says
 // otherwise, so growth fails closed.
 //
