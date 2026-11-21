@@ -256,8 +256,8 @@ func qaWAIsTaken(actor, ability string) func(*vttv1.Envelope) bool {
 }
 
 // qaWATable is a live gateway with a DM, two players, a player who controls
-// no party member and a spectator. Party members: a1 and a2 are P's (a2 shared
-// with Q), a3 is Q's alone, a4 is nobody's; c1 is a creature P controls.
+// nothing and a spectator. Party members: a1 and a2 are P's (a2 shared with
+// Q), a3 is Q's alone, a4 is nobody's; c1 is a creature the DM controls.
 type qaWATable struct {
 	base                   string
 	ids                    *identity.DB
@@ -285,7 +285,7 @@ func qaWANewTable(t *testing.T) *qaWATable {
 		_ = camp.Close()
 	})
 	tb := &qaWATable{base: srv.URL, ids: ids}
-	dmTok, _, err := ids.CreateInvite("Dee", identity.RoleDM)
+	dmTok, dmID, err := ids.CreateInvite("Dee", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,8 +313,7 @@ func qaWANewTable(t *testing.T) *qaWATable {
 	tb.dm.must(qaWAGrant("a2", tb.pID, pm))
 	tb.dm.must(qaWAGrant("a2", tb.qID, pm))
 	tb.dm.must(qaWAGrant("a3", tb.qID, pm))
-	tb.dm.must(qaWAGrant("c1", tb.pID, np))
-	tb.dm.must(qaWAGrant("c1", tb.rID, np))
+	tb.dm.must(qaWAGrant("c1", dmID, np))
 	return tb
 }
 
@@ -336,8 +335,8 @@ func qaWAOpen(t *testing.T, tb *qaWATable, name, tok, log string) (*qaWAConn, *v
 }
 
 // VTT-731: each party member the participant controls carries its sheet's ids
-// in the sheet's order; a creature they control is not in the set; a
-// spectator's and a player's set carry none while they control no party member.
+// in the sheet's order; a creature is in no set; a spectator's and a player's
+// set carry none while they control no party member.
 func TestQAWatchableAbilitiesEachRoleOpensWithTheIdsItIsOwed(t *testing.T) {
 	tb := qaWANewTable(t)
 
@@ -355,7 +354,7 @@ func TestQAWatchableAbilitiesEachRoleOpensWithTheIdsItIsOwed(t *testing.T) {
 		qaWAActor("a1", "Alda"), qaWAActor("a2", "Bram"),
 		qaWAActor("a3", "Cora"), qaWAActor("a4", "Dun"))
 	_, rSet := qaWAOpen(t, tb, "r", tb.rTok, "")
-	qaWAExpectSet(t, "player R who controls only a creature", rSet, everyoneBare)
+	qaWAExpectSet(t, "player R who controls nothing", rSet, everyoneBare)
 	_, sSet := qaWAOpen(t, tb, "s", tb.sTok, "")
 	qaWAExpectSet(t, "spectator S who controls none", sSet, everyoneBare)
 

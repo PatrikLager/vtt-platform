@@ -303,21 +303,14 @@ func TestQACmdAddActorAtTheBoundIsRecordedWhole(t *testing.T) {
 	}
 }
 
-func qaCmdControlEvent(grant bool, actorID, participantID string) *vttv1.Envelope {
-	if grant {
-		return &vttv1.Envelope{Payload: &vttv1.Envelope_ActorControlGranted{
-			ActorControlGranted: &vttv1.ActorControlGranted{
-				ActorId: actorID, ParticipantId: participantID, Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
-			},
-		}}
-	}
+func qaCmdRevokeEvent(actorID, participantID string) *vttv1.Envelope {
 	return &vttv1.Envelope{Payload: &vttv1.Envelope_ActorControlRevoked{
 		ActorControlRevoked: &vttv1.ActorControlRevoked{ActorId: actorID, ParticipantId: participantID},
 	}}
 }
 
-// VTT-161 VTT-162 VTT-289
-func TestQACmdControlOverTheBoundIsRefusedOnTheWireWithTheFoldsText(t *testing.T) {
+// VTT-161 VTT-162 VTT-289 VTT-894 VTT-895
+func TestQACmdControlOverTheBoundIsRefusedOnTheWireAndAppendsNothing(t *testing.T) {
 	cases := []struct {
 		label, participant string
 		grant              bool
@@ -332,15 +325,16 @@ func TestQACmdControlOverTheBoundIsRefusedOnTheWireWithTheFoldsText(t *testing.T
 	observer := qaCmdDial(t, tb, tb.obsToken)
 	qaCmdOK(t, issuer, qaCmdActorCmd("actor", qaCmdPlainActor("qa-actor")), 1)
 	for n, c := range cases {
-		want := qaCmdFoldText(t, tb.camp.State(), qaCmdControlEvent(c.grant, "qa-actor", c.participant))
-		cmd := qaCmdRevokeCmd(fmt.Sprintf("bad-%d", n), "qa-actor", c.participant)
-		if c.grant {
-			cmd = qaCmdGrantCmd(fmt.Sprintf("bad-%d", n), "qa-actor", c.participant, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
+		want := "There is no such participant."
+		cmd := qaCmdGrantCmd(fmt.Sprintf("bad-%d", n), "qa-actor", c.participant, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
+		if !c.grant {
+			want = qaCmdFoldText(t, tb.camp.State(), qaCmdRevokeEvent("qa-actor", c.participant))
+			cmd = qaCmdRevokeCmd(fmt.Sprintf("bad-%d", n), "qa-actor", c.participant)
 		}
 		res := issuer.send(cmd)
 		t.Logf("%s: %s", c.label, res.GetError())
 		if res.GetOk() || res.GetError() != want {
-			t.Fatalf("%s: ok=%v err=%q, want the fold's %q", c.label, res.GetOk(), res.GetError(), want)
+			t.Fatalf("%s: ok=%v err=%q, want %q", c.label, res.GetOk(), res.GetError(), want)
 		}
 		qaCmdStillOpenNothingAppended(t, tb, issuer, observer, n, int64(n+1))
 	}
@@ -353,16 +347,7 @@ func TestQACmdControlAtTheBoundIsRecordedWhole(t *testing.T) {
 	observer := qaCmdDial(t, tb, tb.obsToken)
 	qaCmdOK(t, dm, qaCmdActorCmd("actor", qaCmdPlainActor("qa-actor")), 1)
 	for n, p := range []string{"S" + strings.Repeat("a", 126) + "E", strings.Repeat("é", 64), strings.Repeat("😀", 32)} {
-		seq := int64(2*n + 2)
-		res := qaCmdOK(t, dm, qaCmdGrantCmd(fmt.Sprintf("grant-%d", n), "qa-actor", p,
-			vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER), seq)
-		if got := observer.event(res.GetSequence()).GetActorControlGranted().GetParticipantId(); got != p {
-			t.Fatalf("recorded grant's participant id is %d bytes, sent %d", len(got), len(p))
-		}
-		if !slices.Contains(tb.camp.State().Actors["qa-actor"].GetControllerIds(), p) {
-			t.Fatalf("the campaign's actor is not controlled by the %d-byte participant", len(p))
-		}
-		res = qaCmdOK(t, dm, qaCmdRevokeCmd(fmt.Sprintf("revoke-%d", n), "qa-actor", p), seq+1)
+		res := qaCmdOK(t, dm, qaCmdRevokeCmd(fmt.Sprintf("revoke-%d", n), "qa-actor", p), int64(n+2))
 		if got := observer.event(res.GetSequence()).GetActorControlRevoked().GetParticipantId(); got != p {
 			t.Fatalf("recorded revoke's participant id is %d bytes, sent %d", len(got), len(p))
 		}

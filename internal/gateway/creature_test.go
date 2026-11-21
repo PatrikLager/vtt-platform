@@ -14,10 +14,11 @@ func grantKind(actorID, participantID string, kind vttv1.ActorKind) *vttv1.Clien
 		GrantActorControl: &vttv1.GrantActorControl{ActorId: actorID, ParticipantId: participantID, Kind: kind}}}
 }
 
-// VTT-316 VTT-663 VTT-318 VTT-321 VTT-326 VTT-340 VTT-342 VTT-450 VTT-350 VTT-391
+// VTT-316 VTT-663 VTT-318 VTT-321 VTT-326 VTT-340 VTT-342 VTT-450 VTT-350
 func TestACreatureGrantedToAPlayerAsAPartyMemberIsRunAsOne(t *testing.T) {
 	f := newGWFixture(t)
 	ivo := participantID(t, f, f.otherPlayerToken)
+	dmID := participantID(t, f, f.dmToken)
 	appendTwoRooms(t, f)
 	appendEvents(t, f.campaign, partyMemberOf("ana", ivo)...)
 	appendEvents(t, f.campaign, tokenAt("tok-ana", "ana", 1, 1))
@@ -64,19 +65,24 @@ func TestACreatureGrantedToAPlayerAsAPartyMemberIsRunAsOne(t *testing.T) {
 	moved := logOf(t, f, "wolf")
 	requireLog(t, "A2: the move's entries", w.entries(len(moved)-len(opened)), moved[len(opened):])
 
-	if r := dm.command(grantKind("wolf", ivo, vttv1.ActorKind_ACTOR_KIND_NON_PARTY)); !r.GetOk() {
-		t.Fatalf("A3: the non-party grant is refused: %s", r.GetError())
+	if r := dm.command(&vttv1.ClientCommand{Command: &vttv1.ClientCommand_RevokeActorControl{
+		RevokeActorControl: &vttv1.RevokeActorControl{ActorId: "wolf", ParticipantId: ivo}}}); !r.GetOk() {
+		t.Fatalf("A3: the revocation is refused: %s", r.GetError())
 	}
 	if vp, before := w.untilViewpoint(); vp != "ana" || len(before) != 0 {
 		t.Fatalf("A3: after the run ends the connection watches %q after %d entries, want ana after none", vp, len(before))
+	}
+	revoked := logOf(t, f, "wolf")
+	if r := dm.command(grantKind("wolf", dmID, vttv1.ActorKind_ACTOR_KIND_NON_PARTY)); !r.GetOk() {
+		t.Fatalf("A3: the non-party grant to the DM is refused: %s", r.GetError())
 	}
 	ana = logOf(t, f, "ana")
 	requireLog(t, "A3: ana's log from its first entry", w.entries(len(ana)), ana)
 	if r := w.command(setViewpoint("wolf")); r.GetOk() {
 		t.Fatalf("A3: set_viewpoint on the wolf, no longer a party member, is accepted")
 	}
-	if paused := logOf(t, f, "wolf"); len(paused) != len(moved) {
-		t.Fatalf("A3: the non-party grant wrote %d entries to the wolf's log", len(paused)-len(moved))
+	if paused := logOf(t, f, "wolf"); len(paused) != len(revoked) {
+		t.Fatalf("A3: the non-party grant wrote %d entries to the wolf's log", len(paused)-len(revoked))
 	}
 
 	if r := dm.command(grantKind("wolf", ivo, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)); !r.GetOk() {

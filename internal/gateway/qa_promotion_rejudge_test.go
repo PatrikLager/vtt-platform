@@ -267,10 +267,7 @@ func (e *qaRejudgeEnv) logHead(t *testing.T) int64 {
 	return head
 }
 
-const (
-	qaRejudgeParty    = vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER
-	qaRejudgeNonParty = vttv1.ActorKind_ACTOR_KIND_NON_PARTY
-)
+const qaRejudgeParty = vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER
 
 type qaRejudgeTable struct {
 	env *qaRejudgeEnv
@@ -434,22 +431,6 @@ func TestQARejudgeSpectatorPromotedToPlayerKeepsAPerchItMayStillWatch(t *testing
 	if got.GetSequence() != want.GetSequence() {
 		t.Fatalf("event sequence %d, want %d", got.GetSequence(), want.GetSequence())
 	}
-}
-
-// VTT-340
-func TestQARejudgeControllingOnlyANonPartyActorWatchesNobody(t *testing.T) {
-	tb := qaRejudgeNewTable(t)
-	e := tb.env
-	sTok, sid := e.invite(t, "s1", identity.RoleSpectator)
-	e.addActor(t, tb.dm, "n1", qaRejudgeNonParty)
-	e.grant(t, tb.dm, "n1", sid, qaRejudgeNonParty)
-
-	s, o := e.open(t, sTok, "")
-	if o.viewpoint != "" {
-		t.Fatalf("spectator opened on %q, want nobody", o.viewpoint)
-	}
-	e.promote(t, tb.dm, sid, identity.RolePlayer)
-	s.mustQuiet(t)
 }
 
 func TestQARejudgePromotingAnotherParticipantLeavesTheSeatAlone(t *testing.T) {

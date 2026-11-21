@@ -3,9 +3,9 @@
     "act-herald": {
       "actor_id": "act-herald",
       "name": "Herald",
-      "controller_id": "p-eli",
+      "controller_id": "p-dm",
       "controller_ids": [
-        "p-eli"
+        "p-dm"
       ],
       "kind": 2
     },

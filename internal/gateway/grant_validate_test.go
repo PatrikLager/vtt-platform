@@ -24,7 +24,7 @@ import (
 // So the answer is a refusal, and it has to be here rather than in the fold:
 // the fold must keep accepting every kindless grant already recorded
 // (internal/engine's TestAKindlessGrantDoesNotEraseAKindAlreadyDeclared).
-// VTT-151
+// VTT-925
 func TestAGrantWithNoKindIsRefused(t *testing.T) {
 	cmd := &vttv1.GrantActorControl{ActorId: "act-archer", ParticipantId: "p-2"}
 	if k := cmd.GetKind(); k != vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED {
@@ -48,7 +48,7 @@ func TestAGrantWithNoKindIsRefused(t *testing.T) {
 // while making the DM console and the agent's grant tool both dead, which is
 // the exact failure grant_actor_control already shipped once
 // (TestEveryClientCommandConverts' own doc comment).
-// VTT-151
+// VTT-925
 func TestAGrantThatSaysWhatItIsGrantingIsAccepted(t *testing.T) {
 	for _, kind := range []vttv1.ActorKind{
 		vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
@@ -68,7 +68,7 @@ func TestAGrantThatSaysWhatItIsGrantingIsAccepted(t *testing.T) {
 // honest as the enum grows: a check written as `kind == PARTY_MEMBER || kind ==
 // NON_PARTY` would refuse a value the contract adds. It iterates the
 // descriptor, so a new value joins the gate by existing (ActorKind's doc comment).
-// VTT-151
+// VTT-925
 func TestEveryActorKindTheContractOffersIsAcceptedByAGrant(t *testing.T) {
 	values := vttv1.ActorKind(0).Descriptor().Values()
 	// A loop over a descriptor can run zero times and still report ok, which

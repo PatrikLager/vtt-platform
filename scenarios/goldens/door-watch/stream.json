@@ -152,7 +152,7 @@
     "participantId": "p-dm",
     "actorControlGranted": {
       "actorId": "act-hidden",
-      "participantId": "p-hidden",
+      "participantId": "p-dm",
       "kind": "ACTOR_KIND_NON_PARTY"
     }
   },

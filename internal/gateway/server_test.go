@@ -609,7 +609,7 @@ func (f *gwFixture) dmSeedOtherToken() int64 {
 	sendCommand(f.t, dmConn, &vttv1.ClientCommand{
 		RequestId: "seed-a2-grant",
 		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
-			ActorId: "a2", ParticipantId: "someone-else",
+			ActorId: "a2", ParticipantId: f.playerIDFor(f.t, f.dmToken),
 			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
 		}},
 	})
@@ -1181,7 +1181,7 @@ func TestATokenWhoseIDExceedsTheBoundAppendsNothing(t *testing.T) {
 	}
 }
 
-// VTT-289 VTT-161 VTT-162
+// VTT-289 VTT-161 VTT-162 VTT-894 VTT-895
 func TestAControlCommandWhoseParticipantIDExceedsTheBoundAppendsNothing(t *testing.T) {
 	f := newGWFixture(t)
 	dmConn := f.dial(f.dmToken, gwSeedHead)
@@ -1195,25 +1195,27 @@ func TestAControlCommandWhoseParticipantIDExceedsTheBoundAppendsNothing(t *testi
 		return &vttv1.ClientCommand{RequestId: req, Command: &vttv1.ClientCommand_RevokeActorControl{
 			RevokeActorControl: &vttv1.RevokeActorControl{ActorId: "a1", ParticipantId: participant}}}
 	}
-	want := "engine: participant id must be at most 128 bytes, got 129"
+	noSuch := "There is no such participant."
 	atCap := strings.Repeat("p", 128)
-	for i, c := range []struct {
-		refused, accepted *vttv1.ClientCommand
+	for _, c := range []struct {
+		refused *vttv1.ClientCommand
+		want    string
 	}{
-		{grant("grant-long", strings.Repeat("p", 129)), grant("grant-cap", atCap)},
-		{revoke("revoke-long", strings.Repeat("p", 129)), revoke("revoke-cap", atCap)},
+		{grant("grant-long", strings.Repeat("p", 129)), noSuch},
+		{grant("grant-cap", atCap), noSuch},
+		{revoke("revoke-long", strings.Repeat("p", 129)), "engine: participant id must be at most 128 bytes, got 129"},
 	} {
 		sendCommand(t, dmConn, c.refused)
-		if r := readResult(t, dmConn); r.Ok || r.Error != want {
-			t.Fatalf("%s: ok=%v error=%q, want the fold's refusal %q", c.refused.RequestId, r.Ok, r.Error, want)
+		if r := readResult(t, dmConn); r.Ok || r.Error != c.want {
+			t.Fatalf("%s: ok=%v error=%q, want the refusal %q", c.refused.RequestId, r.Ok, r.Error, c.want)
 		}
-		if got := f.head(t); got != head+int64(i) {
-			t.Fatalf("a refused %s moved the log head from %d to %d", c.refused.RequestId, head+int64(i), got)
+		if got := f.head(t); got != head {
+			t.Fatalf("a refused %s moved the log head from %d to %d", c.refused.RequestId, head, got)
 		}
-		sendCommand(t, dmConn, c.accepted)
-		if r := readResult(t, dmConn); !r.Ok || r.Sequence != head+int64(i)+1 {
-			t.Fatalf("%s: ok=%v sequence=%d error=%q, want ok at %d", c.accepted.RequestId, r.Ok, r.Sequence, r.Error, head+int64(i)+1)
-		}
+	}
+	sendCommand(t, dmConn, revoke("revoke-cap", atCap))
+	if r := readResult(t, dmConn); !r.Ok || r.Sequence != head+1 {
+		t.Fatalf("revoke-cap: ok=%v sequence=%d error=%q, want ok at %d", r.Ok, r.Sequence, r.Error, head+1)
 	}
 }
 
@@ -1616,10 +1618,11 @@ func TestDMGrantsControlOverTheWire(t *testing.T) {
 	// 2026-08-23): a1 is a shared character, so this is a party member. A
 	// grant that stated nothing would be refused before conversion —
 	// scenarios/denials.json pins that half of the flow end to end.
+	ivo := participantID(t, f, f.otherPlayerToken)
 	sendCommand(t, dm, &vttv1.ClientCommand{
 		RequestId: "grant-1",
 		Command: &vttv1.ClientCommand_GrantActorControl{GrantActorControl: &vttv1.GrantActorControl{
-			ActorId: "a1", ParticipantId: "p-second",
+			ActorId: "a1", ParticipantId: ivo,
 			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
 		}},
 	})
@@ -1640,8 +1643,8 @@ func TestDMGrantsControlOverTheWire(t *testing.T) {
 		t.Fatalf("kind = %v, want the grant's declaration to have landed in state", got)
 	}
 	ids := actor.GetControllerIds()
-	if len(ids) != 2 || ids[1] != "p-second" {
-		t.Fatalf("controller_ids = %v, want the original controller plus p-second", ids)
+	if len(ids) != 2 || ids[1] != ivo {
+		t.Fatalf("controller_ids = %v, want the original controller plus Ivo, %s", ids, ivo)
 	}
 	// The mirror still points at the FIRST controller: granting a second one
 	// must not silently move the character away from the first.
@@ -1654,7 +1657,7 @@ func TestDMGrantsControlOverTheWire(t *testing.T) {
 	sendCommand(t, dm, &vttv1.ClientCommand{
 		RequestId: "revoke-1",
 		Command: &vttv1.ClientCommand_RevokeActorControl{RevokeActorControl: &vttv1.RevokeActorControl{
-			ActorId: "a1", ParticipantId: "p-second",
+			ActorId: "a1", ParticipantId: ivo,
 		}},
 	})
 	if res := readResult(t, dm); !res.GetOk() {

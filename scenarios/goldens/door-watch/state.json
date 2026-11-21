@@ -18,9 +18,9 @@
           "max": 2
         }
       },
-      "controller_id": "p-hidden",
+      "controller_id": "p-dm",
       "controller_ids": [
-        "p-hidden"
+        "p-dm"
       ],
       "kind": 2,
       "ability_ids": [

@@ -745,6 +745,10 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	if err := validateForm(cmd, s.ruleset); err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
+	// Keep this after authorize and validateForm: a player learns no id (VTT-928).
+	if refusal := s.granteeRefusal(requestID, cmd, st); refusal != nil {
+		return refusal
+	}
 
 	// Dispatch these before ToEvent: each appends its events as one batch, or
 	// nothing (SPEC-012, SPEC-013).

@@ -6,8 +6,7 @@
     {"name": "ana", "role": "player"},
     {"name": "bo", "role": "player"},
     {"name": "cy", "role": "player"},
-    {"name": "dee", "role": "player"},
-    {"name": "eli", "role": "player"}
+    {"name": "dee", "role": "player"}
   ],
   "steps": [
     {"by": "dm", "command": {"startSession": {"name": "Shared Control"}}, "expect": {"ok": true}},
@@ -24,6 +23,6 @@
     {"by": "dm", "command": {"grantActorControl": {"actorId": "act-warden", "participantId": "{{id:cy}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"revokeActorControl": {"actorId": "act-scout", "participantId": "{{id:dee}}"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-herald", "name": "Herald", "kind": "ACTOR_KIND_NON_PARTY"}}}, "expect": {"ok": true}},
-    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-herald", "participantId": "{{id:eli}}", "kind": "ACTOR_KIND_NON_PARTY"}}, "expect": {"ok": true}}
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-herald", "participantId": "{{id:dm}}", "kind": "ACTOR_KIND_NON_PARTY"}}, "expect": {"ok": true}}
   ]
 }

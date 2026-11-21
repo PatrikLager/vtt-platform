@@ -439,7 +439,7 @@
     "participantId": "p-dm",
     "actorControlGranted": {
       "actorId": "act-herald",
-      "participantId": "p-eli",
+      "participantId": "p-dm",
       "kind": "ACTOR_KIND_NON_PARTY"
     }
   }

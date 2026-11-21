@@ -207,6 +207,7 @@ type qaCreatureTable struct {
 	base   string
 	dm     *qaCreatureConn
 	dmTok  string
+	dmID   string
 	scene  string
 	sessID string
 }
@@ -241,11 +242,11 @@ func qaCreatureOpen(t *testing.T) *qaCreatureTable {
 		_ = c.Close()
 		_ = ids.Close()
 	})
-	dmTok, _, err := ids.CreateInvite("QA DM", identity.RoleDM)
+	dmTok, dmID, err := ids.CreateInvite("QA DM", identity.RoleDM)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tb := &qaCreatureTable{t: t, c: c, ids: ids, base: hs.URL, dmTok: dmTok}
+	tb := &qaCreatureTable{t: t, c: c, ids: ids, base: hs.URL, dmTok: dmTok, dmID: dmID}
 	tb.dm = qaCreatureDial(t, hs.URL, dmTok, nil)
 	return tb
 }
@@ -534,17 +535,17 @@ func qaCreatureLine(e campaign.CharacterEntry) string {
 func TestQACreatureGrantOpensTheCreaturesOwnLog(t *testing.T) {
 	tb, _, pID := qaCreatureSetup(t)
 	tb.dm.mustOK(qaCreatureMove(qaCreatureTokGob, 5, 0))
-	tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, pID, vttv1.ActorKind_ACTOR_KIND_NON_PARTY))
-	tb.narrate("a monster the player holds")
+	tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, tb.dmID, vttv1.ActorKind_ACTOR_KIND_NON_PARTY))
+	tb.narrate("a monster the DM holds")
 
 	// VTT-316
 	if l := tb.log(qaCreatureGoblin); len(l) != 0 {
 		t.Errorf("VTT-316: a goblin that was never a party member has %d log entries", len(l))
 	}
 
-	// VTT-151
+	// VTT-925
 	if r := tb.dm.send(qaCreatureGrant(qaCreatureGoblin, pID, vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED)); r.GetOk() {
-		t.Errorf("VTT-151: a grant_actor_control with no kind was accepted")
+		t.Errorf("VTT-925: a grant_actor_control with no kind was accepted")
 	}
 
 	g := tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, pID, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)).GetSequence()
@@ -644,11 +645,11 @@ func TestQACreatureSetViewpointNeedsAPartyMemberTheyControl(t *testing.T) {
 	pl.expectSwitch(0, qaCreatureHero, tb.log(qaCreatureHero), "VTT-340 open")
 
 	// VTT-450
-	tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, pID, vttv1.ActorKind_ACTOR_KIND_NON_PARTY))
+	tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, tb.dmID, vttv1.ActorKind_ACTOR_KIND_NON_PARTY))
 	m := pl.mark()
 	nonParty := pl.send(qaCreatureView(qaCreatureGoblin))
 	if nonParty.GetOk() {
-		t.Errorf("VTT-450: set_viewpoint on a non-party goblin the player controls was accepted")
+		t.Errorf("VTT-450: set_viewpoint on a non-party goblin the DM controls was accepted")
 	}
 	absent := pl.send(qaCreatureView("actor-absent"))
 	// VTT-347
@@ -657,10 +658,11 @@ func TestQACreatureSetViewpointNeedsAPartyMemberTheyControl(t *testing.T) {
 	}
 
 	// VTT-391
-	tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, pID, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER))
+	tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, tb.dmID, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER))
 	if k := tb.c.Actors()[qaCreatureGoblin].GetKind(); k != vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER {
 		t.Errorf("VTT-391: a re-grant as party member left the goblin %v", k)
 	}
+	tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, pID, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER))
 	tb.narrate("sync after the party grant")
 	// VTT-340 VTT-193
 	pl.expectStay(m, tb.log(qaCreatureHero), "VTT-340 stay")
@@ -755,19 +757,23 @@ func qaCreatureRunning(t *testing.T) (tb *qaCreatureTable, pl *qaCreatureConn, p
 	return tb, pl, pTok, pID
 }
 
-// VTT-391 VTT-316 VTT-326 VTT-340 VTT-342 VTT-450 VTT-350
-func TestQACreatureANonPartyGrantEndsTheRun(t *testing.T) {
+// VTT-316 VTT-326 VTT-340 VTT-342 VTT-450
+func TestQACreatureATakeBackEndsTheRunAndPausesTheLog(t *testing.T) {
 	tb, pl, _, pID := qaCreatureRunning(t)
-	before := tb.log(qaCreatureGoblin)
 
 	m := pl.mark()
-	tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, pID, vttv1.ActorKind_ACTOR_KIND_NON_PARTY))
-	tb.narrate("the run is over")
-	pl.expectSwitch(m, qaCreatureHero, tb.log(qaCreatureHero), "VTT-340, VTT-342 run ends by a grant")
+	tb.dm.mustOK(qaCreatureRevoke(qaCreatureGoblin, pID))
+	tb.narrate("revoked")
+	pl.expectSwitch(m, qaCreatureHero, tb.log(qaCreatureHero), "VTT-340, VTT-342 run ends by the revocation")
+	before := tb.log(qaCreatureGoblin)
 
-	// VTT-391
+	m = pl.mark()
+	tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, tb.dmID, vttv1.ActorKind_ACTOR_KIND_NON_PARTY))
+	tb.narrate("the run is over")
+	pl.expectStay(m, tb.log(qaCreatureHero), "VTT-340 stay after the non-party grant")
+
 	if k := tb.c.Actors()[qaCreatureGoblin].GetKind(); k != vttv1.ActorKind_ACTOR_KIND_NON_PARTY {
-		t.Errorf("VTT-391: a non-party grant to the goblin's own controller left it %v", k)
+		t.Errorf("the DM's non-party grant left the goblin %v", k)
 	}
 	// VTT-316
 	after := tb.log(qaCreatureGoblin)
@@ -780,23 +786,11 @@ func TestQACreatureANonPartyGrantEndsTheRun(t *testing.T) {
 	qaCreaturePrefix(t, before, after, "VTT-326")
 	// VTT-450
 	if r := pl.send(qaCreatureView(qaCreatureGoblin)); r.GetOk() {
-		t.Errorf("VTT-450: set_viewpoint on the goblin after its non-party grant was accepted")
-	}
-	// VTT-350
-	if r := pl.send(qaCreatureMove(qaCreatureTokGob, 5, 0)); r.GetOk() || r.GetError() != unseenSquare {
-		t.Errorf("VTT-350: after the run, a move onto 5,0, which the hero cannot see: ok=%v %q", r.GetOk(), r.GetError())
-	}
-
-	m = pl.mark()
-	tb.dm.mustOK(qaCreatureRevoke(qaCreatureGoblin, pID))
-	tb.narrate("revoked")
-	pl.expectStay(m, tb.log(qaCreatureHero), "VTT-340 stay after the revocation")
-	if l := tb.log(qaCreatureGoblin); len(l) != len(before) {
-		t.Errorf("VTT-316: the goblin's log grew from %d to %d entries after the revocation", len(before), len(l))
+		t.Errorf("VTT-450: set_viewpoint on the goblin after its take-back was accepted")
 	}
 	for _, id := range tb.c.Actors()[qaCreatureGoblin].GetControllerIds() {
 		if id == pID {
-			t.Errorf("the revocation left the player a controller of the goblin")
+			t.Errorf("the take-back left the player a controller of the goblin")
 		}
 	}
 }
@@ -950,7 +944,8 @@ func TestQACreatureASecondPartyGrantResumesTheOldLog(t *testing.T) {
 			tb.narrate("still running")
 
 			m := pl.mark()
-			g2 := tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, pID, vttv1.ActorKind_ACTOR_KIND_NON_PARTY)).GetSequence()
+			tb.dm.mustOK(qaCreatureRevoke(qaCreatureGoblin, pID))
+			g2 := tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, tb.dmID, vttv1.ActorKind_ACTOR_KIND_NON_PARTY)).GetSequence()
 			paused := tb.log(qaCreatureGoblin)
 			held := qaCreatureHeld(paused)
 			if fmt.Sprint(held) != fmt.Sprint([]string{"tok-0-bat", qaCreatureTokRat, qaCreatureTokGob}) {
@@ -962,7 +957,7 @@ func TestQACreatureASecondPartyGrantResumesTheOldLog(t *testing.T) {
 			tc.pause(tb)
 			g3 := tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, pID, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)).GetSequence()
 			n := tb.narrate("resumed")
-			pl.expectSwitch(m, qaCreatureHero, tb.log(qaCreatureHero), "VTT-340, VTT-342 the pause moves the seat")
+			pl.expectSwitch(m, qaCreatureHero, tb.log(qaCreatureHero), "VTT-340, VTT-342 the take-back moves the seat")
 
 			startID := ""
 			if tc.startName != "" {
@@ -1085,8 +1080,8 @@ func TestQACreatureAReconnectNamingTheCreaturesLog(t *testing.T) {
 	}
 
 	// VTT-349
-	tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, pID, vttv1.ActorKind_ACTOR_KIND_NON_PARTY))
 	tb.dm.mustOK(qaCreatureRevoke(qaCreatureGoblin, pID))
+	tb.dm.mustOK(qaCreatureGrant(qaCreatureGoblin, tb.dmID, vttv1.ActorKind_ACTOR_KIND_NON_PARTY))
 	tb.narrate("over")
 	hero := tb.log(qaCreatureHero)
 	late := qaCreatureDial(t, tb.base, pTok, url.Values{"after": {strconv.Itoa(cursor)}, "log": {qaCreatureGoblin}})
@@ -1106,7 +1101,7 @@ func TestQACreatureTheDefaultIsTheFirstPartyMemberById(t *testing.T) {
 
 	// VTT-340
 	m := pl.mark()
-	agTok, _ := tb.invite("QA Agent", identity.RoleAgent)
+	agTok, agID := tb.invite("QA Agent", identity.RoleAgent)
 	ag := qaCreatureDial(t, tb.base, agTok, nil)
 	ag.mustOK(qaCreatureGrant(qaCreatureImp, pID, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER))
 	tb.narrate("the imp joins")
@@ -1128,14 +1123,15 @@ func TestQACreatureTheDefaultIsTheFirstPartyMemberById(t *testing.T) {
 	}
 
 	m = q.mark()
-	ag.mustOK(qaCreatureGrant(qaCreatureGoblin, qID, vttv1.ActorKind_ACTOR_KIND_NON_PARTY))
+	ag.mustOK(qaCreatureRevoke(qaCreatureGoblin, qID))
+	ag.mustOK(qaCreatureGrant(qaCreatureGoblin, agID, vttv1.ActorKind_ACTOR_KIND_NON_PARTY))
 	pm := pl.mark()
 	tb.narrate("the goblin's run is over")
 	pl.expectStay(pm, tb.log(qaCreatureHero), "sync")
 	q.expectSwitch(m, "", nil, "VTT-342 the goblin to nobody")
-	// VTT-370
+	// VTT-142
 	if r := q.send(qaCreatureMove(qaCreatureTokGob, 6, 0)); r.GetOk() {
-		t.Errorf("VTT-370: a player who runs no party member moved the goblin")
+		t.Errorf("VTT-142: a player the goblin was taken back from moved it")
 	}
 
 	// VTT-342

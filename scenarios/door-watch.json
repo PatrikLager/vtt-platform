@@ -12,10 +12,6 @@
       "role": "player"
     },
     {
-      "name": "hidden",
-      "role": "player"
-    },
-    {
       "name": "latecomer",
       "role": "player"
     }
@@ -149,7 +145,7 @@
       "command": {
         "grantActorControl": {
           "actorId": "act-hidden",
-          "participantId": "{{id:hidden}}",
+          "participantId": "{{id:dm}}",
           "kind": "ACTOR_KIND_NON_PARTY"
         }
       },
