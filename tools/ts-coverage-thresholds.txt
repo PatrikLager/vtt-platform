@@ -45,4 +45,5 @@ client/src/view/pack-assets.ts     100.00
 client/src/view/scene-plan.ts      100.00
 client/src/view/player.ts        100.00
 client/src/view/spectator.ts     100.00
+client/src/view/terrain.ts       100.00
 client/src/wire.ts               100.00
