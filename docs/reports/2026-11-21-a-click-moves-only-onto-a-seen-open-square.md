@@ -199,13 +199,20 @@ was corrected before the plan was signed.
 ## The plan's gaps and the owner's answers
 
 - **OD-1, a scene with no `Visible`:** the owner answered A, every square
-  seen, as the board draws it (D3). The plan recommended B. The cost,
-  accepted with the answer: a player's window holds a scene with no
-  `Visible` until its first `sceneSeen`, and for good while the watched
-  token stands off the grid, which only a DM's or an agent's command can
-  place (M8); a click then sends a move the server refuses with VTT-601's
-  text. The `Visible`-free fixtures of the existing player tests stayed as
-  they were.
+  seen, as the board draws it (D3). The plan recommended B, against a cost
+  it gave A (M8): a player's window holding a scene with no `Visible` for
+  good while the watched token stands off the grid, where a click sends a
+  move the server refuses with VTT-601's text. That case does not exist.
+  `sight.VisibleFrom` (`internal/sight/sight.go`) places the eye where the
+  token stands, on the grid or off it, and walks every square of the grid,
+  so at the unlimited range `internal/perceive` asks for
+  (`sightRangeNotSupplied`) a token off the grid sees squares of it; the
+  reading review of 2026-11-21 of SPEC-022's rewrite, probing
+  `internal/perceive`, found such a token's window sent a `SceneSeen`
+  naming them, after this report was first committed. A scene with no
+  `Visible` lasts in a player's window only until its first `sceneSeen` is
+  folded. The `Visible`-free fixtures of the existing player tests stayed
+  as they were.
 - **G1, files the ticket did not name:** changed as the plan listed but
   `client/test/qa-window-offers.test.ts`, which OD-1's answer left as it
   was; `client/e2e/board-margin.spec.ts`, `client/src/view/camera.ts`,
@@ -226,8 +233,8 @@ was corrected before the plan was signed.
   drives an agent's window too.
 - **D7, the window's `Visible` lagging the server's:** no code, no test and
   no debt, by the owner's standing rule. Until the frames of an accepted
-  move's batch arrive, a click on a newly seen square sends nothing, and
-  one on a square no longer seen reaches the server and draws VTT-601's
+  move's batch arrive, a click on a newly seen square sends nothing, and a
+  move onto a square no longer seen reaches the server and draws VTT-601's
   text.
 
 ## The existing tests that changed
@@ -357,8 +364,9 @@ Task 3 added tests only, and Phase 4a did not run (Deviations).
   `cellFromPoint`'s new bounds, `playerClickFor`'s order or `blocksMove`.
   A full run is the owner's to ask for (SPEC-023).
 - **A blocker kind added on one side only** — a new arm in
-  `engine.State.Blocked` with no fixture square — fails no test; the
-  warnings in `Blocked` and above `blocksMove` hold it, by reading (D6).
+  `engine.State.Blocked` with no fixture square — fails neither fixture
+  test; the warnings in `Blocked` and above `blocksMove` hold it, by
+  reading (D6).
 
 ## What was deliberately left out
 
@@ -368,6 +376,7 @@ Task 3 added tests only, and Phase 4a did not run (Deviations).
   server is judged as before.
 - A DM's or an agent's click inside the grid, the door buttons, the
   spectator's board and how the board is drawn.
-- D7's lag, and a token placed off the grid in a player's window (OD-1's
-  accepted cost).
+- D7's lag.
+- A click on a scene in a player's window before its first `sceneSeen` is
+  folded, read as every square seen (OD-1).
 - A click within float rounding of the far edge (Task 1's QA finding 4).
