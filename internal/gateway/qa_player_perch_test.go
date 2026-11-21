@@ -542,8 +542,8 @@ func qappRemoveActorCmd(actorID string) *vttv1.ClientCommand {
 // VTT-450 VTT-347 VTT-921 VTT-193
 func TestQAPPAPlayerWithAPartyMemberWatchesOnlyTheirOwn(t *testing.T) {
 	tb := qappNewTable(t)
-	pTok, pID := tb.invite("Pia", identity.RolePlayer)
-	_, qID := tb.invite("Quinn", identity.RolePlayer)
+	pTok, pID := tb.invite("Pia", identity.RoleSpectator)
+	_, qID := tb.invite("Quinn", identity.RoleSpectator)
 	tb.addActor("pm-d", "Dora", qappParty, pID)
 	tb.addActor("pm-b", "Bert", qappParty, pID)
 	tb.addActor("pm-a", "Alma", qappParty, qID)
@@ -577,7 +577,7 @@ func TestQAPPAPlayerWithAPartyMemberWatchesOnlyTheirOwn(t *testing.T) {
 // VTT-451 VTT-193
 func TestQAPPAPlayerWithAPartyMemberIsRefusedNobody(t *testing.T) {
 	tb := qappNewTable(t)
-	pTok, pID := tb.invite("Pia", identity.RolePlayer)
+	pTok, pID := tb.invite("Pia", identity.RoleSpectator)
 	tb.addActor("pm-b", "Bert", qappParty, pID)
 	tb.addActor("pm-a", "Alma", qappParty)
 
@@ -591,7 +591,7 @@ func TestQAPPAPlayerWithAPartyMemberIsRefusedNobody(t *testing.T) {
 func TestQAPPAParticipantWhoControlsNothingOpensOnTheLogItNames(t *testing.T) {
 	tb := qappNewTable(t)
 	pTok, _ := tb.invite("Pia", identity.RoleSpectator)
-	qTok, qID := tb.invite("Quinn", identity.RolePlayer)
+	qTok, qID := tb.invite("Quinn", identity.RoleSpectator)
 	tb.addActor("pm-c", "Cato", qappParty)
 	tb.addActor("pm-a", "Alma", qappParty)
 	tb.addActor("pm-b", "Bert", qappParty, qID)
@@ -623,7 +623,7 @@ func TestQAPPAParticipantWhoControlsNothingOpensOnTheLogItNames(t *testing.T) {
 func TestQAPPAParticipantWhoControlsNothingIsToldEveryPartyMember(t *testing.T) {
 	tb := qappNewTable(t)
 	pTok, _ := tb.invite("Pia", identity.RoleSpectator)
-	qTok, qID := tb.invite("Quinn", identity.RolePlayer)
+	qTok, qID := tb.invite("Quinn", identity.RoleSpectator)
 	tb.addActor("pm-c", "Cato", qappParty)
 	tb.addActor("pm-a", "Alma", qappParty, qID)
 	tb.addActor("pm-b", "Bert", qappParty)
@@ -656,8 +656,8 @@ func TestQAPPAParticipantWhoControlsNothingIsToldEveryPartyMember(t *testing.T) 
 // VTT-400 VTT-923 VTT-454
 func TestQAPPTheWatchableSetFollowsThePlayersControl(t *testing.T) {
 	tb := qappNewTable(t)
-	pTok, pID := tb.invite("Pia", identity.RolePlayer)
-	_, qID := tb.invite("Quinn", identity.RolePlayer)
+	pTok, pID := tb.invite("Pia", identity.RoleSpectator)
+	_, qID := tb.invite("Quinn", identity.RoleSpectator)
 	tb.addActor("pm-c", "Cato", qappParty)
 	tb.addActor("pm-a", "Alma", qappParty, qID)
 	tb.addActor("pm-b", "Bert", qappParty, pID)
@@ -701,8 +701,8 @@ func TestQAPPTheWatchableSetFollowsThePlayersControl(t *testing.T) {
 // VTT-923 VTT-339 VTT-921
 func TestQAPPRevokingAPlayersOnlyPartyMemberLeavesThemWatchingIt(t *testing.T) {
 	tb := qappNewTable(t)
-	pTok, pID := tb.invite("Pia", identity.RolePlayer)
-	_, qID := tb.invite("Quinn", identity.RolePlayer)
+	pTok, pID := tb.invite("Pia", identity.RoleSpectator)
+	_, qID := tb.invite("Quinn", identity.RoleSpectator)
 	tb.addActor("pm-a", "Alma", qappParty, qID)
 	tb.addActor("pm-t", "Tobbe", qappParty, pID)
 	dm := tb.dm()
@@ -731,8 +731,8 @@ func TestQAPPRevokingAPlayersOnlyPartyMemberLeavesThemWatchingIt(t *testing.T) {
 // VTT-921 VTT-923
 func TestQAPPLosingOneOfTwoPartyMembersMovesLosingTheLastDoesNot(t *testing.T) {
 	tb := qappNewTable(t)
-	pTok, pID := tb.invite("Pia", identity.RolePlayer)
-	_, qID := tb.invite("Quinn", identity.RolePlayer)
+	pTok, pID := tb.invite("Pia", identity.RoleSpectator)
+	_, qID := tb.invite("Quinn", identity.RoleSpectator)
 	tb.addActor("pm-d", "Dora", qappParty, pID)
 	tb.addActor("pm-a", "Alma", qappParty, qID)
 	tb.addActor("pm-b", "Bert", qappParty, pID)
@@ -758,8 +758,8 @@ func TestQAPPAWatchedActorThatLeavesThePartyMovesTheWatcherToNobody(t *testing.T
 	setup := func(t *testing.T) (*qappTable, *qappConn, string, string) {
 		t.Helper()
 		tb := qappNewTable(t)
-		pTok, pID := tb.invite("Pia", identity.RolePlayer)
-		_, qID := tb.invite("Quinn", identity.RolePlayer)
+		pTok, pID := tb.invite("Pia", identity.RoleSpectator)
+		_, qID := tb.invite("Quinn", identity.RoleSpectator)
 		tb.addActor("pm-a", "Alma", qappParty, qID)
 		tb.addActor("pm-c", "Cato", qappParty)
 		tb.addActor("pm-t", "Tobbe", qappParty, pID)
@@ -791,8 +791,8 @@ func TestQAPPAWatchedActorThatLeavesThePartyMovesTheWatcherToNobody(t *testing.T
 // VTT-921 VTT-348 VTT-893
 func TestQAPPAGrantTakesAWatcherOffAnotherPartyMembersLog(t *testing.T) {
 	tb := qappNewTable(t)
-	pTok, pID := tb.invite("Pia", identity.RolePlayer)
-	_, qID := tb.invite("Quinn", identity.RolePlayer)
+	pTok, pID := tb.invite("Pia", identity.RoleSpectator)
+	_, qID := tb.invite("Quinn", identity.RoleSpectator)
 	tb.addActor("pm-a", "Alma", qappParty, qID)
 	tb.addActor("np-g", "Gobo", qappNonParty, tb.dmID)
 	for i := 0; i < 12; i++ {
@@ -844,7 +844,7 @@ func TestQAPPAGrantTakesAWatcherOffAnotherPartyMembersLog(t *testing.T) {
 // VTT-922
 func TestQAPPAMoveIsJudgedByThePartyMemberTheConnectionShows(t *testing.T) {
 	tb := qappNewTable(t)
-	pTok, pID := tb.invite("Pia", identity.RolePlayer)
+	pTok, pID := tb.invite("Pia", identity.RoleSpectator)
 	tb.addActor("pm-l", "Lena", qappParty, pID)
 	tb.addActor("pm-r", "Rolf", qappParty, pID)
 	tb.append(tb.sceneEnv(), tb.tokenEnv("t-l", "pm-l", 1, 1), tb.tokenEnv("t-r", "pm-r", 7, 1))
@@ -870,7 +870,7 @@ func TestQAPPAMoveIsJudgedByThePartyMemberTheConnectionShows(t *testing.T) {
 func TestQAPPAMoveRightAfterControlChangesIsJudgedByTheFirstPartyMember(t *testing.T) {
 	t.Run("a grant while watching another's", func(t *testing.T) {
 		tb := qappNewTable(t)
-		pTok, pID := tb.invite("Pia", identity.RolePlayer)
+		pTok, pID := tb.invite("Pia", identity.RoleSpectator)
 		tb.addActor("pm-x", "Xena", qappParty)
 		tb.addActor("pm-z", "Zack", qappParty)
 		tb.addActor("pm-y", "Ylva", qappParty)
@@ -891,7 +891,7 @@ func TestQAPPAMoveRightAfterControlChangesIsJudgedByTheFirstPartyMember(t *testi
 	})
 	t.Run("a revocation of the one shown", func(t *testing.T) {
 		tb := qappNewTable(t)
-		pTok, pID := tb.invite("Pia", identity.RolePlayer)
+		pTok, pID := tb.invite("Pia", identity.RoleSpectator)
 		tb.addActor("pm-c", "Cato", qappParty, pID)
 		tb.addActor("pm-b", "Bert", qappParty, pID)
 		tb.addActor("pm-s", "Sune", qappParty, pID)
@@ -915,7 +915,7 @@ func TestQAPPAMoveRightAfterControlChangesIsJudgedByTheFirstPartyMember(t *testi
 func TestQAPPTheSpectatorsPerchIsUnchanged(t *testing.T) {
 	tb := qappNewTable(t)
 	sTok, _ := tb.invite("Sami", identity.RoleSpectator)
-	_, qID := tb.invite("Quinn", identity.RolePlayer)
+	_, qID := tb.invite("Quinn", identity.RoleSpectator)
 	tb.addActor("pm-a", "Alma", qappParty, qID)
 	tb.addActor("np-g", "Gobo", qappNonParty, tb.dmID)
 
@@ -936,8 +936,8 @@ func TestQAPPTheSpectatorsPerchIsUnchanged(t *testing.T) {
 func TestQAPPASpectatorWatchingAPartyMemberStaysAsItChangesHands(t *testing.T) {
 	tb := qappNewTable(t)
 	pTok, _ := tb.invite("Pia", identity.RoleSpectator)
-	_, qID := tb.invite("Quinn", identity.RolePlayer)
-	_, rID := tb.invite("Rune", identity.RolePlayer)
+	_, qID := tb.invite("Quinn", identity.RoleSpectator)
+	_, rID := tb.invite("Rune", identity.RoleSpectator)
 	tb.addActor("pm-a", "Alma", qappParty, qID)
 	tb.addActor("pm-b", "Bert", qappParty)
 

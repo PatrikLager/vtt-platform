@@ -96,10 +96,9 @@ func newExitFixture(t *testing.T) *exitFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The player's invite controls act-lera ONLY: no other actor is ever
-	// listed here, and no actor added below grants this participant control
-	// besides act-lera (act-ursus is added controllerless).
-	playerToken, playerID, err := ids.CreateInvite("Player", identity.RolePlayer)
+	// Grant this participant act-lera alone below, which makes the player
+	// (act-ursus is added controllerless).
+	playerToken, playerID, err := ids.CreateInvite("Player", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}

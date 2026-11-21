@@ -44,7 +44,7 @@ func qaRRStart(t *testing.T, rs *rules.Ruleset, configure func(*gateway.Server))
 	}
 	tbl := &qaRRTable{ids: ids, tokens: map[identity.Role]string{}, pids: map[identity.Role]string{}}
 	for _, r := range qaRRRoles {
-		tok, id, err := ids.CreateInvite("qa-"+string(r), r)
+		tok, id, err := ids.CreateInvite("qa-"+string(r), mintRole(r))
 		if err != nil {
 			t.Fatalf("CreateInvite(%s): %v", r, err)
 		}

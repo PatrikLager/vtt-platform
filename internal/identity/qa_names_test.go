@@ -58,9 +58,9 @@ func qaWantAdmitted(t *testing.T, db *identity.DB, secret, name string) {
 // VTT-542 VTT-552
 func TestQAAHeldNameIsRefusedIgnoringCase(t *testing.T) {
 	db, _, secret := qaOpen(t, 50)
-	qaInvite(t, db, "Kim", identity.RolePlayer)
+	qaInvite(t, db, "Kim", identity.RoleSpectator)
 	qaInvite(t, db, "Ünal", identity.RoleSpectator)
-	qaInvite(t, db, "ΟΔΥΣΣΕΎΣ", identity.RolePlayer)
+	qaInvite(t, db, "ΟΔΥΣΣΕΎΣ", identity.RoleSpectator)
 	for _, n := range []string{"Kim", "kim", "KIM", "kIm", "ünal", "ÜNAL", "οδυσσεύς", "οδυσσεύσ"} {
 		qaWantTaken(t, db, secret, n)
 	}
@@ -81,7 +81,7 @@ func TestQAADMAndAgentNamesAreHeldToo(t *testing.T) {
 // VTT-543
 func TestQACreateInviteRefusesAHeldNameAndMintsNothing(t *testing.T) {
 	db, _, _ := qaOpen(t, 5)
-	qaInvite(t, db, "Kim", identity.RolePlayer)
+	qaInvite(t, db, "Kim", identity.RoleSpectator)
 	for _, n := range []string{"Kim", "KIM", "kim"} {
 		tok, id, err := db.CreateInvite(n, identity.RoleSpectator)
 		if !errors.Is(err, identity.ErrNameTaken) || tok != "" || id != "" {
@@ -98,13 +98,13 @@ func TestQACreateInviteRefusesAHeldNameAndMintsNothing(t *testing.T) {
 // VTT-544
 func TestQAARevokedHolderReleasesTheName(t *testing.T) {
 	db, _, secret := qaOpen(t, 50)
-	id := qaInvite(t, db, "Kim", identity.RolePlayer)
+	id := qaInvite(t, db, "Kim", identity.RoleSpectator)
 	qaWantTaken(t, db, secret, "kim")
 	if err := db.Revoke(id); err != nil {
 		t.Fatal(err)
 	}
 	qaWantAdmitted(t, db, secret, "KIM")
-	if _, _, err := db.CreateInvite("kim", identity.RolePlayer); err != nil {
+	if _, _, err := db.CreateInvite("kim", identity.RoleSpectator); err != nil {
 		t.Errorf("CreateInvite over a revoked holder: %v", err)
 	}
 	qaWantTaken(t, db, secret, "Kim")
@@ -113,11 +113,11 @@ func TestQAARevokedHolderReleasesTheName(t *testing.T) {
 // VTT-544
 func TestQAOneLiveHolderAmongRevokedStillHolds(t *testing.T) {
 	db, _, secret := qaOpen(t, 50)
-	old := qaInvite(t, db, "Kim", identity.RolePlayer)
+	old := qaInvite(t, db, "Kim", identity.RoleSpectator)
 	if err := db.Revoke(old); err != nil {
 		t.Fatal(err)
 	}
-	qaInvite(t, db, "kim", identity.RolePlayer)
+	qaInvite(t, db, "kim", identity.RoleSpectator)
 	qaWantTaken(t, db, secret, "KIM")
 	qaWantAdmitted(t, db, secret, "Other")
 }
@@ -142,7 +142,7 @@ func qaDataVersion(t *testing.T, path string) func() int64 {
 // VTT-545
 func TestQATakenNameRefusalWritesNothing(t *testing.T) {
 	db, path, secret := qaOpen(t, 5)
-	qaInvite(t, db, "Kim", identity.RolePlayer)
+	qaInvite(t, db, "Kim", identity.RoleSpectator)
 	read := qaDataVersion(t, path)
 	v0 := read()
 	a0, l0, err := db.JoinBudget()
@@ -171,7 +171,7 @@ func TestQATakenNameRefusalWritesNothing(t *testing.T) {
 // VTT-009
 func TestQAStrangerLearnsNoNames(t *testing.T) {
 	db, _, secret := qaOpen(t, 1)
-	qaInvite(t, db, "Kim", identity.RolePlayer)
+	qaInvite(t, db, "Kim", identity.RoleSpectator)
 	ok1, e1 := db.JoinAdmits("wrong-secret", "Kim")
 	ok2, e2 := db.JoinAdmits("wrong-secret", "Nobody")
 	if ok1 || ok2 || errors.Is(e1, identity.ErrNameTaken) || errors.Is(e2, identity.ErrNameTaken) {
@@ -198,7 +198,7 @@ func TestQAStrangerLearnsNoNames(t *testing.T) {
 // VTT-550 VTT-553
 func TestQARotationAdmitsTheNewSecretUnderAFreeName(t *testing.T) {
 	db, _, secret := qaOpen(t, 1)
-	qaInvite(t, db, "Kim", identity.RolePlayer)
+	qaInvite(t, db, "Kim", identity.RoleSpectator)
 	qaWantAdmitted(t, db, secret, "Lou")
 	if ok, _ := db.JoinAdmits(secret, "Mia"); ok {
 		t.Fatal("spent budget admitted")
@@ -240,7 +240,7 @@ func TestQATwoJoinersAreTwoParticipantsWithDistinctCredentials(t *testing.T) {
 func TestQARaceForLastAdmissionAdmitsExactlyOne(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		db, _, secret := qaOpen(t, 1)
-		qaInvite(t, db, "Kim", identity.RolePlayer)
+		qaInvite(t, db, "Kim", identity.RoleSpectator)
 		var wg sync.WaitGroup
 		res := make([]bool, 2)
 		for j, n := range []string{"Ann", "Bob"} {
@@ -261,7 +261,7 @@ func TestQARaceForLastAdmissionAdmitsExactlyOne(t *testing.T) {
 func TestQAListOrdersByName(t *testing.T) {
 	db, _, _ := qaOpen(t, 5)
 	for _, n := range []string{"Charlie", "Alpha", "Bravo"} {
-		qaInvite(t, db, n, identity.RolePlayer)
+		qaInvite(t, db, n, identity.RoleSpectator)
 	}
 	ps, err := db.List()
 	if err != nil || len(ps) != 3 {
@@ -277,7 +277,7 @@ func TestQAListOrdersByName(t *testing.T) {
 // VTT-046
 func TestQAClosedStoreAdmitsNobodyNorReportsTaken(t *testing.T) {
 	db, _, secret := qaOpen(t, 5)
-	qaInvite(t, db, "Kim", identity.RolePlayer)
+	qaInvite(t, db, "Kim", identity.RoleSpectator)
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}

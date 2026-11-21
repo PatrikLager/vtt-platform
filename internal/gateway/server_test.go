@@ -90,6 +90,14 @@ func mustAppend(t *testing.T, c *campaign.Campaign, id string, payload any) int6
 	return seq
 }
 
+// mintRole is the role a fixture mints for r: identity mints no player (VTT-911).
+func mintRole(r identity.Role) identity.Role {
+	if r == identity.RolePlayer {
+		return identity.RoleSpectator
+	}
+	return r
+}
+
 // gwSeedHead is the sequence of the LAST event newGWFixture seeds, and the
 // cursor every test that means "resume after the fixture" dials with. It was
 // the literal 4 in nineteen places until 2026-08-24, when a1 needed a second
@@ -126,11 +134,11 @@ func newGWFixture(t *testing.T) *gwFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	playerToken, playerID, err := ids.CreateInvite("Lera", identity.RolePlayer)
+	playerToken, playerID, err := ids.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherPlayerToken, _, err := ids.CreateInvite("Ivo", identity.RolePlayer)
+	otherPlayerToken, _, err := ids.CreateInvite("Ivo", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +395,7 @@ func TestConnectRevokedTokenRejectedBeforeUpgrade(t *testing.T) {
 	}
 	defer ids.Close()
 
-	token, id, err := ids.CreateInvite("Lera", identity.RolePlayer)
+	token, id, err := ids.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}

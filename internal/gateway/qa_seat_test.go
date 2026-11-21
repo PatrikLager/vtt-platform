@@ -58,7 +58,7 @@ func qaSeatOpen(t *testing.T, grant bool) *qaSeatTable {
 	for _, r := range []identity.Role{
 		identity.RoleDM, identity.RoleAgent, identity.RolePlayer, identity.RoleSpectator,
 	} {
-		tok, id, err := ids.CreateInvite("qa-"+string(r), r)
+		tok, id, err := ids.CreateInvite("qa-"+string(r), mintRole(r))
 		if err != nil {
 			t.Fatalf("CreateInvite %s: %v", r, err)
 		}

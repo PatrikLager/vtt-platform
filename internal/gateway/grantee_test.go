@@ -80,7 +80,7 @@ func TestAPartyMemberGrantToAnyoneTheTableHoldsIsAppended(t *testing.T) {
 	agentWho := tb.mint("Ag", identity.RoleAgent)
 	agent := tb.connect(agentWho, "the agent")
 	dmWho := tb.mint("Dot", identity.RoleDM)
-	player := tb.mint("Lera", identity.RolePlayer)
+	player := tb.mint("Lera", identity.RoleSpectator)
 	spectator := tb.mint("Robin", identity.RoleSpectator)
 	for i, who := range []qaPRWho{player, spectator, dmWho, agentWho} {
 		actorID := "pm-" + string(rune('a'+i))
@@ -106,7 +106,7 @@ func TestAPlayersGrantIsRefusedByTheTableWhoeverItNames(t *testing.T) {
 	tb := qaPRNewTable(t)
 	dm := tb.host()
 	granteeAdd(tb, dm, "pm-1", "Ash", granteeParty)
-	lera := tb.mint("Lera", identity.RolePlayer)
+	lera := tb.mint("Lera", identity.RoleSpectator)
 	granteeAccepted(t, "fixture", tb, dm, "pm-1", lera.id, granteeParty)
 	player := tb.connect(lera, "a player")
 	res := granteeGrant(tb, player, "pm-1", "never-minted", granteeParty)
@@ -122,7 +122,7 @@ func TestANonPartyGrantToAPlayerOrASpectatorIsRefused(t *testing.T) {
 	agent := tb.connect(tb.mint("Ag", identity.RoleAgent), "the agent")
 	granteeAdd(tb, dm, "np-1", "Gob", granteeNonParty)
 	granteeAdd(tb, dm, "pm-1", "Ash", granteeParty)
-	for _, who := range []qaPRWho{tb.mint("Robin", identity.RoleSpectator), tb.mint("Lera", identity.RolePlayer)} {
+	for _, who := range []qaPRWho{tb.mint("Robin", identity.RoleSpectator), tb.mint("Lera", identity.RoleSpectator)} {
 		for _, by := range []*qaPRConn{dm, agent} {
 			granteeRefused(t, "VTT-913", tb, dm, by, "np-1", who.id, granteeNonParty, who.name+" can only be given a party member.")
 			granteeRefused(t, "VTT-915", tb, dm, by, "pm-1", who.id, granteeNonParty, who.name+" can only be given a party member.")

@@ -234,7 +234,7 @@ func TestARemovedPlayerIsSentNothingTheRemovalCaused(t *testing.T) {
 	}
 	var seats []*seat
 	for i := range 10 {
-		token, id := f.invite(t, "Player "+string(rune('A'+i)), identity.RolePlayer)
+		token, id := f.invite(t, "Player "+string(rune('A'+i)), identity.RoleSpectator)
 		actor := "pm" + string(rune('a'+i))
 		appendEvents(t, f.campaign, partyMemberOf(actor, id)...)
 		seats = append(seats, &seat{id: id, token: token, actor: actor})
@@ -270,7 +270,7 @@ func TestARemovalOfADMAnAgentTheIssuerAnUnknownOrARevokedTargetIsRefused(t *test
 	_, dm2 := f.invite(t, "Second DM", identity.RoleDM)
 	agent := f.playerIDFor(t, f.agentToken)
 	self := f.playerIDFor(t, f.dmToken)
-	_, gone := f.invite(t, "Gone", identity.RolePlayer)
+	_, gone := f.invite(t, "Gone", identity.RoleSpectator)
 	appendEvents(t, f.campaign, partyMemberOf("ag", gone)...)
 	if err := f.ids.Revoke(gone); err != nil {
 		t.Fatal(err)

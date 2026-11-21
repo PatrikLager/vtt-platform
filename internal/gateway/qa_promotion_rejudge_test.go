@@ -273,7 +273,7 @@ func qaRejudgeNewTable(t *testing.T) *qaRejudgeTable {
 func TestQARejudgeAPlayerMadeASpectatorKeepsItsPartyMemberLog(t *testing.T) {
 	tb := qaRejudgeNewTable(t)
 	e := tb.env
-	pTok, pid := e.invite(t, "p1", identity.RolePlayer)
+	pTok, pid := e.invite(t, "p1", identity.RoleSpectator)
 	rTok, _ := e.invite(t, "r1", identity.RoleSpectator)
 	e.addActor(t, tb.dm, "a1", qaRejudgeParty)
 	e.grant(t, tb.dm, "a1", pid, qaRejudgeParty)
@@ -304,7 +304,7 @@ func TestQARejudgeAPlayerMadeASpectatorKeepsItsPartyMemberLog(t *testing.T) {
 func TestQARejudgePromotingAnotherParticipantLeavesTheSeatAlone(t *testing.T) {
 	tb := qaRejudgeNewTable(t)
 	e := tb.env
-	_, pid := e.invite(t, "p1", identity.RolePlayer)
+	_, pid := e.invite(t, "p1", identity.RoleSpectator)
 	sTok, _ := e.invite(t, "s1", identity.RoleSpectator)
 	_, oid := e.invite(t, "s2", identity.RoleSpectator)
 	e.addActor(t, tb.dm, "a1", qaRejudgeParty)
@@ -325,7 +325,7 @@ func TestQARejudgePromotingAnotherParticipantLeavesTheSeatAlone(t *testing.T) {
 func TestQARejudgeASpectatorPromotedToSpectatorKeepsItsPerch(t *testing.T) {
 	tb := qaRejudgeNewTable(t)
 	e := tb.env
-	_, pid := e.invite(t, "p1", identity.RolePlayer)
+	_, pid := e.invite(t, "p1", identity.RoleSpectator)
 	sTok, sid := e.invite(t, "s1", identity.RoleSpectator)
 	e.addActor(t, tb.dm, "a1", qaRejudgeParty)
 	e.grant(t, tb.dm, "a1", pid, qaRejudgeParty)

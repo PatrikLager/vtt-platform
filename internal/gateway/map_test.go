@@ -228,7 +228,7 @@ func newMapFixtureAt(t *testing.T, withMaps, installable bool, artDir string) *m
 	if err != nil {
 		t.Fatal(err)
 	}
-	playerToken, _, err := ids.CreateInvite("Player", identity.RolePlayer)
+	playerToken, _, err := ids.CreateInvite("Player", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}

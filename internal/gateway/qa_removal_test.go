@@ -86,10 +86,10 @@ func qaNewTable(t *testing.T) *qaTable {
 	tb.dm = qaMint(t, ids, "Dee", identity.RoleDM)
 	tb.dm2 = qaMint(t, ids, "Dee Two", identity.RoleDM)
 	tb.agent = qaMint(t, ids, "Aggie", identity.RoleAgent)
-	tb.p = qaMint(t, ids, "Pia", identity.RolePlayer)
-	tb.q = qaMint(t, ids, "Quin", identity.RolePlayer)
+	tb.p = qaMint(t, ids, "Pia", identity.RoleSpectator)
+	tb.q = qaMint(t, ids, "Quin", identity.RoleSpectator)
 	tb.spec = qaMint(t, ids, "Spec", identity.RoleSpectator)
-	tb.idle = qaMint(t, ids, "Idle", identity.RolePlayer)
+	tb.idle = qaMint(t, ids, "Idle", identity.RoleSpectator)
 	tb.seed(t, []struct {
 		id    string
 		ctrls []qaWho
@@ -445,10 +445,10 @@ func TestQARemovalRevokesTheCredentialAndFreesTheName(t *testing.T) {
 	if listed[tb.p.id] || !listed[tb.q.id] {
 		t.Fatalf("listing wrong: %v", listed)
 	}
-	if _, _, err := tb.ids.CreateInvite(tb.p.name, identity.RolePlayer); err != nil {
+	if _, _, err := tb.ids.CreateInvite(tb.p.name, identity.RoleSpectator); err != nil {
 		t.Fatalf("name not free: %v", err)
 	}
-	if _, _, err := tb.ids.CreateInvite(tb.q.name, identity.RolePlayer); err == nil {
+	if _, _, err := tb.ids.CreateInvite(tb.q.name, identity.RoleSpectator); err == nil {
 		t.Fatal("a held name was handed out")
 	}
 }

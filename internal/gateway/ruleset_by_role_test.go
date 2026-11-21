@@ -43,7 +43,7 @@ func newByRoleTable(t *testing.T) *byRoleTable {
 	t.Cleanup(func() { ids.Close() })
 	tb := &byRoleTable{t: t, c: c, tokens: map[string]string{}, ids: map[string]string{}}
 	for name, role := range map[string]identity.Role{"dm": identity.RoleDM, "agent": identity.RoleAgent,
-		"lera": identity.RolePlayer, "bo": identity.RolePlayer, "watcher": identity.RoleSpectator} {
+		"lera": identity.RoleSpectator, "bo": identity.RoleSpectator, "watcher": identity.RoleSpectator} {
 		tok, id, err := ids.CreateInvite(name, role)
 		if err != nil {
 			t.Fatal(err)

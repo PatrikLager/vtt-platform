@@ -91,8 +91,8 @@ func qaDescServe(t *testing.T, rsDir string) *qaDescTable {
 	tb := &qaDescTable{tokens: map[string]string{}, dir: rsDir}
 	pids := map[string]string{}
 	for name, role := range map[string]identity.Role{"dm": identity.RoleDM,
-		"agent": identity.RoleAgent, "pa": identity.RolePlayer,
-		"pb": identity.RolePlayer, "sp": identity.RoleSpectator} {
+		"agent": identity.RoleAgent, "pa": identity.RoleSpectator,
+		"pb": identity.RoleSpectator, "sp": identity.RoleSpectator} {
 		tok, id, err := idb.CreateInvite(name, role)
 		if err != nil {
 			t.Fatal(err)

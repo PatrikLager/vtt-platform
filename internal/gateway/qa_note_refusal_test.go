@@ -324,7 +324,7 @@ func TestQAAPlayersUpsertWithoutVisibilityIsRefusedByAuthorizationFirst(t *testi
 	for _, role := range []identity.Role{identity.RolePlayer, identity.RoleSpectator} {
 		t.Run(string(role), func(t *testing.T) {
 			tb := qaNRNewTable(t)
-			issuer := tb.seat("issuer", role)
+			issuer := tb.seat("issuer", mintRole(role))
 			if role == identity.RolePlayer {
 				list, err := tb.ids.List()
 				if err != nil || len(list) != 1 {

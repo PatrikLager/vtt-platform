@@ -202,8 +202,8 @@ func qaReadEveryAbility(rs *rules.Ruleset) []string {
 func TestQAReadAPlayerReadsTheUnionOverTheActorsTheyControlInIdOrder(t *testing.T) {
 	q := qaReadOpen(t, qaReadLoadRuleset(t), nil)
 	q.qaReadInvite("qa-dm", identity.RoleDM)
-	q.qaReadInvite("qa-player-one", identity.RolePlayer)
-	q.qaReadInvite("qa-player-two", identity.RolePlayer)
+	q.qaReadInvite("qa-player-one", identity.RoleSpectator)
+	q.qaReadInvite("qa-player-two", identity.RoleSpectator)
 	q.qaReadAddActor("qa-hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "staggering-blow", "longsword-strike")
 	q.qaReadAddActor("qa-pet", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "rally")
 	q.qaReadAddActor("qa-charmed", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "goblin-shortbow", "crossbow-shot")
@@ -220,8 +220,8 @@ func TestQAReadAPlayerReadsTheUnionOverTheActorsTheyControlInIdOrder(t *testing.
 // VTT-691
 func TestQAReadAPlayerControllingNoActorReadsNone(t *testing.T) {
 	q := qaReadOpen(t, qaReadLoadRuleset(t), nil)
-	q.qaReadInvite("qa-player", identity.RolePlayer)
-	q.qaReadInvite("qa-busy", identity.RolePlayer)
+	q.qaReadInvite("qa-player", identity.RoleSpectator)
+	q.qaReadInvite("qa-busy", identity.RoleSpectator)
 	q.qaReadAddActor("qa-hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "rally", "crossbow-shot")
 	q.qaReadAddActor("qa-unowned", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "hunters-flurry")
 	q.qaReadGrant("qa-hero", "qa-busy", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
@@ -232,8 +232,8 @@ func TestQAReadAPlayerControllingNoActorReadsNone(t *testing.T) {
 // VTT-691
 func TestQAReadSharedControlGivesEachControllerTheSharedSheet(t *testing.T) {
 	q := qaReadOpen(t, qaReadLoadRuleset(t), nil)
-	q.qaReadInvite("qa-first", identity.RolePlayer)
-	q.qaReadInvite("qa-second", identity.RolePlayer)
+	q.qaReadInvite("qa-first", identity.RoleSpectator)
+	q.qaReadInvite("qa-second", identity.RoleSpectator)
 	q.qaReadAddActor("qa-shared", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "rally")
 	q.qaReadAddActor("qa-own", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "hunters-flurry")
 	q.qaReadGrant("qa-shared", "qa-first", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
@@ -249,7 +249,7 @@ func TestQAReadSharedControlGivesEachControllerTheSharedSheet(t *testing.T) {
 // VTT-691
 func TestQAReadAGrantAndARevocationReachTheNextReadOnTheSameConnection(t *testing.T) {
 	q := qaReadOpen(t, qaReadLoadRuleset(t), nil)
-	q.qaReadInvite("qa-player", identity.RolePlayer)
+	q.qaReadInvite("qa-player", identity.RoleSpectator)
 	q.qaReadAddActor("qa-hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "staggering-blow")
 	q.qaReadAddActor("qa-pet", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "crossbow-shot")
 	q.qaReadWantAbilities("qa-player")
@@ -270,7 +270,7 @@ func TestQAReadAGrantAndARevocationReachTheNextReadOnTheSameConnection(t *testin
 func TestQAReadASheetAbilityTheRulesetDoesNotHoldIsNotInvented(t *testing.T) {
 	rs := qaReadLoadRuleset(t)
 	q := qaReadOpen(t, rs, nil)
-	q.qaReadInvite("qa-player", identity.RolePlayer)
+	q.qaReadInvite("qa-player", identity.RoleSpectator)
 	q.qaReadInvite("qa-dm", identity.RoleDM)
 	q.qaReadAddActor("qa-hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "qa-not-in-the-ruleset", "rally", "Rally")
 	q.qaReadGrant("qa-hero", "qa-player", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
@@ -281,7 +281,7 @@ func TestQAReadASheetAbilityTheRulesetDoesNotHoldIsNotInvented(t *testing.T) {
 // List an ability once however many controlled sheets name it, and however often.
 func TestQAReadAnAbilityNamedTwiceIsReadOnce(t *testing.T) {
 	q := qaReadOpen(t, qaReadLoadRuleset(t), nil)
-	q.qaReadInvite("qa-player", identity.RolePlayer)
+	q.qaReadInvite("qa-player", identity.RoleSpectator)
 	q.qaReadAddActor("qa-hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "rally", "rally", "crossbow-shot")
 	q.qaReadAddActor("qa-pet", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "crossbow-shot")
 	q.qaReadGrant("qa-hero", "qa-player", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
@@ -292,7 +292,7 @@ func TestQAReadAnAbilityNamedTwiceIsReadOnce(t *testing.T) {
 // VTT-691
 func TestQAReadAPlayersAbilityIsTheSameEntryTheDMReads(t *testing.T) {
 	q := qaReadOpen(t, qaReadLoadRuleset(t), nil)
-	q.qaReadInvite("qa-player", identity.RolePlayer)
+	q.qaReadInvite("qa-player", identity.RoleSpectator)
 	q.qaReadInvite("qa-dm", identity.RoleDM)
 	q.qaReadAddActor("qa-hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "hunters-flurry", "crossbow-shot")
 	q.qaReadGrant("qa-hero", "qa-player", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
@@ -336,8 +336,8 @@ func TestQAReadTheDMAndTheAgentReadEveryAbilityInIdOrder(t *testing.T) {
 func qaReadEveryRole(q *qaReadTable) []string {
 	q.qaReadInvite("qa-dm", identity.RoleDM)
 	q.qaReadInvite("qa-agent", identity.RoleAgent)
-	q.qaReadInvite("qa-player", identity.RolePlayer)
-	q.qaReadInvite("qa-idle", identity.RolePlayer)
+	q.qaReadInvite("qa-player", identity.RoleSpectator)
+	q.qaReadInvite("qa-idle", identity.RoleSpectator)
 	q.qaReadInvite("qa-watcher", identity.RoleSpectator)
 	return []string{"qa-dm", "qa-agent", "qa-player", "qa-idle", "qa-watcher"}
 }
@@ -444,8 +444,8 @@ func TestQAReadNothingLoadedAnswersEveryRoleEmptyListsWhateverItControls(t *test
 // VTT-581
 func TestQAReadTheRulesetRouteAnswers401BeforeItLooksAtControl(t *testing.T) {
 	q := qaReadOpen(t, qaReadLoadRuleset(t), nil)
-	q.qaReadInvite("qa-player", identity.RolePlayer)
-	q.qaReadInvite("qa-gone", identity.RolePlayer)
+	q.qaReadInvite("qa-player", identity.RoleSpectator)
+	q.qaReadInvite("qa-gone", identity.RoleSpectator)
 	q.qaReadAddActor("qa-hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "rally")
 	q.qaReadGrant("qa-hero", "qa-gone", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
 	if err := q.ids.Revoke(q.pids["qa-gone"]); err != nil {

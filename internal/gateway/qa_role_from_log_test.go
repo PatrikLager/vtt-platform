@@ -2,6 +2,7 @@ package gateway_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -32,6 +33,7 @@ type qaRLWho struct {
 
 type qaRLTable struct {
 	t     *testing.T
+	dir   string
 	camp  *campaign.Campaign
 	ids   *identity.DB
 	srv   *httptest.Server
@@ -63,7 +65,7 @@ func qaRLOpen(t *testing.T) *qaRLTable {
 		t.Fatalf("identity.Open: %v", err)
 	}
 	srv := httptest.NewServer(gateway.New(camp, ids).Handler())
-	tb := &qaRLTable{t: t, camp: camp, ids: ids, srv: srv}
+	tb := &qaRLTable{t: t, dir: dir, camp: camp, ids: ids, srv: srv}
 	t.Cleanup(func() {
 		for _, c := range tb.conns {
 			_ = c.ws.CloseNow()
@@ -566,9 +568,20 @@ func TestQARLEveryWayOfEndingControlMakesASpectatorAtTheLastActor(t *testing.T) 
 }
 
 // VTT-889 VTT-890 VTT-891 VTT-892
-func TestQARLAParticipantMintedAsAPlayerIsASpectatorUntilGivenACharacter(t *testing.T) {
+func TestQARLAParticipantStoredAsAPlayerIsASpectatorUntilGivenACharacter(t *testing.T) {
 	f := qaRLStandard(t)
-	pell := f.tb.mint("Pell", identity.RolePlayer)
+	pell := f.tb.mint("Pell", identity.RoleSpectator)
+	raw, err := sql.Open("sqlite", campaign.LogPath(f.tb.dir)+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if _, err := raw.Exec(`UPDATE participants SET role = 'player' WHERE id = ?`, pell.id); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := f.tb.ids.Lookup(pell.id); err != nil || p.Role != identity.RolePlayer {
+		t.Fatalf("fixture: identity holds Pell as %+v (%v), want a stored player", p, err)
+	}
 	pc := f.tb.dial(pell)
 	f.expectRole("before any grant", pell, "spectator")
 	f.expectSilenced(pc, "before any grant")
@@ -777,7 +790,7 @@ func TestQARLMakeSpectatorOfAParticipantWhoControlsNothingAppendsNothing(t *test
 			if by == "agent" {
 				ic = f.agc
 			}
-			pell := f.tb.mint("Pell", identity.RolePlayer)
+			pell := f.tb.mint("Pell", identity.RoleSpectator)
 			fern := f.tb.mint("Fern", identity.RoleSpectator)
 			f.dmc.ok(qaRLGrant("pm-c", fern.id, qaRLParty))
 			f.dmc.ok(qaRLRevoke("pm-c", fern.id))

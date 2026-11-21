@@ -101,7 +101,7 @@ func qaQueuedNew(t *testing.T) *qaQueuedWorld {
 	})
 	w := &qaQueuedWorld{c: c, url: "ws" + strings.TrimPrefix(ts.URL, "http"), tokens: map[string]string{}, ids: map[string]string{}}
 	for name, role := range map[string]identity.Role{
-		"dm": identity.RoleDM, "p1": identity.RolePlayer, "s1": identity.RoleSpectator,
+		"dm": identity.RoleDM, "p1": identity.RoleSpectator, "s1": identity.RoleSpectator,
 	} {
 		tok, id, err := ids.CreateInvite(name, role)
 		if err != nil {

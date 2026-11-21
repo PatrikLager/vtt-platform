@@ -31,7 +31,7 @@ func tamperRow(t *testing.T, path, column, value string) {
 // VTT-069
 func TestVerifyFailsClosedOnInvalidStoredRole(t *testing.T) {
 	d, path := openTemp(t)
-	token, _, err := d.CreateInvite("Lera", identity.RolePlayer)
+	token, _, err := d.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestVerifyFailsClosedOnInvalidStoredRole(t *testing.T) {
 // VTT-069
 func TestVerifyRejectsEmptyStoredRole(t *testing.T) {
 	d, path := openTemp(t)
-	token, _, err := d.CreateInvite("Lera", identity.RolePlayer)
+	token, _, err := d.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestOperationsFailAfterClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	token, id, err := d.CreateInvite("Lera", identity.RolePlayer)
+	token, id, err := d.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}

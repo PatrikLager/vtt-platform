@@ -108,7 +108,7 @@ func qaAVOpen(t *testing.T, rs *rules.Ruleset, actors ...*vttv1.Actor) *qaAVTabl
 	t.Cleanup(func() { _ = ids.Close() })
 	tb := &qaAVTable{c: c, tokens: map[identity.Role]string{}, pids: map[identity.Role]string{}}
 	for _, r := range qaAVRoles {
-		tok, id, err := ids.CreateInvite("qa-"+string(r), r)
+		tok, id, err := ids.CreateInvite("qa-"+string(r), mintRole(r))
 		if err != nil {
 			t.Fatalf("CreateInvite %s: %v", r, err)
 		}

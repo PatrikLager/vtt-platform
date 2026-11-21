@@ -108,11 +108,11 @@ func newRulesetFixtureServing(t *testing.T, rs *rules.Ruleset) *rulesetFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	brawlerToken, brawlerID, err := ids.CreateInvite("Brawler", identity.RolePlayer)
+	brawlerToken, brawlerID, err := ids.CreateInvite("Brawler", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
-	patronToken, patronID, err := ids.CreateInvite("Patron", identity.RolePlayer)
+	patronToken, patronID, err := ids.CreateInvite("Patron", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}

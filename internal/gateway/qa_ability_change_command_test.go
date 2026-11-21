@@ -106,7 +106,7 @@ func qaabNewTable(t *testing.T, rs *rules.Ruleset, withAdventure bool) *qaabTabl
 	if err != nil {
 		t.Fatalf("invite agent: %v", err)
 	}
-	plTok, plID, err := ids.CreateInvite("Pat", identity.RolePlayer)
+	plTok, plID, err := ids.CreateInvite("Pat", identity.RoleSpectator)
 	if err != nil {
 		t.Fatalf("invite player: %v", err)
 	}

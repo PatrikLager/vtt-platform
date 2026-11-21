@@ -65,7 +65,7 @@ func qaCmdServe(t *testing.T, configure func(*gateway.Server) *gateway.Server) *
 	if tb.obsToken, _, err = ids.CreateInvite("qa observer", identity.RoleDM); err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
-	if tb.playerToken, tb.playerID, err = ids.CreateInvite("qa player", identity.RolePlayer); err != nil {
+	if tb.playerToken, tb.playerID, err = ids.CreateInvite("qa player", identity.RoleSpectator); err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
 	return tb

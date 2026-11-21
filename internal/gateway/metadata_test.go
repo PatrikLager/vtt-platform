@@ -57,7 +57,7 @@ func newMetaFixture(t *testing.T, withContent bool) *metaFixture {
 		return tok
 	}
 
-	playerToken, playerID, err := ids.CreateInvite("Lera", identity.RolePlayer)
+	playerToken, playerID, err := ids.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -763,7 +763,7 @@ func newGatewayWithMaps(t *testing.T) *mapsFixture {
 		t:              t,
 		dmToken:        mint("DM", identity.RoleDM),
 		agentToken:     mint("Agent", identity.RoleAgent),
-		playerToken:    mint("Lera", identity.RolePlayer),
+		playerToken:    mint("Lera", identity.RoleSpectator),
 		spectatorToken: mint("Watcher", identity.RoleSpectator),
 	}
 
@@ -1035,7 +1035,7 @@ func newGatewayWithArt(t *testing.T) *artFixture {
 		artDir:         artDir,
 		dmToken:        mint("DM", identity.RoleDM),
 		agentToken:     mint("Agent", identity.RoleAgent),
-		playerToken:    mint("Lera", identity.RolePlayer),
+		playerToken:    mint("Lera", identity.RoleSpectator),
 		spectatorToken: mint("Watcher", identity.RoleSpectator),
 	}
 	srv := gateway.New(c, ids).WithArtDir(artDir)

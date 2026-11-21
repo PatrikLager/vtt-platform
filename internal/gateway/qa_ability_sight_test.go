@@ -135,7 +135,7 @@ func qaasOpen(t *testing.T, omit ...string) *qaasTable {
 	tbl := &qaasTable{camp: camp, tokens: map[string]string{}, pids: pids}
 	for name, role := range map[string]identity.Role{
 		"dm": identity.RoleDM, "agent": identity.RoleAgent,
-		"pat": identity.RolePlayer, "quin": identity.RolePlayer,
+		"pat": identity.RoleSpectator, "quin": identity.RoleSpectator,
 	} {
 		tok, id, err := ids.CreateInvite(name, role)
 		if err != nil {

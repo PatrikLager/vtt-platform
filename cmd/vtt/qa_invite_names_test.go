@@ -38,14 +38,14 @@ func TestQAInviteRefusesAHeldNameAndCreatesNobody(t *testing.T) {
 		t.Fatalf("first invite: %v", err)
 	}
 	for _, n := range []string{"Kim", "kim", "KIM"} {
-		if out, err := qaInviteCLI(t, dir, n, "player"); err == nil {
+		if out, err := qaInviteCLI(t, dir, n, "spectator"); err == nil {
 			t.Errorf("invite %q succeeded, out=%q", n, out)
 		}
 	}
 	if got := qaNames(t, dir); len(got) != 1 {
 		t.Errorf("participants = %v, want just Kim", got)
 	}
-	if _, err := qaInviteCLI(t, dir, "Lou", "player"); err != nil {
+	if _, err := qaInviteCLI(t, dir, "Lou", "spectator"); err != nil {
 		t.Errorf("free name refused: %v", err)
 	}
 	if got := qaNames(t, dir); len(got) != 2 {
@@ -56,18 +56,18 @@ func TestQAInviteRefusesAHeldNameAndCreatesNobody(t *testing.T) {
 // VTT-544
 func TestQAInviteReusesARevokedName(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "campaign")
-	out, err := qaInviteCLI(t, dir, "Kim", "player")
+	out, err := qaInviteCLI(t, dir, "Kim", "spectator")
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := extractField(t, out, "participant id: ")
-	if _, err := qaInviteCLI(t, dir, "KIM", "player"); err == nil {
+	if _, err := qaInviteCLI(t, dir, "KIM", "spectator"); err == nil {
 		t.Fatal("held name admitted before revoke")
 	}
 	if _, err := runCLI(t, "revoke", "--campaign", dir, "--id", id); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := qaInviteCLI(t, dir, "KIM", "player"); err != nil {
+	if _, err := qaInviteCLI(t, dir, "KIM", "spectator"); err != nil {
 		t.Errorf("invite after revoke: %v", err)
 	}
 }

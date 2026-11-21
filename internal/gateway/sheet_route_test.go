@@ -86,7 +86,7 @@ func newTavernFixture(t *testing.T) *metaFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ids.Close() })
-	tok, _, err := ids.CreateInvite("Lera", identity.RolePlayer)
+	tok, _, err := ids.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}

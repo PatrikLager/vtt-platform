@@ -447,7 +447,7 @@ func TestANamesReadThatFailsAdmitsAndMintsNobody(t *testing.T) {
 	}
 
 	tripped = testdb.Arm(namesRead, errDBDown)
-	token, _, err := d.CreateInvite("Zed", RolePlayer)
+	token, _, err := d.CreateInvite("Zed", RoleSpectator)
 	if !tripped() {
 		t.Fatal("CreateInvite never read the names — this test proved nothing")
 	}

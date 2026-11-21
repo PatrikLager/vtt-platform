@@ -22,7 +22,7 @@ func TestCommandsThatAppendNothingWorkWhileTheCampaignIsServed(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = closeFn() })
 
-	out, err := runCLI(t, "invite", "--campaign", campaignPath, "--name", "Lera", "--role", "player")
+	out, err := runCLI(t, "invite", "--campaign", campaignPath, "--name", "Lera", "--role", "spectator")
 	if err != nil {
 		t.Fatalf("invite beside serve: %v (output %s)", err, out)
 	}

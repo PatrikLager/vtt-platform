@@ -173,7 +173,7 @@ func qacsWireWorld(t *testing.T, player string) []*vttv1.Envelope {
 // VTT-465 VTT-466 VTT-462
 func TestQACSAPlayerAndASpectatorWhoseCharacterSeesACreatureAreSentNoFrameWithItsNameOrResources(t *testing.T) {
 	w := qacsWireTable(t)
-	playerTok, playerID, err := w.ids.CreateInvite("Ayla's player", identity.RolePlayer)
+	playerTok, playerID, err := w.ids.CreateInvite("Ayla's player", identity.RoleSpectator)
 	if err != nil {
 		t.Fatalf("invite: %v", err)
 	}

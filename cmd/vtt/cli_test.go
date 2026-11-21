@@ -45,7 +45,7 @@ func TestInviteThenRevoke(t *testing.T) {
 	out, err := runCLI(t, "invite",
 		"--campaign", campaignPath,
 		"--name", "Lera",
-		"--role", "player",
+		"--role", "spectator",
 	)
 	if err != nil {
 		t.Fatalf("invite: unexpected error: %v", err)
@@ -83,8 +83,27 @@ func TestInviteThenRevoke(t *testing.T) {
 // TestInviteMissingCampaignErrors proves the required-flag validation cobra
 // enforces before RunE ever runs also covers invite, not just serve.
 func TestInviteMissingCampaignErrors(t *testing.T) {
-	if _, err := runCLI(t, "invite", "--name", "Lera", "--role", "player"); err == nil {
+	if _, err := runCLI(t, "invite", "--name", "Lera", "--role", "spectator"); err == nil {
 		t.Fatal("want error for missing --campaign flag")
+	}
+}
+
+// VTT-911
+func TestInviteAsAPlayerExitsNonZeroWithTheRefusalAndPrintsNoToken(t *testing.T) {
+	bin := buildVTTBinary(t)
+	dir := filepath.Join(t.TempDir(), "campaign")
+	out, code := qaHoldRun(t, bin, "invite", "--campaign", dir, "--name", "Lera", "--role", "player")
+	if code == 0 {
+		t.Fatalf("vtt invite --role player exited 0:\n%s", out)
+	}
+	if strings.Contains(out, "token") || strings.Contains(out, "participant id") {
+		t.Fatalf("vtt invite --role player printed a token or an id:\n%s", out)
+	}
+	if !strings.Contains(out, "a participant becomes a player when given a character; invite them as a spectator") {
+		t.Fatalf("vtt invite --role player printed %q, want the refusal's words", out)
+	}
+	if got := qaNames(t, dir); len(got) != 0 {
+		t.Fatalf("participants after the refused invite = %v, want nobody", got)
 	}
 }
 
@@ -502,7 +521,7 @@ func TestCampaignDirectoryWorksInEitherCLIOrdering(t *testing.T) {
 	t.Run("invite then serve", func(t *testing.T) {
 		campaignPath := filepath.Join(t.TempDir(), "campaign")
 		if _, err := runCLI(t, "invite",
-			"--campaign", campaignPath, "--name", "Alice", "--role", "player",
+			"--campaign", campaignPath, "--name", "Alice", "--role", "spectator",
 		); err != nil {
 			t.Fatalf("invite (first): %v", err)
 		}
@@ -525,7 +544,7 @@ func TestCampaignDirectoryWorksInEitherCLIOrdering(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := runCLI(t, "invite",
-			"--campaign", campaignPath, "--name", "Bob", "--role", "player",
+			"--campaign", campaignPath, "--name", "Bob", "--role", "spectator",
 		); err != nil {
 			t.Fatalf("invite after serve: %v", err)
 		}
@@ -536,7 +555,7 @@ func TestCampaignDirectoryWorksInEitherCLIOrdering(t *testing.T) {
 func TestInviteRefusesANameAnUnrevokedParticipantHolds(t *testing.T) {
 	campaignPath := filepath.Join(t.TempDir(), "campaign")
 	for _, pair := range [][2]string{{"Kim", "kim"}, {"Åsa", "åsa"}} {
-		if _, err := runCLI(t, "invite", "--campaign", campaignPath, "--name", pair[0], "--role", "player"); err != nil {
+		if _, err := runCLI(t, "invite", "--campaign", campaignPath, "--name", pair[0], "--role", "spectator"); err != nil {
 			t.Fatalf("invite %s: %v", pair[0], err)
 		}
 		out, err := runCLI(t, "invite", "--campaign", campaignPath, "--name", pair[1], "--role", "dm")
@@ -547,7 +566,7 @@ func TestInviteRefusesANameAnUnrevokedParticipantHolds(t *testing.T) {
 			t.Fatalf("a refused invite printed a token: %q", out)
 		}
 	}
-	if _, err := runCLI(t, "invite", "--campaign", campaignPath, "--name", "Kimberly", "--role", "player"); err != nil {
+	if _, err := runCLI(t, "invite", "--campaign", campaignPath, "--name", "Kimberly", "--role", "spectator"); err != nil {
 		t.Fatalf("invite Kimberly: %v", err)
 	}
 	ids, err := identity.Open(campaign.LogPath(campaignPath))
@@ -570,7 +589,7 @@ func TestInviteTakesANameOnlyARevokedParticipantHeld(t *testing.T) {
 	if _, err := runCLI(t, "revoke", "--campaign", campaignPath, "--id", extractField(t, out, "participant id: ")); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
-	if _, err := runCLI(t, "invite", "--campaign", campaignPath, "--name", "kim", "--role", "player"); err != nil {
+	if _, err := runCLI(t, "invite", "--campaign", campaignPath, "--name", "kim", "--role", "spectator"); err != nil {
 		t.Fatalf("invite kim with Kim revoked: %v", err)
 	}
 }

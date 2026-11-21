@@ -79,15 +79,15 @@ func TestAControlChangeIsAnnouncedToEveryUnrevokedConnectionNamingWhomItNames(t 
 			func(tb *qaPRTable, _, agent, _ *qaPRConn, named qaPRWho) *vttv1.CommandResult {
 				return reannounceGrant(tb, agent, "pm-1", named)
 			}},
-		{"a DM's revocation", identity.RolePlayer, true,
+		{"a DM's revocation", identity.RoleSpectator, true,
 			func(tb *qaPRTable, dm, _, _ *qaPRConn, named qaPRWho) *vttv1.CommandResult {
 				return reannounceRevoke(tb, dm, "pm-1", named)
 			}},
-		{"an agent's revocation", identity.RolePlayer, true,
+		{"an agent's revocation", identity.RoleSpectator, true,
 			func(tb *qaPRTable, _, agent, _ *qaPRConn, named qaPRWho) *vttv1.CommandResult {
 				return reannounceRevoke(tb, agent, "pm-1", named)
 			}},
-		{"a player's own revocation", identity.RolePlayer, true,
+		{"a player's own revocation", identity.RoleSpectator, true,
 			func(tb *qaPRTable, _, _, own *qaPRConn, named qaPRWho) *vttv1.CommandResult {
 				return reannounceRevoke(tb, own, "pm-1", named)
 			}},
@@ -108,11 +108,11 @@ func TestAControlChangeIsAnnouncedToEveryUnrevokedConnectionNamingWhomItNames(t 
 			}
 			everyone := []*qaPRConn{
 				dm, agent,
-				tb.connect(tb.mint("Wren", identity.RolePlayer), "a player"),
+				tb.connect(tb.mint("Wren", identity.RoleSpectator), "another spectator"),
 				tb.connect(tb.mint("Sy", identity.RoleSpectator), "a spectator"),
 				own[0], own[1],
 			}
-			rook := tb.mint("Rook", identity.RolePlayer)
+			rook := tb.mint("Rook", identity.RoleSpectator)
 			lost := tb.connect(rook, "the revoked watcher")
 			from := tb.fence(dm, append(everyone, lost)...)
 			tb.revoke(rook, lost)
@@ -144,7 +144,7 @@ func TestARemovedActorIsAnnouncedNamingEachOfItsControllers(t *testing.T) {
 	reannounceMust(tb, "the grant to Lera", reannounceGrant(tb, dm, "pm-1", lera))
 	reannounceMust(tb, "the grant to Ivo", reannounceGrant(tb, dm, "pm-1", ivo))
 	everyone := []*qaPRConn{dm, tb.connect(lera, "Lera"), tb.connect(ivo, "Ivo"),
-		tb.connect(tb.mint("Wren", identity.RolePlayer), "a player")}
+		tb.connect(tb.mint("Wren", identity.RoleSpectator), "a spectator")}
 	from := tb.fence(dm, everyone...)
 
 	reannounceMust(tb, "the removal of pm-1", reannounceRemove(tb, dm, "pm-1"))
@@ -171,7 +171,7 @@ func TestAControlChangeOfAParticipantWithNoConnectionIsAnnouncedToNobody(t *test
 			tb := qaPRNewTable(t)
 			dm := tb.host()
 			reannounceAdd(tb, dm, "pm-1")
-			witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
+			witness := tb.connect(tb.mint("Wren", identity.RoleSpectator), "the witness")
 			named := tb.mint("Tam", identity.RoleSpectator)
 			if gone {
 				tb.connect(named, "the named participant").hangUp()
@@ -197,7 +197,7 @@ func TestARevocationTheFoldRefusesAnnouncesNothing(t *testing.T) {
 	dm := tb.host()
 	named := tb.mint("Tam", identity.RoleSpectator)
 	everyone := []*qaPRConn{dm, tb.connect(named, "the named participant"),
-		tb.connect(tb.mint("Wren", identity.RolePlayer), "a player")}
+		tb.connect(tb.mint("Wren", identity.RoleSpectator), "a spectator")}
 	from := tb.fence(dm, everyone...)
 
 	if res := reannounceRevoke(tb, dm, "no-such-actor", named); res.GetOk() {

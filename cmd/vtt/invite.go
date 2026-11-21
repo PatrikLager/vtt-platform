@@ -48,7 +48,7 @@ func newInviteCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&campaignPath, "campaign", "", "path to the campaign directory (required)")
 	cmd.Flags().StringVar(&name, "name", "", "participant display name (required)")
-	cmd.Flags().StringVar(&role, "role", "", "participant role: dm, agent, player, spectator (required)")
+	cmd.Flags().StringVar(&role, "role", "", "participant role: dm, agent, spectator (required)")
 	// THERE IS NO --controls FLAG (2026-08-24). It wrote a column nothing read,
 	// so a DM who used it was told by /api/me that the invitee controlled an
 	// actor while authz, the roster and every sight rule said otherwise.

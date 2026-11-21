@@ -333,7 +333,7 @@ func qaMRStartLive(t *testing.T) *qaMRLive {
 		{"Pim", identity.RolePlayer, &l.playerID},
 		{"Sol", identity.RoleSpectator, new(string)},
 	} {
-		tok, id, err := db.CreateInvite(inv.name, inv.role)
+		tok, id, err := db.CreateInvite(inv.name, mintRole(inv.role))
 		if err != nil {
 			t.Fatalf("CreateInvite: %v", err)
 		}

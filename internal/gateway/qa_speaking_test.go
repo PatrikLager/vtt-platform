@@ -202,8 +202,8 @@ func spkOpen(t *testing.T) *spkWorld {
 	}
 	w.dm, _ = mk("Dana", identity.RoleDM)
 	w.agent, _ = mk("Agnes", identity.RoleAgent)
-	w.ada, w.adaID = mk("Ada", identity.RolePlayer)
-	w.bo, w.boID = mk("Bo", identity.RolePlayer)
+	w.ada, w.adaID = mk("Ada", identity.RoleSpectator)
+	w.bo, w.boID = mk("Bo", identity.RoleSpectator)
 	n := 0
 	add := func(p *vttv1.Envelope) {
 		n++

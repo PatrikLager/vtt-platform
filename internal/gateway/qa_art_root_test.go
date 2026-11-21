@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/campaign"
 	"github.com/PatrikLager/vtt-platform/internal/gateway"
 	"github.com/PatrikLager/vtt-platform/internal/identity"
@@ -32,6 +33,7 @@ var (
 type qaArtTable struct {
 	srv   *httptest.Server
 	ids   *identity.DB
+	camp  *campaign.Campaign
 	token string
 }
 
@@ -55,7 +57,7 @@ func qaArtServe(t *testing.T, artDir string, setDir bool) *qaArtTable {
 		t.Fatalf("identity.Open: %v", err)
 	}
 	t.Cleanup(func() { _ = ids.Close() })
-	token, _, err := ids.CreateInvite("Rowan", identity.RolePlayer)
+	token, _, err := ids.CreateInvite("Rowan", identity.RoleSpectator)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
@@ -65,7 +67,7 @@ func qaArtServe(t *testing.T, artDir string, setDir bool) *qaArtTable {
 	}
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(srv.Close)
-	return &qaArtTable{srv: srv, ids: ids, token: token}
+	return &qaArtTable{srv: srv, ids: ids, camp: c, token: token}
 }
 
 func qaArtDo(t *testing.T, srv *httptest.Server, method, path, authorization string, extra map[string]string) qaArtAnswer {
@@ -769,13 +771,31 @@ func TestQAArtRootAFIFOWearingAnArtFilenameIs404WithoutBlocking(t *testing.T) {
 func TestQAArtRootArtIsAnsweredToEveryRole(t *testing.T) {
 	_, art, picture, _ := qaArtLayout(t)
 	tb := qaArtServe(t, art, true)
-	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent, identity.RolePlayer, identity.RoleSpectator} {
+	seats := map[string]string{}
+	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent, identity.RoleSpectator} {
 		token, _, err := tb.ids.CreateInvite("seat-"+string(role), role)
 		if err != nil {
 			t.Fatalf("CreateInvite %s: %v", role, err)
 		}
+		seats[string(role)] = token
+	}
+	token, id, err := tb.ids.CreateInvite("seat-player", identity.RoleSpectator)
+	if err != nil {
+		t.Fatalf("CreateInvite player: %v", err)
+	}
+	party := vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER
+	if _, err := tb.camp.AppendBatch([]*vttv1.Envelope{
+		{EventId: "art-add", Payload: &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
+			Actor: &vttv1.Actor{ActorId: "pm-1", Name: "Ash", Kind: party}}}},
+		{EventId: "art-grant", Payload: &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
+			ActorId: "pm-1", ParticipantId: id, Kind: party}}},
+	}); err != nil {
+		t.Fatalf("grant the player an actor: %v", err)
+	}
+	seats["player"] = token
+	for role, token := range seats {
 		a := qaArtDo(t, tb.srv, http.MethodGet, "/api/art/brick-path-2.png", "Bearer "+token, nil)
-		qaWantBytes(t, string(role), a, picture)
+		qaWantBytes(t, role, a, picture)
 	}
 }
 
@@ -783,7 +803,7 @@ func TestQAArtRootArtIsAnsweredToEveryRole(t *testing.T) {
 func TestQAArtRootARequestWithoutAGoodBearerIs401(t *testing.T) {
 	_, art, picture, _ := qaArtLayout(t)
 	tb := qaArtServe(t, art, true)
-	revokedToken, revokedID, err := tb.ids.CreateInvite("Leaver", identity.RolePlayer)
+	revokedToken, revokedID, err := tb.ids.CreateInvite("Leaver", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}

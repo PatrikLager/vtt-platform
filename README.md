@@ -15,8 +15,9 @@ whichever command touches it first; `invite`, `serve` and `revoke` can run
 against it in any order:
 
 ```sh
-# Mint an invite token for a new participant (DM-side, CLI-only).
-vtt invite --campaign campaign/ --name "Alice" --role player
+# Mint an invite token for a new participant (DM-side, CLI-only); they join
+# as a spectator, and the DM's grant of a character makes them a player.
+vtt invite --campaign campaign/ --name "Alice" --role spectator
 
 # Serve that campaign over the WebSocket/HTTP gateway.
 vtt serve --campaign campaign/ --addr :8080

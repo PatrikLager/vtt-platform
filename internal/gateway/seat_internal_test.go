@@ -164,7 +164,7 @@ func TestAWedgedWatcherIsTornDownAndOthersKeepServing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	victimToken, victimID, err := ids.CreateInvite("Victim", identity.RolePlayer)
+	victimToken, victimID, err := ids.CreateInvite("Victim", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func seatServer(t *testing.T) (*Server, *campaign.Campaign, *identity.Participan
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ids.Close() })
-	_, playerID, err := ids.CreateInvite("Lera", identity.RolePlayer)
+	_, playerID, err := ids.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -362,7 +362,7 @@ func qaMGWantRefused(t *testing.T, what string, r *vttv1.CommandResult, want str
 // VTT-921 VTT-350 VTT-922
 func TestQAMGTheDefaultViewpointJudgesEveryControlledTokensMove(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
 	tb.party(pid)
 
 	pat := tb.dial("pat", tok, "")
@@ -376,7 +376,7 @@ func TestQAMGTheDefaultViewpointJudgesEveryControlledTokensMove(t *testing.T) {
 // VTT-339 VTT-350 VTT-922
 func TestQAMGTwoConnectionsOfOnePlayerAreEachJudgedByTheirOwnCharacter(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
 	tb.party(pid)
 
 	one := tb.dial("pat-one", tok, "")
@@ -402,7 +402,7 @@ func TestQAMGTwoConnectionsOfOnePlayerAreEachJudgedByTheirOwnCharacter(t *testin
 // VTT-350 VTT-922
 func TestQAMGAWatchedCharacterWithoutATokenSeesNothing(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
 	tb.party(pid)
 
 	pat := tb.dial("pat", tok, "pc-b")
@@ -417,7 +417,7 @@ func TestQAMGAWatchedCharacterWithoutATokenSeesNothing(t *testing.T) {
 func TestQAMGAClosedDoorHidesTheRoomBeyondIt(t *testing.T) {
 	tb := qaMGNewTable(t)
 	dmTok, _ := tb.invite("dm", identity.RoleDM)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
 	// Keep the door at (3,1) the only opening between the two rooms.
 	tb.append(qaMGTiledScene("s3", 7, 3, func(x, y int32) string {
 		switch {
@@ -450,7 +450,7 @@ func TestQAMGAClosedDoorHidesTheRoomBeyondIt(t *testing.T) {
 // VTT-342 VTT-350 VTT-922
 func TestQAMGASwitchedViewpointJudgesTheMovesAfterTheSwitch(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
 	tb.party(pid)
 
 	pat := tb.dial("pat", tok, "")
@@ -471,7 +471,7 @@ func TestQAMGASwitchedViewpointJudgesTheMovesAfterTheSwitch(t *testing.T) {
 // VTT-339 VTT-350 VTT-922 VTT-368
 func TestQAMGAConnectionOpenedOnALogJudgesByThatCharacter(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
 	tb.party(pid)
 
 	pat := tb.dial("pat", tok, "pc-b")
@@ -499,8 +499,8 @@ func TestQAMGAConnectionOpenedOnALogJudgesByThatCharacter(t *testing.T) {
 // VTT-921 VTT-922
 func TestQAMGALogThePlayerMayNotWatchOpensOnTheFirstPartyMember(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
-	_, oli := tb.invite("oli", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
+	_, oli := tb.invite("oli", identity.RoleSpectator)
 	tb.party(pid)
 	// Keep every log named below one that sees room R, which pc-a does not.
 	tb.character("pc-o", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "tok-o", "s1", 6, 1, oli)
@@ -519,7 +519,7 @@ func TestQAMGALogThePlayerMayNotWatchOpensOnTheFirstPartyMember(t *testing.T) {
 // VTT-921 VTT-342 VTT-922
 func TestQAMGRevokingTheWatchedCharacterJudgesByTheFirstPartyMember(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
 	tb.party(pid)
 
 	pat := tb.dial("pat", tok, "pc-b")
@@ -537,7 +537,7 @@ func TestQAMGRevokingTheWatchedCharacterJudgesByTheFirstPartyMember(t *testing.T
 // VTT-921 VTT-922
 func TestQAMGMakingTheWatchedCharacterNonPartyJudgesByTheFirstPartyMember(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
 	tb.party(pid)
 
 	pat := tb.dial("pat", tok, "pc-b")
@@ -562,7 +562,7 @@ func TestQAMGMakingTheWatchedCharacterNonPartyJudgesByTheFirstPartyMember(t *tes
 // VTT-921 VTT-922
 func TestQAMGRemovingTheWatchedCharacterJudgesByTheFirstPartyMember(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
 	tb.party(pid)
 
 	pat := tb.dial("pat", tok, "pc-b")
@@ -580,7 +580,7 @@ func TestQAMGRemovingTheWatchedCharacterJudgesByTheFirstPartyMember(t *testing.T
 // VTT-891 VTT-923
 func TestQAMGLosingTheOnlyPartyMemberLeavesNoTokenMovable(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
 	tb.character("pc-b", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "tok-b", "s1", 5, 1, pid)
 	spectators := fmt.Sprintf("gateway: not authorized: role %q may not issue %q", "spectator", "move_token")
 
@@ -613,7 +613,7 @@ func TestQAMGLosingTheOnlyPartyMemberLeavesNoTokenMovable(t *testing.T) {
 // VTT-921 VTT-342 VTT-922 VTT-891
 func TestQAMGAFirstPartyMemberGrantedMidConnectionMovesWithoutReconnecting(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("nia", identity.RolePlayer)
+	tok, pid := tb.invite("nia", identity.RoleSpectator)
 	tb.character("pc-c", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "tok-c", "s1", 1, 1)
 
 	nia := tb.dial("nia", tok, "")
@@ -630,7 +630,7 @@ func TestQAMGAFirstPartyMemberGrantedMidConnectionMovesWithoutReconnecting(t *te
 // VTT-922
 func TestQAMGAFirstPartyMemberGrantedMidConnectionJudgesTheNextMoveAtItsSnapshot(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("nia", identity.RolePlayer)
+	tok, pid := tb.invite("nia", identity.RoleSpectator)
 	tb.character("pc-c", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "tok-c", "s1", 1, 1)
 
 	nia := tb.dial("nia", tok, "")
@@ -643,7 +643,7 @@ func TestQAMGAFirstPartyMemberGrantedMidConnectionJudgesTheNextMoveAtItsSnapshot
 // VTT-350 VTT-922
 func TestQAMGPartyMembersOnDifferentScenesJudgeOnlyTheirOwnScene(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("quinn", identity.RolePlayer)
+	tok, pid := tb.invite("quinn", identity.RoleSpectator)
 	tb.character("pc-f", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "tok-f", "s2", 1, 1, pid)
 	tb.character("pc-e", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "tok-e", "s1", 1, 1, pid)
 
@@ -661,8 +661,8 @@ func TestQAMGPartyMembersOnDifferentScenesJudgeOnlyTheirOwnScene(t *testing.T) {
 // VTT-450 VTT-922
 func TestQAMGARefusedSetViewpointLeavesTheMoveJudgedByTheCharacterShown(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
-	_, oli := tb.invite("oli", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
+	_, oli := tb.invite("oli", identity.RoleSpectator)
 	tb.party(pid)
 	tb.character("pc-o", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "tok-o", "s1", 6, 1, oli)
 	tb.character("npc-pet", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, "tok-pet", "s1", 6, 0)
@@ -680,7 +680,7 @@ func TestQAMGARefusedSetViewpointLeavesTheMoveJudgedByTheCharacterShown(t *testi
 // VTT-156 VTT-350 VTT-601
 func TestQAMGAnUnseenSquareIsRefusedWithOneStringWhateverStandsOnIt(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
 	tb.party(pid)
 	tb.character("npc-goblin", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, "tok-goblin", "s1", 8, 2)
 
@@ -707,7 +707,7 @@ func TestQAMGAnUnseenSquareIsRefusedWithOneStringWhateverStandsOnIt(t *testing.T
 // VTT-156 VTT-157
 func TestQAMGASeenBlockedSquareIsRefusedWithTheObstructionNamed(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
 	tb.party(pid)
 	crate := qaMGBlocked + "something (a crate) is in the way."
 
@@ -726,7 +726,7 @@ func TestQAMGASeenBlockedSquareIsRefusedWithTheObstructionNamed(t *testing.T) {
 func TestQAMGTheDMMovesATokenOntoAnySquare(t *testing.T) {
 	tb := qaMGNewTable(t)
 	dmTok, _ := tb.invite("dm", identity.RoleDM)
-	_, pid := tb.invite("pat", identity.RolePlayer)
+	_, pid := tb.invite("pat", identity.RoleSpectator)
 	tb.character("pc-a", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "tok-a", "s1", 1, 1, pid)
 	tb.character("npc-goblin", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, "tok-goblin", "s1", 2, 0)
 
@@ -743,7 +743,7 @@ func TestQAMGTheDMMovesATokenOntoAnySquare(t *testing.T) {
 func TestQAMGTheAgentMovesATokenOntoAnySquare(t *testing.T) {
 	tb := qaMGNewTable(t)
 	agentTok, _ := tb.invite("agent", identity.RoleAgent)
-	_, pid := tb.invite("pat", identity.RolePlayer)
+	_, pid := tb.invite("pat", identity.RoleSpectator)
 	tb.character("pc-a", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "tok-a", "s1", 1, 1, pid)
 	tb.character("npc-goblin", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, "tok-goblin", "s1", 2, 0)
 
@@ -757,9 +757,9 @@ func TestQAMGTheAgentMovesATokenOntoAnySquare(t *testing.T) {
 // VTT-142 VTT-139
 func TestQAMGAPlayerMovesOnlyTokensTheyControlAndASpectatorNone(t *testing.T) {
 	tb := qaMGNewTable(t)
-	tok, pid := tb.invite("pat", identity.RolePlayer)
+	tok, pid := tb.invite("pat", identity.RoleSpectator)
 	specTok, _ := tb.invite("sid", identity.RoleSpectator)
-	_, oli := tb.invite("oli", identity.RolePlayer)
+	_, oli := tb.invite("oli", identity.RoleSpectator)
 	tb.party(pid)
 	tb.character("pc-o", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "tok-o", "s1", 2, 2, oli)
 	tb.character("npc-goblin", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, "tok-goblin", "s1", 2, 0)

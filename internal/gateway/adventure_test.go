@@ -146,7 +146,7 @@ func newAdventureFixtureWith(t *testing.T, withAdventures bool,
 	if err != nil {
 		t.Fatal(err)
 	}
-	playerToken, _, err := ids.CreateInvite("Player", identity.RolePlayer)
+	playerToken, _, err := ids.CreateInvite("Player", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func newMultiAdventureFixture(t *testing.T) *adventureFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	playerToken, _, err := ids.CreateInvite("Player", identity.RolePlayer)
+	playerToken, _, err := ids.CreateInvite("Player", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}

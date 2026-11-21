@@ -127,7 +127,7 @@ func TestQAHeldNameIsRefusedIgnoringCaseForEveryRole(t *testing.T) {
 	e := qaSetup(t, 50)
 	e.hold("Ægir Ünal", identity.RoleDM)
 	e.hold("Agent Smith", identity.RoleAgent)
-	e.hold("Pip", identity.RolePlayer)
+	e.hold("Pip", identity.RoleSpectator)
 	e.hold("Quill", identity.RoleSpectator)
 	for _, name := range []string{"ægir ünal", "ÆGIR ÜNAL", "AGENT smith", "pIP", "qUILL", "Pip"} {
 		r := e.join(e.secret, name)
@@ -154,7 +154,7 @@ func TestQAAJoinedNameHoldsItselfAgainstLaterJoiner(t *testing.T) {
 // VTT-545 VTT-011
 func TestQATakenNameWritesNothing(t *testing.T) {
 	e := qaSetup(t, 50)
-	e.hold("Held", identity.RolePlayer)
+	e.hold("Held", identity.RoleSpectator)
 	rows, spent := e.rows(), e.admitted()
 	qaWant(t, "taken", e.join(e.secret, "hELD"), 400)
 	if e.rows() != rows || e.admitted() != spent {
@@ -169,7 +169,7 @@ func TestQATakenNameWritesNothing(t *testing.T) {
 // VTT-009 VTT-013 VTT-546
 func TestQADoorRefusalsLeakNoNames(t *testing.T) {
 	e := qaSetup(t, 1)
-	e.hold("Held", identity.RolePlayer)
+	e.hold("Held", identity.RoleSpectator)
 	nameRefusal := e.join(e.secret, "held")
 	qaWant(t, "taken", nameRefusal, 400)
 	if !strings.Contains(nameRefusal.body, "taken") {
@@ -215,8 +215,8 @@ func TestQADoorRefusalsLeakNoNames(t *testing.T) {
 // VTT-544 VTT-542
 func TestQARevokedHolderDoesNotHoldTheName(t *testing.T) {
 	e := qaSetup(t, 50)
-	gone := e.hold("Ørjan", identity.RolePlayer)
-	e.hold("Both", identity.RolePlayer)
+	gone := e.hold("Ørjan", identity.RoleSpectator)
+	e.hold("Both", identity.RoleSpectator)
 	qaWant(t, "before revoke", e.join(e.secret, "ørjan"), 400)
 	if err := e.ids.Revoke(gone); err != nil {
 		t.Fatal(err)
@@ -229,7 +229,7 @@ func TestQARevokedHolderDoesNotHoldTheName(t *testing.T) {
 // VTT-544
 func TestQAOnlyRevokedHoldersLeaveTheNameFree(t *testing.T) {
 	e := qaSetup(t, 50)
-	if _, id, err := e.ids.CreateInvite("Solo", identity.RolePlayer); err != nil {
+	if _, id, err := e.ids.CreateInvite("Solo", identity.RoleSpectator); err != nil {
 		t.Fatal(err)
 	} else if err := e.ids.Revoke(id); err != nil {
 		t.Fatal(err)
@@ -246,7 +246,7 @@ func TestQAOnlyRevokedHoldersLeaveTheNameFree(t *testing.T) {
 // VTT-555 VTT-542
 func TestQATrimBeforeJudgedAndStored(t *testing.T) {
 	e := qaSetup(t, 50)
-	e.hold("Alice", identity.RolePlayer)
+	e.hold("Alice", identity.RoleSpectator)
 	qaWant(t, "padded held", e.join(e.secret, " \t aLICE \n"), 400)
 	r := e.join(e.secret, "  Bob \t")
 	qaWant(t, "padded free", r, 200)
@@ -291,7 +291,7 @@ func TestQAUsableDisplayNameBounds(t *testing.T) {
 // VTT-550
 func TestQARotationRefusesOldAdmitsNew(t *testing.T) {
 	e := qaSetup(t, 50)
-	e.hold("Held", identity.RolePlayer)
+	e.hold("Held", identity.RoleSpectator)
 	old := e.secret
 	qaWant(t, "old ok", e.join(old, "Before"), 200)
 	next, err := e.ids.RotateJoinSecret()

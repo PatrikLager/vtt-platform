@@ -53,7 +53,7 @@ func sheetWireNarrate(text string) *vttv1.Envelope {
 // VTT-658 VTT-664
 func TestASeatIsSentNoCompanionsSheetBeforeItsCharacterSeesIt(t *testing.T) {
 	w := qacsWireTable(t)
-	playerTok, playerID, err := w.ids.CreateInvite("Ayla's player", identity.RolePlayer)
+	playerTok, playerID, err := w.ids.CreateInvite("Ayla's player", identity.RoleSpectator)
 	if err != nil {
 		t.Fatalf("invite: %v", err)
 	}

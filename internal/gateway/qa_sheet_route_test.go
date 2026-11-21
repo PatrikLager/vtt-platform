@@ -41,7 +41,7 @@ func qaSheetStart(t *testing.T, rs *rules.Ruleset) qaSheetServer {
 		if err != nil {
 			t.Fatal(err)
 		}
-		tok, _, err := ids.CreateInvite("qa-"+name, role)
+		tok, _, err := ids.CreateInvite("qa-"+name, mintRole(role))
 		if err != nil {
 			t.Fatal(err)
 		}

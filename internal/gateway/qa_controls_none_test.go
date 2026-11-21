@@ -386,8 +386,8 @@ func qacnCheckNoMove(t *testing.T, who string, frames []qacnFrame) {
 // VTT-454 VTT-399
 func TestQACNAPlayerWhoControlsAPartyMemberIsToldSo(t *testing.T) {
 	tb := qacnNewTable(t)
-	aTok, a := tb.invite("Ada", identity.RolePlayer)
-	_, b := tb.invite("Bo", identity.RolePlayer)
+	aTok, a := tb.invite("Ada", identity.RoleSpectator)
+	_, b := tb.invite("Bo", identity.RoleSpectator)
 	tb.append(
 		tb.added("pm-1", "Ash", qacnParty), tb.granted("pm-1", b, qacnParty),
 		tb.added("pm-2", "Birch", qacnParty), tb.granted("pm-2", a, qacnParty),
@@ -402,7 +402,7 @@ func TestQACNAPlayerWhoControlsAPartyMemberIsToldSo(t *testing.T) {
 func TestQACNASpectatorWhoControlsNothingIsToldTheyControlNone(t *testing.T) {
 	tb := qacnNewTable(t)
 	sTok, _ := tb.invite("Sol", identity.RoleSpectator)
-	_, a := tb.invite("Ada", identity.RolePlayer)
+	_, a := tb.invite("Ada", identity.RoleSpectator)
 	tb.append(
 		tb.added("pm-1", "Ash", qacnParty), tb.granted("pm-1", a, qacnParty),
 		tb.added("pm-2", "Birch", qacnParty),
@@ -432,7 +432,7 @@ func TestQACNAnEmptySetSaysOnTheWireThatTheyControlNone(t *testing.T) {
 // VTT-455 VTT-454 VTT-923
 func TestQACNRevokingATablesOnlyPartyMemberSendsTheSetAgain(t *testing.T) {
 	tb := qacnNewTable(t)
-	aTok, a := tb.invite("Ada", identity.RolePlayer)
+	aTok, a := tb.invite("Ada", identity.RoleSpectator)
 	tb.append(
 		tb.added("pm-1", "Ash", qacnParty), tb.granted("pm-1", a, qacnParty),
 		tb.added("np-1", "Goblin", qacnNonParty),
@@ -447,7 +447,7 @@ func TestQACNRevokingATablesOnlyPartyMemberSendsTheSetAgain(t *testing.T) {
 // VTT-455 VTT-454
 func TestQACNGrantingTheOnlyPartyMemberToAParticipantWhoControlsNoneSendsTheSetAgain(t *testing.T) {
 	tb := qacnNewTable(t)
-	aTok, a := tb.invite("Ada", identity.RolePlayer)
+	aTok, a := tb.invite("Ada", identity.RoleSpectator)
 	tb.append(tb.added("pm-1", "Ash", qacnParty))
 	cn := tb.dial("Ada", aTok, "pm-1")
 	qacnCheckOpening(t, "Ada", cn.open(), qacnSet(true, "pm-1", "Ash"))
@@ -459,7 +459,7 @@ func TestQACNGrantingTheOnlyPartyMemberToAParticipantWhoControlsNoneSendsTheSetA
 func TestQACNASpectatorsControlChangeSendsTheSetAgain(t *testing.T) {
 	tb := qacnNewTable(t)
 	sTok, s := tb.invite("Sol", identity.RoleSpectator)
-	_, a := tb.invite("Ada", identity.RolePlayer)
+	_, a := tb.invite("Ada", identity.RoleSpectator)
 	tb.append(
 		tb.added("pm-1", "Ash", qacnParty), tb.granted("pm-1", a, qacnParty),
 		tb.added("pm-2", "Birch", qacnParty),
@@ -475,8 +475,8 @@ func TestQACNASpectatorsControlChangeSendsTheSetAgain(t *testing.T) {
 // VTT-454 VTT-400 VTT-923
 func TestQACNRevokingAPlayersPartyMemberKeepsThemWatchingItAndSaysTheyControlNone(t *testing.T) {
 	tb := qacnNewTable(t)
-	aTok, a := tb.invite("Ada", identity.RolePlayer)
-	_, b := tb.invite("Bo", identity.RolePlayer)
+	aTok, a := tb.invite("Ada", identity.RoleSpectator)
+	_, b := tb.invite("Bo", identity.RoleSpectator)
 	tb.append(
 		tb.added("pm-1", "Ash", qacnParty), tb.granted("pm-1", b, qacnParty),
 		tb.added("pm-2", "Birch", qacnParty), tb.granted("pm-2", a, qacnParty),
@@ -491,8 +491,8 @@ func TestQACNRevokingAPlayersPartyMemberKeepsThemWatchingItAndSaysTheyControlNon
 // VTT-454 VTT-400
 func TestQACNLosingOneOfTwoPartyMembersStillSaysTheyControlOne(t *testing.T) {
 	tb := qacnNewTable(t)
-	aTok, a := tb.invite("Ada", identity.RolePlayer)
-	_, b := tb.invite("Bo", identity.RolePlayer)
+	aTok, a := tb.invite("Ada", identity.RoleSpectator)
+	_, b := tb.invite("Bo", identity.RoleSpectator)
 	tb.append(
 		tb.added("pm-1", "Ash", qacnParty), tb.granted("pm-1", a, qacnParty),
 		tb.added("pm-2", "Birch", qacnParty), tb.granted("pm-2", a, qacnParty),
@@ -507,8 +507,8 @@ func TestQACNLosingOneOfTwoPartyMembersStillSaysTheyControlOne(t *testing.T) {
 // VTT-454 VTT-400 VTT-386
 func TestQACNMakingTheirPartyMemberNonPartySaysTheyControlNone(t *testing.T) {
 	tb := qacnNewTable(t)
-	aTok, a := tb.invite("Ada", identity.RolePlayer)
-	_, b := tb.invite("Bo", identity.RolePlayer)
+	aTok, a := tb.invite("Ada", identity.RoleSpectator)
+	_, b := tb.invite("Bo", identity.RoleSpectator)
 	_, d := tb.invite("Dee", identity.RoleDM)
 	tb.append(
 		tb.added("pm-1", "Ash", qacnParty), tb.granted("pm-1", b, qacnParty),
@@ -527,8 +527,8 @@ func TestQACNMakingTheirPartyMemberNonPartySaysTheyControlNone(t *testing.T) {
 // VTT-454 VTT-400
 func TestQACNRemovingTheirPartyMemberSaysTheyControlNone(t *testing.T) {
 	tb := qacnNewTable(t)
-	aTok, a := tb.invite("Ada", identity.RolePlayer)
-	_, b := tb.invite("Bo", identity.RolePlayer)
+	aTok, a := tb.invite("Ada", identity.RoleSpectator)
+	_, b := tb.invite("Bo", identity.RoleSpectator)
 	tb.append(
 		tb.added("pm-1", "Ash", qacnParty), tb.granted("pm-1", b, qacnParty),
 		tb.added("pm-2", "Birch", qacnParty), tb.granted("pm-2", a, qacnParty),
@@ -543,8 +543,8 @@ func TestQACNRemovingTheirPartyMemberSaysTheyControlNone(t *testing.T) {
 // VTT-454 VTT-400 VTT-921
 func TestQACNAPartyMemberGrantOfANonPartyActorSaysTheyControlOne(t *testing.T) {
 	tb := qacnNewTable(t)
-	aTok, a := tb.invite("Ada", identity.RolePlayer)
-	_, b := tb.invite("Bo", identity.RolePlayer)
+	aTok, a := tb.invite("Ada", identity.RoleSpectator)
+	_, b := tb.invite("Bo", identity.RoleSpectator)
 	tb.append(
 		tb.added("pm-1", "Ash", qacnParty), tb.granted("pm-1", b, qacnParty),
 		tb.added("cr-1", "Wolf", qacnNonParty),
@@ -562,7 +562,7 @@ func TestQACNAPartyMemberGrantOfANonPartyActorSaysTheyControlOne(t *testing.T) {
 // VTT-455
 func TestQACNEveryConnectionOfThePlayerIsSentTheChange(t *testing.T) {
 	tb := qacnNewTable(t)
-	aTok, a := tb.invite("Ada", identity.RolePlayer)
+	aTok, a := tb.invite("Ada", identity.RoleSpectator)
 	tb.append(tb.added("pm-1", "Ash", qacnParty), tb.granted("pm-1", a, qacnParty))
 	one := tb.dial("Ada's first", aTok, "")
 	qacnCheckOpening(t, "Ada's first", one.open(), qacnSet(false, "pm-1", "Ash"))
@@ -576,7 +576,7 @@ func TestQACNEveryConnectionOfThePlayerIsSentTheChange(t *testing.T) {
 // VTT-401 VTT-455
 func TestQACNTheDMAndTheAgentAreSentNoSetAsControlChanges(t *testing.T) {
 	tb := qacnNewTable(t)
-	aTok, a := tb.invite("Ada", identity.RolePlayer)
+	aTok, a := tb.invite("Ada", identity.RoleSpectator)
 	dTok, _ := tb.invite("Dee", identity.RoleDM)
 	gTok, _ := tb.invite("Gus", identity.RoleAgent)
 	tb.append(tb.added("pm-1", "Ash", qacnParty), tb.granted("pm-1", a, qacnParty))
@@ -599,7 +599,7 @@ func TestQACNTheDMAndTheAgentAreSentNoSetAsControlChanges(t *testing.T) {
 // VTT-455 VTT-454
 func TestQACNAGrantAndItsRevocationInOneAppendSendNoSet(t *testing.T) {
 	tb := qacnNewTable(t)
-	aTok, a := tb.invite("Ada", identity.RolePlayer)
+	aTok, a := tb.invite("Ada", identity.RoleSpectator)
 	tb.append(tb.added("pm-1", "Ash", qacnParty))
 	cn := tb.dial("Ada", aTok, "pm-1")
 	qacnCheckOpening(t, "Ada", cn.open(), qacnSet(true, "pm-1", "Ash"))
@@ -612,7 +612,7 @@ func TestQACNAGrantAndItsRevocationInOneAppendSendNoSet(t *testing.T) {
 // VTT-454 VTT-400 VTT-896
 func TestQACNMakingAPlayerASpectatorSaysTheyControlNone(t *testing.T) {
 	tb := qacnNewTable(t)
-	aTok, a := tb.invite("Ada", identity.RolePlayer)
+	aTok, a := tb.invite("Ada", identity.RoleSpectator)
 	dTok, _ := tb.invite("Dee", identity.RoleDM)
 	tb.append(
 		tb.added("pm-1", "Ash", qacnParty), tb.granted("pm-1", a, qacnParty),

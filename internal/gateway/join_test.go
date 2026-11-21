@@ -474,7 +474,7 @@ func (f *joinFixture) invite(name string, role identity.Role) string {
 func TestAJoinUnderANameSomebodyHoldsIsToldTheNameIsTaken(t *testing.T) {
 	f := newJoinFixture(t)
 	f.invite("Kim", identity.RoleSpectator)
-	f.invite("Åsa", identity.RolePlayer)
+	f.invite("Åsa", identity.RoleSpectator)
 	f.invite("DM", identity.RoleDM)
 	secret := f.open(100)
 	_, _, door := f.post("not-the-secret", "Zed")

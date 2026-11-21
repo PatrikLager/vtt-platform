@@ -33,7 +33,7 @@ func openTemp(t *testing.T) (*identity.DB, string) {
 // VTT-075
 func TestCreateInviteVerifyRoundTrip(t *testing.T) {
 	d, _ := openTemp(t)
-	token, id, err := d.CreateInvite("Lera", identity.RolePlayer)
+	token, id, err := d.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,8 +54,8 @@ func TestCreateInviteVerifyRoundTrip(t *testing.T) {
 	if p.Name != "Lera" {
 		t.Errorf("Name: got %q, want %q", p.Name, "Lera")
 	}
-	if p.Role != identity.RolePlayer {
-		t.Errorf("Role: got %q, want %q", p.Role, identity.RolePlayer)
+	if p.Role != identity.RoleSpectator {
+		t.Errorf("Role: got %q, want %q", p.Role, identity.RoleSpectator)
 	}
 }
 
@@ -63,7 +63,7 @@ func TestCreateInviteVerifyRoundTrip(t *testing.T) {
 // VTT-041
 func TestTokenNotRecoverableFromDB(t *testing.T) {
 	d, path := openTemp(t)
-	token, id, err := d.CreateInvite("Lera", identity.RolePlayer)
+	token, id, err := d.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestTokenNotRecoverableFromDB(t *testing.T) {
 // VTT-074
 func TestVerifyRejectsWrongToken(t *testing.T) {
 	d, _ := openTemp(t)
-	if _, _, err := d.CreateInvite("Lera", identity.RolePlayer); err != nil {
+	if _, _, err := d.CreateInvite("Lera", identity.RoleSpectator); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.Verify("this-is-not-a-real-token"); err == nil {
@@ -101,7 +101,7 @@ func TestVerifyRejectsWrongToken(t *testing.T) {
 // VTT-074
 func TestRevokedTokenRejectedAfterRevoke(t *testing.T) {
 	d, _ := openTemp(t)
-	token, id, err := d.CreateInvite("Lera", identity.RolePlayer)
+	token, id, err := d.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,10 +144,60 @@ func TestParseRoleAcceptsExactlyTheFourRoles(t *testing.T) {
 	}
 }
 
+// VTT-911
+func TestCreateInviteRefusesAPlayerAndEveryOtherRoleAndMintsNothing(t *testing.T) {
+	d, _ := openTemp(t)
+	_, dmID, err := d.CreateInvite("Ari", identity.RoleDM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const refusal = "identity: a participant becomes a player when given a character; invite them as a spectator"
+	token, id, err := d.CreateInvite("Lera", identity.RolePlayer)
+	if err == nil || err.Error() != refusal {
+		t.Fatalf("CreateInvite(player) error = %v, want %q", err, refusal)
+	}
+	if token != "" || id != "" {
+		t.Fatalf("CreateInvite(player) = (%q, %q), want no token and no id", token, id)
+	}
+	for _, bad := range []identity.Role{"", "gm", "Player", "admin"} {
+		if token, id, err := d.CreateInvite("Lera", bad); err == nil || token != "" || id != "" {
+			t.Errorf("CreateInvite(%q) = (%q, %q, %v), want an error and nothing minted", bad, token, id, err)
+		}
+	}
+	list, err := d.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].ID != dmID {
+		t.Fatalf("List after the refused invites holds %d participants, want Ari alone", len(list))
+	}
+}
+
+// VTT-911
+func TestCreateInviteMintsTheDMTheAgentAndASpectator(t *testing.T) {
+	d, _ := openTemp(t)
+	for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent, identity.RoleSpectator} {
+		token, id, err := d.CreateInvite("as-"+string(role), role)
+		if err != nil {
+			t.Fatalf("CreateInvite(%s): %v", role, err)
+		}
+		p, err := d.Verify(token)
+		if err != nil {
+			t.Fatalf("Verify(the %s's token): %v", role, err)
+		}
+		if p.ID != id || p.Role != role {
+			t.Fatalf("the %s's token resolves to %+v, want id %q at %s", role, p, id, role)
+		}
+	}
+	if list, err := d.List(); err != nil || len(list) != 3 {
+		t.Fatalf("List holds %d participants (%v), want the three minted", len(list), err)
+	}
+}
+
 // VTT-551
 func TestTwoInvitesProduceDistinctTokensAndIDs(t *testing.T) {
 	d, _ := openTemp(t)
-	token1, id1, err := d.CreateInvite("Lera", identity.RolePlayer)
+	token1, id1, err := d.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +239,7 @@ func TestCoexistsWithStoreOnSameFile(t *testing.T) {
 	}
 	defer s.Close()
 
-	token, _, err := d.CreateInvite("Lera", identity.RolePlayer)
+	token, _, err := d.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +402,7 @@ func TestRotatingTheSecretInvalidatesTheOldLink(t *testing.T) {
 // VTT-020
 func TestRotatingTheSecretLeavesParticipantsAlone(t *testing.T) {
 	d, _ := openTemp(t)
-	token, _, err := d.CreateInvite("Lera", identity.RolePlayer)
+	token, _, err := d.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,7 +518,7 @@ func TestOpeningTheDoorFirstStillMintsARealSecret(t *testing.T) {
 // VTT-074
 func TestLookupRefusesARevokedParticipant(t *testing.T) {
 	d, _ := openTemp(t)
-	_, id, err := d.CreateInvite("Mallory", identity.RolePlayer)
+	_, id, err := d.CreateInvite("Mallory", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -494,7 +544,7 @@ func TestLookupCarriesTheWholeParticipant(t *testing.T) {
 	// Assert ID too: Authorize reads it for ownership, so a partial lookup would
 	// change what authorization sees.
 	d, _ := openTemp(t)
-	_, id, err := d.CreateInvite("Kim", identity.RolePlayer)
+	_, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,7 +552,7 @@ func TestLookupCarriesTheWholeParticipant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.ID != id || p.Name != "Kim" || p.Role != identity.RolePlayer {
+	if p.ID != id || p.Name != "Kim" || p.Role != identity.RoleSpectator {
 		t.Fatalf("lookup lost identity: %+v", p)
 	}
 }
@@ -604,7 +654,7 @@ func TestListingParticipantsShowsWhoIsHereAndWhatTheyMayDo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, goneID, err := d.CreateInvite("Mal", identity.RolePlayer)
+	_, goneID, err := d.CreateInvite("Mal", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1295,7 +1345,7 @@ func TestTheIdentityStoreReportsFailuresRatherThanPretending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, id, err := d.CreateInvite("Ada", identity.RolePlayer)
+	_, id, err := d.CreateInvite("Ada", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1361,7 +1411,7 @@ func heldNamesAtAnOpenDoor(t *testing.T) (*identity.DB, string, string) {
 		role identity.Role
 	}{
 		{"Kim", identity.RoleSpectator},
-		{"Åsa", identity.RolePlayer},
+		{"Åsa", identity.RoleSpectator},
 		{"DM", identity.RoleDM},
 		{"Agent", identity.RoleAgent},
 	} {
@@ -1402,7 +1452,7 @@ func TestAnInviteUnderANameSomebodyHoldsIsRefusedAtAnyRole(t *testing.T) {
 	}{
 		{"kim", identity.RoleDM},
 		{"åsa", identity.RoleAgent},
-		{"dm", identity.RolePlayer},
+		{"dm", identity.RoleSpectator},
 		{"AGENT", identity.RoleSpectator},
 	} {
 		token, id, err := d.CreateInvite(c.name, c.role)
@@ -1439,7 +1489,7 @@ func TestANameOnlyARevokedParticipantHeldIsFree(t *testing.T) {
 	if ok, err := d.JoinAdmits(secret, "kim"); !ok || err != nil {
 		t.Fatalf("JoinAdmits(kim) with Kim revoked = (%v, %v), want (true, nil)", ok, err)
 	}
-	if _, _, err := d.CreateInvite("KIM", identity.RolePlayer); err != nil {
+	if _, _, err := d.CreateInvite("KIM", identity.RoleSpectator); err != nil {
 		t.Fatalf("CreateInvite(KIM) with Kim revoked: %v", err)
 	}
 }
@@ -1460,7 +1510,7 @@ func TestANameThatCannotBeReadRefusesTheJoinAndTheInvite(t *testing.T) {
 	if ok || err == nil || errors.Is(err, identity.ErrNameTaken) {
 		t.Fatalf("JoinAdmits over an unreadable name = (%v, %v), want (false, a read error)", ok, err)
 	}
-	if _, _, err := d.CreateInvite("Zed", identity.RolePlayer); err == nil || errors.Is(err, identity.ErrNameTaken) {
+	if _, _, err := d.CreateInvite("Zed", identity.RoleSpectator); err == nil || errors.Is(err, identity.ErrNameTaken) {
 		t.Fatalf("CreateInvite over an unreadable name: %v, want a read error", err)
 	}
 }

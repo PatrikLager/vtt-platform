@@ -208,7 +208,7 @@ func TestQAHeldNameRefusalReachesNoWriteStatement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := db.CreateInvite("Kim", RolePlayer); err != nil {
+	if _, _, err := db.CreateInvite("Kim", RoleSpectator); err != nil {
 		t.Fatal(err)
 	}
 	reached := refuseUnderEachArm(t, func() (bool, error) {

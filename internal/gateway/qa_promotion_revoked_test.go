@@ -402,14 +402,14 @@ func qaPRWantTold(t *testing.T, rule string, c *qaPRConn, frames []*vttv1.Server
 
 // VTT-032 VTT-906
 func TestQAPromoRevokedARevokedWatcherIsNotSentTheGrant(t *testing.T) {
-	for _, role := range []identity.Role{identity.RoleSpectator, identity.RolePlayer, identity.RoleAgent, identity.RoleDM} {
+	for _, role := range []identity.Role{identity.RoleSpectator, identity.RoleAgent, identity.RoleDM} {
 		t.Run("revoked "+string(role), func(t *testing.T) {
 			tb := qaPRNewTable(t)
 			dm := tb.host()
 			reannounceAdd(tb, dm, "pm-1")
 			revoked := tb.mint("Rook", role)
 			lost := tb.connect(revoked, "the revoked watcher")
-			witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
+			witness := tb.connect(tb.mint("Wren", identity.RoleSpectator), "the witness")
 			target := tb.mint("Tam", identity.RoleSpectator)
 			own := tb.connect(target, "the granted participant")
 			for _, c := range []*qaPRConn{dm, lost, witness} {
@@ -438,8 +438,8 @@ func TestQAPromoRevokedNoDeviceOfARevokedParticipantIsSentTheGrant(t *testing.T)
 	// Keep this wait ahead of the connects below: they must find the target in
 	// their snapshot and be sent no arrival that reads as a grant's.
 	dm.awaitTold(target, qaPRHere, 1)
-	witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
-	revoked := tb.mint("Rook", identity.RolePlayer)
+	witness := tb.connect(tb.mint("Wren", identity.RoleSpectator), "the witness")
+	revoked := tb.mint("Rook", identity.RoleSpectator)
 	first := tb.connect(revoked, "the revoked participant's first device")
 	second := tb.connect(revoked, "the revoked participant's second device")
 
@@ -459,7 +459,7 @@ func TestQAPromoRevokedARevocationBetweenTwoControlChangesWithholdsOnlyTheSecond
 	reannounceAdd(tb, dm, "pm-1")
 	revoked := tb.mint("Rook", identity.RoleSpectator)
 	lost := tb.connect(revoked, "the watcher revoked between the control changes")
-	witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
+	witness := tb.connect(tb.mint("Wren", identity.RoleSpectator), "the witness")
 	target := tb.mint("Tam", identity.RoleSpectator)
 	own := tb.connect(target, "the granted participant")
 	for _, c := range []*qaPRConn{dm, lost, witness} {
@@ -484,7 +484,7 @@ func TestQAPromoRevokedARevocationBetweenTwoControlChangesWithholdsOnlyTheSecond
 func TestQAPromoRevokedPromotingARevokedParticipantSendsThemNothing(t *testing.T) {
 	tb := qaPRNewTable(t)
 	dm := tb.host()
-	witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
+	witness := tb.connect(tb.mint("Wren", identity.RoleSpectator), "the witness")
 	target := tb.mint("Tam", identity.RoleSpectator)
 	own := tb.connect(target, "the revoked participant being promoted")
 	dm.awaitTold(target, qaPRHere, 1)
@@ -506,7 +506,7 @@ func TestQAPromoRevokedTheNextEventClosesARevokedWatcherWhoWasSentNoGrant(t *tes
 	reannounceAdd(tb, dm, "pm-1")
 	revoked := tb.mint("Rook", identity.RoleSpectator)
 	lost := tb.connect(revoked, "the revoked watcher")
-	witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
+	witness := tb.connect(tb.mint("Wren", identity.RoleSpectator), "the witness")
 	target := tb.mint("Tam", identity.RoleSpectator)
 	tb.connect(target, "the granted participant")
 	for _, c := range []*qaPRConn{dm, lost, witness} {
@@ -541,9 +541,9 @@ func TestQAPromoRevokedTheNextEventClosesARevokedWatcherWhoWasSentNoGrant(t *tes
 func TestQAPromoRevokedARevokedWatcherIsToldOfNoArrivalAndNoDeparture(t *testing.T) {
 	tb := qaPRNewTable(t)
 	dm := tb.host()
-	revoked := tb.mint("Rook", identity.RolePlayer)
+	revoked := tb.mint("Rook", identity.RoleSpectator)
 	lost := tb.connect(revoked, "the revoked watcher")
-	witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
+	witness := tb.connect(tb.mint("Wren", identity.RoleSpectator), "the witness")
 
 	tb.revoke(revoked, lost)
 	visitor := tb.mint("Vee", identity.RoleSpectator)
@@ -562,7 +562,7 @@ func TestQAPromoRevokedTheGrantedParticipantIsToldOnTheirOwnConnection(t *testin
 	tb := qaPRNewTable(t)
 	dm := tb.host()
 	reannounceAdd(tb, dm, "pm-1")
-	revoked := tb.mint("Rook", identity.RolePlayer)
+	revoked := tb.mint("Rook", identity.RoleSpectator)
 	lost := tb.connect(revoked, "the revoked watcher")
 	target := tb.mint("Tam", identity.RoleSpectator)
 	own := tb.connect(target, "the granted participant")
@@ -591,7 +591,7 @@ func TestQAPromoRevokedEveryUnrevokedConnectionIsSentTheGrant(t *testing.T) {
 			promoter := tb.connect(tb.mint("Dee", by), "the promoter")
 			tb.narrate(promoter, "the table is laid")
 			reannounceAdd(tb, promoter, "pm-1")
-			player := tb.mint("Wren", identity.RolePlayer)
+			player := tb.mint("Wren", identity.RoleSpectator)
 			before := []*qaPRConn{
 				promoter,
 				tb.connect(tb.mint("Bo", other), "the other "+string(other)),
@@ -599,7 +599,7 @@ func TestQAPromoRevokedEveryUnrevokedConnectionIsSentTheGrant(t *testing.T) {
 				tb.connect(player, "a player's second device"),
 				tb.connect(tb.mint("Sy", identity.RoleSpectator), "a spectator"),
 			}
-			revoked := tb.mint("Rook", identity.RolePlayer)
+			revoked := tb.mint("Rook", identity.RoleSpectator)
 			lost := tb.connect(revoked, "the revoked watcher")
 			target := tb.mint("Tam", identity.RoleSpectator)
 			first := tb.connect(target, "the granted participant's first device")
@@ -639,7 +639,7 @@ func TestQAPromoRevokedGrantingAnAbsentParticipantAnnouncesNothing(t *testing.T)
 		tb := qaPRNewTable(t)
 		dm := tb.host()
 		reannounceAdd(tb, dm, "pm-1")
-		witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
+		witness := tb.connect(tb.mint("Wren", identity.RoleSpectator), "the witness")
 		target := tb.mint("Tam", identity.RoleSpectator)
 
 		reannounceMust(tb, "the grant", reannounceGrant(tb, dm, "pm-1", target))
@@ -652,7 +652,7 @@ func TestQAPromoRevokedGrantingAnAbsentParticipantAnnouncesNothing(t *testing.T)
 		tb := qaPRNewTable(t)
 		dm := tb.host()
 		reannounceAdd(tb, dm, "pm-1")
-		witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
+		witness := tb.connect(tb.mint("Wren", identity.RoleSpectator), "the witness")
 		target := tb.mint("Tam", identity.RoleSpectator)
 		tb.connect(target, "the participant who leaves").hangUp()
 		dm.awaitTold(target, qaPRGone, 1)

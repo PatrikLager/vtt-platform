@@ -90,7 +90,7 @@ func waitForMCPLog(t *testing.T, cs *mcpsdk.ClientSession, log string, atLeast i
 func TestMCPSeatedAsAPlayerFollowsItsSetViewpoint(t *testing.T) {
 	fx := startMCPFixture(t)
 	dmToken := mintInviteToken(t, fx.campaignPath, identity.RoleDM, "dm")
-	playerToken, playerID := mintParticipant(t, fx.campaignPath, identity.RolePlayer, "player")
+	playerToken, playerID := mintParticipant(t, fx.campaignPath, identity.RoleSpectator, "player")
 	dm, closeDM := startMCPSession(t, fx.wsURL, dmToken)
 	defer closeDM()
 	player, closePlayer := startMCPSession(t, fx.wsURL, playerToken)

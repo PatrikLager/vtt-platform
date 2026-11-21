@@ -348,8 +348,8 @@ func TestQAHoldInviteWorksAgainstAHeldDirectory(t *testing.T) {
 	dir := t.TempDir()
 	qaHoldMustOpen(t, dir)
 
-	qaHoldMustRun(t, bin, "invite", "--campaign", dir, "--name", "QA Ann", "--role", "player")
-	if _, ok := qaHoldHasParticipant(t, qaHoldIdentity(t, dir), "QA Ann", identity.RolePlayer); !ok {
+	qaHoldMustRun(t, bin, "invite", "--campaign", dir, "--name", "QA Ann", "--role", "spectator")
+	if _, ok := qaHoldHasParticipant(t, qaHoldIdentity(t, dir), "QA Ann", identity.RoleSpectator); !ok {
 		t.Fatalf("vtt invite against a held directory minted nobody")
 	}
 }
@@ -360,7 +360,7 @@ func TestQAHoldRevokeWorksAgainstAHeldDirectory(t *testing.T) {
 	dir := t.TempDir()
 	qaHoldMustOpen(t, dir)
 	db := qaHoldIdentity(t, dir)
-	_, id, err := db.CreateInvite("QA Bo", identity.RolePlayer)
+	_, id, err := db.CreateInvite("QA Bo", identity.RoleSpectator)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
@@ -424,7 +424,7 @@ func TestQAHoldAdminCommandsWorkBesideARunningServe(t *testing.T) {
 	bin := qaHoldBuild(t)
 	dir := t.TempDir()
 	qaHoldServeUntilHealthy(t, bin, dir)
-	_, id, err := qaHoldIdentity(t, dir).CreateInvite("QA Cy", identity.RolePlayer)
+	_, id, err := qaHoldIdentity(t, dir).CreateInvite("QA Cy", identity.RoleSpectator)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestQAHoldAdminCommandsWorkBesideARunningServe(t *testing.T) {
 func TestQAHoldAdminCommandsHoldNothingWhileTheyRun(t *testing.T) {
 	bin := qaHoldBuild(t)
 	dir := t.TempDir()
-	_, id, err := qaHoldIdentity(t, dir).CreateInvite("QA Di", identity.RolePlayer)
+	_, id, err := qaHoldIdentity(t, dir).CreateInvite("QA Di", identity.RoleSpectator)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
@@ -498,7 +498,7 @@ func TestQAHoldInviteCreatesAMissingDirectoryWithMode0750(t *testing.T) {
 	bin := qaHoldBuild(t)
 	dir := filepath.Join(t.TempDir(), "qa-new")
 
-	qaHoldMustRun(t, bin, "invite", "--campaign", dir, "--name", "QA Ed", "--role", "player")
+	qaHoldMustRun(t, bin, "invite", "--campaign", dir, "--name", "QA Ed", "--role", "spectator")
 	fi, err := os.Stat(dir)
 	if err != nil || !fi.IsDir() {
 		t.Fatalf("vtt invite did not create %s: %v", dir, err)
@@ -516,7 +516,7 @@ func TestQAHoldADirectoryInviteCreatesHoldsNoEventsTable(t *testing.T) {
 	bin := qaHoldBuild(t)
 	dir := filepath.Join(t.TempDir(), "qa-new")
 
-	qaHoldMustRun(t, bin, "invite", "--campaign", dir, "--name", "QA Flo", "--role", "player")
+	qaHoldMustRun(t, bin, "invite", "--campaign", dir, "--name", "QA Flo", "--role", "spectator")
 	if qaHoldHasTable(t, dir, "events") {
 		t.Fatalf("a directory vtt invite created holds an events table")
 	}
@@ -555,7 +555,7 @@ func TestQAHoldAdminCommandsWorkOnALogOpenRefuses(t *testing.T) {
 	if c, err := qaHoldOpenPromptly(t, dir); c != nil || err == nil || errors.Is(err, campaign.ErrHeld) {
 		t.Fatalf("precondition: campaign.Open must refuse this log: c=%v err=%v", c, err)
 	}
-	_, id, err := qaHoldIdentity(t, dir).CreateInvite("QA Gus", identity.RolePlayer)
+	_, id, err := qaHoldIdentity(t, dir).CreateInvite("QA Gus", identity.RoleSpectator)
 	if err != nil {
 		t.Fatalf("CreateInvite: %v", err)
 	}
@@ -576,7 +576,7 @@ func TestQAHoldIdentityOnAHeldDirectoryWorksAndTakesNoHold(t *testing.T) {
 		t.Fatalf("identity.Open beside a holder: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	if _, _, err := db.CreateInvite("QA Ida", identity.RolePlayer); err != nil {
+	if _, _, err := db.CreateInvite("QA Ida", identity.RoleSpectator); err != nil {
 		t.Fatalf("CreateInvite beside a holder: %v", err)
 	}
 	if err := c.Close(); err != nil {
@@ -592,7 +592,7 @@ func TestQAHoldIdentityOnAHeldDirectoryWorksAndTakesNoHold(t *testing.T) {
 	}
 	found := false
 	for _, p := range ps {
-		if p.Name == "QA Ida" && p.Role == identity.RolePlayer {
+		if p.Name == "QA Ida" && p.Role == identity.RoleSpectator {
 			found = true
 		}
 	}

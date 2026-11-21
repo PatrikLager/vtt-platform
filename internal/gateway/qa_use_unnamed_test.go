@@ -82,8 +82,8 @@ func qaUseOpen(t *testing.T, withRuleset bool) *qaUseTable {
 	}{
 		{"Dee", identity.RoleDM},
 		{"Ada", identity.RoleAgent},
-		{"Pia", identity.RolePlayer},
-		{"Pete", identity.RolePlayer},
+		{"Pia", identity.RoleSpectator},
+		{"Pete", identity.RoleSpectator},
 		{"Sid", identity.RoleSpectator},
 	} {
 		token, id, err := ids.CreateInvite(p.name, p.role)

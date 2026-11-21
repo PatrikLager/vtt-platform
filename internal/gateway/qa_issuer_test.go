@@ -229,7 +229,7 @@ func qaIssOpenTable(t *testing.T) *qaIssTable {
 	t.Cleanup(hs.Close)
 	tb := &qaIssTable{t: t, c: c, url: hs.URL, tokens: map[identity.Role]string{}, ids: map[identity.Role]string{}}
 	for _, r := range []identity.Role{identity.RoleDM, identity.RoleAgent, identity.RolePlayer, identity.RoleSpectator} {
-		tok, id, err := ids.CreateInvite("qa-iss-"+string(r), r)
+		tok, id, err := ids.CreateInvite("qa-iss-"+string(r), mintRole(r))
 		if err != nil {
 			t.Fatalf("invite: %v", err)
 		}

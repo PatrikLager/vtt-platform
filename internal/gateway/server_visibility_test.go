@@ -946,7 +946,7 @@ func newSightTable(t *testing.T) *sightTable {
 	if err != nil {
 		t.Fatal(err)
 	}
-	playerToken, playerID, err := ids.CreateInvite("Archer", identity.RolePlayer)
+	playerToken, playerID, err := ids.CreateInvite("Archer", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}

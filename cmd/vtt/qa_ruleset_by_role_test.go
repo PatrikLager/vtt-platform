@@ -50,7 +50,7 @@ func qaReadMCPOpen(t *testing.T) *qaReadMCPTable {
 	if err != nil {
 		t.Fatal(err)
 	}
-	playerTok, playerID, err := ids.CreateInvite("qa-player", identity.RolePlayer)
+	playerTok, playerID, err := ids.CreateInvite("qa-player", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}

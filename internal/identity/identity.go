@@ -202,7 +202,7 @@ func ParseRole(s string) (Role, error) {
 }
 
 // Participant is a resolved identity: who a token belongs to, and at what role.
-// Do not add what they control: that is Actor.controller_ids in the log (SPEC-009).
+// Add no control, and judge no player or spectator by Role: the log does (VTT-889).
 type Participant struct {
 	ID   string
 	Name string
@@ -440,10 +440,14 @@ func (d *DB) Close() error {
 // CreateInvite mints a participant and a one-time invite token, returned exactly
 // once; only its SHA-256 hash is stored (VTT-041). A name a participant who is
 // not revoked holds is refused with ErrNameTaken. Take no list of actors:
-// control is an ActorControlGranted in the log (SPEC-009).
+// control is an ActorControlGranted in the log (SPEC-009). Refuse player: a
+// grant makes one (VTT-911).
 func (d *DB) CreateInvite(name string, role Role) (token string, id string, err error) {
 	if _, err := ParseRole(string(role)); err != nil {
 		return "", "", err
+	}
+	if role == RolePlayer {
+		return "", "", errors.New("identity: a participant becomes a player when given a character; invite them as a spectator")
 	}
 	if err := d.nameHeld(name); err != nil {
 		return "", "", err

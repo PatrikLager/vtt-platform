@@ -81,7 +81,7 @@ func qaGROpen(t *testing.T) *qaGRTable {
 	tb.dm = tb.mint("Dagny", identity.RoleDM)
 	tb.agent = tb.mint("Oracle", identity.RoleAgent)
 	tb.zora, tb.abel = tb.mintAgainstIDOrder("Zora", "Abel")
-	tb.ingr = tb.mint("Ingrid", identity.RolePlayer)
+	tb.ingr = tb.mint("Ingrid", identity.RoleSpectator)
 	tb.sixt = tb.mint("Sixten", identity.RoleSpectator)
 	tb.dmc = tb.dial(tb.dm, "dm")
 	tb.agc = tb.dial(tb.agent, "agent")
@@ -118,11 +118,11 @@ func (tb *qaGRTable) mintAgainstIDOrder(hiName, loName string) (qaGRWho, qaGRWho
 	for i := 0; i < 64; i++ {
 		var hi, lo qaGRWho
 		if i%2 == 0 {
-			hi = tb.mint(hiName, identity.RolePlayer)
-			lo = tb.mint(loName, identity.RolePlayer)
+			hi = tb.mint(hiName, identity.RoleSpectator)
+			lo = tb.mint(loName, identity.RoleSpectator)
 		} else {
-			lo = tb.mint(loName, identity.RolePlayer)
-			hi = tb.mint(hiName, identity.RolePlayer)
+			lo = tb.mint(loName, identity.RoleSpectator)
+			hi = tb.mint(hiName, identity.RoleSpectator)
 		}
 		if hi.id < lo.id {
 			return hi, lo
@@ -346,9 +346,9 @@ func TestQAGRAGrantNamingAParticipantNeverMintedIsRefusedPlainly(t *testing.T) {
 // VTT-894 VTT-895
 func TestQAGRAGrantNamingARemovedParticipantIsRefusedWithTheSameText(t *testing.T) {
 	tb := qaGROpen(t)
-	rut := tb.mint("Rut", identity.RolePlayer)
+	rut := tb.mint("Rut", identity.RoleSpectator)
 	tove := tb.mint("Tove", identity.RoleSpectator)
-	vera := tb.mint("Vera", identity.RolePlayer)
+	vera := tb.mint("Vera", identity.RoleSpectator)
 	tb.give("actor-c", tb.zora.id)
 	tb.give("actor-d", rut.id)
 	tb.give("actor-d", vera.id)
@@ -567,7 +567,7 @@ func TestQAGRTheDMOrTheAgentAsACoControllerIsNotNamed(t *testing.T) {
 // VTT-926 VTT-927
 func TestQAGRARemovedControllerIsNotNamedAndDoesNotCount(t *testing.T) {
 	tb := qaGROpen(t)
-	rut := tb.mint("Rut", identity.RolePlayer)
+	rut := tb.mint("Rut", identity.RoleSpectator)
 	tb.give("actor-b", rut.id)
 	tb.give("actor-b", tb.zora.id)
 	tb.give("actor-c", tb.abel.id)
@@ -597,7 +597,7 @@ func TestQAGRARemovedControllerIsNotNamedAndDoesNotCount(t *testing.T) {
 // VTT-926 VTT-927
 func TestQAGRAnActorOnlyARemovedParticipantAndTheDMControlIsMadeNonParty(t *testing.T) {
 	tb := qaGROpen(t)
-	rut := tb.mint("Rut", identity.RolePlayer)
+	rut := tb.mint("Rut", identity.RoleSpectator)
 	tb.give("actor-c", tb.dm.id)
 	tb.give("actor-c", rut.id)
 	tb.give("actor-b", rut.id)
@@ -678,7 +678,7 @@ func TestQAGRAPartyMemberGrantToAnyoneTheTableHoldsIsAppended(t *testing.T) {
 // VTT-925
 func TestQAGRAGrantStatingNoKindIsToldAboutItsKindWhoeverItNames(t *testing.T) {
 	tb := qaGROpen(t)
-	rut := tb.mint("Rut", identity.RolePlayer)
+	rut := tb.mint("Rut", identity.RoleSpectator)
 	tb.give("actor-c", tb.abel.id)
 	tb.revoke(rut)
 	grantees := []struct{ label, id string }{
@@ -707,7 +707,7 @@ func TestQAGRAGrantStatingNoKindIsToldAboutItsKindWhoeverItNames(t *testing.T) {
 // VTT-894
 func TestQAGRAPlayersOrSpectatorsGrantIsRefusedByTheTableWhateverItNames(t *testing.T) {
 	tb := qaGROpen(t)
-	rut := tb.mint("Rut", identity.RolePlayer)
+	rut := tb.mint("Rut", identity.RoleSpectator)
 	tb.give("actor-c", tb.zora.id)
 	tb.revoke(rut)
 	pc := tb.dial(tb.ingr, "player")

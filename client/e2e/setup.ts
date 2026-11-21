@@ -1,5 +1,5 @@
 // Boot a real `vtt serve` for the e2e run: build the binary, create a
-// campaign, mint one invite per role, and hand the addresses to the specs.
+// campaign, mint the DM and two spectators, and hand the addresses to the specs.
 //
 // A REAL binary rather than a stub, deliberately. These tests exist to prove
 // the thing we ship works — embedded client, wire, HTTP metadata and authz
@@ -57,9 +57,9 @@ async function startTable(table: string): Promise<Fixture> {
   }
   const bin = binary;
 
-  // One invite per role. The player controls act-lera, which the adventure
-  // places on the board — without a controlled actor the player panel has
-  // nothing to offer and the move test would be vacuous.
+  // The DM and two spectators: the DM's grant through the console makes Lera
+  // the player, and without a controlled actor the player panel has nothing
+  // to offer and the move test would be vacuous.
   const mint = (name: string, role: string) => {
     const args = ["invite", "--campaign", campaign, "--name", name, "--role", role];
     const out = run(bin, args);
@@ -82,7 +82,7 @@ async function startTable(table: string): Promise<Fixture> {
   // a player-controlled actor through the console, which is both how a real
   // table works and better coverage than pre-seeding it would be.
   const dm = mint("DM", "dm");
-  const player = mint("Lera", "player");
+  const player = mint("Lera", "spectator");
   const spectator = mint("Watcher", "spectator");
   const tokens = { dm: dm.token, player: player.token, spectator: spectator.token };
   const ids = { dm: dm.id, player: player.id, spectator: spectator.id };

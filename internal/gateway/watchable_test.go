@@ -293,7 +293,7 @@ func TestAPerchedSpectatorGrantedAPartyMemberMovesToTheFirst(t *testing.T) {
 // VTT-454
 func TestTheSetSaysWhetherTheParticipantControlsNoPartyMember(t *testing.T) {
 	f := newGWFixture(t)
-	coToken, coID, err := f.ids.CreateInvite("Mira", identity.RolePlayer)
+	coToken, coID, err := f.ids.CreateInvite("Mira", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}

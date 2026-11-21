@@ -357,7 +357,7 @@ func qaCreatureSetup(t *testing.T) (tb *qaCreatureTable, pTok, pID string) {
 	tb.dm.mustOK(qaCreatureNarrate("in S1"))
 	tb.dm.mustOK(qaCreatureEnd())
 	last := tb.dm.mustOK(qaCreatureStart(qaCreatureOpenName))
-	pTok, pID = tb.invite("QA Player", identity.RolePlayer)
+	pTok, pID = tb.invite("QA Player", identity.RoleSpectator)
 	tb.dm.mustOK(qaCreatureGrant(qaCreatureHero, pID, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER))
 	w := tb.worldThrough(last.GetSequence())
 	for _, e := range w {
@@ -668,7 +668,7 @@ func TestQACreatureSetViewpointNeedsAPartyMemberTheyControl(t *testing.T) {
 	pl.expectStay(m, tb.log(qaCreatureHero), "VTT-921 stay")
 
 	// VTT-450
-	p2Tok, p2ID := tb.invite("QA Other Player", identity.RolePlayer)
+	p2Tok, p2ID := tb.invite("QA Other Player", identity.RoleSpectator)
 	tb.dm.mustOK(qaCreatureAddActor("actor-a-own", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER))
 	tb.dm.mustOK(qaCreatureGrant("actor-a-own", p2ID, vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER))
 	p2 := qaCreatureDial(t, tb.base, p2Tok, nil)
@@ -1108,7 +1108,7 @@ func TestQACreatureTheDefaultIsTheFirstPartyMemberById(t *testing.T) {
 	pl.expectStay(m, tb.log(qaCreatureHero), "VTT-921 stays on the hero")
 
 	// VTT-921
-	qTok, qID := tb.invite("QA Empty-handed Player", identity.RolePlayer)
+	qTok, qID := tb.invite("QA Empty-handed Player", identity.RoleSpectator)
 	q := qaCreatureDial(t, tb.base, qTok, nil)
 	q.expectSwitch(0, "", nil, "VTT-921 nobody")
 	if h := q.snapshot(0)[0].GetCatchUpHead(); h == nil || h.GetHeadSequence() != 0 {

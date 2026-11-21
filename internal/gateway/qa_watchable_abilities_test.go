@@ -289,13 +289,13 @@ func qaWANewTable(t *testing.T) *qaWATable {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tb.pTok, tb.pID, err = ids.CreateInvite("Pia", identity.RolePlayer); err != nil {
+	if tb.pTok, tb.pID, err = ids.CreateInvite("Pia", identity.RoleSpectator); err != nil {
 		t.Fatal(err)
 	}
-	if tb.qTok, tb.qID, err = ids.CreateInvite("Quin", identity.RolePlayer); err != nil {
+	if tb.qTok, tb.qID, err = ids.CreateInvite("Quin", identity.RoleSpectator); err != nil {
 		t.Fatal(err)
 	}
-	if tb.rTok, tb.rID, err = ids.CreateInvite("Rolf", identity.RolePlayer); err != nil {
+	if tb.rTok, tb.rID, err = ids.CreateInvite("Rolf", identity.RoleSpectator); err != nil {
 		t.Fatal(err)
 	}
 	if tb.sTok, tb.sID, err = ids.CreateInvite("Sami", identity.RoleSpectator); err != nil {

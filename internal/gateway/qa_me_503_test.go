@@ -34,7 +34,7 @@ func qa503Start(t *testing.T) *qa503Rig {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = ids.Close() })
-	live, _, err := ids.CreateInvite("Live", identity.RolePlayer)
+	live, _, err := ids.CreateInvite("Live", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func qa503Start(t *testing.T) *qa503Rig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gone, goneID, err := ids.CreateInvite("Gone", identity.RolePlayer)
+	gone, goneID, err := ids.CreateInvite("Gone", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}

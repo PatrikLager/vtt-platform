@@ -829,7 +829,7 @@ func TestASecondDeviceIsNotASecondArrivalOrDeparture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	playerToken, playerID, err := ids.CreateInvite("Lera", identity.RolePlayer)
+	playerToken, playerID, err := ids.CreateInvite("Lera", identity.RoleSpectator)
 	if err != nil {
 		t.Fatal(err)
 	}
