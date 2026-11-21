@@ -1,5 +1,6 @@
 import { test, expect, type Page, type BrowserContext } from "@playwright/test";
 import { fixture } from "./setup";
+import { asDM } from "./as-dm";
 
 // The demo gate for presence and actor control (spec §8), against the SHIPPED
 // binary with TWO real browser contexts.
@@ -16,8 +17,8 @@ import { fixture } from "./setup";
 
 const { base, tokens, ids } = fixture("handover");
 
-// The second test starts where the first leaves the table, so run them in order
-// and skip the second when the first fails.
+// Each test starts where the one before it leaves the table, so run them in
+// order and skip the rest when one fails.
 test.describe.configure({ mode: "serial" });
 
 // Leave the table as this file found it: it opens a session, and a rerun of
@@ -111,8 +112,8 @@ test("a DM hands a second character over, and the player keeps both across a rec
     }
     await expect(dm.locator(`[data-token-id="tok-${SECOND}"]`)).toBeVisible({ timeout: 10_000 });
 
-    // The player holds NOTHING yet, so they watch as a spectator does: the
-    // perch, on nobody, offering both characters (the owner's ruling B-4).
+    // Lera holds NOTHING yet, so she is a spectator: the perch, on nobody,
+    // offering both characters (VTT-917).
     // Asserted before any grant, so every change after it means something.
     const panel = player.locator(".player");
     const perch = player.locator(".perch");
@@ -258,6 +259,74 @@ test("the DM takes a player's only character back, and the player chooses anothe
     await playerCtx.close();
     await dmCtx.close();
   });
+
+// "the DM takes a player's only character back, and the player chooses another
+// shoulder" leaves Lera holding nothing.
+// VTT-889 VTT-890 VTT-901 VTT-902 VTT-903 VTT-906 VTT-917 VTT-923
+test("the DM makes a player a spectator, and they perch", async ({ browser }) => {
+  const dmCtx = await browser.newContext();
+  const playerCtx = await browser.newContext();
+  const dm = await dmCtx.newPage();
+  const player = await playerCtx.newPage();
+  // Every promotion the DM's window sends: the send, not only its effect.
+  const promotions: unknown[] = [];
+  dm.on("websocket", (ws) =>
+    ws.on("framesent", (f) => {
+      const c = JSON.parse(String(f.payload)) as { promoteParticipant?: unknown };
+      if (c.promoteParticipant) promotions.push(c.promoteParticipant);
+    }),
+  );
+  await openAs(dm, "dm");
+  let sockets = 0;
+  player.on("websocket", () => sockets++);
+  await openAs(player, "player");
+  const panel = player.locator(".player");
+  const perch = player.locator(".perch");
+  const role = dm.locator(`.roster-row[data-participant="${ids.player}"] .role`);
+  await expect(perch).toBeVisible({ timeout: 15_000 });
+  await expect(role).toHaveText("spectator", { timeout: 10_000 });
+
+  const party = "ACTOR_KIND_PARTY_MEMBER";
+  await asDM(dm, tokens.dm, [
+    { grantActorControl: { actorId: FIRST, participantId: ids.player, kind: party } },
+    { grantActorControl: { actorId: SECOND, participantId: ids.player, kind: party } },
+  ]);
+  // Her window follows the grants on the connection it has, with no reload.
+  await expect(panel.getByRole("button", { name: "Bram" })).toBeVisible({ timeout: 15_000 });
+  await expect(panel.getByRole("button", { name: "Ash" })).toBeVisible();
+  await expect(perch).toHaveCount(0);
+  await expect(role).toHaveText("player", { timeout: 10_000 });
+  for (const actorId of [FIRST, SECOND]) {
+    await expect(dm.locator(`.control-actor[data-actor="${actorId}"] .held-who`)).toContainText("Lera", { timeout: 10_000 });
+  }
+  await panel.getByRole("button", { name: "Bram" }).click();
+  await expect(panel.getByRole("button", { name: "Bram" })).toHaveClass("chip sel", { timeout: 10_000 });
+  await dm.screenshot(shot("h13-dm-before-make-spectator"));
+
+  let asked = "";
+  dm.once("dialog", (d) => {
+    asked = d.message();
+    void d.accept();
+  });
+  await dm.locator(`[data-action="demote-${ids.player}"]`).click();
+  await expect(role).toHaveText("spectator", { timeout: 15_000 });
+  expect(asked).toBe("Make Lera a spectator? They no longer control Ash and Bram.");
+  expect(promotions).toEqual([{ participantId: ids.player, role: "spectator" }]);
+  for (const actorId of [FIRST, SECOND]) {
+    await expect(dm.locator(`.control-actor[data-actor="${actorId}"] .held-who`)).toHaveCount(0, { timeout: 10_000 });
+  }
+  await dm.screenshot(shot("h14-dm-made-lera-a-spectator"));
+
+  // Losing her last character leaves her on the party member she watched.
+  await expect(perch.locator(".perched-on")).toHaveText("Perched on: Bram", { timeout: 15_000 });
+  await expect(panel).toHaveCount(0);
+  // Both ways on the connection she opened, with no reload (VTT-906).
+  expect(sockets).toBe(1);
+  await player.screenshot(shot("h15-player-perched-as-a-spectator"));
+
+  await playerCtx.close();
+  await dmCtx.close();
+});
 
 // SKIPPED, and the reason is worth more than the screenshot would have been.
 //

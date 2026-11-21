@@ -49,7 +49,6 @@ test("the DM whispers to Tobbe and Tobbe answers, and only the DM and whoever wa
     await asDM(dm!, tokens.dm, [
       { addActor: { actor: { actorId: `w-tobbe-${i}`, name: tobbe, kind: party } } },
       { addActor: { actor: { actorId: `w-lera-${i}`, name: lera, kind: party } } },
-      { promoteParticipant: { participantId: ids.spectator, role: "player" } },
       { grantActorControl: { actorId: `w-lera-${i}`, participantId: ids.player, kind: party } },
       { grantActorControl: { actorId: `w-tobbe-${i}`, participantId: ids.spectator, kind: party } },
       { setJoinDoor: { door: "JOIN_DOOR_OPEN" } },

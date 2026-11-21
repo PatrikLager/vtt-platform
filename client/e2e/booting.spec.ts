@@ -72,10 +72,7 @@ test("the DM boots a player, who leaves the table and their characters, and can 
   await asDM(dm, tokens.dm, [{ addActor: { actor: { actorId: hero, name: `Hero ${i}`, kind: party } } }]);
   await join(guest, link, kit);
   const id = await participantId(dm, kit);
-  await asDM(dm, tokens.dm, [
-    { promoteParticipant: { participantId: id, role: "player" } },
-    { grantActorControl: { actorId: hero, participantId: id, kind: party } },
-  ]);
+  await asDM(dm, tokens.dm, [{ grantActorControl: { actorId: hero, participantId: id, kind: party } }]);
   const held = dm.locator(`.control-actor[data-actor="${hero}"] .held-who`);
   await expect(held).toHaveText(kit, { timeout: 15_000 });
   await dm.screenshot(shot(`b1-console-before-boot-${i}`));
@@ -100,15 +97,18 @@ test("a player removed while away is told so when they come back, and can join a
   // VTT-573 VTT-577
   const i = test.info().repeatEachIndex;
   const jo = `Jo${i}`;
+  const hero = `away-hero-${i}`;
   const dmCtx = await browser.newContext();
   const guestCtx = await browser.newContext();
   const dm = await dmCtx.newPage();
 
   const link = await openDM(dm);
+  await asDM(dm, tokens.dm, [{ addActor: { actor: { actorId: hero, name: `Away ${i}`, kind: party } } }]);
   const away = await guestCtx.newPage();
   await join(away, link, jo);
   const id = await participantId(dm, jo);
-  await asDM(dm, tokens.dm, [{ promoteParticipant: { participantId: id, role: "player" } }]);
+  // A grant is what makes Jo a player.
+  await asDM(dm, tokens.dm, [{ grantActorControl: { actorId: hero, participantId: id, kind: party } }]);
   const present = dm.locator(".participant", { hasText: jo });
   await expect(present).toHaveCount(1, { timeout: 15_000 });
   await away.close();

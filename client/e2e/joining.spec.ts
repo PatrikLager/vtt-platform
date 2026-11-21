@@ -48,7 +48,8 @@ async function openAs(page: Page, role: keyof typeof tokens) {
   await expect(page.locator(".conn")).toHaveText("connected", { timeout: 15_000 });
 }
 
-test("a stranger with one link joins, watches, is promoted, and plays", async ({ browser }) => {
+// VTT-889 VTT-890 VTT-906 VTT-917
+test("a stranger with one link joins, watches, is given a character, and plays", async ({ browser }) => {
   const dmCtx = await browser.newContext();
   const guestCtx = await browser.newContext();
   const dm = await dmCtx.newPage();
@@ -63,7 +64,7 @@ test("a stranger with one link joins, watches, is promoted, and plays", async ({
   // The adventure puts characters on the board, and its actors deliberately
   // carry NO controller — they are DM-run until somebody is handed one, which
   // is how a campaign actually starts (spec §3.1: you log in holding nothing).
-  // Beat 5 needs one to hand over.
+  // Beat 4 needs one to hand over.
   await dm.getByRole("button", { name: /^Load / }).first().click();
   await expect(dm.locator(".grid")).toBeVisible({ timeout: 10_000 });
 
@@ -95,6 +96,11 @@ test("a stranger with one link joins, watches, is promoted, and plays", async ({
   //
   // The same page that was refused a moment ago, retried: the failure did not
   // cost them their typing and did not leave the form dead.
+  //
+  // Count the sockets from here on: beat 5 holds that the grant reaches the
+  // guest on the one they joined on.
+  let sockets = 0;
+  guest.on("websocket", () => sockets++);
   await guest.locator('[data-action="join"]').click();
   await expect(guest.locator(".conn")).toHaveText("connected", { timeout: 20_000 });
   // The secret is gone from the address bar, checked in a REAL browser where
@@ -131,39 +137,29 @@ test("a stranger with one link joins, watches, is promoted, and plays", async ({
 
   // --- beat 3: a spectator can only watch --------------------------------
   //
-  // Asserted before the promotion, so every change after it means something.
-  // No player panel is the visible half; the roster naming them a spectator is
-  // the authoritative half.
+  // Asserted before the grant, so every change after it means something.
+  // The perch and no player panel are the visible half; the roster naming
+  // them a spectator is the authoritative half.
+  await expect(guest.locator(".perch")).toBeVisible({ timeout: 10_000 });
   await expect(guest.locator(".player")).toHaveCount(0);
-  // THE ROLE CELL, not the row. The row's text also contains the BUTTON —
-  // "Make player" — so a containment check on the row matches "player" while
-  // Robin is still a spectator, and matches "spectator" after they have been
-  // promoted. Both assertions passed in both directions: this file, the one
-  // written to catch features that do not work, could not tell promoted from
-  // not. Caught by review, after two screenshots named j5-dm-sees-a-spectator
-  // and j6-dm-promoted-them came out byte-identical.
+  // THE ROLE CELL, not the row. The row's text also contains its BUTTONS —
+  // a player's row says "Make spectator" — so a containment check on the row
+  // matches "spectator" after Robin has become a player. An earlier version
+  // of this file passed in both directions that way, and two screenshots of
+  // different states came out byte-identical.
   await expect(
     dm.locator('.roster-row:has-text("Robin") .role'),
   ).toHaveText("spectator", { timeout: 10_000 });
   await dm.screenshot(shot("j5-dm-sees-a-spectator"));
 
-  // --- beat 4: the DM promotes them, and it bites with NO reconnect ------
+  // --- beat 4: the DM hands them a character, and it bites with NO reconnect
   //
-  // The J4 property, end to end in a browser: the guest's socket is the one
-  // they joined on and is never touched. Everyone arrives as a spectator, so
-  // a reconnect here would sit on the critical path of every person who ever
+  // A grant is what makes a player (VTT-889, VTT-890), and nothing else in
+  // the console does. The guest's socket is the one they
+  // joined on and is never touched: everyone arrives as a spectator, so a
+  // reconnect here would sit on the critical path of every person who ever
   // joins — the shared link would be more cumbersome than the invites it
   // replaces.
-  await dm.locator('.roster-row:has-text("Robin") [data-action^="promote-"]').click();
-  await expect(
-    dm.locator('.roster-row:has-text("Robin") .role'),
-  ).toHaveText("player", { timeout: 15_000 });
-  await dm.screenshot(shot("j6-dm-promoted-them"));
-
-  // --- beat 5: they can act ----------------------------------------------
-  //
-  // The DM hands over a character (spec §3.1: you log in holding nothing), and
-  // the promoted spectator's panel appears on the connection they already had.
   const row = dm.locator(".control-actor").first();
   await expect(row).toBeVisible({ timeout: 10_000 });
   await row.locator(".grant-target").selectOption({ label: "Robin" });
@@ -175,9 +171,19 @@ test("a stranger with one link joins, watches, is promoted, and plays", async ({
   await row.locator(".grant-kind").selectOption("ACTOR_KIND_PARTY_MEMBER");
   await row.locator(".grant").click();
   await expect(row.locator(".held-who")).toContainText("Robin", { timeout: 15_000 });
+  await expect(
+    dm.locator('.roster-row:has-text("Robin") .role'),
+  ).toHaveText("player", { timeout: 15_000 });
+  await dm.screenshot(shot("j6-dm-gave-them-a-character"));
 
+  // --- beat 5: they can act ----------------------------------------------
+  //
+  // The player panel appears in place of the perch, on the connection the
+  // guest already had: no reload, and no second socket.
   await expect(guest.locator(".player")).toBeVisible({ timeout: 15_000 });
-  await guest.screenshot(shot("j7-promoted-guest-holding-a-character"));
+  await expect(guest.locator(".perch")).toHaveCount(0);
+  expect(sockets).toBe(1);
+  await guest.screenshot(shot("j7-guest-holding-a-character"));
 
   // --- beat 6: rotating locks out the old link and nobody else -----------
   //

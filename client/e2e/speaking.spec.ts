@@ -34,7 +34,6 @@ test("another player's Story names a line by its speaker, in character and out o
       { startSession: { name: "Speaking" } },
       { loadAdventure: { adventureId: "goblin-ambush" } },
       { grantActorControl: { actorId: "act-fighter", participantId: ids.player, kind: party } },
-      { promoteParticipant: { participantId: ids.spectator, role: "player" } },
       { addActor: { actor: { actorId: "act-wren", name: "Wren", kind: party } } },
       { grantActorControl: { actorId: "act-wren", participantId: ids.spectator, kind: party } },
     ]);
