@@ -107,7 +107,7 @@ var qaasCast = []qaasFigure{
 	{"pc-bay", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, 10, 2, "pat"},
 	{"pc-ash", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, 2, 2, "pat"},
 	{"npc-near", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, 4, 2, ""},
-	{"npc-pet", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, 3, 3, "quin"},
+	{"npc-pet", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, 3, 3, ""},
 	{"npc-far", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, 12, 2, ""},
 	{"npc-zed", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, 13, 1, ""},
 	{"npc-abe", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, 13, 3, ""},
@@ -514,7 +514,7 @@ func TestQAASTheRefusalIsAnUnknownIdsWhateverElseTheCommandGetsWrong(t *testing.
 	}
 }
 
-// VTT-472 VTT-453
+// VTT-472 VTT-922
 func TestQAASAPerchedPlayerIsJudgedByThePartyMemberTheConnectionShows(t *testing.T) {
 	far := qaasUse("pc-ash", "shot", "npc-far")
 	qaasResolved(t, qaasIssue(t, nil, "pat", "pc-bay", far), far)
@@ -522,7 +522,7 @@ func TestQAASAPerchedPlayerIsJudgedByThePartyMemberTheConnectionShows(t *testing
 	qaasIsUnknownTarget(t, qaasRefusedAsUnknown(t, "pat", "pc-bay", near, "npc-near"), "npc-near")
 }
 
-// VTT-472 VTT-453
+// VTT-472 VTT-922
 func TestQAASAPerchOnAPartyMemberNoLongerTheirsNoLongerJudges(t *testing.T) {
 	tbl := qaasOpen(t)
 	pat := qaasDial(t, tbl, "pat")
@@ -555,7 +555,7 @@ func TestQAASAPerchOnAPartyMemberNoLongerTheirsNoLongerJudges(t *testing.T) {
 	}
 }
 
-// VTT-472 VTT-453
+// VTT-472 VTT-922
 func TestQAASACasterOutOfTheShouldersSightCannotAimEvenAtItself(t *testing.T) {
 	far := qaasUse("pc-bay", "shot", "npc-far")
 	qaasIsUnknownTarget(t, qaasRefusedAsUnknown(t, "pat", "", far, "npc-far"), "npc-far")
@@ -573,17 +573,6 @@ func TestQAASACasterOutOfTheShouldersSightCannotAimEvenAtItself(t *testing.T) {
 func TestQAASThePlayersShoulderIsSeenAsATarget(t *testing.T) {
 	self := qaasUse("pc-ash", "shot", "pc-ash")
 	qaasCheckOutcomes(t, qaasResolved(t, qaasIssue(t, nil, "pat", "", self), self), "pc-ash")
-}
-
-// VTT-472 VTT-453
-func TestQAASAPlayerWhoControlsNoPartyMemberHasNoEyesToAimBy(t *testing.T) {
-	near := qaasUse("npc-pet", "shot", "npc-near")
-	qaasIsUnknownTarget(t, qaasRefusedAsUnknown(t, "quin", "", near, "npc-near"), "npc-near")
-	r := qaasIssue(t, nil, "quin", "", qaasUse("npc-pet", "shot", "npc-pet"))
-	if r.res.GetOk() || r.res.GetError() != rules.UnknownTarget("npc-pet").Error() {
-		t.Errorf("npc-pet on itself: ok %v, answer %q, want %q",
-			r.res.GetOk(), r.res.GetError(), rules.UnknownTarget("npc-pet").Error())
-	}
 }
 
 // VTT-482

@@ -852,25 +852,25 @@ func TestQARAGrantOfAnUnknownActorAnnouncesOnlyIfAccepted(t *testing.T) {
 	qaRAExpectWindow(t, watchers, before, after, map[qaRAWho]int{w.tamsin: 0})
 }
 
-// VTT-047 VTT-309
-func TestQARAPromotionIsStillAnnouncedOnceToEveryoneAndItsTarget(t *testing.T) {
+// VTT-906
+func TestQARAMakeSpectatorIsAnnouncedOnceToEveryoneAndItsTarget(t *testing.T) {
 	w := qaRANewWorld(t)
 	dm := w.dial(w.dm)
 	agent := w.dial(w.agent)
 	pia := w.dial(w.pia)
-	sky1 := w.dial(w.sky)
-	sky2 := w.dial(w.sky)
-	watchers := []*qaRAConn{dm, agent, pia, sky1, sky2}
+	corin1 := w.dial(w.corin)
+	corin2 := w.dial(w.corin)
+	watchers := []*qaRAConn{dm, agent, pia, corin1, corin2}
 
 	before := w.fence(watchers...)
-	qaRAAccepted(t, dm.command(t, w.qaRATable, qaRAPromote(w.sky.id, "player")))
+	qaRAAccepted(t, dm.command(t, w.qaRATable, qaRAPromote(w.corin.id, "spectator")))
 	after := w.fence(watchers...)
 
-	qaRAExpectWindow(t, watchers, before, after, map[qaRAWho]int{w.sky: 1})
+	qaRAExpectWindow(t, watchers, before, after, map[qaRAWho]int{w.corin: 1})
 }
 
-// VTT-310
-func TestQARAPromotionOfAnUnconnectedParticipantIsAnnouncedToNobody(t *testing.T) {
+// VTT-907
+func TestQARAMakeSpectatorOfAnUnconnectedParticipantIsAnnouncedToNobody(t *testing.T) {
 	w := qaRANewWorld(t)
 	dm := w.dial(w.dm)
 	agent := w.dial(w.agent)
@@ -878,8 +878,8 @@ func TestQARAPromotionOfAnUnconnectedParticipantIsAnnouncedToNobody(t *testing.T
 	watchers := []*qaRAConn{dm, agent, pia}
 
 	before := w.fence(watchers...)
-	qaRAAccepted(t, dm.command(t, w.qaRATable, qaRAPromote(w.sky.id, "player")))
+	qaRAAccepted(t, dm.command(t, w.qaRATable, qaRAPromote(w.corin.id, "spectator")))
 	after := w.fence(watchers...)
 
-	qaRAExpectWindow(t, watchers, before, after, map[qaRAWho]int{w.sky: 0})
+	qaRAExpectWindow(t, watchers, before, after, map[qaRAWho]int{w.corin: 0})
 }

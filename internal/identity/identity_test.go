@@ -116,7 +116,7 @@ func TestRevokedTokenRejectedAfterRevoke(t *testing.T) {
 	}
 }
 
-// VTT-066
+// VTT-912
 func TestParseRoleAcceptsExactlyTheFourRoles(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -400,10 +400,6 @@ func TestTheDoorRefusesWhenTheDatabaseIsUnusable(t *testing.T) {
 	if _, err := d.Lookup("p-anyone"); err == nil {
 		t.Fatal("a lookup against a dead handle must report the failure, not resolve")
 	}
-	if err := d.SetRole("p-anyone", identity.RolePlayer); err == nil {
-		t.Fatal("promoting against a dead handle must report the failure — a DM console " +
-			"that reports success while the database is gone is worse than one that errors")
-	}
 }
 
 // VTT-043
@@ -466,142 +462,6 @@ func TestOpeningTheDoorFirstStillMintsARealSecret(t *testing.T) {
 	}
 	if other == secret {
 		t.Fatal("two campaigns must not share a join secret")
-	}
-}
-
-// VTT-029
-func TestSetRolePromotesTheNamedParticipant(t *testing.T) {
-	d, _ := openTemp(t)
-	token, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := d.SetRole(id, identity.RolePlayer); err != nil {
-		t.Fatal(err)
-	}
-	p, err := d.Verify(token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.Role != identity.RolePlayer {
-		t.Fatalf("role = %q, want player — the same TOKEN must now carry the new role, "+
-			"because that is what the connection reads", p.Role)
-	}
-}
-
-// VTT-037
-func TestSetRoleLeavesEVERYONEElseAlone(t *testing.T) {
-	// Keep this test: a missing WHERE promotes the whole table, and the mutation
-	// gate cannot see SQL.
-	d, _ := openTemp(t)
-	_, kim, err := d.CreateInvite("Kim", identity.RoleSpectator)
-	if err != nil {
-		t.Fatal(err)
-	}
-	adaToken, _, err := d.CreateInvite("Ada", identity.RoleSpectator)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := d.SetRole(kim, identity.RolePlayer); err != nil {
-		t.Fatal(err)
-	}
-	ada, err := d.Verify(adaToken)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ada.Role != identity.RoleSpectator {
-		t.Fatalf("Ada became %q — promoting one participant must not promote the table", ada.Role)
-	}
-}
-
-// VTT-066
-func TestSetRoleRejectsARoleThatIsNotOneOfTheFour(t *testing.T) {
-	d, _ := openTemp(t)
-	_, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := d.SetRole(id, identity.Role("superuser")); err == nil {
-		t.Fatal("an unknown role must be refused — ParseRole is the whole set, and a row " +
-			"carrying anything else is a participant no authz cell describes")
-	}
-}
-
-// VTT-067
-func TestSetRoleOnSomeoneWhoDoesNotExistIsAnError(t *testing.T) {
-	d, _ := openTemp(t)
-	if err := d.SetRole("p-nobody", identity.RolePlayer); err == nil {
-		t.Fatal("promoting an unknown participant must report it, not succeed quietly")
-	}
-}
-
-// VTT-068
-func TestSetRoleToTheSameRoleIsFine(t *testing.T) {
-	d, _ := openTemp(t)
-	_, id, err := d.CreateInvite("Kim", identity.RolePlayer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := d.SetRole(id, identity.RolePlayer); err != nil {
-		t.Fatalf("re-promoting to the same role must be a no-op, not an error: %v", err)
-	}
-}
-
-// VTT-029
-func TestSetRoleDoesNotDisturbTheCredential(t *testing.T) {
-	d, _ := openTemp(t)
-	token, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := d.SetRole(id, identity.RolePlayer); err != nil {
-		t.Fatal(err)
-	}
-	p, err := d.Verify(token)
-	if err != nil {
-		t.Fatalf("the token must still verify after a promotion: %v", err)
-	}
-	if p.ID != id || p.Name != "Kim" {
-		t.Fatalf("promotion changed identity: %+v", p)
-	}
-	if p.Role != identity.RolePlayer {
-		t.Fatalf("the promotion itself did not take: %+v", p)
-	}
-}
-
-// VTT-030
-func TestSetRoleOnARevokedParticipantStaysRevoked(t *testing.T) {
-	d, _ := openTemp(t)
-	token, id, err := d.CreateInvite("Mallory", identity.RoleSpectator)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := d.Revoke(id); err != nil {
-		t.Fatal(err)
-	}
-	_ = d.SetRole(id, identity.RolePlayer)
-	if _, err := d.Verify(token); err == nil {
-		t.Fatal("promoting a revoked participant must not restore them")
-	}
-}
-
-// VTT-029
-func TestLookupReflectsAPromotionImmediately(t *testing.T) {
-	d, _ := openTemp(t)
-	_, id, err := d.CreateInvite("Kim", identity.RoleSpectator)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := d.SetRole(id, identity.RolePlayer); err != nil {
-		t.Fatal(err)
-	}
-	p, err := d.Lookup(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p.Role != identity.RolePlayer {
-		t.Fatalf("role = %q, want player — a lookup that returns the OLD role is exactly "+
-			"the caching this replaces", p.Role)
 	}
 }
 
@@ -1420,7 +1280,7 @@ func TestJoinAdmitsOnACampaignWithNoDoorRowRefusesWithoutCreatingOne(t *testing.
 	}
 }
 
-// VTT-066
+// VTT-911
 func TestCreateInviteRefusesARoleThatIsNotOne(t *testing.T) {
 	d, _ := openTemp(t)
 	if _, _, err := d.CreateInvite("Nobody", identity.Role("overlord")); err == nil {
@@ -1441,9 +1301,6 @@ func TestTheIdentityStoreReportsFailuresRatherThanPretending(t *testing.T) {
 	}
 	d.Close()
 
-	if err := d.SetRole(id, identity.RoleSpectator); err == nil {
-		t.Fatal("SetRole on a closed database reported success")
-	}
 	if err := d.Revoke(id); err == nil {
 		t.Fatal("Revoke on a closed database reported success")
 	}

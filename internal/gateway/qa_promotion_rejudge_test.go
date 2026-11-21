@@ -137,18 +137,6 @@ func (rc *qaRejudgeConn) mustFrame(t *testing.T) *vttv1.ServerFrame {
 	return f
 }
 
-func (rc *qaRejudgeConn) mustViewpoint(t *testing.T, want string) {
-	t.Helper()
-	f := rc.mustFrame(t)
-	vp := f.GetViewpointChanged()
-	if vp == nil {
-		t.Fatalf("want ViewpointChanged naming %q, got %v", want, f)
-	}
-	if vp.GetActorId() != want {
-		t.Fatalf("ViewpointChanged names %q, want %q", vp.GetActorId(), want)
-	}
-}
-
 func (rc *qaRejudgeConn) mustQuiet(t *testing.T) {
 	t.Helper()
 	if f := rc.seatFrame(t, qaRejudgeQuiet); f != nil {
@@ -281,106 +269,8 @@ func qaRejudgeNewTable(t *testing.T) *qaRejudgeTable {
 	return &qaRejudgeTable{env: env, dm: env.dial(t, dmToken, "")}
 }
 
-// VTT-340 VTT-342 VTT-367 VTT-036
-func TestQARejudgePromotedSpectatorOnAnothersPartyMemberMovesToTheirOwn(t *testing.T) {
-	tb := qaRejudgeNewTable(t)
-	e := tb.env
-	_, pid := e.invite(t, "p1", identity.RolePlayer)
-	sTok, sid := e.invite(t, "s1", identity.RoleSpectator)
-	e.addActor(t, tb.dm, "a1", qaRejudgeParty)
-	e.grant(t, tb.dm, "a1", pid, qaRejudgeParty)
-	e.addActor(t, tb.dm, "c1", qaRejudgeParty)
-	e.grant(t, tb.dm, "c1", sid, qaRejudgeParty)
-	e.narrate(t, tb.dm)
-
-	s, o := e.open(t, sTok, "a1")
-	if o.viewpoint != "a1" || len(o.events) == 0 {
-		t.Fatalf("spectator did not open on a1's log: %+v", o)
-	}
-	before := e.logHead(t)
-	e.promote(t, tb.dm, sid, identity.RolePlayer)
-
-	s.mustViewpoint(t, "c1")
-	held, err := e.c.CharacterLog("c1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i, entry := range held {
-		if got := s.mustEvent(t); !proto.Equal(got, entry.Env) {
-			t.Fatalf("after the move, entry %d is %v, want c1's %v", i+1, got, entry.Env)
-		}
-	}
-	s.mustQuiet(t)
-	if after := e.logHead(t); after != before {
-		t.Fatalf("log head moved from %d to %d", before, after)
-	}
-}
-
-// VTT-340 VTT-342 VTT-339 VTT-036
-func TestQARejudgePromotedSpectatorHoldingAPartyMemberWatchesItFromItsFirstEntry(t *testing.T) {
-	tb := qaRejudgeNewTable(t)
-	e := tb.env
-	_, pid := e.invite(t, "p1", identity.RolePlayer)
-	sTok, sid := e.invite(t, "s1", identity.RoleSpectator)
-	rTok, _ := e.invite(t, "r1", identity.RoleSpectator)
-	e.addActor(t, tb.dm, "a1", qaRejudgeParty)
-	e.addActor(t, tb.dm, "a2", qaRejudgeParty)
-	e.addActor(t, tb.dm, "a3", qaRejudgeParty)
-	e.grant(t, tb.dm, "a1", pid, qaRejudgeParty)
-	e.narrate(t, tb.dm)
-	e.grant(t, tb.dm, "a2", sid, qaRejudgeParty)
-	e.grant(t, tb.dm, "a1", sid, qaRejudgeParty)
-	e.grant(t, tb.dm, "a3", sid, qaRejudgeParty)
-
-	_, ref := e.open(t, rTok, "a1")
-	if len(ref.events) == 0 {
-		t.Fatalf("reference log of a1 is empty")
-	}
-	s, o := e.open(t, sTok, "")
-	if o.viewpoint != "" || len(o.events) != 0 {
-		t.Fatalf("spectator without a log did not open on nobody: %+v", o)
-	}
-	before := e.logHead(t)
-	e.promote(t, tb.dm, sid, identity.RolePlayer)
-
-	s.mustViewpoint(t, "a1")
-	for i, want := range ref.events {
-		got := s.mustEvent(t)
-		if got.GetSequence() != want.GetSequence() {
-			t.Fatalf("entry %d has sequence %d, want %d", i, got.GetSequence(), want.GetSequence())
-		}
-	}
-	s.mustQuiet(t)
-	if after := e.logHead(t); after != before {
-		t.Fatalf("log head moved from %d to %d", before, after)
-	}
-}
-
-// VTT-340 VTT-342
-func TestQARejudgeBothConnectionsOfAPromotedSpectatorAreRejudged(t *testing.T) {
-	tb := qaRejudgeNewTable(t)
-	e := tb.env
-	_, pid := e.invite(t, "p1", identity.RolePlayer)
-	sTok, sid := e.invite(t, "s1", identity.RoleSpectator)
-	e.addActor(t, tb.dm, "a1", qaRejudgeParty)
-	e.grant(t, tb.dm, "a1", pid, qaRejudgeParty)
-	e.addActor(t, tb.dm, "c1", qaRejudgeParty)
-	e.grant(t, tb.dm, "c1", sid, qaRejudgeParty)
-	e.narrate(t, tb.dm)
-
-	s1, o1 := e.open(t, sTok, "a1")
-	s2, o2 := e.open(t, sTok, "a1")
-	if o1.viewpoint != "a1" || o2.viewpoint != "a1" {
-		t.Fatalf("connections did not open on a1: %+v %+v", o1, o2)
-	}
-	e.promote(t, tb.dm, sid, identity.RolePlayer)
-
-	s1.mustViewpoint(t, "c1")
-	s2.mustViewpoint(t, "c1")
-}
-
-// VTT-388 VTT-342
-func TestQARejudgePlayerPromotedToSpectatorKeepsItsPartyMemberLog(t *testing.T) {
+// VTT-923 VTT-896 VTT-342
+func TestQARejudgeAPlayerMadeASpectatorKeepsItsPartyMemberLog(t *testing.T) {
 	tb := qaRejudgeNewTable(t)
 	e := tb.env
 	pTok, pid := e.invite(t, "p1", identity.RolePlayer)
@@ -395,39 +285,17 @@ func TestQARejudgePlayerPromotedToSpectatorKeepsItsPartyMemberLog(t *testing.T) 
 	}
 	r, _ := e.open(t, rTok, "a1")
 	e.promote(t, tb.dm, pid, identity.RoleSpectator)
-	p.mustQuiet(t)
 
-	e.narrate(t, tb.dm)
 	want := r.mustEvent(t)
+	if rv := want.GetActorControlRevoked(); rv.GetActorId() != "a1" || rv.GetParticipantId() != pid {
+		t.Fatalf("a1's log gained %v after the player was made a spectator, want their revocation", want)
+	}
+	if got := p.mustEvent(t); !proto.Equal(got, want) {
+		t.Fatalf("made a spectator, the connection was sent %v, want a1's revocation %v and no move", got, want)
+	}
+	e.narrate(t, tb.dm)
+	want = r.mustEvent(t)
 	got := p.mustEvent(t)
-	if got.GetSequence() != want.GetSequence() {
-		t.Fatalf("event sequence %d, want %d", got.GetSequence(), want.GetSequence())
-	}
-}
-
-// VTT-388
-func TestQARejudgeSpectatorPromotedToPlayerKeepsAPerchItMayStillWatch(t *testing.T) {
-	tb := qaRejudgeNewTable(t)
-	e := tb.env
-	sTok, sid := e.invite(t, "s1", identity.RoleSpectator)
-	rTok, _ := e.invite(t, "r1", identity.RoleSpectator)
-	e.addActor(t, tb.dm, "a0", qaRejudgeParty)
-	e.grant(t, tb.dm, "a0", sid, qaRejudgeParty)
-	e.addActor(t, tb.dm, "a1", qaRejudgeParty)
-	e.grant(t, tb.dm, "a1", sid, qaRejudgeParty)
-	e.narrate(t, tb.dm)
-
-	s, o := e.open(t, sTok, "a1")
-	if o.viewpoint != "a1" {
-		t.Fatalf("spectator opened on %q, want a1", o.viewpoint)
-	}
-	r, _ := e.open(t, rTok, "a1")
-	e.promote(t, tb.dm, sid, identity.RolePlayer)
-	s.mustQuiet(t)
-
-	e.narrate(t, tb.dm)
-	want := r.mustEvent(t)
-	got := s.mustEvent(t)
 	if got.GetSequence() != want.GetSequence() {
 		t.Fatalf("event sequence %d, want %d", got.GetSequence(), want.GetSequence())
 	}
@@ -441,17 +309,19 @@ func TestQARejudgePromotingAnotherParticipantLeavesTheSeatAlone(t *testing.T) {
 	_, oid := e.invite(t, "s2", identity.RoleSpectator)
 	e.addActor(t, tb.dm, "a1", qaRejudgeParty)
 	e.grant(t, tb.dm, "a1", pid, qaRejudgeParty)
+	e.addActor(t, tb.dm, "a2", qaRejudgeParty)
+	e.grant(t, tb.dm, "a2", oid, qaRejudgeParty)
 	e.narrate(t, tb.dm)
 
 	s, o := e.open(t, sTok, "a1")
 	if o.viewpoint != "a1" {
 		t.Fatalf("spectator opened on %q, want a1", o.viewpoint)
 	}
-	e.promote(t, tb.dm, oid, identity.RolePlayer)
+	e.promote(t, tb.dm, oid, identity.RoleSpectator)
 	s.mustQuiet(t)
 }
 
-// VTT-388
+// VTT-896
 func TestQARejudgeASpectatorPromotedToSpectatorKeepsItsPerch(t *testing.T) {
 	tb := qaRejudgeNewTable(t)
 	e := tb.env
@@ -465,33 +335,10 @@ func TestQARejudgeASpectatorPromotedToSpectatorKeepsItsPerch(t *testing.T) {
 	if o.viewpoint != "a1" {
 		t.Fatalf("spectator opened on %q, want a1", o.viewpoint)
 	}
+	before := e.logHead(t)
 	e.promote(t, tb.dm, sid, identity.RoleSpectator)
 	s.mustQuiet(t)
-}
-
-// VTT-452 VTT-388 VTT-036
-func TestQARejudgePromotedSpectatorWhoControlsNoneKeepsItsPerch(t *testing.T) {
-	tb := qaRejudgeNewTable(t)
-	e := tb.env
-	_, pid := e.invite(t, "p1", identity.RolePlayer)
-	sTok, sid := e.invite(t, "s1", identity.RoleSpectator)
-	e.addActor(t, tb.dm, "a1", qaRejudgeParty)
-	e.grant(t, tb.dm, "a1", pid, qaRejudgeParty)
-	e.narrate(t, tb.dm)
-
-	s, o := e.open(t, sTok, "a1")
-	if o.viewpoint != "a1" || len(o.events) == 0 {
-		t.Fatalf("spectator did not open on a1's log: %+v", o)
-	}
-	before := e.logHead(t)
-	e.promote(t, tb.dm, sid, identity.RolePlayer)
-
-	s.mustQuiet(t)
 	if after := e.logHead(t); after != before {
-		t.Fatalf("log head moved from %d to %d", before, after)
-	}
-	e.narrate(t, tb.dm)
-	if ev := s.mustEvent(t); ev.GetNarrationAdded() == nil {
-		t.Fatalf("the next entry after the promotion is %v, want a1's narration", ev)
+		t.Fatalf("making a spectator who controls nothing a spectator moved the log head from %d to %d", before, after)
 	}
 }

@@ -159,7 +159,7 @@ func TestAnActorWithNoDeclaredKindIsNoShoulderHoweverManyHoldIt(t *testing.T) {
 	st := twoRooms()
 	mustApply(st, 8, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "wisp", Name: "Wisp"}})
 	// A kindless grant: the command boundary refuses it and the fold accepts it.
-	mustApply(st, 9, &vttv1.ActorControlGranted{ActorId: "wisp", ParticipantId: "s-1"})
+	mustApply(st, 9, &vttv1.ActorControlGranted{ActorId: "wisp", ParticipantId: "dm-1"})
 	mustApply(st, 10, &vttv1.ActorControlGranted{ActorId: "wisp", ParticipantId: "p-1"})
 	for _, p := range []*identity.Participant{spectator(), owner()} {
 		if err := gateway.MayWatch(p, "wisp", st.Actors); err == nil {
@@ -240,33 +240,5 @@ func TestUnperchingNamesNoActorAndIsAllowed(t *testing.T) {
 func TestAPlayerMayNotWatchNobody(t *testing.T) {
 	if err := gateway.MayWatch(owner(), "", twoRooms().Actors); err == nil {
 		t.Fatal("a player's set_viewpoint naming no actor was accepted")
-	}
-}
-
-// VTT-452 VTT-347
-func TestAPlayerWhoControlsNoPartyMemberMayWatchAnyPartyMemberOrNobody(t *testing.T) {
-	st := twoRooms()
-	mustApply(st, 8, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "scout", Name: "Scout",
-		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
-	mustApply(st, 9, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "pet", Name: "Pet",
-		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}})
-	mustApply(st, 10, &vttv1.ActorControlGranted{ActorId: "pet", ParticipantId: "p-3",
-		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
-	for _, p := range []*identity.Participant{
-		{ID: "p-2", Role: identity.RolePlayer},
-		{ID: "p-3", Role: identity.RolePlayer},
-	} {
-		for _, id := range []string{"hero", "scout", ""} {
-			if err := gateway.MayWatch(p, id, st.Actors); err != nil {
-				t.Errorf("%s controls no party member and may not watch %q: %v", p.ID, id, err)
-			}
-		}
-		for _, id := range []string{"goblin", "pet", "absent"} {
-			got := gateway.MayWatch(p, id, st.Actors)
-			want := gateway.MayWatch(spectator(), id, st.Actors)
-			if got == nil || want == nil || got.Error() != want.Error() {
-				t.Errorf("%s watching %q: got %v, want the spectator's refusal %v", p.ID, id, got, want)
-			}
-		}
 	}
 }

@@ -249,10 +249,11 @@ func TestQADSAPlayerFarFromTheSquareGetsOneTextWhateverTheSquareIs(t *testing.T)
 }
 
 // VTT-609
-func TestQADSAPlayerWhoControlsNothingGetsOneTextAtEverySquare(t *testing.T) {
+func TestQADSAPlayerWhosePartyMemberHasNoTokenGetsOneTextAtEverySquare(t *testing.T) {
 	f := newGWFixture(t)
 	f.seedCellar(t)
 	qaDSSeedHall(t, f)
+	appendEvents(t, f.campaign, partyMemberOf("qa-ds-ivos", f.playerIDFor(t, f.otherPlayerToken))...)
 	conn := f.dial(f.otherPlayerToken, f.head(t))
 	squares := []qaDSSquare{
 		{"cellar", 0, 1}, {"cellar", 0, 0}, {"cellar", 2, 1},

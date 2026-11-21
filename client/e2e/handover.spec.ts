@@ -210,7 +210,7 @@ test("a DM hands a second character over, and the player keeps both across a rec
 // "a DM hands a second character over, and the player keeps both across a
 // reconnect" leaves Lera holding Ash and Bram. Revoking both leaves her on Ash,
 // her last (the owner's ruling "Stay on Tobbe"), with the perch.
-// VTT-458 VTT-456 VTT-452 VTT-459 VTT-605 VTT-606 VTT-607
+// VTT-458 VTT-923 VTT-459 VTT-605 VTT-606 VTT-607
 test("the DM takes a player's only character back, and the player chooses another shoulder",
   async ({ browser }) => {
     const dmCtx = await browser.newContext();

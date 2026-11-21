@@ -63,7 +63,7 @@ test("the DM whispers to Tobbe and Tobbe answers, and only the DM and whoever wa
     );
     await openAs(leraPage!, tokens.player);
     // Watcher's page opens after the DM's commands, so it boots as the player
-    // who plays Tobbe; a rerun's earlier Tobbe comes first by id (VTT-340).
+    // who plays Tobbe; a rerun's earlier Tobbe comes first by id (VTT-921).
     await openAs(tobbePage!, tokens.spectator);
     await tobbePage!.locator(".player").getByRole("button", { name: tobbe }).click();
 

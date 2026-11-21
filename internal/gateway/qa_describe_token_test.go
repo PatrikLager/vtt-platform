@@ -89,7 +89,7 @@ func TestQADTPlayerIsRefusedEvenForATokenWhoseActorTheyControl(t *testing.T) {
 // SPEC-013 "Refusal by default": "the message names the role and the command".
 // VTT-463
 func TestQADTSpectatorIsRefused(t *testing.T) {
-	st := qadtState("p-spec")
+	st := qadtState("p-player")
 	p := &identity.Participant{ID: "p-spec", Name: "Sam", Role: identity.RoleSpectator}
 	for _, tok := range []string{"qadt-tok", "qadt-gob"} {
 		err := gateway.Authorize(p, qadtDescribe(tok, "n", "no", "g", "gn"), st)

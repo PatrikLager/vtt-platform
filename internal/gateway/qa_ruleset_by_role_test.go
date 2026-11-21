@@ -206,26 +206,15 @@ func TestQAReadAPlayerReadsTheUnionOverTheActorsTheyControlInIdOrder(t *testing.
 	q.qaReadInvite("qa-player-two", identity.RolePlayer)
 	q.qaReadAddActor("qa-hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "staggering-blow", "longsword-strike")
 	q.qaReadAddActor("qa-pet", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "rally")
-	q.qaReadAddActor("qa-charmed", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, "goblin-shortbow", "crossbow-shot")
+	q.qaReadAddActor("qa-charmed", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "goblin-shortbow", "crossbow-shot")
 	q.qaReadAddActor("qa-other", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "hunters-flurry")
 	q.qaReadAddActor("qa-goblin", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, "goblin-scimitar")
 	q.qaReadGrant("qa-hero", "qa-player-one", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
 	q.qaReadGrant("qa-pet", "qa-player-one", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
-	q.qaReadGrant("qa-charmed", "qa-player-one", vttv1.ActorKind_ACTOR_KIND_NON_PARTY)
+	q.qaReadGrant("qa-charmed", "qa-player-one", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
 	q.qaReadGrant("qa-other", "qa-player-two", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
 	q.qaReadWantAbilities("qa-player-one", "crossbow-shot", "goblin-shortbow", "longsword-strike", "rally", "staggering-blow")
 	q.qaReadWantAbilities("qa-player-two", "hunters-flurry")
-}
-
-// VTT-691
-func TestQAReadANonPartyActorAddedAsSuchAndGrantedCounts(t *testing.T) {
-	q := qaReadOpen(t, qaReadLoadRuleset(t), nil)
-	q.qaReadInvite("qa-player", identity.RolePlayer)
-	q.qaReadAddActor("qa-wolf", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, "goblin-scimitar")
-	q.qaReadAddActor("qa-unkind", vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED, "rally")
-	q.qaReadGrant("qa-wolf", "qa-player", vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED)
-	q.qaReadGrant("qa-unkind", "qa-player", vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED)
-	q.qaReadWantAbilities("qa-player", "goblin-scimitar", "rally")
 }
 
 // VTT-691
@@ -262,11 +251,11 @@ func TestQAReadAGrantAndARevocationReachTheNextReadOnTheSameConnection(t *testin
 	q := qaReadOpen(t, qaReadLoadRuleset(t), nil)
 	q.qaReadInvite("qa-player", identity.RolePlayer)
 	q.qaReadAddActor("qa-hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "staggering-blow")
-	q.qaReadAddActor("qa-pet", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, "crossbow-shot")
+	q.qaReadAddActor("qa-pet", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "crossbow-shot")
 	q.qaReadWantAbilities("qa-player")
 	q.qaReadGrant("qa-hero", "qa-player", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
 	q.qaReadWantAbilities("qa-player", "staggering-blow")
-	q.qaReadGrant("qa-pet", "qa-player", vttv1.ActorKind_ACTOR_KIND_NON_PARTY)
+	q.qaReadGrant("qa-pet", "qa-player", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
 	q.qaReadWantAbilities("qa-player", "crossbow-shot", "staggering-blow")
 	q.qaReadRevoke("qa-hero", "qa-player")
 	q.qaReadWantAbilities("qa-player", "crossbow-shot")
@@ -328,22 +317,6 @@ func TestQAReadAPlayersAbilityIsTheSameEntryTheDMReads(t *testing.T) {
 	}
 }
 
-// VTT-692
-func TestQAReadASpectatorReadsNoAbilityEvenWhereItsIdControlsAnActor(t *testing.T) {
-	q := qaReadOpen(t, qaReadLoadRuleset(t), nil)
-	q.qaReadInvite("qa-watcher", identity.RoleSpectator)
-	q.qaReadInvite("qa-demoted", identity.RolePlayer)
-	q.qaReadAddActor("qa-hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "rally", "crossbow-shot")
-	q.qaReadGrant("qa-hero", "qa-demoted", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
-	q.qaReadGrant("qa-hero", "qa-watcher", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
-	q.qaReadWantAbilities("qa-watcher")
-	q.qaReadWantAbilities("qa-demoted", "crossbow-shot", "rally")
-	if err := q.ids.SetRole(q.pids["qa-demoted"], identity.RoleSpectator); err != nil {
-		t.Fatalf("SetRole: %v", err)
-	}
-	q.qaReadWantAbilities("qa-demoted")
-}
-
 // VTT-693 VTT-118
 func TestQAReadTheDMAndTheAgentReadEveryAbilityInIdOrder(t *testing.T) {
 	rs := qaReadLoadRuleset(t)
@@ -358,20 +331,6 @@ func TestQAReadTheDMAndTheAgentReadEveryAbilityInIdOrder(t *testing.T) {
 	}
 	q.qaReadWantAbilities("qa-dm", every...)
 	q.qaReadWantAbilities("qa-agent", every...)
-}
-
-// VTT-693
-func TestQAReadAPlayerPromotedToDMReadsEveryAbilityAtTheNextRead(t *testing.T) {
-	rs := qaReadLoadRuleset(t)
-	q := qaReadOpen(t, rs, nil)
-	q.qaReadInvite("qa-rising", identity.RolePlayer)
-	q.qaReadAddActor("qa-hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, "rally")
-	q.qaReadGrant("qa-hero", "qa-rising", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER)
-	q.qaReadWantAbilities("qa-rising", "rally")
-	if err := q.ids.SetRole(q.pids["qa-rising"], identity.RoleDM); err != nil {
-		t.Fatalf("SetRole: %v", err)
-	}
-	q.qaReadWantAbilities("qa-rising", qaReadEveryAbility(rs)...)
 }
 
 func qaReadEveryRole(q *qaReadTable) []string {

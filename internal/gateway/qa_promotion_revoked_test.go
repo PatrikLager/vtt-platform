@@ -32,8 +32,6 @@ const (
 	qaPRGone = vttv1.PresenceState_PRESENCE_STATE_DISCONNECTED
 )
 
-const qaPRPromotionRule = "SPEC-009, Promotion is a command"
-
 type qaPRWho struct {
 	id, name, token string
 	role            identity.Role
@@ -225,6 +223,15 @@ func (tb *qaPRTable) refuse(c *qaPRConn) []*vttv1.ServerFrame {
 	return frames
 }
 
+func (tb *qaPRTable) closed(c *qaPRConn) []*vttv1.ServerFrame {
+	tb.t.Helper()
+	frames, err := c.end()
+	if got := websocket.CloseStatus(err); got != websocket.StatusPolicyViolation {
+		tb.t.Fatalf("VTT-032: %s: the next append ended the connection with %v (%v), want a policy-violation close", c.label, got, err)
+	}
+	return frames
+}
+
 type qaPRConn struct {
 	t     *testing.T
 	label string
@@ -393,41 +400,43 @@ func qaPRWantTold(t *testing.T, rule string, c *qaPRConn, frames []*vttv1.Server
 	}
 }
 
-// VTT-032
-func TestQAPromoRevokedARevokedWatcherIsNotSentThePromotion(t *testing.T) {
+// VTT-032 VTT-906
+func TestQAPromoRevokedARevokedWatcherIsNotSentTheGrant(t *testing.T) {
 	for _, role := range []identity.Role{identity.RoleSpectator, identity.RolePlayer, identity.RoleAgent, identity.RoleDM} {
 		t.Run("revoked "+string(role), func(t *testing.T) {
 			tb := qaPRNewTable(t)
 			dm := tb.host()
+			reannounceAdd(tb, dm, "pm-1")
 			revoked := tb.mint("Rook", role)
 			lost := tb.connect(revoked, "the revoked watcher")
 			witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
 			target := tb.mint("Tam", identity.RoleSpectator)
-			own := tb.connect(target, "the promoted participant")
+			own := tb.connect(target, "the granted participant")
 			for _, c := range []*qaPRConn{dm, lost, witness} {
 				c.awaitTold(target, qaPRHere, 1)
 			}
 
 			tb.revoke(revoked, lost)
-			tb.mustPromote(dm, target, identity.RolePlayer)
+			reannounceMust(tb, "the grant", reannounceGrant(tb, dm, "pm-1", target))
 			fence := tb.fence(dm, witness, own)
 
-			qaPRWantTold(t, qaPRPromotionRule, witness, witness.ahead(fence), target, qaPRHere, qaPRHere)
-			qaPRWantTold(t, qaPRPromotionRule, dm, dm.ahead(fence), target, qaPRHere, qaPRHere)
-			qaPRWantTold(t, "VTT-047", own, own.ahead(fence), target, qaPRHere)
-			qaPRWantTold(t, "VTT-032", lost, tb.refuse(lost), target, qaPRHere)
+			qaPRWantTold(t, reannounceRule, witness, witness.ahead(fence), target, qaPRHere, qaPRHere)
+			qaPRWantTold(t, reannounceRule, dm, dm.ahead(fence), target, qaPRHere, qaPRHere)
+			qaPRWantTold(t, reannounceRule, own, own.ahead(fence), target, qaPRHere)
+			qaPRWantTold(t, "VTT-032", lost, tb.closed(lost), target, qaPRHere)
 		})
 	}
 }
 
 // VTT-032
-func TestQAPromoRevokedNoDeviceOfARevokedParticipantIsSentThePromotion(t *testing.T) {
+func TestQAPromoRevokedNoDeviceOfARevokedParticipantIsSentTheGrant(t *testing.T) {
 	tb := qaPRNewTable(t)
 	dm := tb.host()
+	reannounceAdd(tb, dm, "pm-1")
 	target := tb.mint("Tam", identity.RoleSpectator)
-	tb.connect(target, "the promoted participant")
+	tb.connect(target, "the granted participant")
 	// Keep this wait ahead of the connects below: they must find the target in
-	// their snapshot and be sent no arrival that reads as a promotion.
+	// their snapshot and be sent no arrival that reads as a grant's.
 	dm.awaitTold(target, qaPRHere, 1)
 	witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
 	revoked := tb.mint("Rook", identity.RolePlayer)
@@ -435,39 +444,40 @@ func TestQAPromoRevokedNoDeviceOfARevokedParticipantIsSentThePromotion(t *testin
 	second := tb.connect(revoked, "the revoked participant's second device")
 
 	tb.revoke(revoked, first, second)
-	tb.mustPromote(dm, target, identity.RolePlayer)
+	reannounceMust(tb, "the grant", reannounceGrant(tb, dm, "pm-1", target))
 	fence := tb.fence(dm, witness)
 
-	qaPRWantTold(t, qaPRPromotionRule, witness, witness.ahead(fence), target, qaPRHere)
-	qaPRWantTold(t, "VTT-032", first, tb.refuse(first), target)
-	qaPRWantTold(t, "VTT-032", second, tb.refuse(second), target)
+	qaPRWantTold(t, reannounceRule, witness, witness.ahead(fence), target, qaPRHere)
+	qaPRWantTold(t, "VTT-032", first, tb.closed(first), target)
+	qaPRWantTold(t, "VTT-032", second, tb.closed(second), target)
 }
 
-// VTT-032
-func TestQAPromoRevokedARevocationBetweenTwoPromotionsWithholdsOnlyTheSecond(t *testing.T) {
+// VTT-032 VTT-906
+func TestQAPromoRevokedARevocationBetweenTwoControlChangesWithholdsOnlyTheSecond(t *testing.T) {
 	tb := qaPRNewTable(t)
 	dm := tb.host()
+	reannounceAdd(tb, dm, "pm-1")
 	revoked := tb.mint("Rook", identity.RoleSpectator)
-	lost := tb.connect(revoked, "the watcher revoked between the promotions")
+	lost := tb.connect(revoked, "the watcher revoked between the control changes")
 	witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
 	target := tb.mint("Tam", identity.RoleSpectator)
-	own := tb.connect(target, "the promoted participant")
+	own := tb.connect(target, "the granted participant")
 	for _, c := range []*qaPRConn{dm, lost, witness} {
 		c.awaitTold(target, qaPRHere, 1)
 	}
 
-	tb.mustPromote(dm, target, identity.RolePlayer)
+	reannounceMust(tb, "the grant", reannounceGrant(tb, dm, "pm-1", target))
 	// Keep this wait ahead of the revocation: the watcher is owed the first
-	// promotion, and nothing orders a result against the frame it caused.
+	// grant, and nothing orders a result against the frame it caused.
 	lost.awaitTold(target, qaPRHere, 2)
 
 	tb.revoke(revoked, lost)
 	tb.mustPromote(dm, target, identity.RoleSpectator)
 	fence := tb.fence(dm, witness, own)
 
-	qaPRWantTold(t, qaPRPromotionRule, witness, witness.ahead(fence), target, qaPRHere, qaPRHere, qaPRHere)
-	qaPRWantTold(t, "VTT-047", own, own.ahead(fence), target, qaPRHere, qaPRHere)
-	qaPRWantTold(t, "VTT-032", lost, tb.refuse(lost), target, qaPRHere, qaPRHere)
+	qaPRWantTold(t, reannounceRule, witness, witness.ahead(fence), target, qaPRHere, qaPRHere, qaPRHere)
+	qaPRWantTold(t, reannounceRule, own, own.ahead(fence), target, qaPRHere, qaPRHere)
+	qaPRWantTold(t, "VTT-032", lost, tb.closed(lost), target, qaPRHere, qaPRHere)
 }
 
 // VTT-032
@@ -483,29 +493,31 @@ func TestQAPromoRevokedPromotingARevokedParticipantSendsThemNothing(t *testing.T
 	tb.revoke(target, own)
 	// Assert nothing about this result or about what the witness is sent: no
 	// record says whether a revoked participant can be promoted.
-	tb.promote(dm, target, identity.RolePlayer)
+	tb.promote(dm, target, identity.RoleSpectator)
 	tb.fence(dm, witness)
 
 	qaPRWantTold(t, "VTT-032", own, tb.refuse(own), target)
 }
 
 // VTT-032 VTT-352
-func TestQAPromoRevokedTheNextEventClosesARevokedWatcherWhoWasSentNoPromotion(t *testing.T) {
+func TestQAPromoRevokedTheNextEventClosesARevokedWatcherWhoWasSentNoGrant(t *testing.T) {
 	tb := qaPRNewTable(t)
 	dm := tb.host()
+	reannounceAdd(tb, dm, "pm-1")
 	revoked := tb.mint("Rook", identity.RoleSpectator)
 	lost := tb.connect(revoked, "the revoked watcher")
 	witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
 	target := tb.mint("Tam", identity.RoleSpectator)
-	tb.connect(target, "the promoted participant")
+	tb.connect(target, "the granted participant")
 	for _, c := range []*qaPRConn{dm, lost, witness} {
 		c.awaitTold(target, qaPRHere, 1)
 	}
 
 	tb.revoke(revoked, lost)
-	tb.mustPromote(dm, target, identity.RolePlayer)
+	granted := reannounceGrant(tb, dm, "pm-1", target)
+	reannounceMust(tb, "the grant", granted)
 	fence := tb.fence(dm, witness)
-	qaPRWantTold(t, qaPRPromotionRule, witness, witness.ahead(fence), target, qaPRHere, qaPRHere)
+	qaPRWantTold(t, reannounceRule, witness, witness.ahead(fence), target, qaPRHere, qaPRHere)
 	narrated := tb.narrate(dm, "the lamps gutter")
 
 	frames, err := lost.end()
@@ -517,8 +529,10 @@ func TestQAPromoRevokedTheNextEventClosesARevokedWatcherWhoWasSentNoPromotion(t 
 		t.Errorf("VTT-032: the next event closed the revoked watcher with %v %q, want %v %q",
 			closed.Code, closed.Reason, websocket.StatusPolicyViolation, "gateway: credential no longer valid")
 	}
-	if slices.Contains(qaPREvents(frames), narrated.GetSequence()) {
-		t.Errorf("VTT-032: the revoked watcher was delivered event %d", narrated.GetSequence())
+	for _, seq := range []int64{granted.GetSequence(), narrated.GetSequence()} {
+		if slices.Contains(qaPREvents(frames), seq) {
+			t.Errorf("VTT-032: the revoked watcher was delivered event %d", seq)
+		}
 	}
 	qaPRWantTold(t, "VTT-032", lost, frames, target, qaPRHere)
 }
@@ -543,29 +557,30 @@ func TestQAPromoRevokedARevokedWatcherIsToldOfNoArrivalAndNoDeparture(t *testing
 	qaPRWantTold(t, "VTT-032", lost, tb.refuse(lost), visitor)
 }
 
-// VTT-047
-func TestQAPromoRevokedThePromotedParticipantIsToldOnTheirOwnConnection(t *testing.T) {
+// VTT-906
+func TestQAPromoRevokedTheGrantedParticipantIsToldOnTheirOwnConnection(t *testing.T) {
 	tb := qaPRNewTable(t)
 	dm := tb.host()
+	reannounceAdd(tb, dm, "pm-1")
 	revoked := tb.mint("Rook", identity.RolePlayer)
 	lost := tb.connect(revoked, "the revoked watcher")
 	target := tb.mint("Tam", identity.RoleSpectator)
-	own := tb.connect(target, "the promoted participant")
+	own := tb.connect(target, "the granted participant")
 	dm.awaitTold(target, qaPRHere, 1)
 
 	tb.revoke(revoked, lost)
-	tb.mustPromote(dm, target, identity.RolePlayer)
+	reannounceMust(tb, "the grant", reannounceGrant(tb, dm, "pm-1", target))
 	fence := tb.fence(dm, own)
 
 	named := qaPRNaming(own.ahead(fence), target)
 	want := &vttv1.PresenceChanged{ParticipantId: target.id, DisplayName: target.name, State: qaPRHere}
 	if len(named) != 1 || !proto.Equal(named[0], want) {
-		t.Errorf("VTT-047: the promoted participant's own connection was sent %v naming them, want exactly %v", named, want)
+		t.Errorf("VTT-906: the granted participant's own connection was sent %v naming them, want exactly %v", named, want)
 	}
 }
 
-// VTT-309
-func TestQAPromoRevokedEveryUnrevokedConnectionIsSentThePromotion(t *testing.T) {
+// VTT-906
+func TestQAPromoRevokedEveryUnrevokedConnectionIsSentTheGrant(t *testing.T) {
 	for _, by := range []identity.Role{identity.RoleDM, identity.RoleAgent} {
 		t.Run("promoted by "+string(by), func(t *testing.T) {
 			other := identity.RoleAgent
@@ -575,6 +590,7 @@ func TestQAPromoRevokedEveryUnrevokedConnectionIsSentThePromotion(t *testing.T) 
 			tb := qaPRNewTable(t)
 			promoter := tb.connect(tb.mint("Dee", by), "the promoter")
 			tb.narrate(promoter, "the table is laid")
+			reannounceAdd(tb, promoter, "pm-1")
 			player := tb.mint("Wren", identity.RolePlayer)
 			before := []*qaPRConn{
 				promoter,
@@ -586,89 +602,66 @@ func TestQAPromoRevokedEveryUnrevokedConnectionIsSentThePromotion(t *testing.T) 
 			revoked := tb.mint("Rook", identity.RolePlayer)
 			lost := tb.connect(revoked, "the revoked watcher")
 			target := tb.mint("Tam", identity.RoleSpectator)
-			first := tb.connect(target, "the promoted participant's first device")
+			first := tb.connect(target, "the granted participant's first device")
 			for _, c := range append(slices.Clone(before), lost) {
 				c.awaitTold(target, qaPRHere, 1)
 			}
 			// Keep the second device behind those waits: connected sooner, it can
 			// be sent the arrival its own participant caused (SPEC-011), and that
-			// frame reads as a promotion.
-			own := []*qaPRConn{first, tb.connect(target, "the promoted participant's second device")}
+			// frame reads as a grant's.
+			own := []*qaPRConn{first, tb.connect(target, "the granted participant's second device")}
 
 			tb.revoke(revoked, lost)
-			tb.mustPromote(promoter, target, identity.RolePlayer)
+			reannounceMust(tb, "the grant", reannounceGrant(tb, promoter, "pm-1", target))
 			fence := tb.fence(promoter, append(slices.Clone(before), own...)...)
 
 			want := &vttv1.PresenceChanged{ParticipantId: target.id, DisplayName: target.name, State: qaPRHere}
 			for _, c := range before {
 				named := qaPRNaming(c.ahead(fence), target)
 				if len(named) != 2 || !proto.Equal(named[1], want) {
-					t.Errorf("%s: %s was sent %v naming the promoted participant, want their arrival and then %v", qaPRPromotionRule, c.label, named, want)
+					t.Errorf("%s: %s was sent %v naming the granted participant, want their arrival and then %v", reannounceRule, c.label, named, want)
 				}
 			}
 			for _, c := range own {
 				named := qaPRNaming(c.ahead(fence), target)
 				if len(named) != 1 || !proto.Equal(named[0], want) {
-					t.Errorf("%s: %s was sent %v naming them, want exactly %v", qaPRPromotionRule, c.label, named, want)
+					t.Errorf("%s: %s was sent %v naming them, want exactly %v", reannounceRule, c.label, named, want)
 				}
 			}
-			qaPRWantTold(t, "VTT-032", lost, tb.refuse(lost), target, qaPRHere)
+			qaPRWantTold(t, "VTT-032", lost, tb.closed(lost), target, qaPRHere)
 		})
 	}
 }
 
-// VTT-310
-func TestQAPromoRevokedPromotingAnAbsentParticipantAnnouncesNothing(t *testing.T) {
+// VTT-907
+func TestQAPromoRevokedGrantingAnAbsentParticipantAnnouncesNothing(t *testing.T) {
 	t.Run("never connected", func(t *testing.T) {
 		tb := qaPRNewTable(t)
 		dm := tb.host()
+		reannounceAdd(tb, dm, "pm-1")
 		witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
 		target := tb.mint("Tam", identity.RoleSpectator)
 
-		tb.mustPromote(dm, target, identity.RolePlayer)
+		reannounceMust(tb, "the grant", reannounceGrant(tb, dm, "pm-1", target))
 		fence := tb.fence(dm, dm, witness)
 
-		qaPRWantTold(t, qaPRPromotionRule, dm, dm.ahead(fence), target)
-		qaPRWantTold(t, qaPRPromotionRule, witness, witness.ahead(fence), target)
+		qaPRWantTold(t, "VTT-907", dm, dm.ahead(fence), target)
+		qaPRWantTold(t, "VTT-907", witness, witness.ahead(fence), target)
 	})
 	t.Run("connected and left", func(t *testing.T) {
 		tb := qaPRNewTable(t)
 		dm := tb.host()
+		reannounceAdd(tb, dm, "pm-1")
 		witness := tb.connect(tb.mint("Wren", identity.RolePlayer), "the witness")
 		target := tb.mint("Tam", identity.RoleSpectator)
 		tb.connect(target, "the participant who leaves").hangUp()
 		dm.awaitTold(target, qaPRGone, 1)
 		witness.awaitTold(target, qaPRGone, 1)
 
-		tb.mustPromote(dm, target, identity.RolePlayer)
+		reannounceMust(tb, "the grant", reannounceGrant(tb, dm, "pm-1", target))
 		fence := tb.fence(dm, dm, witness)
 
-		qaPRWantTold(t, qaPRPromotionRule, dm, dm.ahead(fence), target, qaPRHere, qaPRGone)
-		qaPRWantTold(t, qaPRPromotionRule, witness, witness.ahead(fence), target, qaPRHere, qaPRGone)
+		qaPRWantTold(t, "VTT-907", dm, dm.ahead(fence), target, qaPRHere, qaPRGone)
+		qaPRWantTold(t, "VTT-907", witness, witness.ahead(fence), target, qaPRHere, qaPRGone)
 	})
-}
-
-// VTT-036
-func TestQAPromoRevokedAPromotionAppendsNoEvent(t *testing.T) {
-	tb := qaPRNewTable(t)
-	host := tb.mint("Dee", identity.RoleDM)
-	dm := tb.connect(host, "the DM")
-	target := tb.mint("Tam", identity.RoleSpectator)
-	tb.connect(target, "the promoted participant")
-	dm.awaitTold(target, qaPRHere, 1)
-
-	first := tb.narrate(dm, "before the promotion")
-	tb.mustPromote(dm, target, identity.RolePlayer)
-	second := tb.narrate(dm, "after the promotion")
-	want := []int64{first.GetSequence(), second.GetSequence()}
-
-	arrived := func(frames []*vttv1.ServerFrame, _ bool) bool {
-		return slices.Contains(qaPREvents(frames), second.GetSequence())
-	}
-	if got := qaPREvents(dm.await("event of the second narration", arrived)); !slices.Equal(got, want) {
-		t.Errorf("VTT-036: the DM was delivered events %v across a promotion, want the two narrations %v", got, want)
-	}
-	if got := qaPREvents(tb.connect(host, "the DM's second device").await("backlog to its head", arrived)); !slices.Equal(got, want) {
-		t.Errorf("VTT-036: the log replays as %v after a promotion, want the two narrations %v", got, want)
-	}
 }

@@ -61,7 +61,7 @@ func TestAPlayersSetCarriesTheAbilityIdsOfEachPartyMemberTheyControl(t *testing.
 		&vttv1.ActorControlGranted{ActorId: "a2", ParticipantId: f.playerID,
 			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "pet", Name: "Pet", AbilityIds: []string{"bite"}}},
-		&vttv1.ActorControlGranted{ActorId: "pet", ParticipantId: f.playerID,
+		&vttv1.ActorControlGranted{ActorId: "pet", ParticipantId: participantID(t, f, f.dmToken),
 			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
 	dm := f.watch(f.dmToken, 0, "")
 	changeAbility(t, dm, giveAbilityCmd("a1", "slash"))
@@ -71,7 +71,7 @@ func TestAPlayersSetCarriesTheAbilityIdsOfEachPartyMemberTheyControl(t *testing.
 }
 
 // VTT-731
-func TestTheSetsOfASpectatorAndAPlayerWhoControlNoPartyMemberCarryNoAbilityIds(t *testing.T) {
+func TestTheSetOfASpectatorCarriesNoAbilityIds(t *testing.T) {
 	f := newGWFixture(t)
 	appendEvents(t, f.campaign,
 		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a2", Name: "Quill", AbilityIds: []string{"heal"},
@@ -79,31 +79,35 @@ func TestTheSetsOfASpectatorAndAPlayerWhoControlNoPartyMemberCarryNoAbilityIds(t
 	dm := f.watch(f.dmToken, 0, "")
 	changeAbility(t, dm, giveAbilityCmd("a1", "slash"))
 
-	for who, token := range map[string]string{"the spectator": f.spectatorToken, "Ivo": f.otherPlayerToken} {
-		w := f.watch(token, 0, "")
-		if head := w.mustAny(); head.GetCatchUpHead() == nil {
-			t.Fatalf("%s: the first frame is %v, want the catch-up head", who, head)
-		}
-		requireAbilities(t, who+"'s opening set", w.mustAny(), "a1: a2:")
+	w := f.watch(f.spectatorToken, 0, "")
+	if head := w.mustAny(); head.GetCatchUpHead() == nil {
+		t.Fatalf("the spectator: the first frame is %v, want the catch-up head", head)
 	}
+	requireAbilities(t, "the spectator's opening set", w.mustAny(), "a1: a2:")
 }
 
-// Keep a1 naming an ability: the spectator's set must carry the ids of the
-// party member it controls alone.
-// VTT-731
-func TestASpectatorWhoControlsAPartyMemberIsSentItsAbilityIds(t *testing.T) {
+// Keep a1 naming an ability: the granted participant's set must carry the ids
+// of the party member they control alone.
+// VTT-731 VTT-893
+func TestASpectatorGrantedAPartyMemberIsSentItsAbilityIds(t *testing.T) {
 	f := newGWFixture(t)
 	appendEvents(t, f.campaign,
-		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "c1", Name: "Corin", AbilityIds: []string{"ward"}}},
-		&vttv1.ActorControlGranted{ActorId: "c1", ParticipantId: participantID(t, f, f.spectatorToken),
-			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "c1", Name: "Corin", AbilityIds: []string{"ward"},
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
 	dm := f.watch(f.dmToken, 0, "")
 	changeAbility(t, dm, giveAbilityCmd("a1", "slash"))
 
 	w := f.watch(f.spectatorToken, 0, "")
-	w.openWithAbilities("a1: c1:ward", "")
+	w.openWithAbilities("a1: c1:", "")
+	appendEvents(t, f.campaign, &vttv1.ActorControlGranted{ActorId: "c1",
+		ParticipantId: participantID(t, f, f.spectatorToken), Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	requireAbilities(t, "the seat, after the grant", w.mustAny(), "c1:ward")
+	requireViewpoint(t, "after the grant's set", w.mustAny(), "c1")
+	w.requireEntries(f, "c1's log from its first entry", "c1", 0)
+	held := len(logOf(t, f, "c1"))
 	changeAbility(t, dm, giveAbilityCmd("c1", "dart"))
-	requireAbilities(t, "the spectator's seat, after the give", w.mustAny(), "a1: c1:ward,dart")
+	requireAbilities(t, "the seat, after the give", w.mustAny(), "c1:ward,dart")
+	w.requireEntries(f, "c1's log after the give", "c1", held)
 	w.quietAll(300 * time.Millisecond)
 }
 

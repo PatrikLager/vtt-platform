@@ -272,8 +272,6 @@ func TestAWedgedWatcherIsTornDownAndOthersKeepServing(t *testing.T) {
 	}
 }
 
-// Keep before between openSeat and the pump: a promotion's opening tests need
-// that window.
 func pumpUnderTest(t *testing.T, s *Server, p *identity.Participant, named string,
 	before func()) (*perchBox, chan []byte) {
 	t.Helper()
@@ -432,7 +430,7 @@ func seatMove(tokenID string, x int32) *vttv1.ClientCommand {
 }
 
 // Start no pump here: the seat must not have read the grant's wake.
-// VTT-453
+// VTT-922
 func TestAMoveRightAfterAGrantIsJudgedByTheNewCharacter(t *testing.T) {
 	s, c, p := seatServer(t)
 	seatRooms(t, c)
@@ -452,7 +450,7 @@ func TestAMoveRightAfterAGrantIsJudgedByTheNewCharacter(t *testing.T) {
 }
 
 // Start no pump here: the seat must still show ana when the move is judged.
-// VTT-453 VTT-601
+// VTT-922 VTT-601
 func TestAMoveRightAfterARevocationIsNotJudgedByTheLostCharacter(t *testing.T) {
 	s, c, p := seatServer(t)
 	seatRooms(t, c)
@@ -475,7 +473,7 @@ func TestAMoveRightAfterARevocationIsNotJudgedByTheLostCharacter(t *testing.T) {
 }
 
 // Start no pump here: the move must be judged before any frame is sent.
-// VTT-453
+// VTT-922
 func TestAMoveOnAConnectionOpenedOnALogIsJudgedByThatLog(t *testing.T) {
 	s, c, p := seatServer(t)
 	seatRooms(t, c)
@@ -646,58 +644,16 @@ func seatSpectator(t *testing.T, s *Server) *identity.Participant {
 	return &identity.Participant{ID: id, Role: identity.RoleSpectator}
 }
 
-func seatPromote(t *testing.T, s *Server, id string) func() {
-	t.Helper()
-	return func() {
-		t.Helper()
-		if err := s.ids.SetRole(id, identity.RolePlayer); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-// VTT-387 VTT-368
-func TestAPromotionAsTheSeatOpensSendsNoEntryOfTheShoulder(t *testing.T) {
-	s, c, p := seatServer(t)
-	seatParty(t, c, "x1", p.ID)
-	spec := seatSpectator(t, s)
-	seatParty(t, c, "c1", spec.ID)
-	_, out := pumpUnderTest(t, s, spec, "x1", seatPromote(t, s, spec.ID))
-	if vc := frameOf(t, out).GetViewpointChanged(); vc == nil || vc.GetActorId() != "x1" {
-		t.Fatalf("the seat announced %v first, want the x1 it opened on", vc)
-	}
-	for {
-		f := frameOf(t, out)
-		if f.GetEvent() != nil {
-			t.Fatalf("promoted as it opened, the spectator was sent x1's entry %v", f.GetEvent())
-		}
-		if vc := f.GetViewpointChanged(); vc != nil && vc.GetActorId() == "c1" {
-			break
-		}
-	}
-	seatAppend(t, c, "after", &vttv1.NarrationAdded{Text: "x1 hears this"})
-	held, err := c.CharacterLog("c1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for i, e := range held {
-		if got := frameOf(t, out).GetEvent(); !proto.Equal(got, e.Env) {
-			t.Fatalf("c1's entry %d is %v, want %v", i+1, got, e.Env)
-		}
-	}
-	select {
-	case b := <-out:
-		t.Fatalf("after c1's log the connection was sent %s", b)
-	case <-time.After(300 * time.Millisecond):
-	}
-}
-
-// VTT-340 VTT-368
-func TestAPromotionAsTheSeatOpensMovesItOntoTheirPartyMember(t *testing.T) {
+// VTT-921 VTT-368
+func TestAGrantAsTheSeatOpensMovesItOntoTheirPartyMember(t *testing.T) {
 	s, c, _ := seatServer(t)
 	spec := seatSpectator(t, s)
-	seatParty(t, c, "c1", spec.ID)
-	_, out := pumpUnderTest(t, s, spec, "", seatPromote(t, s, spec.ID))
+	seatAppend(t, c, "c1-added", &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "c1", Name: "c1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
+	_, out := pumpUnderTest(t, s, spec, "", func() {
+		seatAppend(t, c, "c1-granted", &vttv1.ActorControlGranted{ActorId: "c1", ParticipantId: spec.ID,
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
+	})
 	if vc := frameOf(t, out).GetViewpointChanged(); vc == nil || vc.GetActorId() != "" {
 		t.Fatalf("the seat announced %v first, want the nobody it opened on", vc)
 	}
@@ -721,88 +677,19 @@ func TestAPromotionAsTheSeatOpensMovesItOntoTheirPartyMember(t *testing.T) {
 	}
 }
 
-func seatPumpState(s *Server, sub *seat, id string,
-	lookup func(string) (*identity.Participant, error)) (chan []byte, *pumpState) {
-	var closing atomic.Bool
-	closing.Store(true)
-	out := make(chan []byte, 8)
-	return out, &pumpState{s: s, sub: sub, id: id, lookup: lookup, outCh: out, writerDone: make(chan struct{}),
-		closing: &closing}
-}
-
-func seatOpenedOnX1(t *testing.T) (*Server, *seat, *identity.Participant, *vttv1.Envelope) {
-	t.Helper()
-	s, c, p := seatServer(t)
-	seatParty(t, c, "x1", p.ID)
-	spec := seatSpectator(t, s)
-	seatParty(t, c, "c1", spec.ID)
-	sub, head, err := openSeat(c, spec, "x1", 0, 64, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(sub.close)
-	if head == 0 {
-		t.Fatal("fixture: x1's log is empty")
-	}
-	return s, sub, spec, seatTake(t, sub.events, "x1's first entry")
-}
-
-func seatNoEntryOfX1(t *testing.T, ps *pumpState, sub *seat, out chan []byte, env *vttv1.Envelope) {
-	t.Helper()
-	if len(sub.wake) != 0 {
-		t.Fatal("fixture: a wake waits, so admit would re-judge and the role check go untested")
-	}
-	if !ps.onEntry(env) {
-		t.Fatal("the pump stopped on an entry of a log the new role may not watch")
-	}
-	if vc := frameOf(t, out).GetViewpointChanged(); vc == nil || vc.GetActorId() != "c1" || sub.shown != "c1" {
-		t.Fatalf("the seat shows %q after %v, want c1", sub.shown, vc)
-	}
-	if len(out) != 0 {
-		t.Fatalf("x1's entry was queued for a player who may not watch x1 (%d frames)", len(out))
-	}
-}
-
-// VTT-387
-func TestAnEntryTakenAfterAPromotionIsJudgedByTheNewRole(t *testing.T) {
-	s, sub, spec, env := seatOpenedOnX1(t)
-	if err := s.ids.SetRole(spec.ID, identity.RolePlayer); err != nil {
-		t.Fatal(err)
-	}
-	out, ps := seatPumpState(s, sub, spec.ID, s.ids.Lookup)
-	seatNoEntryOfX1(t, ps, sub, out, env)
-}
-
-// VTT-387
-func TestARoleReadAfterAdmitStillJudgesTheEntry(t *testing.T) {
-	s, sub, spec, env := seatOpenedOnX1(t)
-	player := &identity.Participant{ID: spec.ID, Role: identity.RolePlayer}
-	lookups := 0
-	out, ps := seatPumpState(s, sub, spec.ID, func(string) (*identity.Participant, error) {
-		lookups++
-		if lookups == 1 {
-			return spec, nil
-		}
-		return player, nil
-	})
-	seatNoEntryOfX1(t, ps, sub, out, env)
-}
-
-// VTT-399 VTT-452
-func TestWatchableNamesEveryPartyMemberForAPlayerWhoControlsNone(t *testing.T) {
+// VTT-399 VTT-893
+func TestWatchableNamesEveryPartyMemberForAParticipantWhoControlsNothing(t *testing.T) {
 	actors := map[string]*vttv1.Actor{
 		"a1":  {ActorId: "a1", Name: "Hero", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, ControllerIds: []string{"p-1"}},
 		"a2":  {ActorId: "a2", Name: "Ash", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
 		"gob": {ActorId: "gob", Name: "Goblin", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
-		"pet": {ActorId: "pet", Name: "Pet", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY, ControllerIds: []string{"p-3"}},
+		"pet": {ActorId: "pet", Name: "Pet", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY, ControllerIds: []string{"dm-1"}},
 	}
-	for _, id := range []string{"p-2", "p-3"} {
-		got := ""
-		for _, a := range watchable(&identity.Participant{ID: id, Role: identity.RolePlayer}, actors).GetActors() {
-			got += a.GetActorId() + ":" + a.GetName() + " "
-		}
-		if got != "a1:Hero a2:Ash " {
-			t.Errorf("%s controls no party member: the set is %q, want every party member", id, got)
-		}
+	got := ""
+	for _, a := range watchable(&identity.Participant{ID: "s-1", Role: identity.RoleSpectator}, actors).GetActors() {
+		got += a.GetActorId() + ":" + a.GetName() + " "
+	}
+	if got != "a1:Hero a2:Ash " {
+		t.Errorf("a participant who controls nothing: the set is %q, want every party member", got)
 	}
 }

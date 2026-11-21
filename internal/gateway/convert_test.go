@@ -477,9 +477,9 @@ func TestEveryClientCommandConverts(t *testing.T) {
 		"remove_participant": "revokes the participant in identity and then revokes their " +
 			"control of every actor they control as one batch of ActorControlRevoked, never a single event, " +
 			"so ToEvent does not convert it",
-		"promote_participant": "changes IDENTITY, not campaign state, so it produces no " +
-			"event at all — a role lives in participants.role beside the token, one " +
-			"source of truth, never in the log (joining-a-table spec §3.1, §3.1a)",
+		"promote_participant": "makes a player a spectator by revoking their control of " +
+			"every actor they control as one batch of ActorControlRevoked, never a single " +
+			"event, so ToEvent does not convert it (handlePromotion in server.go)",
 		"set_join_door": "operational state, like presence — a replay must not reopen a " +
 			"door somebody closed, so the door lives in identity and not in the log " +
 			"(joining-a-table spec §2, §4)",

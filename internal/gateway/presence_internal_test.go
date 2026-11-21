@@ -740,7 +740,7 @@ func TestSuppressionIsPerParticipantNotPerConnection(t *testing.T) {
 	}
 }
 
-// VTT-340
+// VTT-558
 func TestARejudgeSignalsEveryConnectionOfTheParticipantAndNoOther(t *testing.T) {
 	r := newPresenceRegistry()
 	first, second, other := conn("p-1", "Ana", 1), conn("p-1", "Ana", 1), conn("p-2", "Bo", 1)

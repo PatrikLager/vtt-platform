@@ -533,19 +533,13 @@ func qappRevokeCmd(actorID, pid string) *vttv1.ClientCommand {
 	}}
 }
 
-func qappPromoteCmd(pid string, role identity.Role) *vttv1.ClientCommand {
-	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_PromoteParticipant{
-		PromoteParticipant: &vttv1.PromoteParticipant{ParticipantId: pid, Role: string(role)},
-	}}
-}
-
 func qappRemoveActorCmd(actorID string) *vttv1.ClientCommand {
 	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RemoveActor{
 		RemoveActor: &vttv1.RemoveActor{ActorId: actorID},
 	}}
 }
 
-// VTT-450 VTT-347 VTT-340 VTT-193
+// VTT-450 VTT-347 VTT-921 VTT-193
 func TestQAPPAPlayerWithAPartyMemberWatchesOnlyTheirOwn(t *testing.T) {
 	tb := qappNewTable(t)
 	pTok, pID := tb.invite("Pia", identity.RolePlayer)
@@ -554,7 +548,7 @@ func TestQAPPAPlayerWithAPartyMemberWatchesOnlyTheirOwn(t *testing.T) {
 	tb.addActor("pm-b", "Bert", qappParty, pID)
 	tb.addActor("pm-a", "Alma", qappParty, qID)
 	tb.addActor("pm-c", "Cato", qappParty)
-	tb.addActor("np-g", "Gobo", qappNonParty, pID)
+	tb.addActor("np-g", "Gobo", qappNonParty, tb.dmID)
 	tb.addActor("np-m", "Mold", qappNonParty)
 
 	cn := tb.dial("p", pTok, "")
@@ -593,60 +587,15 @@ func TestQAPPAPlayerWithAPartyMemberIsRefusedNobody(t *testing.T) {
 	tb.expectWatching("pm-b", from, cn)
 }
 
-// VTT-452 VTT-347 VTT-340 VTT-193
-func TestQAPPAPlayerWithoutAPartyMemberWatchesAnyPartyMemberOrNobody(t *testing.T) {
+// VTT-339 VTT-921
+func TestQAPPAParticipantWhoControlsNothingOpensOnTheLogItNames(t *testing.T) {
 	tb := qappNewTable(t)
-	pTok, pID := tb.invite("Pia", identity.RolePlayer)
-	_, qID := tb.invite("Quinn", identity.RolePlayer)
-	tb.addActor("pm-c", "Cato", qappParty)
-	tb.addActor("pm-a", "Alma", qappParty, qID)
-	tb.addActor("np-g", "Gobo", qappNonParty, pID)
-	tb.addActor("np-m", "Mold", qappNonParty)
-
-	cn := tb.dial("p", pTok, "")
-	if got := cn.firstViewpoint(); got != "" {
-		t.Fatalf("opening viewpoint %q, want nobody", got)
-	}
-	cn.mustOK(cn.perch("pm-a"), "perch on another player's pm-a")
-	atA := cn.waitViewpoint(0, "pm-a") + 1
-	tb.expectWatching("pm-a", atA, cn)
-	logA := tb.logOf("pm-a")
-	end := cn.count()
-	for _, e := range cn.events(atA, end) {
-		if !qappInLog(e, logA) {
-			t.Fatalf("entry %v sent while watching pm-a is not an entry of pm-a's log", e)
-		}
-	}
-
-	cn.mustOK(cn.perch("pm-c"), "perch on the unassigned pm-c")
-	atC := cn.waitViewpoint(atA, "pm-c") + 1
-
-	shapes := map[string]string{}
-	for _, id := range []string{"np-g", "np-m", "zz-nope"} {
-		r := cn.perch(id)
-		cn.mustRefuse(r, "perch on "+id)
-		shapes[id] = qappRefusalShape(r, id)
-	}
-	for id, shape := range shapes {
-		if shape != shapes["zz-nope"] {
-			t.Fatalf("refusal for %s is %q, for an absent actor %q: want one string", id, shape, shapes["zz-nope"])
-		}
-	}
-	tb.expectWatching("pm-c", atC, cn)
-
-	cn.mustOK(cn.perch(""), "perch on nobody")
-	cn.waitViewpoint(atC, "")
-}
-
-// VTT-339 VTT-452 VTT-340
-func TestQAPPAPlayerWithoutAPartyMemberOpensOnTheLogItNames(t *testing.T) {
-	tb := qappNewTable(t)
-	pTok, pID := tb.invite("Pia", identity.RolePlayer)
+	pTok, _ := tb.invite("Pia", identity.RoleSpectator)
 	qTok, qID := tb.invite("Quinn", identity.RolePlayer)
 	tb.addActor("pm-c", "Cato", qappParty)
 	tb.addActor("pm-a", "Alma", qappParty)
 	tb.addActor("pm-b", "Bert", qappParty, qID)
-	tb.addActor("np-g", "Gobo", qappNonParty, pID)
+	tb.addActor("np-g", "Gobo", qappNonParty, tb.dmID)
 	tb.addActor("np-m", "Mold", qappNonParty)
 
 	onC := tb.dial("p-log-pm-c", pTok, "pm-c")
@@ -670,20 +619,20 @@ func TestQAPPAPlayerWithoutAPartyMemberOpensOnTheLogItNames(t *testing.T) {
 	}
 }
 
-// VTT-399 VTT-452 VTT-401 VTT-454
-func TestQAPPAPlayerWithoutAPartyMemberIsToldEveryPartyMember(t *testing.T) {
+// VTT-399 VTT-401 VTT-454
+func TestQAPPAParticipantWhoControlsNothingIsToldEveryPartyMember(t *testing.T) {
 	tb := qappNewTable(t)
-	pTok, pID := tb.invite("Pia", identity.RolePlayer)
+	pTok, _ := tb.invite("Pia", identity.RoleSpectator)
 	qTok, qID := tb.invite("Quinn", identity.RolePlayer)
 	tb.addActor("pm-c", "Cato", qappParty)
 	tb.addActor("pm-a", "Alma", qappParty, qID)
 	tb.addActor("pm-b", "Bert", qappParty)
-	tb.addActor("np-g", "Gobo", qappNonParty, pID)
+	tb.addActor("np-g", "Gobo", qappNonParty, tb.dmID)
 	tb.addActor("np-m", "Mold", qappNonParty)
 
 	_, got := tb.dial("p", pTok, "").waitWatchable(0)
 	if want := qappWatchableNone("pm-a", "Alma", "pm-b", "Bert", "pm-c", "Cato"); !proto.Equal(got, want) {
-		t.Fatalf("a player with no party member is told %v, want %v", got, want)
+		t.Fatalf("a participant who controls nothing is told %v, want %v", got, want)
 	}
 	_, got = tb.dial("q", qTok, "").waitWatchable(0)
 	if want := qappWatchable("pm-a", "Alma"); !proto.Equal(got, want) {
@@ -696,15 +645,15 @@ func TestQAPPAPlayerWithoutAPartyMemberIsToldEveryPartyMember(t *testing.T) {
 	}
 
 	bare := qappNewTable(t)
-	rTok, rID := bare.invite("Rune", identity.RolePlayer)
-	bare.addActor("np-g", "Gobo", qappNonParty, rID)
+	rTok, _ := bare.invite("Rune", identity.RoleSpectator)
+	bare.addActor("np-g", "Gobo", qappNonParty, bare.dmID)
 	_, got = bare.dial("r", rTok, "").waitWatchable(0)
 	if len(got.GetActors()) != 0 {
-		t.Fatalf("with no party member at the table the player is told %v, want none", got)
+		t.Fatalf("with no party member at the table the participant is told %v, want none", got)
 	}
 }
 
-// VTT-400 VTT-452 VTT-456 VTT-454
+// VTT-400 VTT-923 VTT-454
 func TestQAPPTheWatchableSetFollowsThePlayersControl(t *testing.T) {
 	tb := qappNewTable(t)
 	pTok, pID := tb.invite("Pia", identity.RolePlayer)
@@ -712,7 +661,7 @@ func TestQAPPTheWatchableSetFollowsThePlayersControl(t *testing.T) {
 	tb.addActor("pm-c", "Cato", qappParty)
 	tb.addActor("pm-a", "Alma", qappParty, qID)
 	tb.addActor("pm-b", "Bert", qappParty, pID)
-	tb.addActor("np-g", "Gobo", qappNonParty, pID)
+	tb.addActor("np-g", "Gobo", qappNonParty, tb.dmID)
 
 	cn := tb.dial("p", pTok, "")
 	_, got := cn.waitWatchable(0)
@@ -744,12 +693,12 @@ func TestQAPPTheWatchableSetFollowsThePlayersControl(t *testing.T) {
 	step("adding pm-e", qappWatchableNone("pm-a", "Alma", "pm-b", "Bert", "pm-c", "Cato", "pm-e", "Edda"),
 		tb.actorEnv("pm-e", "Edda", qappParty))
 	step("making pm-c non-party", qappWatchableNone("pm-a", "Alma", "pm-b", "Bert", "pm-e", "Edda"),
-		tb.grantEnv("pm-c", qID, qappNonParty))
+		tb.grantEnv("pm-c", tb.dmID, qappNonParty))
 	step("granting pm-e", qappWatchable("pm-e", "Edda"),
 		tb.grantEnv("pm-e", pID, qappParty))
 }
 
-// VTT-456 VTT-339 VTT-340
+// VTT-923 VTT-339 VTT-921
 func TestQAPPRevokingAPlayersOnlyPartyMemberLeavesThemWatchingIt(t *testing.T) {
 	tb := qappNewTable(t)
 	pTok, pID := tb.invite("Pia", identity.RolePlayer)
@@ -779,7 +728,7 @@ func TestQAPPRevokingAPlayersOnlyPartyMemberLeavesThemWatchingIt(t *testing.T) {
 	}
 }
 
-// VTT-340 VTT-456
+// VTT-921 VTT-923
 func TestQAPPLosingOneOfTwoPartyMembersMovesLosingTheLastDoesNot(t *testing.T) {
 	tb := qappNewTable(t)
 	pTok, pID := tb.invite("Pia", identity.RolePlayer)
@@ -804,8 +753,8 @@ func TestQAPPLosingOneOfTwoPartyMembersMovesLosingTheLastDoesNot(t *testing.T) {
 	tb.expectWatching("pm-b", from, cn)
 }
 
-// VTT-340 VTT-452
-func TestQAPPAWatchedActorThatLeavesThePartyMovesThePlayerToNobody(t *testing.T) {
+// VTT-386
+func TestQAPPAWatchedActorThatLeavesThePartyMovesTheWatcherToNobody(t *testing.T) {
 	setup := func(t *testing.T) (*qappTable, *qappConn, string, string) {
 		t.Helper()
 		tb := qappNewTable(t)
@@ -819,7 +768,7 @@ func TestQAPPAWatchedActorThatLeavesThePartyMovesThePlayerToNobody(t *testing.T)
 	t.Run("their own made non-party", func(t *testing.T) {
 		tb, cn, pID, _ := setup(t)
 		from := cn.waitViewpoint(0, "pm-t") + 1
-		tb.grant("pm-t", pID, qappNonParty)
+		tb.append(tb.revokeEnv("pm-t", pID), tb.grantEnv("pm-t", tb.dmID, qappNonParty))
 		cn.waitViewpoint(from, "")
 	})
 	t.Run("their own removed", func(t *testing.T) {
@@ -834,18 +783,18 @@ func TestQAPPAWatchedActorThatLeavesThePartyMovesThePlayerToNobody(t *testing.T)
 		tb.revoke("pm-t", pID)
 		cn.mustOK(cn.perch("pm-a"), "perch on pm-a")
 		from := cn.waitViewpoint(0, "pm-a") + 1
-		tb.grant("pm-a", qID, qappNonParty)
+		tb.append(tb.revokeEnv("pm-a", qID), tb.grantEnv("pm-a", tb.dmID, qappNonParty))
 		cn.waitViewpoint(from, "")
 	})
 }
 
-// VTT-340 VTT-348
+// VTT-921 VTT-348 VTT-893
 func TestQAPPAGrantTakesAWatcherOffAnotherPartyMembersLog(t *testing.T) {
 	tb := qappNewTable(t)
 	pTok, pID := tb.invite("Pia", identity.RolePlayer)
 	_, qID := tb.invite("Quinn", identity.RolePlayer)
 	tb.addActor("pm-a", "Alma", qappParty, qID)
-	tb.addActor("np-g", "Gobo", qappNonParty, pID)
+	tb.addActor("np-g", "Gobo", qappNonParty, tb.dmID)
 	for i := 0; i < 12; i++ {
 		tb.append(tb.narrationEnv(qappText("history")))
 	}
@@ -892,7 +841,7 @@ func TestQAPPAGrantTakesAWatcherOffAnotherPartyMembersLog(t *testing.T) {
 	}
 }
 
-// VTT-453
+// VTT-922
 func TestQAPPAMoveIsJudgedByThePartyMemberTheConnectionShows(t *testing.T) {
 	tb := qappNewTable(t)
 	pTok, pID := tb.invite("Pia", identity.RolePlayer)
@@ -917,30 +866,7 @@ func TestQAPPAMoveIsJudgedByThePartyMemberTheConnectionShows(t *testing.T) {
 	left.mustRefuse(left.move("t-l", 1, 1), "a left-room move after perching on pm-r")
 }
 
-// VTT-453 VTT-370 VTT-456
-func TestQAPPAPlayerWithoutAPartyMemberMovesNothingWhateverTheyWatch(t *testing.T) {
-	tb := qappNewTable(t)
-	pTok, pID := tb.invite("Pia", identity.RolePlayer)
-	tb.addActor("pm-x", "Xena", qappParty)
-	tb.addActor("np-g", "Gobo", qappNonParty, pID)
-	tb.append(tb.sceneEnv(), tb.tokenEnv("t-x", "pm-x", 7, 1), tb.tokenEnv("t-g", "np-g", 6, 1))
-
-	cn := tb.dial("p", pTok, "")
-	cn.waitViewpoint(0, "")
-	cn.mustOK(cn.perch("pm-x"), "perch on pm-x")
-	from := cn.waitViewpoint(0, "pm-x") + 1
-	cn.mustRefuse(cn.move("t-g", 6, 2), "a move while controlling no party member")
-
-	tb.grant("pm-x", pID, qappParty)
-	cn.mustOK(cn.move("t-g", 6, 2), "the same move once pm-x is theirs")
-
-	tb.revoke("pm-x", pID)
-	cn.mustRefuse(cn.move("t-g", 6, 0), "a move after pm-x is revoked")
-	tb.expectWatching("pm-x", from, cn)
-	cn.mustRefuse(cn.move("t-g", 6, 0), "a move after pm-x is revoked, the seat settled")
-}
-
-// VTT-453 VTT-340
+// VTT-922 VTT-921
 func TestQAPPAMoveRightAfterControlChangesIsJudgedByTheFirstPartyMember(t *testing.T) {
 	t.Run("a grant while watching another's", func(t *testing.T) {
 		tb := qappNewTable(t)
@@ -948,19 +874,16 @@ func TestQAPPAMoveRightAfterControlChangesIsJudgedByTheFirstPartyMember(t *testi
 		tb.addActor("pm-x", "Xena", qappParty)
 		tb.addActor("pm-z", "Zack", qappParty)
 		tb.addActor("pm-y", "Ylva", qappParty)
-		tb.addActor("np-g", "Gobo", qappNonParty, pID)
-		tb.addActor("np-h", "Hobb", qappNonParty, pID)
 		tb.append(tb.sceneEnv(),
-			tb.tokenEnv("t-x", "pm-x", 7, 1), tb.tokenEnv("t-z", "pm-z", 7, 0), tb.tokenEnv("t-y", "pm-y", 1, 1),
-			tb.tokenEnv("t-g", "np-g", 6, 1), tb.tokenEnv("t-h", "np-h", 2, 1))
+			tb.tokenEnv("t-x", "pm-x", 7, 1), tb.tokenEnv("t-z", "pm-z", 7, 0), tb.tokenEnv("t-y", "pm-y", 1, 1))
 
 		cn := tb.dial("p", pTok, "")
 		cn.mustOK(cn.perch("pm-x"), "perch on pm-x")
 		mark := cn.waitViewpoint(0, "pm-x") + 1
 
 		tb.append(tb.grantEnv("pm-z", pID, qappParty), tb.grantEnv("pm-y", pID, qappParty))
-		cn.mustRefuse(cn.move("t-g", 6, 2), "a right-room move once pm-z and pm-y are theirs")
-		cn.mustOK(cn.move("t-h", 2, 2), "a left-room move once pm-z and pm-y are theirs")
+		cn.mustRefuse(cn.move("t-z", 6, 2), "a right-room move once pm-z and pm-y are theirs")
+		cn.mustOK(cn.move("t-y", 2, 2), "a left-room move once pm-z and pm-y are theirs")
 		cn.waitViewpoint(mark, "pm-y")
 		if moved := cn.viewpoints(mark, cn.count()); moved[0] != "pm-y" {
 			t.Fatalf("the grant moved the seat to %q, want pm-y first", moved)
@@ -972,18 +895,15 @@ func TestQAPPAMoveRightAfterControlChangesIsJudgedByTheFirstPartyMember(t *testi
 		tb.addActor("pm-c", "Cato", qappParty, pID)
 		tb.addActor("pm-b", "Bert", qappParty, pID)
 		tb.addActor("pm-s", "Sune", qappParty, pID)
-		tb.addActor("np-g", "Gobo", qappNonParty, pID)
-		tb.addActor("np-h", "Hobb", qappNonParty, pID)
 		tb.append(tb.sceneEnv(),
-			tb.tokenEnv("t-b", "pm-b", 1, 1), tb.tokenEnv("t-c", "pm-c", 7, 0), tb.tokenEnv("t-s", "pm-s", 7, 1),
-			tb.tokenEnv("t-g", "np-g", 6, 1), tb.tokenEnv("t-h", "np-h", 2, 1))
+			tb.tokenEnv("t-b", "pm-b", 1, 1), tb.tokenEnv("t-c", "pm-c", 7, 0), tb.tokenEnv("t-s", "pm-s", 7, 1))
 
 		cn := tb.dial("p", pTok, "pm-s")
 		mark := cn.waitViewpoint(0, "pm-s") + 1
 
 		tb.revoke("pm-s", pID)
-		cn.mustRefuse(cn.move("t-g", 6, 2), "a right-room move once pm-s is revoked")
-		cn.mustOK(cn.move("t-h", 2, 2), "a left-room move once pm-s is revoked")
+		cn.mustRefuse(cn.move("t-c", 6, 2), "a right-room move once pm-s is revoked")
+		cn.mustOK(cn.move("t-b", 2, 2), "a left-room move once pm-s is revoked")
 		cn.waitViewpoint(mark, "pm-b")
 		if moved := cn.viewpoints(mark, cn.count()); moved[0] != "pm-b" {
 			t.Fatalf("the revocation moved the seat to %q, want pm-b first", moved)
@@ -991,96 +911,31 @@ func TestQAPPAMoveRightAfterControlChangesIsJudgedByTheFirstPartyMember(t *testi
 	})
 }
 
-// VTT-388 VTT-387 VTT-452 VTT-340
-func TestQAPPPromotingASpectatorToAPlayerWithoutAPartyMemberKeepsThePerch(t *testing.T) {
-	tb := qappNewTable(t)
-	_, qID := tb.invite("Quinn", identity.RolePlayer)
-	s1Tok, s1ID := tb.invite("Sami", identity.RoleSpectator)
-	s2Tok, s2ID := tb.invite("Sven", identity.RoleSpectator)
-	tb.addActor("pm-a", "Alma", qappParty, qID)
-	tb.addActor("pm-c", "Cato", qappParty)
-	for i := 0; i < 12; i++ {
-		tb.append(tb.narrationEnv(qappText("history")))
-	}
-	tb.addActor("pm-b", "Bert", qappParty, s2ID)
-	dm := tb.dm()
-
-	s1 := tb.dial("s1", s1Tok, "")
-	s1.mustOK(s1.perch("pm-a"), "s1 perch on pm-a")
-	from1 := s1.waitViewpoint(0, "pm-a") + 1
-	s2 := tb.dial("s2", s2Tok, "")
-	s2.mustOK(s2.perch("pm-a"), "s2 perch on pm-a")
-	from2 := s2.waitViewpoint(0, "pm-a") + 1
-	tb.expectWatching("pm-a", from1, s1)
-	tb.expectWatching("pm-a", from2, s2)
-	watchFrom := s1.count()
-
-	tb.dmDo(dm, qappPromoteCmd(s1ID, identity.RolePlayer), "promote s1")
-	tb.expectWatching("pm-a", from1, s1)
-	if ws := s1.watchables(watchFrom, s1.count()); len(ws) != 0 {
-		t.Fatalf("the promotion re-sent an unchanged set: %v", ws)
-	}
-
-	tb.dmDo(dm, qappPromoteCmd(s2ID, identity.RolePlayer), "promote s2")
-	text := qappText("after-promotion")
-	tb.append(tb.narrationEnv(text))
-	idx := s2.waitNarration(from2, text)
-	if got, _ := s2.shown(idx); got != "pm-b" {
-		t.Fatalf("s2, now a player who controls pm-b, shows %q at the narration, want pm-b; frames:\n%s", got, s2.dump())
-	}
-	e := s2.snapshot()[idx].GetEvent()
-	if !qappInLog(e, tb.logOf("pm-b")) || qappInLog(e, tb.logOf("pm-a")) {
-		t.Fatalf("the narration after the promotion is not pm-b's copy: %v", e)
-	}
-}
-
-// VTT-388
-func TestQAPPDemotingAPlayerToSpectatorKeepsThePerch(t *testing.T) {
-	tb := qappNewTable(t)
-	pTok, pID := tb.invite("Pia", identity.RolePlayer)
-	oTok, oID := tb.invite("Olle", identity.RolePlayer)
-	_, qID := tb.invite("Quinn", identity.RolePlayer)
-	tb.addActor("pm-a", "Alma", qappParty, qID)
-	tb.addActor("pm-o", "Otto", qappParty, oID)
-	dm := tb.dm()
-
-	p := tb.dial("p", pTok, "")
-	p.mustOK(p.perch("pm-a"), "perch on pm-a")
-	fromP := p.waitViewpoint(0, "pm-a") + 1
-	o := tb.dial("o", oTok, "")
-	fromO := o.waitViewpoint(0, "pm-o") + 1
-
-	tb.dmDo(dm, qappPromoteCmd(pID, identity.RoleSpectator), "demote p")
-	tb.dmDo(dm, qappPromoteCmd(oID, identity.RoleSpectator), "demote o")
-	tb.expectWatching("pm-a", fromP, p)
-	tb.expectWatching("pm-o", fromO, o)
-}
-
 // VTT-181 VTT-345 VTT-386
 func TestQAPPTheSpectatorsPerchIsUnchanged(t *testing.T) {
 	tb := qappNewTable(t)
-	sTok, sID := tb.invite("Sami", identity.RoleSpectator)
+	sTok, _ := tb.invite("Sami", identity.RoleSpectator)
 	_, qID := tb.invite("Quinn", identity.RolePlayer)
 	tb.addActor("pm-a", "Alma", qappParty, qID)
-	tb.addActor("np-g", "Gobo", qappNonParty, sID)
+	tb.addActor("np-g", "Gobo", qappNonParty, tb.dmID)
 
 	cn := tb.dial("s", sTok, "")
 	cn.waitViewpoint(0, "")
-	cn.mustRefuse(cn.perch("np-g"), "perch on a non-party actor the spectator controls")
+	cn.mustRefuse(cn.perch("np-g"), "perch on a non-party actor the DM controls")
 	cn.mustOK(cn.perch("pm-a"), "perch on pm-a")
 	from := cn.waitViewpoint(0, "pm-a") + 1
 	cn.mustOK(cn.perch(""), "perch on nobody")
 	from = cn.waitViewpoint(from, "") + 1
 	cn.mustOK(cn.perch("pm-a"), "perch on pm-a again")
 	from = cn.waitViewpoint(from, "pm-a") + 1
-	tb.grant("pm-a", qID, qappNonParty)
+	tb.append(tb.revokeEnv("pm-a", qID), tb.grantEnv("pm-a", tb.dmID, qappNonParty))
 	cn.waitViewpoint(from, "")
 }
 
-// VTT-452 VTT-340
-func TestQAPPAPlayerWatchingAnotherPartyMemberStaysAsItChangesHands(t *testing.T) {
+// VTT-893
+func TestQAPPASpectatorWatchingAPartyMemberStaysAsItChangesHands(t *testing.T) {
 	tb := qappNewTable(t)
-	pTok, _ := tb.invite("Pia", identity.RolePlayer)
+	pTok, _ := tb.invite("Pia", identity.RoleSpectator)
 	_, qID := tb.invite("Quinn", identity.RolePlayer)
 	_, rID := tb.invite("Rune", identity.RolePlayer)
 	tb.addActor("pm-a", "Alma", qappParty, qID)

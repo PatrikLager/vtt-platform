@@ -271,8 +271,10 @@ func TestQATTAPlayersAndASpectatorsDescribeAreRefused(t *testing.T) {
 		}
 	}
 	cmd := qattDescribeCmd("r", "t1", "N", "", "", "")
+	withOwnPartyMember(st, "p")
 	for _, role := range []identity.Role{identity.RolePlayer, identity.RoleSpectator} {
-		if err := gateway.Authorize(&identity.Participant{ID: "p", Name: "P", Role: role}, cmd, st); err == nil {
+		id := map[identity.Role]string{identity.RolePlayer: "p", identity.RoleSpectator: "s"}[role]
+		if err := gateway.Authorize(&identity.Participant{ID: id, Name: "P", Role: role}, cmd, st); err == nil {
 			t.Errorf("%s's describe_token was authorized", role)
 		}
 	}

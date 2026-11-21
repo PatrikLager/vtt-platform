@@ -42,7 +42,7 @@ type gwFixture struct {
 	playerToken, otherPlayerToken       string
 	playerID                            string
 
-	// ids is exposed for the same reason campaign is: promotion changes
+	// ids is exposed for the same reason campaign is: a revocation changes
 	// IDENTITY, not campaign state, so the only place its effect is visible is
 	// the participants table.
 	ids *identity.DB
@@ -1668,92 +1668,42 @@ func TestDMGrantsControlOverTheWire(t *testing.T) {
 	}
 }
 
-// TestDMPromotesASpectatorOverTheWire is the seam: authorized, converted,
-// APPLIED. The branch this work follows shipped grant_actor_control
-// authorized and dead because nothing tested past the permission check, so
-// this asserts on IDENTITY — the only place a role change is visible — rather
-// than on the result frame.
-func TestDMPromotesASpectatorOverTheWire(t *testing.T) {
+// VTT-896 VTT-897 VTT-898
+func TestDMMakesAPlayerASpectatorOverTheWire(t *testing.T) {
 	f := newGWFixture(t)
-	dm := f.dial(f.dmToken, 0)
+	dm := f.dial(f.dmToken, gwSeedHead)
 	expectCatchUpHead(t, dm)
 	expectPresenceSnapshot(t, dm)
-
-	watcher, err := f.ids.Verify(f.spectatorToken)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if watcher.Role != identity.RoleSpectator {
-		t.Fatalf("fixture drifted: %q", watcher.Role)
-	}
+	dmID := f.playerIDFor(t, f.dmToken)
 
 	sendCommand(t, dm, &vttv1.ClientCommand{
-		RequestId: "promote-1",
+		RequestId: "demote-1",
 		Command: &vttv1.ClientCommand_PromoteParticipant{
 			PromoteParticipant: &vttv1.PromoteParticipant{
-				ParticipantId: watcher.ID, Role: string(identity.RolePlayer),
+				ParticipantId: f.playerID, Role: string(identity.RoleSpectator),
 			},
 		},
 	})
-	if res := readResult(t, dm); !res.GetOk() {
-		t.Fatalf("promotion refused: %q", res.GetError())
+	res := readResult(t, dm)
+	if !res.GetOk() || res.GetSequence() != gwSeedHead+1 {
+		t.Fatalf("making the player a spectator answered ok=%v %q at sequence %d, want ok at %d",
+			res.GetOk(), res.GetError(), res.GetSequence(), gwSeedHead+1)
 	}
-
-	// The SAME token now carries the new role — which is what a reconnect will
-	// read, and the whole reason role stays beside the credential.
-	after, err := f.ids.Verify(f.spectatorToken)
-	if err != nil {
-		t.Fatal(err)
+	ev := readEvent(t, dm)
+	rv := ev.GetActorControlRevoked()
+	if ev.GetSequence() != res.GetSequence() || rv.GetActorId() != "a1" || rv.GetParticipantId() != f.playerID ||
+		ev.GetParticipantId() != dmID || ev.GetActorRole() != string(identity.RoleDM) {
+		t.Fatalf("the log gained %v, want a1's revocation naming the player, stamped with the DM", ev)
 	}
-	if after.Role != identity.RolePlayer {
-		t.Fatalf("role = %q, want player — the command was accepted but changed nothing",
-			after.Role)
+	if ids := f.campaign.State().Actors["a1"].GetControllerIds(); len(ids) != 0 {
+		t.Fatalf("a1's controllers are %v after the player was made a spectator, want none", ids)
 	}
-}
-
-// VTT-036
-func TestAPromotionAppendsNoEvent(t *testing.T) {
-	f := newGWFixture(t)
-	dm := f.dial(f.dmToken, 0)
-	expectCatchUpHead(t, dm)
-	expectPresenceSnapshot(t, dm)
-
-	watcher, err := f.ids.Verify(f.spectatorToken)
-	if err != nil {
-		t.Fatal(err)
-	}
-	before := f.head(t)
-
-	sendCommand(t, dm, &vttv1.ClientCommand{
-		RequestId: "promote-no-event",
-		Command: &vttv1.ClientCommand_PromoteParticipant{
-			PromoteParticipant: &vttv1.PromoteParticipant{
-				ParticipantId: watcher.ID, Role: string(identity.RolePlayer),
-			},
-		},
-	})
-	if res := readResult(t, dm); !res.GetOk() {
-		t.Fatalf("promotion refused: %q", res.GetError())
-	}
-	// The positive control: a promotion that was refused, or applied to
-	// nobody, would leave the head alone and pass the check below for the
-	// wrong reason.
-	after, err := f.ids.Verify(f.spectatorToken)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.Role != identity.RolePlayer {
-		t.Fatalf("role = %q, want player — nothing was promoted, so the head says nothing",
-			after.Role)
-	}
-
-	if h := f.head(t); h != before {
-		t.Fatalf("a promotion appended to the log (head %d → %d) — a role lives beside "+
-			"the credential, and an event beside it is a second source of truth", before, h)
+	if h := f.head(t); h != gwSeedHead+1 {
+		t.Fatalf("the log head is %d, want the one revocation at %d", h, gwSeedHead+1)
 	}
 }
 
-// VTT-025
+// VTT-899
 func TestPromotingToDMIsRefusedOverTheWire(t *testing.T) {
 	// End to end, because the escalation guard lives in Authorize and a
 	// refactor could move the check past it.
@@ -1784,14 +1734,8 @@ func TestPromotingToDMIsRefusedOverTheWire(t *testing.T) {
 	}
 }
 
-// TestAPromotionBitesWithoutReconnecting is what J4 exists for (spec §3.2).
-//
-// Everyone who joins through the shared link arrives as a SPECTATOR, so if a
-// promotion only took effect on reconnect, a reconnect would sit on the
-// critical path of every single person who ever joins — making the shared link
-// more cumbersome than the per-person invites it replaces.
-// VTT-031
-func TestAPromotionBitesWithoutReconnecting(t *testing.T) {
+// VTT-891
+func TestAGrantBitesWithoutReconnecting(t *testing.T) {
 	f := newGWFixture(t)
 	watcher := f.dial(f.spectatorToken, 0)
 	expectCatchUpHead(t, watcher)
@@ -1806,24 +1750,26 @@ func TestAPromotionBitesWithoutReconnecting(t *testing.T) {
 		t.Fatal("a spectator must not be able to narrate")
 	}
 
-	// The DM promotes them, on a DIFFERENT connection.
+	// The DM grants them a party member, on a DIFFERENT connection.
 	me, err := f.ids.Verify(f.spectatorToken)
 	if err != nil {
 		t.Fatal(err)
 	}
+	appendEvents(t, f.campaign, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "c1", Name: "Cole",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
 	dm := f.dial(f.dmToken, 0)
 	expectCatchUpHead(t, dm)
 	expectPresenceSnapshot(t, dm)
 	sendCommand(t, dm, &vttv1.ClientCommand{
-		RequestId: "promote",
-		Command: &vttv1.ClientCommand_PromoteParticipant{
-			PromoteParticipant: &vttv1.PromoteParticipant{
-				ParticipantId: me.ID, Role: string(identity.RolePlayer),
+		RequestId: "grant",
+		Command: &vttv1.ClientCommand_GrantActorControl{
+			GrantActorControl: &vttv1.GrantActorControl{
+				ActorId: "c1", ParticipantId: me.ID, Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
 			},
 		},
 	})
 	if res := readResult(t, dm); !res.GetOk() {
-		t.Fatalf("promotion refused: %q", res.GetError())
+		t.Fatalf("grant refused: %q", res.GetError())
 	}
 
 	// SAME connection, no reconnect: it now works.
@@ -1832,7 +1778,7 @@ func TestAPromotionBitesWithoutReconnecting(t *testing.T) {
 		Command:   &vttv1.ClientCommand_AddNarration{AddNarration: &vttv1.AddNarration{Text: "hello", OutOfCharacter: true}},
 	})
 	if res := readResult(t, watcher); !res.GetOk() {
-		t.Fatalf("a promoted participant must be able to act on their EXISTING connection, "+
+		t.Fatalf("a granted participant must be able to act on their EXISTING connection, "+
 			"got %q — otherwise everyone who joins must reconnect immediately after joining",
 			res.GetError())
 	}
@@ -2258,19 +2204,9 @@ func TestRotatingTheLinkLocksOutTheOldOneAndNobodyElse(t *testing.T) {
 	}
 }
 
-// TestPromotionCannotUNMAKEADMOrAgent closes the mirror image of the rule
-// spec §3.1a states.
-//
-// §3.1a bounds what a promotion may promote TO — only player or spectator, so
-// the shared link is never a route to full authority in two steps. It says
-// nothing about who may be promoted FROM, and the two are not the same rule:
-// promote_participant(dm_id, "spectator") names an allowed role, so the target
-// check passes, and a DM becomes a spectator at their own table.
-//
-// That is not recoverable in-band. Promotion cannot reach `dm` by design, so
-// nobody left at the table can undo it — it takes host access and `vtt
-// invite`. AGENTS ARE AUTHORIZED to promote, which is the sharp end: an agent
-// having a bad day can lock every human out of their own campaign.
+// TestPromotionCannotUNMAKEADMOrAgent: a promotion naming the DM or an agent is
+// refused, though "spectator" passes the target check (VTT-899). Issue it as
+// the agent: an agent having a bad day must not strip the table of its DM.
 // VTT-026
 func TestPromotionCannotUNMAKEADMOrAgent(t *testing.T) {
 	f := newGWFixture(t)
@@ -2308,48 +2244,22 @@ func TestPromotionCannotUNMAKEADMOrAgent(t *testing.T) {
 			t.Fatalf("%s was demoted to a spectator — nobody left at the table can undo "+
 				"that, because promotion cannot reach dm or agent", target.what)
 		}
-		now, err := f.ids.Lookup(target.id)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if now.Role == identity.RoleSpectator {
-			t.Fatalf("%s is now a spectator despite the refusal", target.what)
-		}
 	}
 
 	// And an ordinary promotion still works — a guard that refuses everything
 	// is not a guard.
-	p, err := f.ids.Verify(f.spectatorToken)
-	if err != nil {
-		t.Fatal(err)
-	}
 	sendCommand(t, conn, &vttv1.ClientCommand{
 		RequestId: "r-ok",
 		Command: &vttv1.ClientCommand_PromoteParticipant{
-			PromoteParticipant: &vttv1.PromoteParticipant{ParticipantId: p.ID, Role: "player"},
+			PromoteParticipant: &vttv1.PromoteParticipant{ParticipantId: f.playerID, Role: "spectator"},
 		},
 	})
 	if res := readResult(t, conn); !res.GetOk() {
-		t.Fatalf("promoting a spectator must still work: %s", res.GetError())
+		t.Fatalf("making a player a spectator must still work: %s", res.GetError())
 	}
 }
 
-// TestAPromotionIsAnnouncedToThePromotedPersonThemselves covers the half of
-// promotion that live re-resolution does not reach.
-//
-// The server starts accepting a promoted spectator's commands immediately
-// (J4). Their BROWSER read its role once, at connect, via /api/me — and
-// nothing ever told it that role moved, so they could act and their own client
-// offered them nothing to act with: the server saying yes to a screen with no
-// controls on it. The re-announcement is the nudge that makes the client
-// re-read.
-//
-// Two things are asserted and both are load-bearing. That a frame arrives AT
-// ALL is the point of the announcement. That it carries the promoted person's
-// own DISPLAY NAME is what pins which connection the registry looked up — a
-// lookup that matched the wrong participant would announce somebody else's
-// name under this id, and the table's roster would quietly rename them.
-// VTT-047
+// VTT-906
 func TestAPromotionIsAnnouncedToThePromotedPersonThemselves(t *testing.T) {
 	f := newGWFixture(t)
 
@@ -2362,11 +2272,11 @@ func TestAPromotionIsAnnouncedToThePromotedPersonThemselves(t *testing.T) {
 	expectCatchUpHead(t, dm)
 	expectPresenceSnapshot(t, dm)
 
-	watcher := f.dial(f.spectatorToken, 0)
+	watcher := f.dial(f.playerToken, 0)
 	expectCatchUpHead(t, watcher)
 	expectPresenceSnapshot(t, watcher)
 
-	p, err := f.ids.Verify(f.spectatorToken)
+	p, err := f.ids.Verify(f.playerToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2374,7 +2284,7 @@ func TestAPromotionIsAnnouncedToThePromotedPersonThemselves(t *testing.T) {
 	sendCommand(t, dm, &vttv1.ClientCommand{
 		RequestId: "r-promote",
 		Command: &vttv1.ClientCommand_PromoteParticipant{
-			PromoteParticipant: &vttv1.PromoteParticipant{ParticipantId: p.ID, Role: "player"},
+			PromoteParticipant: &vttv1.PromoteParticipant{ParticipantId: p.ID, Role: "spectator"},
 		},
 	})
 	if res := readResult(t, dm); !res.GetOk() {
@@ -2471,6 +2381,7 @@ func TestAPromotionIsNotAnnouncedToARevokedWatcher(t *testing.T) {
 	f := newGWFixture(t)
 	const connected = vttv1.PresenceState_PRESENCE_STATE_CONNECTED
 	targetID := f.playerIDFor(t, f.otherPlayerToken)
+	appendEvents(t, f.campaign, partyMemberOf("b1", targetID)...)
 
 	stranger := f.dial(f.spectatorToken, 0)
 	expectCatchUpHead(t, stranger)

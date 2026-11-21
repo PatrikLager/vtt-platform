@@ -409,9 +409,9 @@ func (s *Server) serve(ctx context.Context, conn *websocket.Conn, p *identity.Pa
 			return
 		}
 
-		// Re-resolve on every command: authorization is live, a connection-time answer
-		// is not (SPEC-009, VTT-031). The pump re-resolves on delivery for the same
-		// reason; change both or neither.
+		// Re-resolve on every command: a revoked credential ends here, not at the
+		// reconnect (SPEC-009, VTT-032). The pump re-resolves on delivery for the
+		// same reason; change both or neither.
 		now, err := s.ids.Lookup(p.ID)
 		if errors.Is(err, identity.ErrInvalidToken) {
 			// Revoked or gone: close, there is nothing left this connection may do (VTT-032).
@@ -492,15 +492,10 @@ type pumpState struct {
 	lastSet    *vttv1.WatchableChanged
 }
 
-// revoked re-resolves the participant, closing on a gone credential and
-// judging by their current role otherwise (SPEC-009, VTT-031, VTT-032).
-// ErrInvalidToken only: an operational failure must not drop an entry.
+// revoked re-resolves the participant, closing on a gone credential (SPEC-009,
+// VTT-032). ErrInvalidToken only: an operational failure must not drop an entry.
 func (ps *pumpState) revoked() bool {
-	now, err := ps.lookup(ps.id)
-	if !errors.Is(err, identity.ErrInvalidToken) {
-		if err == nil {
-			ps.sub.p = now
-		}
+	if _, err := ps.lookup(ps.id); !errors.Is(err, identity.ErrInvalidToken) {
 		return false
 	}
 	// conn.Close, not shutdown: shutdown waits on this pump.
@@ -549,7 +544,7 @@ func (ps *pumpState) moved(switched bool, err error) bool {
 	return ps.tell() && (!switched || ps.announce())
 }
 
-// onWake re-judges the seat after an append or a promotion (VTT-340, VTT-348).
+// onWake re-judges the seat after an append or a removal (VTT-348, VTT-921).
 func (ps *pumpState) onWake() bool {
 	if ps.revoked() {
 		return false
@@ -569,8 +564,8 @@ func (ps *pumpState) onPerch(actorID string) bool {
 	return ps.moved(true, err)
 }
 
-// Re-resolve before admit and after it, which may have taken the entry's wake,
-// and judge the entry by the role read last (VTT-031, VTT-352, VTT-387).
+// Re-resolve before admit and after it, which may have taken the entry's wake
+// (VTT-352).
 func (ps *pumpState) onEntry(env *vttv1.Envelope) bool {
 	if ps.revoked() {
 		return false
@@ -581,13 +576,6 @@ func (ps *pumpState) onEntry(env *vttv1.Envelope) bool {
 	}
 	if !ps.moved(moved, err) {
 		return false
-	}
-	if send {
-		switched, err := ps.sub.rejudge()
-		if !ps.moved(switched, err) {
-			return false
-		}
-		send = !switched
 	}
 	return !send || deliver(ps.s.encodeFrame, []*vttv1.Envelope{env}, ps.outCh, ps.writerDone, ps.conn, ps.closing)
 }
@@ -656,16 +644,17 @@ func (s *Server) answerCommand(p *identity.Participant, lookupErr error, cmd *vt
 
 // Refuse on a nil state: authorizing against no world decides from nothing
 // (SPEC-013).
-func (s *Server) authorize(p *identity.Participant, cmd *vttv1.ClientCommand) (*engine.State, *vttv1.CommandResult) {
+// authorize also answers p as st judges them, for every later step (VTT-892).
+func (s *Server) authorize(p *identity.Participant, cmd *vttv1.ClientCommand) (*engine.State, *identity.Participant, *vttv1.CommandResult) {
 	requestID := cmd.GetRequestId()
 	st := s.campaign.State()
 	if st == nil {
-		return nil, &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: "gateway: campaign unavailable"}
+		return nil, p, &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: "gateway: campaign unavailable"}
 	}
 	if err := Authorize(p, cmd, st); err != nil {
-		return nil, &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+		return nil, p, &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
-	return st, nil
+	return st, roleIn(p, st.Actors), nil
 }
 
 // Hand the perch to the pump and apply nothing here: a frame emitted from this
@@ -673,7 +662,7 @@ func (s *Server) authorize(p *identity.Participant, cmd *vttv1.ClientCommand) (*
 // in (SPEC-011, SPEC-015).
 func (s *Server) handleSetViewpoint(p *identity.Participant, cmd *vttv1.ClientCommand,
 	req *vttv1.SetViewpoint, perches *perchBox) *vttv1.CommandResult {
-	if _, refusal := s.authorize(p, cmd); refusal != nil {
+	if _, _, refusal := s.authorize(p, cmd); refusal != nil {
 		return refusal
 	}
 	perches.set(req.GetActorId())
@@ -686,7 +675,7 @@ func (s *Server) handleSetViewpoint(p *identity.Participant, cmd *vttv1.ClientCo
 func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand, sub *seat) *vttv1.CommandResult {
 	requestID := cmd.GetRequestId()
 
-	st, refusal := s.authorize(p, cmd)
+	st, p, refusal := s.authorize(p, cmd)
 	if refusal != nil {
 		return refusal
 	}
@@ -773,10 +762,10 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	if rp, ok := cmd.GetCommand().(*vttv1.ClientCommand_RemoveParticipant); ok {
 		return s.handleRemoval(requestID, rp.RemoveParticipant, st, p)
 	}
-	// Answer these three without ToEvent: they append nothing (SPEC-007).
 	if pp, ok := cmd.GetCommand().(*vttv1.ClientCommand_PromoteParticipant); ok {
-		return s.handlePromotion(requestID, pp.PromoteParticipant)
+		return s.handlePromotion(requestID, pp.PromoteParticipant, st, p)
 	}
+	// Answer these two without ToEvent: they append nothing (SPEC-007).
 	if d, ok := cmd.GetCommand().(*vttv1.ClientCommand_SetJoinDoor); ok {
 		return s.handleJoinDoor(requestID, d.SetJoinDoor)
 	}
@@ -905,7 +894,7 @@ func (s *Server) revoked() map[string]bool {
 }
 
 // reannounce re-announces a participant to every unrevoked connection, theirs
-// included (SPEC-009, VTT-032, VTT-047, VTT-906).
+// included (SPEC-009, VTT-032, VTT-906).
 func (s *Server) reannounce(participantID string) {
 	// Resolve revoked out here, never under the registry's locks; resolve the name,
 	// encode and send inside, or an unwinding connection leaves a ghost (SPEC-011).
@@ -989,25 +978,9 @@ func (s *Server) handleRemoval(requestID string, req *vttv1.RemoveParticipant,
 		return refused("gateway: not authorized: a dm or an agent cannot be removed")
 	}
 
-	var actorIDs []string
-	for id, a := range st.Actors {
-		if slices.Contains(a.GetControllerIds(), target.ID) {
-			actorIDs = append(actorIDs, id)
-		}
-	}
-	sort.Strings(actorIDs)
-	envs := make([]*vttv1.Envelope, 0, len(actorIDs))
-	now := timestamppb.Now()
-	for _, actorID := range actorIDs {
-		id, err := newEventID()
-		if err != nil {
-			return refused(err.Error())
-		}
-		envs = append(envs, &vttv1.Envelope{
-			EventId: id, ParticipantId: p.ID, ActorRole: string(p.Role), OccurredAt: now,
-			Payload: &vttv1.Envelope_ActorControlRevoked{ActorControlRevoked: &vttv1.ActorControlRevoked{
-				ActorId: actorID, ParticipantId: target.ID}},
-		})
+	envs, err := controlRevocations(st, target.ID, p)
+	if err != nil {
+		return refused(err.Error())
 	}
 
 	if err := s.ids.Revoke(target.ID); err != nil {
@@ -1059,28 +1032,59 @@ func (s *Server) handleRotateJoinLink(requestID string) *vttv1.CommandResult {
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
 }
 
-// handlePromotion applies promote_participant (SPEC-009).
-func (s *Server) handlePromotion(requestID string, req *vttv1.PromoteParticipant) *vttv1.CommandResult {
+// handlePromotion applies promote_participant: "Make spectator" (VTT-896).
+func (s *Server) handlePromotion(requestID string, req *vttv1.PromoteParticipant,
+	st *engine.State, p *identity.Participant) *vttv1.CommandResult {
+	refused := func(msg string) *vttv1.CommandResult {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: msg}
+	}
 	// Refuse a dm or agent target here: Authorize does no I/O and cannot read the
 	// target's role (SPEC-009, VTT-026).
 	target, err := s.ids.Lookup(req.GetParticipantId())
 	if err != nil {
-		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+		return refused(err.Error())
 	}
 	if target.Role == identity.RoleDM || target.Role == identity.RoleAgent {
-		return &vttv1.CommandResult{
-			RequestId: requestID,
-			Ok:        false,
-			Error:     "gateway: not authorized: a dm or agent cannot be demoted by a promotion",
+		return refused("gateway: not authorized: a dm or agent cannot be demoted by a promotion")
+	}
+	envs, err := controlRevocations(st, target.ID, p)
+	if err != nil {
+		return refused(err.Error())
+	}
+	if len(envs) == 0 {
+		return &vttv1.CommandResult{RequestId: requestID, Ok: true}
+	}
+	firstSeq, err := s.campaign.AppendBatch(envs)
+	if err != nil {
+		return refused(err.Error())
+	}
+	s.reannounce(target.ID)
+	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq}
+}
+
+// Keep removal and promotion on controlRevocations (VTT-896, VTT-897).
+func controlRevocations(st *engine.State, targetID string, by *identity.Participant) ([]*vttv1.Envelope, error) {
+	var actorIDs []string
+	for id, a := range st.Actors {
+		if slices.Contains(a.GetControllerIds(), targetID) {
+			actorIDs = append(actorIDs, id)
 		}
 	}
-	if err := s.ids.SetRole(req.GetParticipantId(), identity.Role(req.GetRole())); err != nil {
-		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
+	sort.Strings(actorIDs)
+	envs := make([]*vttv1.Envelope, 0, len(actorIDs))
+	now := timestamppb.Now()
+	for _, actorID := range actorIDs {
+		id, err := newEventID()
+		if err != nil {
+			return nil, err
+		}
+		envs = append(envs, &vttv1.Envelope{
+			EventId: id, ParticipantId: by.ID, ActorRole: string(by.Role), OccurredAt: now,
+			Payload: &vttv1.Envelope_ActorControlRevoked{ActorControlRevoked: &vttv1.ActorControlRevoked{
+				ActorId: actorID, ParticipantId: targetID}},
+		})
 	}
-	// Signal after SetRole: the pump that takes it must look up the new role.
-	s.presence.rejudge(req.GetParticipantId())
-	s.reannounce(req.GetParticipantId())
-	return &vttv1.CommandResult{RequestId: requestID, Ok: true}
+	return envs, nil
 }
 
 // Keep credentialGone the reason contract/testdata/credential_close.json holds: a

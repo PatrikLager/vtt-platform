@@ -57,12 +57,17 @@ func newMetaFixture(t *testing.T, withContent bool) *metaFixture {
 		return tok
 	}
 
+	playerToken, playerID, err := ids.CreateInvite("Lera", identity.RolePlayer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendEvents(t, c, partyMemberOf("a1", playerID)...)
 	f := &metaFixture{
 		t:              t,
 		ids:            ids,
 		dmToken:        mint("DM", identity.RoleDM),
 		agentToken:     mint("Agent", identity.RoleAgent),
-		playerToken:    mint("Lera", identity.RolePlayer),
+		playerToken:    playerToken,
 		spectatorToken: mint("Watcher", identity.RoleSpectator),
 	}
 
@@ -467,7 +472,7 @@ func TestMetadataRulesetShapeMatchesTheContract(t *testing.T) {
 // participantId, and the role decides which panels exist at all. Inferring
 // either from the event stream would be guesswork — a spectator who has
 // caused no events looks exactly like a player who has not acted yet.
-// VTT-581 VTT-112
+// VTT-581 VTT-112 VTT-889
 func TestMetadataMeIdentifiesTheCaller(t *testing.T) {
 	f := newMetaFixture(t, true)
 
@@ -673,6 +678,7 @@ func TestParticipantsIsDMOnlyAndLiteralPerRole(t *testing.T) {
 	}
 }
 
+// VTT-890
 func TestParticipantsNamesEveryoneAndTheirRole(t *testing.T) {
 	// What the promote control is built on: the DM has to be able to see WHO
 	// is only watching. A roster without roles would make promotion a guess.

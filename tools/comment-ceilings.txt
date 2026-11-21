@@ -253,7 +253,6 @@ internal/gateway/qa_door_square_test.go  0.0
 internal/gateway/qa_door_tool_claims_test.go  2.0
 internal/gateway/qa_id_bound_test.go  0.0
 internal/gateway/qa_issuer_test.go  0.9
-internal/gateway/qa_joining_test.go  4.8
 internal/gateway/qa_me_503_test.go  0.0
 internal/gateway/qa_move_gate_test.go  1.5
 internal/gateway/qa_move_reason_bound_test.go  1.4
@@ -263,7 +262,6 @@ internal/gateway/qa_names_test.go  0.0
 internal/gateway/qa_note_refusal_test.go  0.4
 internal/gateway/qa_plain_refusal_test.go  0.7
 internal/gateway/qa_player_perch_test.go  0.0
-internal/gateway/qa_promotion_opening_test.go  0.0
 internal/gateway/qa_promotion_queued_test.go  0.0
 internal/gateway/qa_promotion_rejudge_test.go  0.0
 internal/gateway/qa_promotion_revoked_test.go  5.1

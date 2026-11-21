@@ -19,7 +19,7 @@ func speakingWorld() *engine.State {
 	for _, a := range []*vttv1.Actor{
 		{ActorId: "a1", Name: "Hero", Kind: party, ControllerIds: []string{"p-1"}},
 		{ActorId: "a2", Name: "Rival", Kind: party, ControllerIds: []string{"p-2"}},
-		{ActorId: "a3", Name: "Lurker", Kind: other, ControllerIds: []string{"p-1"}},
+		{ActorId: "a3", Name: "Lurker", Kind: other, ControllerIds: []string{"dm"}},
 		{ActorId: "a4", Kind: party, ControllerIds: []string{"p-1"}},
 	} {
 		a.ControllerId = a.ControllerIds[0]
@@ -69,7 +69,7 @@ func TestAPlayersLineThatSpeaksAsNoPartyMemberOfTheirsIsRefused(t *testing.T) {
 	absent := gateway.Authorize(p, sayCmd("nobody", "", false), st)
 	mustRefuse(t, absent, "as an absent id")
 	creature := gateway.Authorize(p, sayCmd("a3", "", false), st)
-	mustRefuse(t, creature, "as their own creature")
+	mustRefuse(t, creature, "as the DM's creature")
 	if creature.Error() != absent.Error() {
 		t.Fatalf("a creature's refusal %q differs from an absent id's %q",
 			creature, absent)
@@ -86,7 +86,7 @@ func TestAPlayerCannotSpeakAsAPartyMemberWithNoName(t *testing.T) {
 func TestALineOutOfCharacterSpeaksAsNoActor(t *testing.T) {
 	st := speakingWorld()
 	for _, p := range []*identity.Participant{
-		speaker("p-3", identity.RolePlayer),
+		speaker("p-2", identity.RolePlayer),
 		speaker("dm", identity.RoleDM),
 		speaker("agent", identity.RoleAgent),
 	} {

@@ -15,7 +15,7 @@ func TestOnlyTheDMAndTheAgentMayGiveOrTakeAnAbility(t *testing.T) {
 	st := ownershipFixture()
 	for _, name := range []string{"give_ability", "take_ability"} {
 		for _, role := range []identity.Role{identity.RoleDM, identity.RoleAgent, identity.RolePlayer, identity.RoleSpectator} {
-			err := gateway.Authorize(&identity.Participant{ID: "p-1", Role: role}, commandFor(t, name), st)
+			err := gateway.Authorize(&identity.Participant{ID: authzCaseID(role), Role: role}, commandFor(t, name), st)
 			if role == identity.RoleDM || role == identity.RoleAgent {
 				if err != nil {
 					t.Errorf("%s: %s refused: %v", role, name, err)

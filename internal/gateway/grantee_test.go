@@ -106,7 +106,9 @@ func TestAPlayersGrantIsRefusedByTheTableWhoeverItNames(t *testing.T) {
 	tb := qaPRNewTable(t)
 	dm := tb.host()
 	granteeAdd(tb, dm, "pm-1", "Ash", granteeParty)
-	player := tb.connect(tb.mint("Lera", identity.RolePlayer), "a player")
+	lera := tb.mint("Lera", identity.RolePlayer)
+	granteeAccepted(t, "fixture", tb, dm, "pm-1", lera.id, granteeParty)
+	player := tb.connect(lera, "a player")
 	res := granteeGrant(tb, player, "pm-1", "never-minted", granteeParty)
 	if res.GetOk() || res.GetError() == "There is no such participant." {
 		t.Errorf("VTT-894: a player's grant naming nobody was answered ok=%v %q, want the table's refusal, which says nothing of which ids exist", res.GetOk(), res.GetError())

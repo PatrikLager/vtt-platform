@@ -282,7 +282,7 @@ func TestAPlayersConnectionIsItsCharactersLog(t *testing.T) {
 	w.quiet(300 * time.Millisecond)
 }
 
-// VTT-340 VTT-341 VTT-385
+// VTT-921 VTT-341 VTT-385
 func TestAPlayerWatchesTheirFirstPartyMemberByID(t *testing.T) {
 	f := newGWFixture(t)
 	appendEvents(t, f.campaign, partyMemberOf("a0", f.playerID)...)
@@ -293,7 +293,7 @@ func TestAPlayerWatchesTheirFirstPartyMemberByID(t *testing.T) {
 	}
 	ivo := f.watch(f.otherPlayerToken, 0, "")
 	spec := f.watch(f.spectatorToken, 0, "")
-	for name, w := range map[string]*watchConn{"a player with no party member": ivo, "an unperched spectator": spec} {
+	for name, w := range map[string]*watchConn{"a participant who controls nothing": ivo, "an unperched spectator": spec} {
 		if head, vp := w.opening(); head != 0 || vp != "" {
 			t.Fatalf("%s opens on %q at head %d, want nobody at 0", name, vp, head)
 		}
@@ -343,7 +343,8 @@ func TestAPlayerMayWatchOnlyTheirOwnPartyMembers(t *testing.T) {
 	appendEvents(t, f.campaign, partyMemberOf("b1", participantID(t, f, f.otherPlayerToken))...)
 	appendEvents(t, f.campaign,
 		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "gob", Name: "Gob", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}},
-		&vttv1.ActorControlGranted{ActorId: "gob", ParticipantId: f.playerID, Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
+		&vttv1.ActorControlGranted{ActorId: "gob", ParticipantId: participantID(t, f, f.dmToken),
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
 	w := f.watch(f.playerToken, 0, "")
 	if _, vp := w.opening(); vp != "a1" {
 		t.Fatalf("opens on %q, want a1", vp)
@@ -393,20 +394,22 @@ func TestASpectatorWatchesThePartyMemberItPerchesOn(t *testing.T) {
 	w.quiet(300 * time.Millisecond)
 }
 
-// VTT-340 VTT-348 VTT-386
+// VTT-921 VTT-348 VTT-386
 func TestAConnectionStopsWatchingAnActorItMayNoLongerWatch(t *testing.T) {
 	losses := map[string]struct {
 		next  string
-		event func(f *gwFixture) []proto.Message
+		event func(t *testing.T, f *gwFixture) []proto.Message
 	}{
-		"control revoked": {"a2", func(f *gwFixture) []proto.Message {
+		"control revoked": {"a2", func(_ *testing.T, f *gwFixture) []proto.Message {
 			return []proto.Message{&vttv1.ActorControlRevoked{ActorId: "a1", ParticipantId: f.playerID}}
 		}},
-		"made a non-party actor": {"", func(f *gwFixture) []proto.Message {
-			return []proto.Message{&vttv1.ActorControlGranted{ActorId: "a1", ParticipantId: f.playerID,
-				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}
+		"taken back as a non-party actor": {"", func(t *testing.T, f *gwFixture) []proto.Message {
+			t.Helper()
+			return []proto.Message{&vttv1.ActorControlRevoked{ActorId: "a1", ParticipantId: f.playerID},
+				&vttv1.ActorControlGranted{ActorId: "a1", ParticipantId: participantID(t, f, f.dmToken),
+					Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}}
 		}},
-		"removed": {"", func(*gwFixture) []proto.Message {
+		"removed": {"", func(*testing.T, *gwFixture) []proto.Message {
 			return []proto.Message{&vttv1.TokenRemoved{TokenId: "t1"}, &vttv1.ActorRemoved{ActorId: "a1"}}
 		}},
 	}
@@ -421,7 +424,7 @@ func TestAConnectionStopsWatchingAnActorItMayNoLongerWatch(t *testing.T) {
 				t.Fatalf("opens on %q, want a1", vp)
 			}
 			w.entries(len(logOf(t, f, "a1")))
-			lost := appendEvents(t, f.campaign, loss.event(f)...)
+			lost := appendEvents(t, f.campaign, loss.event(t, f)...)
 			vp, before := w.untilViewpoint()
 			if vp != loss.next {
 				t.Fatalf("after the loss the player watches %q, want %q", vp, loss.next)
@@ -471,8 +474,9 @@ func TestAConnectionStopsWatchingAnActorItMayNoLongerWatch(t *testing.T) {
 		}
 		w.untilViewpoint()
 		w.entries(len(logOf(t, f, "a1")))
-		appendEvents(t, f.campaign, &vttv1.ActorControlGranted{ActorId: "a1", ParticipantId: f.playerID,
-			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
+		appendEvents(t, f.campaign, &vttv1.ActorControlRevoked{ActorId: "a1", ParticipantId: f.playerID},
+			&vttv1.ActorControlGranted{ActorId: "a1", ParticipantId: participantID(t, f, f.dmToken),
+				Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
 		if vp, _ := w.untilViewpoint(); vp != "" {
 			t.Fatalf("the shoulder left the party and the spectator watches %q, want nobody", vp)
 		}
@@ -511,7 +515,7 @@ func TestACursorIsHonouredOnlyInTheLogItWasReadFrom(t *testing.T) {
 	requireLog(t, "the default from its first entry", gone.entries(len(a0)), a0)
 }
 
-// VTT-340 VTT-369 VTT-339
+// VTT-921 VTT-369 VTT-339
 func TestALogNamingAnActorItMayNotWatchOpensOnTheDefault(t *testing.T) {
 	f := newGWFixture(t)
 	appendEvents(t, f.campaign, partyMemberOf("b1", participantID(t, f, f.otherPlayerToken))...)
@@ -566,20 +570,17 @@ func TestAClosedCampaignClosesAWatchersConnection(t *testing.T) {
 	}
 }
 
-// VTT-340
-func TestAPromotedSpectatorWatchesTheirFirstPartyMember(t *testing.T) {
+// VTT-921 VTT-893
+func TestAGrantedSpectatorWatchesTheirFirstPartyMember(t *testing.T) {
 	f := newGWFixture(t)
 	w := f.watch(f.spectatorToken, 0, "")
 	if _, vp := w.opening(); vp != "" {
 		t.Fatalf("an unperched spectator opens on %q", vp)
 	}
 	id := participantID(t, f, f.spectatorToken)
-	if err := f.ids.SetRole(id, identity.RolePlayer); err != nil {
-		t.Fatal(err)
-	}
 	appendEvents(t, f.campaign, partyMemberOf("c1", id)...)
 	if vp, before := w.untilViewpoint(); vp != "c1" || len(before) != 0 {
-		t.Fatalf("promoted and granted a party member, the connection watches %q after %d entries, want c1", vp, len(before))
+		t.Fatalf("granted a party member, the connection watches %q after %d entries, want c1", vp, len(before))
 	}
 	want := logOf(t, f, "c1")
 	requireLog(t, "the granted log", w.entries(len(want)), want)
@@ -613,42 +614,19 @@ func TestAPlayersMoveIsJudgedByTheCharacterTheyWatch(t *testing.T) {
 	}
 }
 
-// VTT-370
-func TestAPlayerWithNoPartyMemberMovesNothing(t *testing.T) {
-	f := newGWFixture(t)
-	ivo := participantID(t, f, f.otherPlayerToken)
-	appendTwoRooms(t, f)
-	appendEvents(t, f.campaign,
-		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "wolf", Name: "Wolf", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}},
-		&vttv1.ActorControlGranted{ActorId: "wolf", ParticipantId: ivo, Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
-		tokenAt("tok-wolf", "wolf", 1, 1))
-
-	w := f.watch(f.otherPlayerToken, 0, "")
-	if _, vp := w.opening(); vp != "" {
-		t.Fatalf("opens on %q, want nobody", vp)
-	}
-	for _, to := range [][2]int32{{2, 1}, {1, 0}, {4, 1}} {
-		if r := w.command(moveTo("tok-wolf", to[0], to[1])); r.GetOk() || r.GetError() != unseenSquare {
-			t.Fatalf("the wolf's controller moved it to %v: ok=%v %q, want %q", to, r.GetOk(), r.GetError(), unseenSquare)
-		}
-	}
-}
-
-func promote(t *testing.T, dm *watchConn, participantID string, role identity.Role) {
+func makeSpectator(t *testing.T, dm *watchConn, participantID string) {
 	t.Helper()
 	r := dm.command(&vttv1.ClientCommand{Command: &vttv1.ClientCommand_PromoteParticipant{
-		PromoteParticipant: &vttv1.PromoteParticipant{ParticipantId: participantID, Role: string(role)}}})
+		PromoteParticipant: &vttv1.PromoteParticipant{ParticipantId: participantID, Role: string(identity.RoleSpectator)}}})
 	if !r.GetOk() {
-		t.Fatalf("the promotion to %s was refused: %s", role, r.GetError())
+		t.Fatalf("making %s a spectator was refused: %s", participantID, r.GetError())
 	}
 }
 
-// VTT-340
-func TestAPromotionMovesASpectatorOffAShoulderThePlayerMayNotWatch(t *testing.T) {
+// VTT-921 VTT-893
+func TestAGrantMovesASpectatorOffAShoulderThePlayerMayNotWatch(t *testing.T) {
 	f := newGWFixture(t)
-	dm := f.watch(f.dmToken, 0, "")
 	id := participantID(t, f, f.spectatorToken)
-	appendEvents(t, f.campaign, partyMemberOf("c1", id)...)
 	spec := f.watch(f.spectatorToken, 0, "")
 	if _, vp := spec.opening(); vp != "" {
 		t.Fatalf("an unperched spectator opens on %q", vp)
@@ -661,9 +639,9 @@ func TestAPromotionMovesASpectatorOffAShoulderThePlayerMayNotWatch(t *testing.T)
 	}
 	spec.entries(len(logOf(t, f, "a1")))
 
-	promote(t, dm, id, identity.RolePlayer)
+	appendEvents(t, f.campaign, partyMemberOf("c1", id)...)
 	if vp, before := spec.untilViewpoint(); vp != "c1" || len(before) != 0 {
-		t.Fatalf("promoted with nothing appended, the connection moved to %q after %d entries, want c1 after none",
+		t.Fatalf("granted a party member, the connection moved to %q after %d entries, want c1 after none",
 			vp, len(before))
 	}
 	held := logOf(t, f, "c1")
@@ -673,32 +651,31 @@ func TestAPromotionMovesASpectatorOffAShoulderThePlayerMayNotWatch(t *testing.T)
 	spec.quiet(300 * time.Millisecond)
 }
 
-// VTT-340
-func TestAPromotedSpectatorMovesOntoThePartyMemberTheyHold(t *testing.T) {
+// VTT-921 VTT-893
+func TestAGrantOfAnActorAlreadyAddedMovesASpectatorOntoIt(t *testing.T) {
 	f := newGWFixture(t)
-	dm := f.watch(f.dmToken, 0, "")
 	id := participantID(t, f, f.spectatorToken)
-	appendEvents(t, f.campaign, partyMemberOf("c1", id)...)
+	appendEvents(t, f.campaign, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "c1", Name: "c1",
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
 	spec := f.watch(f.spectatorToken, 0, "")
 	if head, vp := spec.opening(); head != 0 || vp != "" {
-		t.Fatalf("a spectator who holds c1 opens on %q at head %d, want nobody at 0", vp, head)
+		t.Fatalf("a spectator who holds nothing opens on %q at head %d, want nobody at 0", vp, head)
 	}
 
-	promote(t, dm, id, identity.RolePlayer)
+	appendEvents(t, f.campaign, &vttv1.ActorControlGranted{ActorId: "c1", ParticipantId: id,
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
 	if vp, before := spec.untilViewpoint(); vp != "c1" || len(before) != 0 {
-		t.Fatalf("promoted with nothing appended, the connection moved to %q after %d entries, want c1 after none",
+		t.Fatalf("granted c1, the connection moved to %q after %d entries, want c1 after none",
 			vp, len(before))
 	}
 	want := logOf(t, f, "c1")
 	requireLog(t, "c1 from its first entry", spec.entries(len(want)), want)
 }
 
-// VTT-340
-func TestAPromotionMovesEveryConnectionOfTheParticipant(t *testing.T) {
+// VTT-921 VTT-893
+func TestAGrantMovesEveryConnectionOfTheParticipant(t *testing.T) {
 	f := newGWFixture(t)
-	dm := f.watch(f.dmToken, 0, "")
 	id := participantID(t, f, f.spectatorToken)
-	appendEvents(t, f.campaign, partyMemberOf("c1", id)...)
 	devices := []*watchConn{f.watch(f.spectatorToken, 0, "a1"), f.watch(f.spectatorToken, 0, "a1")}
 	for i, w := range devices {
 		if _, vp := w.opening(); vp != "a1" {
@@ -707,7 +684,7 @@ func TestAPromotionMovesEveryConnectionOfTheParticipant(t *testing.T) {
 		w.entries(len(logOf(t, f, "a1")))
 	}
 
-	promote(t, dm, id, identity.RolePlayer)
+	appendEvents(t, f.campaign, partyMemberOf("c1", id)...)
 	for i, w := range devices {
 		if vp, before := w.untilViewpoint(); vp != "c1" || len(before) != 0 {
 			t.Fatalf("device %d moved to %q after %d entries, want c1 after none", i+1, vp, len(before))
@@ -715,7 +692,7 @@ func TestAPromotionMovesEveryConnectionOfTheParticipant(t *testing.T) {
 	}
 }
 
-// VTT-388
+// VTT-923 VTT-896
 func TestAPlayerMadeASpectatorKeepsWatchingTheirPartyMember(t *testing.T) {
 	f := newGWFixture(t)
 	dm := f.watch(f.dmToken, 0, "")
@@ -726,19 +703,24 @@ func TestAPlayerMadeASpectatorKeepsWatchingTheirPartyMember(t *testing.T) {
 	before := logOf(t, f, "a1")
 	w.entries(len(before))
 
-	promote(t, dm, f.playerID, identity.RoleSpectator)
+	makeSpectator(t, dm, f.playerID)
 	appendEvents(t, f.campaign, &vttv1.NarrationAdded{Text: "a1 still hears this"})
-	requireLog(t, "a1's next entry", w.entries(1), logOf(t, f, "a1")[len(before):])
+	after := logOf(t, f, "a1")[len(before):]
+	if len(after) != 2 || after[0].GetActorControlRevoked().GetParticipantId() != f.playerID {
+		t.Fatalf("a1's log gained %v, want the player's revocation and the narration", after)
+	}
+	requireLog(t, "a1's next entries", w.entries(2), after)
 	w.quiet(300 * time.Millisecond)
 }
 
-// VTT-388
-func TestAPromotedSpectatorKeepsWatchingAPartyMemberTheyHold(t *testing.T) {
+// VTT-921 VTT-893
+func TestAGrantedSpectatorKeepsWatchingThePartyMemberTheyAreGiven(t *testing.T) {
 	f := newGWFixture(t)
-	dm := f.watch(f.dmToken, 0, "")
 	id := participantID(t, f, f.spectatorToken)
-	appendEvents(t, f.campaign, partyMemberOf("c1", id)...)
-	appendEvents(t, f.campaign, partyMemberOf("c2", id)...)
+	for _, a := range []string{"c1", "c2"} {
+		appendEvents(t, f.campaign, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: a, Name: a,
+			Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
+	}
 	w := f.watch(f.spectatorToken, 0, "c2")
 	if _, vp := w.opening(); vp != "c2" {
 		t.Fatalf("opens on %q, want c2", vp)
@@ -746,13 +728,16 @@ func TestAPromotedSpectatorKeepsWatchingAPartyMemberTheyHold(t *testing.T) {
 	before := logOf(t, f, "c2")
 	w.entries(len(before))
 
-	promote(t, dm, id, identity.RolePlayer)
+	appendEvents(t, f.campaign,
+		&vttv1.ActorControlGranted{ActorId: "c1", ParticipantId: id, Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER},
+		&vttv1.ActorControlGranted{ActorId: "c2", ParticipantId: id, Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
 	appendEvents(t, f.campaign, &vttv1.NarrationAdded{Text: "c2 still hears this"})
-	requireLog(t, "c2's next entry", w.entries(1), logOf(t, f, "c2")[len(before):])
+	after := logOf(t, f, "c2")[len(before):]
+	requireLog(t, "c2's next entries", w.entries(len(after)), after)
 	w.quiet(300 * time.Millisecond)
 }
 
-// VTT-456 VTT-400 VTT-454
+// VTT-923 VTT-400 VTT-454
 func TestAPlayerWhoseLastPartyMemberIsRevokedKeepsWatchingIt(t *testing.T) {
 	f := newGWFixture(t)
 	appendEvents(t, f.campaign, &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "a2", Name: "Ash",

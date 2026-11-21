@@ -78,7 +78,7 @@ func TestOpenRejectsFileThatIsNotADatabase(t *testing.T) {
 	}
 }
 
-// VTT-067
+// VTT-929
 func TestRevokeUnknownParticipantErrors(t *testing.T) {
 	d, _ := openTemp(t)
 	if err := d.Revoke("no-such-participant"); err == nil {

@@ -40,9 +40,8 @@ type seat struct {
 	wake      <-chan struct{}
 	stopWake  func()
 	shown     string
-	judgedAs  identity.Role
 	watchable *vttv1.WatchableChanged
-	// Read told from any goroutine; watch stores it before a frame names it (VTT-453).
+	// Read told from any goroutine; watch stores it before a frame names it (VTT-922).
 	told atomic.Pointer[string]
 }
 
@@ -50,7 +49,7 @@ type seat struct {
 // the log named when p may watch it, or p's default (SPEC-015, VTT-339).
 func openSeat(c *campaign.Campaign, p *identity.Participant, named string, after int64,
 	buffer int, noProgress time.Duration) (*seat, int64, error) {
-	s := &seat{c: c, p: p, buffer: buffer, noProgress: noProgress, judgedAs: p.Role}
+	s := &seat{c: c, p: p, buffer: buffer, noProgress: noProgress}
 	if !watchesALog(p.Role) {
 		events, unsub, head, err := c.SubscribeWithNoProgressTimeout(after, buffer, noProgress)
 		if err != nil {
@@ -86,7 +85,7 @@ func (s *seat) watch(actorID string, cursor int64) (int64, error) {
 	for {
 		s.drop()
 		shown := actorID
-		s.shown, s.judgedAs = shown, s.p.Role
+		s.shown = shown
 		s.told.Store(&shown)
 		var head int64
 		if actorID != "" {
@@ -112,8 +111,7 @@ func (s *seat) watch(actorID string, cursor int64) (int64, error) {
 	}
 }
 
-// resolve keeps what the seat shows while p may watch it, else p's default
-// (VTT-340).
+// resolve keeps the shown log while p may watch it, else p's default (VTT-921).
 func (s *seat) resolve(actors map[string]*vttv1.Actor) string {
 	s.watchable = watchable(s.p, actors)
 	if s.shown != "" && MayWatch(s.p, s.shown, actors) == nil {
@@ -124,21 +122,12 @@ func (s *seat) resolve(actors map[string]*vttv1.Actor) string {
 
 // recheck reports whether the actors after a wake moved the seat (VTT-348).
 func (s *seat) recheck() (bool, error) {
-	s.judgedAs = s.p.Role
 	next := s.resolve(s.c.Actors())
 	if next == s.shown {
 		return false, nil
 	}
 	_, err := s.watch(next, 0)
 	return true, err
-}
-
-// rejudge rechecks a seat judged by a role its participant lost (VTT-387).
-func (s *seat) rejudge() (bool, error) {
-	if s.p.Role == s.judgedAs {
-		return false, nil
-	}
-	return s.recheck()
 }
 
 // admit decides an entry the pump has taken: a waiting wake is read first, since
@@ -209,7 +198,7 @@ func (b *perchBox) take() (actorID string, ok bool) {
 	return actorID, ok
 }
 
-// judgedBy is the told one while it is p's party member, else p's default (VTT-453).
+// judgedBy is the told one while it is p's party member, else p's default (VTT-922).
 func (s *seat) judgedBy(p *identity.Participant, actors map[string]*vttv1.Actor) string {
 	viewpoint := ""
 	if told := s.told.Load(); told != nil {

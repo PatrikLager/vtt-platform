@@ -12,11 +12,12 @@ import (
 
 // MayWatch reports whether p may watch actorID's log among actors (SPEC-015).
 func MayWatch(p *identity.Participant, actorID string, actors map[string]*vttv1.Actor) error {
+	p = roleIn(p, actors)
 	ownOnly := false
 	switch p.Role {
 	case identity.RoleSpectator:
 	case identity.RolePlayer:
-		ownOnly = controlsAPartyMember(p.ID, actors)
+		ownOnly = true
 	default:
 		return fmt.Errorf("%w: role %q is sent the world and watches no character log",
 			ErrUnauthorized, p.Role)
@@ -25,7 +26,7 @@ func MayWatch(p *identity.Participant, actorID string, actors map[string]*vttv1.
 		if ownOnly {
 			return fmt.Errorf("%w: a player watches one of their own party members", ErrUnauthorized)
 		}
-		// Accept the empty id for a perch: it leaves a shoulder (VTT-345, VTT-452).
+		// Accept the empty id for a perch: it leaves a shoulder (VTT-345).
 		return nil
 	}
 	a, ok := actors[actorID]
@@ -50,10 +51,10 @@ func controlsAPartyMember(participantID string, actors map[string]*vttv1.Actor) 
 	return false
 }
 
-// defaultViewpoint is p's first party member by id, or "" for a player who
-// controls none and for every other role (VTT-340).
+// defaultViewpoint is a player's first party member by id, or "" for every
+// other role (VTT-921).
 func defaultViewpoint(p *identity.Participant, actors map[string]*vttv1.Actor) string {
-	if p.Role != identity.RolePlayer {
+	if roleIn(p, actors).Role != identity.RolePlayer {
 		return ""
 	}
 	var ids []string

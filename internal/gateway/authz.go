@@ -57,6 +57,7 @@ func (r plainRefusal) Unwrap() error { return ErrUnauthorized }
 // Authorize decides whether p may issue cmd against st: the role table, the
 // checks for every role, then the player rules (SPEC-013).
 func Authorize(p *identity.Participant, cmd *vttv1.ClientCommand, st *engine.State) error {
+	p = roleIn(p, st.Actors)
 	name := commandName(cmd)
 	roles, known := commandRoles[name]
 	if !known || !roles[p.Role] {
@@ -279,16 +280,33 @@ func authorizeSelfRevoke(p *identity.Participant, req *vttv1.RevokeActorControl,
 	return authorizeActorOwnership(p, req.GetActorId(), st)
 }
 
-// Keep this narrower than identity.ParseRole: it must refuse "dm" and "agent"
-// (SPEC-009).
+// Keep spectator the one role a promotion names: a grant makes a player
+// (SPEC-009, VTT-899, VTT-900).
 func authorizePromotionTarget(req *vttv1.PromoteParticipant) error {
-	switch req.GetRole() {
-	case string(identity.RolePlayer), string(identity.RoleSpectator):
+	if req.GetRole() == string(identity.RoleSpectator) {
 		return nil
-	default:
-		return fmt.Errorf("%w: a participant may be promoted only to player or spectator, not %q",
-			ErrUnauthorized, req.GetRole())
 	}
+	if req.GetRole() == string(identity.RolePlayer) {
+		return plainRefusal("A participant becomes a player when given a character.")
+	}
+	return fmt.Errorf("%w: a promotion may only make a participant a spectator, not %q",
+		ErrUnauthorized, req.GetRole())
+}
+
+// roleIn is p's role as actors decide it for a player or a spectator (VTT-891).
+func roleIn(p *identity.Participant, actors map[string]*vttv1.Actor) *identity.Participant {
+	if p.Role != identity.RolePlayer && p.Role != identity.RoleSpectator {
+		return p
+	}
+	judged := *p
+	judged.Role = identity.RoleSpectator
+	for _, a := range actors {
+		if controls(a, p.ID) {
+			judged.Role = identity.RolePlayer
+			break
+		}
+	}
+	return &judged
 }
 
 // Keep each name the proto field's: commandRoles and playerRules are keyed by

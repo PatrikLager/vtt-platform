@@ -194,7 +194,7 @@ func TestQAASASceneWithNoTilesHidesNothingAtAnyDistance(t *testing.T) {
 		"a scene with no tiles blocks nothing")
 }
 
-// VTT-472 VTT-453
+// VTT-472 VTT-922
 func TestQAASAnotherShoulderSeesFromItsOwnSquare(t *testing.T) {
 	st := qaasHall(t).st
 	qaasExpect(t, perceive.Eyes{Shoulder: "scout"}, st, map[string]bool{

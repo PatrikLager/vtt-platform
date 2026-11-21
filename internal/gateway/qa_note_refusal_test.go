@@ -325,6 +325,13 @@ func TestQAAPlayersUpsertWithoutVisibilityIsRefusedByAuthorizationFirst(t *testi
 		t.Run(string(role), func(t *testing.T) {
 			tb := qaNRNewTable(t)
 			issuer := tb.seat("issuer", role)
+			if role == identity.RolePlayer {
+				list, err := tb.ids.List()
+				if err != nil || len(list) != 1 {
+					t.Fatalf("fixture: the table holds %v (%v), want the issuer alone", list, err)
+				}
+				appendEvents(t, tb.c, partyMemberOf("qa-nr-own", list[0].ID)...)
+			}
 			before := tb.head()
 			r := issuer.upsert("unauth", "k", "x", vttv1.NoteVisibility_NOTE_VISIBILITY_UNSPECIFIED)
 			if r.GetOk() {

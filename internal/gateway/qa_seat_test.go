@@ -430,7 +430,7 @@ func qaSeatMinLen(t *testing.T, what string, log []*vttv1.Envelope, n int) {
 	}
 }
 
-// VTT-340 VTT-338 VTT-368 VTT-349 VTT-384 VTT-378
+// VTT-921 VTT-338 VTT-368 VTT-349 VTT-384 VTT-378
 func TestQASeatAPlayerOpensOnTheirFirstPartyMemberByID(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	hero := tb.log(t, "hero")
@@ -462,7 +462,7 @@ func TestQASeatAPlayerOpensOnTheirFirstPartyMemberByID(t *testing.T) {
 	q.nothingShown(t, next, "after the live entries")
 }
 
-// VTT-340 VTT-349
+// VTT-921 VTT-349
 func TestQASeatAPlayerIgnoresTheCursorWithoutAWatchableLog(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	hero := tb.log(t, "hero")
@@ -565,10 +565,9 @@ func TestQASeatASpectatorWatchesNobodyUntilItPerches(t *testing.T) {
 	}
 }
 
-// VTT-340 VTT-341 VTT-342 VTT-338 VTT-374
-func TestQASeatAPlayerWithNoPartyMemberWatchesNobodyUntilGranted(t *testing.T) {
+// VTT-921 VTT-341 VTT-342 VTT-338 VTT-374
+func TestQASeatAParticipantWhoControlsNothingWatchesNobodyUntilGranted(t *testing.T) {
 	tb := qaSeatOpen(t, false)
-	tb.append(t, tb.grant("goblin", qaSeatNP))
 	q := tb.dial(t, identity.RolePlayer, "after=0&log=goblin")
 	head, view, next := q.opening(t)
 	if view != "" || head != 0 {
@@ -576,7 +575,7 @@ func TestQASeatAPlayerWithNoPartyMemberWatchesNobodyUntilGranted(t *testing.T) {
 	}
 	tb.append(t, tb.move("t-hero"))
 	tb.append(t, tb.move("t-goblin"))
-	q.nothingShown(t, next, "a player controlling no party member")
+	q.nothingShown(t, next, "a participant who controls nothing")
 	tb.append(t, tb.grant("scout", qaSeatPM), tb.grant("hero", qaSeatPM))
 	next = q.view(t, next, "hero")
 	hero := tb.log(t, "hero")
@@ -716,7 +715,7 @@ func TestQASeatASpectatorPerchesOnlyOnAPartyMember(t *testing.T) {
 	q.expect(t, next, "scout from its first entry", tb.log(t, "scout"))
 }
 
-// VTT-348 VTT-340 VTT-342 VTT-367
+// VTT-348 VTT-921 VTT-342 VTT-367
 func TestQASeatLosingControlSwitchesAPlayerToTheNextPartyMember(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	onHero := tb.dial(t, identity.RolePlayer, "after=0")
@@ -758,7 +757,7 @@ func TestQASeatLosingControlSwitchesAPlayerToTheNextPartyMember(t *testing.T) {
 	}
 }
 
-// VTT-342 VTT-348 VTT-340 VTT-341 VTT-386
+// VTT-342 VTT-348 VTT-921 VTT-341 VTT-386
 func TestQASeatAShoulderThatStopsBeingAPartyMemberSwitchesItsWatchers(t *testing.T) {
 	tb := qaSeatOpen(t, true)
 	spec := tb.dial(t, identity.RoleSpectator, "after=0&log=hero")

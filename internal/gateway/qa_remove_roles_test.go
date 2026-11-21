@@ -26,9 +26,10 @@ func TestQARemoveParticipantOnlyDmAndAgentMayIssueIt(t *testing.T) {
 		{"player", false},
 		{"spectator", false},
 	}
+	st := withOwnPartyMember(engine.NewState(), "p-1")
 	for _, c := range cases {
-		p := &identity.Participant{ID: "p-1", Name: "Somebody", Role: c.role}
-		err := gateway.Authorize(p, qaRemoveCmd("someone-else"), engine.NewState())
+		p := &identity.Participant{ID: authzCaseID(c.role), Name: "Somebody", Role: c.role}
+		err := gateway.Authorize(p, qaRemoveCmd("someone-else"), st)
 		if c.ok && err != nil {
 			t.Errorf("role %s refused: %v", c.role, err)
 		}
@@ -45,7 +46,7 @@ func TestQARemoveParticipantOnlyDmAndAgentMayIssueIt(t *testing.T) {
 // VTT-565
 func TestQARemoveParticipantPlayerRefusedEvenForSelf(t *testing.T) {
 	p := &identity.Participant{ID: "p-1", Name: "Pip", Role: "player"}
-	if err := gateway.Authorize(p, qaRemoveCmd("p-1"), engine.NewState()); err == nil {
+	if err := gateway.Authorize(p, qaRemoveCmd("p-1"), withOwnPartyMember(engine.NewState(), "p-1")); err == nil {
 		t.Fatal("a player removed themself")
 	}
 	dm := &identity.Participant{ID: "d-1", Name: "Dana", Role: identity.RoleDM}

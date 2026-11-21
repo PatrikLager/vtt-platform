@@ -432,29 +432,6 @@ func newSecret() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// SetRole changes a participant's authorization level and nothing else.
-// Keep the role in participants.role, never in the log: the fold has no Role
-// (SPEC-009, VTT-039). Keep the token and id untouched, or a promotion logs
-// them out (VTT-029); leave revoked alone (VTT-030).
-func (d *DB) SetRole(id string, role Role) error {
-	if _, err := ParseRole(string(role)); err != nil {
-		return err
-	}
-	res, err := d.db.Exec(`UPDATE participants SET role = ? WHERE id = ?`, string(role), id)
-	if err != nil {
-		return fmt.Errorf("identity: set role: %w", err)
-	}
-	// Report n == 0: silently promoting somebody who has left is worse than an error.
-	n, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("identity: set role: %w", err)
-	}
-	if n == 0 {
-		return fmt.Errorf("identity: no participant %q", id)
-	}
-	return nil
-}
-
 // Close releases the underlying SQLite handle.
 func (d *DB) Close() error {
 	return d.db.Close()

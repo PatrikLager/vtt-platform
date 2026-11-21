@@ -92,7 +92,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, meJSON{
 		ParticipantID: p.ID,
 		Name:          p.Name,
-		Role:          string(p.Role),
+		Role:          string(roleIn(p, s.campaign.Actors()).Role),
 	})
 }
 
@@ -243,23 +243,19 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 // Keep this decided per request through controls (VTT-691): a set kept between
 // reads outlives a revocation.
 func (s *Server) abilitiesReadBy(p *identity.Participant) func(string) bool {
-	switch p.Role {
-	case identity.RoleDM, identity.RoleAgent:
+	if runsTheTable(p.Role) {
 		return func(string) bool { return true }
-	case identity.RolePlayer:
-		var mine []*vttv1.Actor
-		if st := s.campaign.State(); st != nil {
-			for _, a := range st.Actors {
-				if controls(a, p.ID) {
-					mine = append(mine, a)
-				}
+	}
+	var mine []*vttv1.Actor
+	if st := s.campaign.State(); st != nil {
+		for _, a := range st.Actors {
+			if controls(a, p.ID) {
+				mine = append(mine, a)
 			}
 		}
-		return func(id string) bool {
-			return slices.ContainsFunc(mine, func(a *vttv1.Actor) bool { return rules.Offers(a, id) })
-		}
-	default:
-		return func(string) bool { return false }
+	}
+	return func(id string) bool {
+		return slices.ContainsFunc(mine, func(a *vttv1.Actor) bool { return rules.Offers(a, id) })
 	}
 }
 
@@ -369,8 +365,9 @@ func (s *Server) handleParticipants(w http.ResponseWriter, r *http.Request) {
 	}
 	// Keep the slice non-nil: an empty table is [] to a client, never null.
 	out := make([]participantJSON, 0, len(list))
+	actors := s.campaign.Actors()
 	for _, q := range list {
-		out = append(out, participantJSON{ParticipantID: q.ID, Name: q.Name, Role: string(q.Role)})
+		out = append(out, participantJSON{ParticipantID: q.ID, Name: q.Name, Role: string(roleIn(q, actors).Role)})
 	}
 	writeJSON(w, out)
 }

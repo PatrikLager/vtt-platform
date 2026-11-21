@@ -30,7 +30,7 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 	case "grant_actor_control":
 		return grantActorControlCmd("p-2")
 	case "promote_participant":
-		return promoteCmd("p-2", "player")
+		return promoteCmd("p-2", "spectator")
 	case "remove_participant":
 		return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_RemoveParticipant{
 			RemoveParticipant: &vttv1.RemoveParticipant{ParticipantId: "p-2"},
@@ -550,6 +550,20 @@ func ownershipFixture() *engine.State {
 	return st
 }
 
+func withOwnPartyMember(st *engine.State, participantID string) *engine.State {
+	id := "own-" + participantID
+	st.Actors[id] = &vttv1.Actor{ActorId: id, Name: "Own", Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER,
+		ControllerId: participantID, ControllerIds: []string{participantID}}
+	return st
+}
+
+func authzCaseID(role identity.Role) string {
+	if role == identity.RoleSpectator {
+		return "s-1"
+	}
+	return "p-1"
+}
+
 // VTT-028 VTT-139 VTT-140 VTT-450 VTT-344 VTT-565 VTT-590
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
 	if len(authzCases) != 108 {
@@ -558,7 +572,7 @@ func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
 	st := ownershipFixture()
 	for _, tc := range authzCases {
 		t.Run(tc.command+"/"+string(tc.role), func(t *testing.T) {
-			p := &identity.Participant{ID: "p-1", Role: tc.role}
+			p := &identity.Participant{ID: authzCaseID(tc.role), Role: tc.role}
 			cmd := commandFor(t, tc.command)
 			err := gateway.Authorize(p, cmd, st)
 			got := err == nil
@@ -577,7 +591,7 @@ func TestOnlyTheDMAndTheAgentMayDescribeAToken(t *testing.T) {
 		identity.RoleDM: true, identity.RoleAgent: true,
 		identity.RolePlayer: false, identity.RoleSpectator: false,
 	} {
-		err := gateway.Authorize(&identity.Participant{ID: "p-1", Role: role}, commandFor(t, "describe_token"), st)
+		err := gateway.Authorize(&identity.Participant{ID: authzCaseID(role), Role: role}, commandFor(t, "describe_token"), st)
 		if may && err != nil {
 			t.Fatalf("%s: describe_token refused: %v", role, err)
 		}
@@ -609,6 +623,7 @@ func TestAuthorizePlayerOtherTokenDenied(t *testing.T) {
 		ControllerIds: []string{"someone-else"},
 	}
 	st.Tokens["t1"] = engine.Token{ID: "t1", SceneID: "scn", ActorID: "a1"}
+	withOwnPartyMember(st, "p-1")
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	if err := gateway.Authorize(p, moveTokenCmd("t1"), st); err == nil {
 		t.Fatal("want error moving a token controlled by another participant")
@@ -620,6 +635,7 @@ func TestAuthorizePlayerControllerlessActorTokenDenied(t *testing.T) {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{ActorId: "a1", Name: "Hero"} // ControllerId empty = DM/agent only
 	st.Tokens["t1"] = engine.Token{ID: "t1", SceneID: "scn", ActorID: "a1"}
+	withOwnPartyMember(st, "p-1")
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	if err := gateway.Authorize(p, moveTokenCmd("t1"), st); err == nil {
 		t.Fatal("want error moving a controllerless actor's token as a player")
@@ -628,7 +644,7 @@ func TestAuthorizePlayerControllerlessActorTokenDenied(t *testing.T) {
 
 // VTT-142
 func TestAuthorizePlayerUnknownTokenDenied(t *testing.T) {
-	st := engine.NewState()
+	st := withOwnPartyMember(engine.NewState(), "p-1")
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	if err := gateway.Authorize(p, moveTokenCmd("no-such-token"), st); err == nil {
 		t.Fatal("want error moving an unknown token")
@@ -906,6 +922,7 @@ func TestAuthorizePlayerUseAbilityOtherActorDenied(t *testing.T) {
 		ControllerId:  "someone-else",
 		ControllerIds: []string{"someone-else"},
 	}
+	withOwnPartyMember(st, "p-1")
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	if err := gateway.Authorize(p, useAbilityCmd("a1"), st); err == nil {
 		t.Fatal("want error using an ability as an actor controlled by another participant")
@@ -916,6 +933,7 @@ func TestAuthorizePlayerUseAbilityOtherActorDenied(t *testing.T) {
 func TestAuthorizePlayerUseAbilityControllerlessActorDenied(t *testing.T) {
 	st := engine.NewState()
 	st.Actors["a1"] = &vttv1.Actor{ActorId: "a1", Name: "Hero"} // ControllerId empty = DM/agent only
+	withOwnPartyMember(st, "p-1")
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	if err := gateway.Authorize(p, useAbilityCmd("a1"), st); err == nil {
 		t.Fatal("want error using an ability as a controllerless actor")
@@ -924,7 +942,7 @@ func TestAuthorizePlayerUseAbilityControllerlessActorDenied(t *testing.T) {
 
 // VTT-144
 func TestAuthorizePlayerUseAbilityUnknownActorDenied(t *testing.T) {
-	st := engine.NewState()
+	st := withOwnPartyMember(engine.NewState(), "p-1")
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	if err := gateway.Authorize(p, useAbilityCmd("no-such-actor"), st); err == nil {
 		t.Fatal("want error using an ability as an unknown actor")
@@ -952,6 +970,7 @@ func TestAuthorizePlayerRemoveConditionOtherActorDenied(t *testing.T) {
 		ControllerId:  "someone-else",
 		ControllerIds: []string{"someone-else"},
 	}
+	withOwnPartyMember(st, "p-1")
 	p := &identity.Participant{ID: "p-1", Role: identity.RolePlayer}
 	if err := gateway.Authorize(p, removeConditionCmd("a1"), st); err == nil {
 		t.Fatal("want error removing a condition from an actor controlled by another participant")
@@ -963,11 +982,11 @@ func TestAuthorizePlayerRemoveConditionOtherActorDenied(t *testing.T) {
 // must be denied regardless of role.
 // VTT-138
 func TestAuthorizeUnknownCommandDeniedForEveryRole(t *testing.T) {
-	st := engine.NewState()
+	st := withOwnPartyMember(engine.NewState(), "p-1")
 	roles := []identity.Role{identity.RoleDM, identity.RoleAgent, identity.RolePlayer, identity.RoleSpectator}
 	for _, role := range roles {
 		t.Run(string(role), func(t *testing.T) {
-			p := &identity.Participant{ID: "p-1", Role: role}
+			p := &identity.Participant{ID: authzCaseID(role), Role: role}
 			if err := gateway.Authorize(p, &vttv1.ClientCommand{}, st); err == nil {
 				t.Fatalf("want error for empty command, role %s", role)
 			}
@@ -1012,6 +1031,7 @@ func TestAuthorizeNonControllerStillDeniedWhenActorIsShared(t *testing.T) {
 		ControllerIds: []string{"p-1", "p-2"},
 	}
 	st.Tokens["t1"] = engine.Token{ID: "t1", SceneID: "scn", ActorID: "a1"}
+	withOwnPartyMember(st, "p-3")
 
 	p := &identity.Participant{ID: "p-3", Role: identity.RolePlayer}
 	if err := gateway.Authorize(p, moveTokenCmd("t1"), st); err == nil {
@@ -1077,7 +1097,7 @@ func TestAuthorizePlayerRevokeOtherParticipantDenied(t *testing.T) {
 // self-check alone would let any player issue revoke against any actor.
 // VTT-146
 func TestAuthorizePlayerRevokeSelfOnAnActorTheyDoNotControlDenied(t *testing.T) {
-	st := ownershipFixture() // a1 controlled by p-1, NOT p-9
+	st := withOwnPartyMember(ownershipFixture(), "p-9") // a1 controlled by p-1, NOT p-9
 	p := &identity.Participant{ID: "p-9", Role: identity.RolePlayer}
 	if err := gateway.Authorize(p, revokeActorControlCmd("p-9"), st); err == nil {
 		t.Fatal("a player must not revoke control they never held")
@@ -1134,8 +1154,8 @@ func TestAuthorizeDMMayRevokeAnotherParticipantsControl(t *testing.T) {
 
 // --- promotion may not reach dm or agent (spec §3.1a) -----------------------
 
-// VTT-025
-func TestPromotionMayOnlyTargetPlayerOrSpectator(t *testing.T) {
+// VTT-899 VTT-900
+func TestPromotionMayOnlyMakeASpectator(t *testing.T) {
 	// The escalation path this guard exists to close: a shared join link mints
 	// SPECTATORS, so if promotion could reach dm or agent, that link would be
 	// a route to full authority in two steps — exactly what admitting people
@@ -1143,10 +1163,12 @@ func TestPromotionMayOnlyTargetPlayerOrSpectator(t *testing.T) {
 	st := ownershipFixture()
 	dm := &identity.Participant{ID: "p-dm", Role: identity.RoleDM}
 
-	for _, role := range []string{"player", "spectator"} {
-		if err := gateway.Authorize(dm, promoteCmd("p-2", role), st); err != nil {
-			t.Fatalf("a DM must be able to promote to %q: %v", role, err)
-		}
+	if err := gateway.Authorize(dm, promoteCmd("p-2", "spectator"), st); err != nil {
+		t.Fatalf("a DM must be able to make a participant a spectator: %v", err)
+	}
+	const byGrant = "A participant becomes a player when given a character."
+	if err := gateway.Authorize(dm, promoteCmd("p-2", "player"), st); err == nil || err.Error() != byGrant {
+		t.Fatalf("a promotion to player answered %v, want %q", err, byGrant)
 	}
 	for _, role := range []string{"dm", "agent"} {
 		if err := gateway.Authorize(dm, promoteCmd("p-2", role), st); err == nil {
@@ -1160,11 +1182,11 @@ func TestPromotionMayOnlyTargetPlayerOrSpectator(t *testing.T) {
 	}
 }
 
-// VTT-025
+// VTT-899
 func TestAnAgentMayNotPromoteAnyoneToDMOrAgent(t *testing.T) {
 	// Keep the issuer an agent: an agent is an LLM's seat, and a promotion to dm
 	// it could issue would make one injected tool call a permanent takeover. The
-	// DM-shaped bypasses are TestPromotionMayOnlyTargetPlayerOrSpectator's
+	// DM-shaped bypasses are TestPromotionMayOnlyMakeASpectator's
 	// (SPEC-009, SPEC-013).
 	st := ownershipFixture()
 	agent := &identity.Participant{ID: "p-agent", Role: identity.RoleAgent}
@@ -1178,10 +1200,8 @@ func TestAnAgentMayNotPromoteAnyoneToDMOrAgent(t *testing.T) {
 	// AND THE POSITIVE HALF, so this cannot pass by refusing everything: the
 	// agent is genuinely authorized to promote, which is what makes the two
 	// refusals above a boundary rather than a blanket denial.
-	for _, role := range []string{"player", "spectator"} {
-		if err := gateway.Authorize(agent, promoteCmd("p-2", role), st); err != nil {
-			t.Fatalf("an agent must still be AUTHORIZED to promote to %q: %v", role, err)
-		}
+	if err := gateway.Authorize(agent, promoteCmd("p-2", "spectator"), st); err != nil {
+		t.Fatalf("an agent must still be AUTHORIZED to make a participant a spectator: %v", err)
 	}
 }
 

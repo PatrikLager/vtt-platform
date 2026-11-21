@@ -175,7 +175,7 @@ func TestQAPRPlainTheCellarBoulderIsNamedInPlainWords(t *testing.T) {
 	qaPRPlainAccepted(t, f, conn, qaPRPlainSay("act-fighter", false))
 }
 
-// VTT-601 VTT-453
+// VTT-601 VTT-922
 func TestQAPRPlainTheMoveIsJudgedByTheEyesTheConnectionShows(t *testing.T) {
 	f := newGWFixture(t)
 	qaPRPlainVault(t, f, "crate")
@@ -204,27 +204,6 @@ func TestQAPRPlainACreatureTokenIsJudgedThroughTheShownCharacter(t *testing.T) {
 	qaPRPlainAccepted(t, f, conn, qaPRPlainMove("tok-qapr-goblin", 3, 1))
 }
 
-// VTT-601 VTT-370
-func TestQAPRPlainAPlayerWhoRunsOnlyACreatureIsToldTheyCannotSee(t *testing.T) {
-	f := newGWFixture(t)
-	f.whisperTable(t)
-	qaPRPlainVault(t, f, "crate")
-	ivo := qaPRPlainIvo(t, f)
-	qaPRPlainAccepted(t, f, qaPRPlainOpen(t, f, f.dmToken, ""), &vttv1.ClientCommand{RequestId: "qapr-revoke", Command: &vttv1.ClientCommand_RevokeActorControl{
-		RevokeActorControl: &vttv1.RevokeActorControl{ActorId: "a2", ParticipantId: ivo}}})
-	mustAppend(t, f.campaign, "qapr-beast", &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{
-		Actor: &vttv1.Actor{ActorId: "qapr-beast", Name: "Beast"}}})
-	mustAppend(t, f.campaign, "qapr-beast-grant", &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
-		ActorId: "qapr-beast", ParticipantId: ivo, Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}})
-	mustAppend(t, f.campaign, "qapr-beast-token", &vttv1.Envelope_TokenPlaced{TokenPlaced: &vttv1.TokenPlaced{
-		TokenId: "tok-qapr-beast", SceneId: qaPRPlainScene, ActorId: "qapr-beast", Position: &vttv1.GridPosition{X: 8, Y: 1}}})
-	conn := qaPRPlainOpen(t, f, f.otherPlayerToken, "")
-	qaPRPlainWant(t, "eyeless onto floor", qaPRPlainRefused(t, f, conn, qaPRPlainMove("tok-qapr-beast", 9, 1)), qaPRPlainUnseen)
-	qaPRPlainWant(t, "eyeless onto statue", qaPRPlainRefused(t, f, conn, qaPRPlainMove("tok-qapr-beast", 7, 1)), qaPRPlainUnseen)
-	lera := qaPRPlainOpen(t, f, f.playerToken, qaPRPlainScout)
-	qaPRPlainAccepted(t, f, lera, qaPRPlainMove(qaPRPlainTok, 2, 1))
-}
-
 func qaPRPlainIvo(t *testing.T, f *gwFixture) string {
 	t.Helper()
 	tobbe := f.campaign.State().Actors["a2"]
@@ -237,6 +216,7 @@ func qaPRPlainIvo(t *testing.T, f *gwFixture) string {
 func TestQAPRPlainAMoveRefusedBeforeTheGateKeepsItsOldWords(t *testing.T) {
 	f := newGWFixture(t)
 	qaPRPlainVault(t, f, "crate")
+	appendEvents(t, f.campaign, partyMemberOf("qapr-ivos", f.playerIDFor(t, f.otherPlayerToken))...)
 	ivo := qaPRPlainOpen(t, f, f.otherPlayerToken, "")
 	spec := qaPRPlainOpen(t, f, f.spectatorToken, "")
 	for who, conn := range map[string]*websocket.Conn{"ivo": ivo, "spectator": spec} {
@@ -324,7 +304,7 @@ func TestQAPRPlainTheNamelessTextIsToldOnlyOfTheSpeakersOwnPartyMember(t *testin
 		ActorId: "qapr-a5", ParticipantId: ivo, Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER}})
 	mustAppend(t, f.campaign, "qapr-a6", &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "qapr-a6"}}})
 	mustAppend(t, f.campaign, "qapr-a6-grant", &vttv1.Envelope_ActorControlGranted{ActorControlGranted: &vttv1.ActorControlGranted{
-		ActorId: "qapr-a6", ParticipantId: f.playerID, Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}})
+		ActorId: "qapr-a6", ParticipantId: f.playerIDFor(t, f.dmToken), Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}})
 	conn := qaPRPlainOpen(t, f, f.playerToken, "")
 	others := []string{"qapr-absent", "a2", "a3", "qapr-a5", "qapr-a6"}
 	qaPRPlainOneText(t, "line", others, func(id string) string { return qaPRPlainRefused(t, f, conn, qaPRPlainSay(id, false)) })

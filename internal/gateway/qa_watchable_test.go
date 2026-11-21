@@ -12,7 +12,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
-	"github.com/PatrikLager/vtt-platform/internal/identity"
 )
 
 const (
@@ -245,7 +244,8 @@ func TestQAWatchableAPlayersOpeningNamesTheirPartyMembersByName(t *testing.T) {
 	appendEvents(t, f.campaign, qaWatchableUncontrolled("pm", "Wanderer"))
 	appendEvents(t, f.campaign,
 		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "gob", Name: "Gob", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}},
-		&vttv1.ActorControlGranted{ActorId: "gob", ParticipantId: f.playerID, Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
+		&vttv1.ActorControlGranted{ActorId: "gob", ParticipantId: participantID(t, f, f.dmToken),
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
 
 	qaWatchableOpenLog(t, f, f.watch(f.playerToken, 0, ""), "a0", qaWatchableNames{"a0": "Zed", "a1": "Hero"})
 	qaWatchableOpenLog(t, f, f.watch(f.playerToken, 0, "a1"), "a1", qaWatchableNames{"a0": "Zed", "a1": "Hero"})
@@ -261,7 +261,7 @@ func TestQAWatchableASpectatorsOpeningNamesEveryPartyMember(t *testing.T) {
 	appendEvents(t, f.campaign, qaWatchableUncontrolled("pm", "Wanderer"))
 	appendEvents(t, f.campaign,
 		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "gob", Name: "Gob", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}},
-		&vttv1.ActorControlGranted{ActorId: "gob", ParticipantId: participantID(t, f, f.spectatorToken),
+		&vttv1.ActorControlGranted{ActorId: "gob", ParticipantId: participantID(t, f, f.dmToken),
 			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
 	all := qaWatchableNames{"a0": "Zed", "a1": "Hero", "b1": "Bryn", "pm": "Wanderer"}
 
@@ -275,7 +275,7 @@ func TestQAWatchableAConnectionWithNoneIsSentAnEmptySet(t *testing.T) {
 	appendEvents(t, f.campaign,
 		&vttv1.TokenRemoved{TokenId: "t1"}, &vttv1.ActorRemoved{ActorId: "a1"},
 		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "wolf", Name: "Wolf", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}},
-		&vttv1.ActorControlGranted{ActorId: "wolf", ParticipantId: participantID(t, f, f.otherPlayerToken),
+		&vttv1.ActorControlGranted{ActorId: "wolf", ParticipantId: participantID(t, f, f.dmToken),
 			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
 	qaWatchableOpenLog(t, f, f.watch(f.otherPlayerToken, 0, ""), "", qaWatchableNames{})
 
@@ -369,7 +369,7 @@ func TestQAWatchableAPartyMemberWithNoControllerJoinsOnlyTheSpectatorsSet(t *tes
 	qaWatchableRequireNoSet(t, "a player", qaWatchableDrain(lera))
 }
 
-// VTT-400 VTT-456
+// VTT-400 VTT-923
 func TestQAWatchableARevocationChangesOnlyTheRevokedPlayersSet(t *testing.T) {
 	f := newGWFixture(t)
 	appendEvents(t, f.campaign, qaWatchableMember("a2", "Ash", f.playerID)...)
@@ -398,14 +398,15 @@ func TestQAWatchableANonPartyGrantTakesTheActorOutOfEverySet(t *testing.T) {
 	ivo := f.watch(f.otherPlayerToken, 0, "")
 	qaWatchableOpenLog(t, f, ivo, "", qaWatchableNames{"a1": "Hero", "a2": "Ash"})
 
-	appendEvents(t, f.campaign, &vttv1.ActorControlGranted{ActorId: "a2", ParticipantId: f.playerID,
-		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
+	dmID := participantID(t, f, f.dmToken)
+	appendEvents(t, f.campaign, &vttv1.ActorControlRevoked{ActorId: "a2", ParticipantId: f.playerID},
+		&vttv1.ActorControlGranted{ActorId: "a2", ParticipantId: dmID, Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
 	qaWatchableRequireChange(t, "the controller", lera, qaWatchableNames{"a1": "Hero"})
 	qaWatchableRequireChange(t, "the spectator", spec, qaWatchableNames{"a1": "Hero"})
 	qaWatchableRequireChange(t, "another player", ivo, qaWatchableNames{"a1": "Hero"})
 
-	appendEvents(t, f.campaign, &vttv1.ActorControlGranted{ActorId: "a1", ParticipantId: f.playerID,
-		Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
+	appendEvents(t, f.campaign, &vttv1.ActorControlRevoked{ActorId: "a1", ParticipantId: f.playerID},
+		&vttv1.ActorControlGranted{ActorId: "a1", ParticipantId: dmID, Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
 	qaWatchableRequireMove(t, "the controller of the watched one", lera, qaWatchableNames{}, "")
 	qaWatchableRequireChange(t, "the spectator", spec, qaWatchableNames{})
 	qaWatchableRequireChange(t, "another player", ivo, qaWatchableNames{})
@@ -445,32 +446,16 @@ func TestQAWatchableAnActorAddedAgainIsNamedByItsNewName(t *testing.T) {
 }
 
 // VTT-400; the set comes before the ViewpointChanged it causes (SPEC-015)
-func TestQAWatchableAPromotionChangesTheSet(t *testing.T) {
-	t.Run("a spectator made a player", func(t *testing.T) {
+func TestQAWatchableAGrantAndAMakeSpectatorChangeTheSet(t *testing.T) {
+	t.Run("a spectator granted a party member", func(t *testing.T) {
 		f := newGWFixture(t)
-		dm := f.watch(f.dmToken, 0, "")
 		id := participantID(t, f, f.spectatorToken)
-		appendEvents(t, f.campaign, qaWatchableMember("c1", "Cole", id)...)
 		appendEvents(t, f.campaign, qaWatchableMember("b1", "Bryn", participantID(t, f, f.otherPlayerToken))...)
 		spec := f.watch(f.spectatorToken, 0, "")
-		qaWatchableOpenLog(t, f, spec, "", qaWatchableNames{"a1": "Hero", "b1": "Bryn", "c1": "Cole"})
+		qaWatchableOpenLog(t, f, spec, "", qaWatchableNames{"a1": "Hero", "b1": "Bryn"})
 
-		promote(t, dm, id, identity.RolePlayer)
-		qaWatchableRequireMove(t, "the promoted spectator", spec, qaWatchableNames{"c1": "Cole"}, "c1")
-	})
-	t.Run("a perched spectator made a player who holds nothing keeps its set and its perch", func(t *testing.T) {
-		f := newGWFixture(t)
-		dm := f.watch(f.dmToken, 0, "")
-		spec := f.watch(f.spectatorToken, 0, "a1")
-		qaWatchableOpenLog(t, f, spec, "a1", qaWatchableNames{"a1": "Hero"})
-
-		promote(t, dm, participantID(t, f, f.spectatorToken), identity.RolePlayer)
-		qaWatchableRequireNoSet(t, "the promoted spectator", qaWatchableDrain(spec))
-		appendEvents(t, f.campaign, &vttv1.NarrationAdded{Text: "after the promotion"})
-		frames := qaWatchableUntil(spec, "the narration's entry", func(fr *vttv1.ServerFrame) bool { return fr.GetEvent() != nil })
-		if i := qaWatchableIndex(frames, qaWatchableIsViewpoint); i >= 0 {
-			t.Fatalf("the promotion moved the seat: %v", frames[i])
-		}
+		appendEvents(t, f.campaign, qaWatchableMember("c1", "Cole", id)...)
+		qaWatchableRequireMove(t, "the granted spectator", spec, qaWatchableNames{"c1": "Cole"}, "c1")
 	})
 	t.Run("a player made a spectator", func(t *testing.T) {
 		f := newGWFixture(t)
@@ -479,7 +464,7 @@ func TestQAWatchableAPromotionChangesTheSet(t *testing.T) {
 		lera := f.watch(f.playerToken, 0, "")
 		qaWatchableOpenLog(t, f, lera, "a1", qaWatchableNames{"a1": "Hero"})
 
-		promote(t, dm, f.playerID, identity.RoleSpectator)
+		makeSpectator(t, dm, f.playerID)
 		qaWatchableRequireChange(t, "the demoted player", lera, qaWatchableNames{"a1": "Hero", "b1": "Bryn"})
 	})
 }
@@ -500,7 +485,6 @@ func TestQAWatchableEveryConnectionOfAParticipantIsSentTheSet(t *testing.T) {
 // No set without a change: a set is queued when it differs (SPEC-015)
 func TestQAWatchableAChangeThatLeavesTheSetAloneSendsNone(t *testing.T) {
 	f := newGWFixture(t)
-	dm := f.watch(f.dmToken, 0, "")
 	appendEvents(t, f.campaign, qaWatchableMember("a0", "Zed", f.playerID)...)
 	lera := f.watch(f.playerToken, 0, "a1")
 	both := qaWatchableNames{"a0": "Zed", "a1": "Hero"}
@@ -526,9 +510,10 @@ func TestQAWatchableAChangeThatLeavesTheSetAloneSendsNone(t *testing.T) {
 	quietAfterEntry("a narration", &vttv1.NarrationAdded{Text: "the cave drips"})
 	quietAfterEntry("a token move", &vttv1.TokenMoved{TokenId: "t1", SceneId: "scn1",
 		From: &vttv1.GridPosition{X: 3, Y: 7}, To: &vttv1.GridPosition{X: 4, Y: 7}})
-	quietAfterEntry("a non-party actor in the player's control",
+	quietAfterEntry("a non-party actor in the DM's control",
 		&vttv1.ActorAdded{Actor: &vttv1.Actor{ActorId: "gob", Name: "Gob", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY}},
-		&vttv1.ActorControlGranted{ActorId: "gob", ParticipantId: f.playerID, Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
+		&vttv1.ActorControlGranted{ActorId: "gob", ParticipantId: participantID(t, f, f.dmToken),
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
 		&vttv1.NarrationAdded{Text: "a goblin joins"})
 
 	if r := lera.command(setViewpoint("a0")); !r.GetOk() {
@@ -541,11 +526,6 @@ func TestQAWatchableAChangeThatLeavesTheSetAloneSendsNone(t *testing.T) {
 	}
 	frames = qaWatchableUntil(spec, "the perch", qaWatchableIsViewpoint)
 	qaWatchableRequireNoSet(t, "the spectator after a perch", append(frames, qaWatchableDrain(spec)...))
-
-	promote(t, dm, f.playerID, identity.RoleSpectator)
-	appendEvents(t, f.campaign, &vttv1.NarrationAdded{Text: "after the promotion"})
-	frames = qaWatchableUntil(lera, "the narration's entry", func(fr *vttv1.ServerFrame) bool { return fr.GetEvent() != nil })
-	qaWatchableRequireNoSet(t, "a player made a spectator of the same set", append(frames, qaWatchableDrain(lera)...))
 }
 
 // VTT-401
@@ -561,7 +541,8 @@ func TestQAWatchableTheDMAndTheAgentAreSentNoSet(t *testing.T) {
 	appendEvents(t, f.campaign, qaWatchableUncontrolled("pm", "Wanderer"))
 	appendEvents(t, f.campaign, &vttv1.ActorControlRevoked{ActorId: "a2", ParticipantId: f.playerID})
 	appendEvents(t, f.campaign, &vttv1.TokenRemoved{TokenId: "t1"}, &vttv1.ActorRemoved{ActorId: "a1"})
-	promote(t, dm, participantID(t, f, f.spectatorToken), identity.RolePlayer)
+	appendEvents(t, f.campaign, &vttv1.ActorControlGranted{ActorId: "pm", ParticipantId: participantID(t, f, f.spectatorToken),
+		Kind: vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER})
 
 	for name, w := range map[string]*watchConn{"the DM": dm, "the agent": agent} {
 		frames := qaWatchableDrain(w)

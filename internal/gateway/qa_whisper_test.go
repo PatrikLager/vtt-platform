@@ -112,7 +112,7 @@ func TestQAWhTheAgentWhispersToAPartyMember(t *testing.T) {
 // VTT-587, VTT-162
 func TestQAWhADMOrAgentWhisperNamingNoPartyMemberIsRefusedAndAppendsNothing(t *testing.T) {
 	f := newGWFixture(t)
-	qaWhActor(t, f, "qa-wh-gob", "Goblin", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, f.playerID)
+	qaWhActor(t, f, "qa-wh-gob", "Goblin", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, f.playerIDFor(t, f.dmToken))
 	qaWhActor(t, f, "qa-wh-npc", "Barkeep", vttv1.ActorKind_ACTOR_KIND_UNSPECIFIED, "")
 	cases := map[string]*vttv1.AddWhisper{
 		"no-to":              {Text: "x"},
@@ -148,7 +148,7 @@ func TestQAWhAPlayersWhisperFromAnythingButTheirOwnPartyMemberIsRefusedWithOneTe
 	f := newGWFixture(t)
 	ivo := f.playerIDFor(t, f.otherPlayerToken)
 	qaWhActor(t, f, "qa-wh-ivos", "Ivos Hero", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, ivo)
-	qaWhActor(t, f, "qa-wh-pet", "Wolf", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, f.playerID)
+	qaWhActor(t, f, "qa-wh-pet", "Wolf", vttv1.ActorKind_ACTOR_KIND_NON_PARTY, f.playerIDFor(t, f.dmToken))
 	lera := f.dial(f.playerToken, f.head(t))
 	texts := map[string]string{}
 	for name, from := range map[string]string{"empty": "", "unknown": "no-such-actor", "not-theirs": "qa-wh-ivos", "creature": "qa-wh-pet"} {
@@ -183,15 +183,6 @@ func TestQAWhANamelessPartyMemberCannotWhisperToTheDM(t *testing.T) {
 	qaWhAccepted(t, f, lera, qaWhCmd("control", &vttv1.AddWhisper{Text: "x", FromActorId: "a1"}))
 }
 
-// VTT-588, VTT-162
-func TestQAWhAPlayerWhoControlsNothingCannotWhisper(t *testing.T) {
-	f := newGWFixture(t)
-	ivo := f.dial(f.otherPlayerToken, f.head(t))
-	qaWhRefused(t, f, ivo, qaWhCmd("ivo", &vttv1.AddWhisper{Text: "x", FromActorId: "a1"}))
-	lera := f.dial(f.playerToken, f.head(t))
-	qaWhAccepted(t, f, lera, qaWhCmd("control", &vttv1.AddWhisper{Text: "x", FromActorId: "a1"}))
-}
-
 // VTT-590, VTT-162
 func TestQAWhASpectatorCannotWhisperAtAll(t *testing.T) {
 	f := newGWFixture(t)
@@ -222,7 +213,11 @@ func TestQAWhAuthorizeAdmitsAWhisperFromTheDMTheAgentAndAPlayerAlone(t *testing.
 		{identity.Role(""), fromA1, false},
 	}
 	for _, c := range cases {
-		p := &identity.Participant{ID: f.playerID, Name: "Lera", Role: c.role}
+		id := f.playerID
+		if c.role == identity.RoleSpectator {
+			id = f.playerIDFor(t, f.spectatorToken)
+		}
+		p := &identity.Participant{ID: id, Name: "Lera", Role: c.role}
 		err := gateway.Authorize(p, c.cmd, st)
 		if c.ok && err != nil {
 			t.Errorf("role %q: refused %v, want admitted", c.role, err)
@@ -259,18 +254,18 @@ func TestQAWhAWhispersTextIsBoundedOverTheWire(t *testing.T) {
 }
 
 // VTT-587, VTT-588, VTT-589
-func TestQAWhAPartyMemberRegrantedAsACreatureNeitherHearsNorWhispers(t *testing.T) {
+func TestQAWhAPartyMemberTakenBackAsACreatureNeitherHearsNorWhispers(t *testing.T) {
 	f := newGWFixture(t)
-	mustAppend(t, f.campaign, "qa-wh-regrant", &vttv1.Envelope_ActorControlGranted{
-		ActorControlGranted: &vttv1.ActorControlGranted{ActorId: "a1", ParticipantId: f.playerID, Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY},
-	})
 	qaWhActor(t, f, "qa-wh-b", "Tobbe", vttv1.ActorKind_ACTOR_KIND_PARTY_MEMBER, f.playerID)
+	appendEvents(t, f.campaign, &vttv1.ActorControlRevoked{ActorId: "a1", ParticipantId: f.playerID},
+		&vttv1.ActorControlGranted{ActorId: "a1", ParticipantId: f.playerIDFor(t, f.dmToken),
+			Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY})
 	dm := f.dial(f.dmToken, f.head(t))
 	qaWhRefused(t, f, dm, qaWhCmd("dm-to-creature", &vttv1.AddWhisper{Text: "x", ToActorIds: []string{"a1"}}))
 	lera := f.dial(f.playerToken, f.head(t))
 	empty := qaWhRefused(t, f, lera, qaWhCmd("empty", &vttv1.AddWhisper{Text: "x"}))
 	if got := qaWhRefused(t, f, lera, qaWhCmd("from-creature", &vttv1.AddWhisper{Text: "x", FromActorId: "a1"})); got != empty {
-		t.Errorf("from a regranted creature refused with %q, want the one text %q", got, empty)
+		t.Errorf("from a creature taken back refused with %q, want the one text %q", got, empty)
 	}
 	qaWhAccepted(t, f, lera, qaWhCmd("control", &vttv1.AddWhisper{Text: "x", FromActorId: "qa-wh-b"}))
 }
