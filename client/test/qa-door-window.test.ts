@@ -223,7 +223,7 @@ const doorCmds = (s: FakeSocket) =>
   s.sent.map((x) => { const c = JSON.parse(x); delete c.requestId; return c; }).filter((c) => c.openDoor || c.closeDoor);
 
 describe("the window", () => {
-  // VTT-881 VTT-883 VTT-884
+  // VTT-881 VTT-883 VTT-938
   test("a player watching the character beside the door works it by its button; switching to the far one removes the button", async () => {
     const root = install(player);
     await pump();

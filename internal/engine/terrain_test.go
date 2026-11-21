@@ -1,9 +1,13 @@
 package engine_test
 
 import (
+	"encoding/json"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
+
+	"google.golang.org/protobuf/encoding/protojson"
 
 	vttv1 "github.com/PatrikLager/vtt-platform/contract/gen/go/vtt/v1"
 	"github.com/PatrikLager/vtt-platform/internal/engine"
@@ -371,5 +375,39 @@ func TestDoorClosedInitializesNilOpenDoors(t *testing.T) {
 
 	if blocked, why := st.Blocked("bare", 0, 0); !blocked {
 		t.Fatalf("a door that was never opened must still read closed: blocked=%v why=%q", blocked, why)
+	}
+}
+
+// VTT-937
+func TestBlockedAnswersEverySquareTheSharedFixtureLists(t *testing.T) {
+	rawLog, err := os.ReadFile("../../contract/testdata/blocked_squares_log.json")
+	must(t, err)
+	var items []json.RawMessage
+	must(t, json.Unmarshal(rawLog, &items))
+	st := engine.NewState()
+	for _, it := range items {
+		env := &vttv1.Envelope{}
+		must(t, protojson.Unmarshal(it, env))
+		must(t, engine.Apply(st, env))
+	}
+	rawWant, err := os.ReadFile("../../contract/testdata/blocked_squares.json")
+	must(t, err)
+	var want struct {
+		SceneID string `json:"sceneId"`
+		Squares []struct {
+			Case    string `json:"case"`
+			X       int32  `json:"x"`
+			Y       int32  `json:"y"`
+			Blocked bool   `json:"blocked"`
+		} `json:"squares"`
+	}
+	must(t, json.Unmarshal(rawWant, &want))
+	if len(want.Squares) == 0 {
+		t.Fatal("the fixture lists no square")
+	}
+	for _, sq := range want.Squares {
+		if got, why := st.Blocked(want.SceneID, sq.X, sq.Y); got != sq.Blocked {
+			t.Errorf("%s (%d,%d): Blocked = %v (%q), the fixture says %v", sq.Case, sq.X, sq.Y, got, why, sq.Blocked)
+		}
 	}
 }

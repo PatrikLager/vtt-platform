@@ -314,7 +314,7 @@ test("player: a click on the watched character's own chip sends set_viewpoint na
 // --- the player's board click ----------------------------------------------
 
 test("player: a click on a listed party member's token sends set_viewpoint naming it", async () => {
-  // VTT-919
+  // VTT-940
   const { r, s, sock } = await openPlayer();
   const from = sock.sent.length;
   clickCell(r, 5, 5);
@@ -339,7 +339,7 @@ test("player: a click on an empty square moves the watched character, which is n
 });
 
 test("player: a click on the watched character's own token alone sends no set_viewpoint, and moves nothing else", async () => {
-  // VTT-919 (only another listed party member switches), VTT-408
+  // VTT-940 (only another listed party member switches), VTT-408
   const { r, s, sock } = await openPlayer();
   const from = sock.sent.length;
   clickCell(r, 1, 1);
@@ -351,7 +351,7 @@ test("player: a click on the watched character's own token alone sends no set_vi
 });
 
 test("player: the watched character and a listed party member on one square switch to the other", async () => {
-  // VTT-919
+  // VTT-940
   const { r, s, sock } = await openPlayer({ log: mainLog({ bram: [1, 1] }) });
   const from = sock.sent.length;
   clickCell(r, 1, 1);
@@ -363,7 +363,7 @@ test("player: the watched character and a listed party member on one square swit
 });
 
 test("player: two listed party members on one square send one set_viewpoint naming one of them", async () => {
-  // VTT-919
+  // VTT-940
   const log = mainLog({ more: [actor("e-tova", "Tova"), grant("e-tova", PLAYER, PARTY), token("t-tova", "e-tova", 5, 5)] });
   const { r, s, sock } = await openPlayer({ log });
   const from = sock.sent.length;
@@ -376,7 +376,7 @@ test("player: two listed party members on one square send one set_viewpoint nami
 });
 
 test("player: a token of an actor the set does not name switches to nothing, and any move is the watched character's", async () => {
-  // VTT-919, VTT-408; the player acts only as the character they watch (Q1).
+  // VTT-940, VTT-408; the player acts only as the character they watch (Q1).
   const { r, s, sock } = await openPlayer();
   for (const [x, y] of [[3, 3], [6, 1]] as const) {
     const from = sock.sent.length;
@@ -408,7 +408,7 @@ test("player: after a switch, a move moves the newly watched character", async (
 });
 
 test("player: a click on a listed party member's token standing in an open door switches to them, and works no door", async () => {
-  // VTT-919 VTT-882 VTT-884 VTT-885
+  // VTT-940 VTT-882 VTT-938 VTT-885
   const log = mainLog({
     tiles: { "2,2": { kind: "door", material: "wood", art: "" } },
     bram: [2, 2],
@@ -425,7 +425,7 @@ test("player: a click on a listed party member's token standing in an open door 
 });
 
 test("player: with an ability armed and doors not, a click on a listed party member's token in range still switches", async () => {
-  // VTT-919
+  // VTT-940
   const { r, s, sock } = await openPlayer({ log: mainLog({ bram: [2, 2] }), abilities: [POKE] });
   const poke = Array.from(r.querySelectorAll<HTMLButtonElement>(".player button")).find((b) => b.textContent === "Poke");
   expect(poke).toBeDefined();

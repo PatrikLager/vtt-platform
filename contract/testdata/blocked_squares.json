@@ -1,0 +1,24 @@
+{
+  "sceneId": "vault",
+  "squares": [
+    { "case": "a wall", "x": 0, "y": 0, "blocked": true },
+    { "case": "a floor", "x": 1, "y": 0, "blocked": false },
+    { "case": "a square with no tile", "x": 0, "y": 1, "blocked": false },
+    { "case": "a door never opened", "x": 0, "y": 4, "blocked": true },
+    { "case": "a door opened", "x": 1, "y": 4, "blocked": false },
+    { "case": "a door opened, then closed", "x": 2, "y": 4, "blocked": true },
+    { "case": "the anchor of scenery that blocks movement", "x": 2, "y": 1, "blocked": true },
+    { "case": "the far corner of scenery that blocks movement", "x": 3, "y": 3, "blocked": true },
+    { "case": "scenery that blocks movement, its anchor's row, last column", "x": 3, "y": 1, "blocked": true },
+    { "case": "scenery that blocks movement, its anchor's column, last row", "x": 2, "y": 3, "blocked": true },
+    { "case": "the floor just past the scenery's right edge", "x": 4, "y": 2, "blocked": false },
+    { "case": "the floor just past the scenery's bottom edge", "x": 3, "y": 4, "blocked": false },
+    { "case": "the floor just past the scenery's left edge", "x": 1, "y": 2, "blocked": false },
+    { "case": "the floor just past the scenery's top edge", "x": 2, "y": 0, "blocked": false },
+    { "case": "scenery that blocks sight and not movement", "x": 5, "y": 2, "blocked": false },
+    { "case": "the anchor of rotated scenery two squares wide that blocks movement", "x": 4, "y": 3, "blocked": true },
+    { "case": "the second column of that rotated scenery, over a square with no tile", "x": 5, "y": 3, "blocked": true },
+    { "case": "the square below that scenery's anchor, which reading its rotation would cover", "x": 4, "y": 4, "blocked": false },
+    { "case": "an opened door under scenery that blocks movement", "x": 0, "y": 3, "blocked": true }
+  ]
+}

@@ -16,6 +16,8 @@ import "fmt"
 // state cannot describe is recoverable (retry once the scene exists);
 // silently permitting one is not — nothing would ever have checked it.
 func (st *State) Blocked(sceneID string, x, y int32) (bool, string) {
+	// Change client/src/view/terrain.ts's blocksMove and
+	// contract/testdata/blocked_squares.json with any arm here (VTT-937).
 	sc, ok := st.Scenes[sceneID]
 	if !ok {
 		return true, fmt.Sprintf("unknown scene %q", sceneID)
@@ -28,13 +30,9 @@ func (st *State) Blocked(sceneID string, x, y int32) (bool, string) {
 	case "wall":
 		return true, "a wall"
 	case "door":
-		// A key absent from OpenDoors means the door was never toggled,
-		// which the SceneCreated arm (apply.go) and DoorOpened/DoorClosed's
-		// delete-on-close both treat as CLOSED — the fail-closed direction.
-		// A scene with no Tiles recorded never reaches this case at all:
-		// the zero-value Tile{} has Kind "", which matches neither switch
-		// arm, so a terrain-free scene is never blocked by terrain (Patrik's
-		// ruling 2026-08-13 — no special case needed).
+		// A key absent from OpenDoors reads CLOSED, failing closed: a door
+		// never toggled, or one DoorClosed deleted. A square with no tile never
+		// gets here: the zero Tile{} has Kind "".
 		if !sc.OpenDoors[key] {
 			return true, "a closed door"
 		}

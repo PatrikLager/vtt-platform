@@ -393,7 +393,7 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
           })
         : undefined,
       ticker: isDM,
-      // Keep a player's click off the door tool (VTT-884) and a DM's or an
+      // Keep a player's click off the door tool (VTT-938) and a DM's or an
       // agent's armed click a door command or nothing (VTT-888).
       onCell: canAct
         ? (cell) => {

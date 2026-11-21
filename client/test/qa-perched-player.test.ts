@@ -211,7 +211,7 @@ test("qaNP: a player whose set says they control no party member draws the playe
   expect(count("section.ticker")).toBe(0);
 });
 
-// VTT-919 VTT-408 VTT-917
+// VTT-940 VTT-408 VTT-917
 test("qaNP: a player whose set says they control no party member switches or moves by a board click as a listed player does", async () => {
   const ws = await listedPlayer(true);
   const live = ws.sent.length;
@@ -339,7 +339,7 @@ test("qaNP: a spectator is drawn the perch with exactly the set and nobody, whet
   expect(count(".player")).toBe(0);
 });
 
-// VTT-919
+// VTT-940
 test("qaNP: a listed player's click on a cell of set members switches to one of them, never to one the set does not name", async () => {
   const ws = await listedPlayer();
   const before = ws.sent.length;

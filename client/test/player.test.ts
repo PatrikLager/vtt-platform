@@ -176,14 +176,14 @@ function crowded(): State {
 
 const watching = (actorId: string) => ({ selectedActorId: actorId, selectedAbilityId: "", doorsArmed: false });
 
-// VTT-919
+// VTT-940
 test("a click on a listed party member's token switches to it", () => {
   const cmd = playerClickFor(crowded(), me, watching("mine"), ["mine", "also-mine"], { x: 3, y: 3 });
   expect(cmd?.command.case).toBe("setViewpoint");
   expect((cmd!.command.value as any).actorId).toBe("also-mine");
 });
 
-// VTT-919
+// VTT-940
 test("two listed party members on one cell switch to the lowest id", () => {
   const cmd = playerClickFor(crowded(), me, watching("mine"), ["zed", "mine", "also-mine"], { x: 3, y: 3 });
   expect((cmd!.command.value as any).actorId).toBe("also-mine");
@@ -193,14 +193,14 @@ test("a click on the watched character's token sends nothing", () => {
   expect(playerClickFor(world(), me, watching("mine"), ["mine", "also-mine"], { x: 1, y: 1 })).toBeNull();
 });
 
-// VTT-408
+// VTT-408, VTT-939
 test("a click on a square with no listed party member moves the watched character", () => {
   const cmd = playerClickFor(world(), me, watching("mine"), ["mine"], { x: 4, y: 5 });
   expect(cmd!.command.case).toBe("moveToken");
   expect((cmd!.command.value as any).tokenId).toBe("t-mine");
 });
 
-// VTT-919, VTT-408
+// VTT-940, VTT-408, VTT-939
 test("a token the set does not name moves the watched character onto its square", () => {
   const cmd = playerClickFor(crowded(), me, watching("mine"), ["mine"], { x: 3, y: 3 });
   expect(cmd!.command.case).toBe("moveToken");
@@ -208,7 +208,7 @@ test("a token the set does not name moves the watched character onto its square"
   expect((cmd!.command.value as any).to).toMatchObject({ x: 3, y: 3 });
 });
 
-// VTT-919
+// VTT-940
 test("a listed party member on the same row or column, not the same square, does not switch", () => {
   const st = world();
   st.Tokens["t-also"] = { ID: "t-also", SceneID: "s1", ActorID: "also-mine", X: 5, Y: 5 };
@@ -218,12 +218,97 @@ test("a listed party member on the same row or column, not the same square, does
   }
 });
 
-// VTT-919
+// VTT-940
 test("a listed party member's token in another scene does not switch", () => {
   const st = world();
   st.Tokens["t-also"] = { ID: "t-also", SceneID: "s2", ActorID: "also-mine", X: 4, Y: 4 };
   const cmd = playerClickFor(st, me, watching("mine"), ["mine", "also-mine"], { x: 4, y: 4 });
   expect(cmd!.command.case).toBe("moveToken");
+});
+
+// --- a player's click off the squares they see, and onto ones they cannot enter
+
+/**
+ * world() as a player's window holds it: columns and rows 1 to 5 seen now,
+ * (0,0) remembered, the rest never seen; a wall, an open door and two never
+ * opened, scenery blocking movement two squares by two from (4,4), and a curtain
+ * blocking sight.
+ */
+function seenHall(): State {
+  const st = world();
+  const sc = st.Scenes["s1"]!;
+  sc.Visible = {};
+  for (let x = 1; x <= 5; x++) for (let y = 1; y <= 5; y++) sc.Visible[`${x},${y}`] = true;
+  sc.Explored = { ...sc.Visible, "0,0": true };
+  const tile = (Kind: string) => ({ Kind, Material: "", Art: "" });
+  sc.Tiles = {
+    "2,2": tile("wall"), "2,3": tile("door"), "2,4": tile("door"), "2,5": tile("door"),
+    "3,2": tile("floor"),
+  };
+  sc.OpenDoors = { "2,4": true };
+  const obj = (ObjectID: string, X: number, Y: number, size: number, blocks: "move" | "sight") => ({
+    ObjectID, Kind: ObjectID, X, Y, Width: size, Height: size, RotationDegrees: 0,
+    BlocksSight: blocks === "sight", BlocksMove: blocks === "move", Art: "",
+  });
+  sc.Objects = [obj("crates", 4, 4, 2, "move"), obj("curtain", 5, 2, 1, "sight")];
+  return st;
+}
+
+const sends = (st: State, cell: { x: number; y: number }, watchable = ["mine"]) =>
+  playerClickFor(st, me, watching("mine"), watchable, cell);
+
+// VTT-935
+test("a click on a remembered square or a never-seen one sends nothing", () => {
+  for (const cell of [{ x: 0, y: 0 }, { x: 7, y: 7 }, { x: 0, y: 3 }]) {
+    expect([cell, sends(seenHall(), cell)]).toEqual([cell, null]);
+  }
+});
+
+// VTT-935
+test("a listed party member's token on a square not seen now switches to nothing", () => {
+  const st = seenHall();
+  st.Tokens["t-also"] = { ID: "t-also", SceneID: "s1", ActorID: "also-mine", X: 0, Y: 0 };
+  expect(sends(st, { x: 0, y: 0 }, ["mine", "also-mine"])).toBeNull();
+});
+
+// VTT-935, VTT-939
+test("a scene the window holds no Visible for reads every square as seen", () => {
+  const st = seenHall();
+  delete st.Scenes["s1"]!.Visible;
+  const cmd = sends(st, { x: 7, y: 7 });
+  expect(cmd?.command.case).toBe("moveToken");
+  expect((cmd!.command.value as any).to).toMatchObject({ x: 7, y: 7 });
+});
+
+// VTT-936
+test("a click on a seen wall, a seen closed door or seen scenery that blocks movement sends nothing", () => {
+  // (2,3) and (2,5) never opened: a door closed after opening reads the same.
+  for (const cell of [{ x: 2, y: 2 }, { x: 2, y: 3 }, { x: 2, y: 5 }, { x: 5, y: 5 }, { x: 4, y: 5 }, { x: 5, y: 4 }]) {
+    expect([cell, sends(seenHall(), cell)]).toEqual([cell, null]);
+  }
+});
+
+// VTT-939, VTT-938
+test("a click on a seen open door, a seen square with no tile or a seen curtain moves the watched token there", () => {
+  for (const cell of [{ x: 2, y: 4 }, { x: 3, y: 3 }, { x: 3, y: 2 }, { x: 5, y: 2 }, { x: 3, y: 4 }]) {
+    const cmd = sends(seenHall(), cell);
+    expect([cell, cmd?.command.case]).toEqual([cell, "moveToken"]);
+    expect((cmd!.command.value as any)).toMatchObject({ tokenId: "t-mine", to: cell });
+  }
+});
+
+// VTT-935
+test("with no scene a click sends nothing", () => {
+  expect(sends(newState(), { x: 1, y: 1 })).toBeNull();
+});
+
+// VTT-940
+test("a listed party member standing in a seen closed door still switches to them", () => {
+  const st = seenHall();
+  st.Tokens["t-also"] = { ID: "t-also", SceneID: "s1", ActorID: "also-mine", X: 2, Y: 3 };
+  const cmd = sends(st, { x: 2, y: 3 }, ["mine", "also-mine"]);
+  expect(cmd?.command.case).toBe("setViewpoint");
+  expect((cmd!.command.value as any).actorId).toBe("also-mine");
 });
 
 // --- who each role may act as ----------------------------------------------

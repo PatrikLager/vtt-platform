@@ -1952,26 +1952,38 @@ test("the DM's armed door click names no actor, though a chip selects an actor o
   s?.close();
 });
 
-// VTT-884 VTT-885
-test("a player beside a door is offered no arm-doors control, and a click on the door square moves the watched character's token", async () => {
-  const { r, s, sock } = await playerTableWithDoor();
+/** The door table as a player's window holds it: the door and the token's own square seen now. */
+async function playerSeesTheDoor() {
+  const t = await playerTableWithDoor();
+  t.sock.deliver(envelope(6, { sceneSeen: { sceneId: "s1", visible: ["0,0", "1,0", "0,1", "1,1"],
+    tiles: { "0,0": { kind: "door", material: "wood", art: "" } } } }));
+  await settle();
+  return t;
+}
+
+// VTT-885 VTT-936 VTT-938
+test("a player beside a seen closed door is offered no arm-doors control, and a click on the door square sends nothing", async () => {
+  const { r, s, sock } = await playerSeesTheDoor();
   expect(r.querySelector('[data-action="work-door"]')).not.toBeNull();
   expect(r.querySelector('[data-action="arm-doors"]')).toBeNull();
-  clickBoard(r, 90, 10); // cell (0,0), the door
+  clickBoard(r, ...squareAt(0, 0, 4, 4)); // the door
   await settle();
-  expect(sock.sent.map((f) => Object.keys(JSON.parse(f)).filter((k) => k !== "requestId"))).toEqual([["moveToken"]]);
-  expect(JSON.parse(sock.sent[0]!).moveToken.tokenId).toBe("t1");
+  expect(sock.sent).toHaveLength(0);
+  expect(r.querySelector(".toast")).toBeNull();
   s?.close();
 });
 
-// VTT-884
-test("with doors disarmed, the same click moves the token instead", async () => {
-  const { r, s, sock } = await playerTableWithDoor();
-  clickBoard(r, 90, 10); // cell (0,0), the door
+// VTT-938 VTT-939
+test("once the seen door is open, the same click moves the watched character's token and works no door", async () => {
+  const { r, s, sock } = await playerSeesTheDoor();
+  sock.deliver(envelope(7, { doorOpened: { sceneId: "s1", at: {} } }));
   await settle();
-
-  expect(sock.sent).toHaveLength(1);
-  expect(JSON.parse(sock.sent[0]!)).toHaveProperty("moveToken");
+  clickBoard(r, ...squareAt(0, 0, 4, 4)); // the door
+  await settle();
+  expect(sentKinds(sock)).toEqual([["moveToken"]]);
+  const move = JSON.parse(sock.sent[0]!).moveToken;
+  expect(move.tokenId).toBe("t1");
+  expect(move.to).toEqual({}); // square (0,0): protojson writes no zero field
   s?.close();
 });
 
@@ -3524,7 +3536,7 @@ test("sets that drop a party member before /api/me answers leave the window offe
   s?.close();
 });
 
-// VTT-405, VTT-919
+// VTT-405, VTT-940
 test("a player switches by a button and by a click on the token", async () => {
   const { r, s, sock } = await twoMemberTable("a1", [["a1", "Lera"], ["a2", "Bram"]]);
   chips(r).find((b) => b.textContent === "Bram")!.click();

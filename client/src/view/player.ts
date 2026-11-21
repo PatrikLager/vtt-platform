@@ -9,7 +9,9 @@ import type { Actor, State } from "../state";
 import { affordable, controlledActors, offered, readLine, sheetFor, sheetNames, targetableTokens, type ShownSection } from "../player";
 import { moveToken, useAbility, setViewpoint, speakAs, speakOutOfCharacter, addWhisper } from "../commands";
 import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
+import { doorKey } from "../fold";
 import { currentSceneId, doorButtonsFor } from "./doors";
+import { blocksMove } from "./terrain";
 import { namer, type Namer } from "./naming";
 
 export interface PlayerUIState {
@@ -296,9 +298,9 @@ export function moveCommandFor(
 }
 
 /**
- * A player's board click: a switch to a party member the gateway lets them
- * watch whose token is on the cell, nothing on the watched one's own token,
- * else a move of it (VTT-919, VTT-408).
+ * A player's board click: nothing where a held Visible omits the square (VTT-935);
+ * a switch to a listed party member's token there (VTT-940); nothing on the watched
+ * one's own token, nor where blocksMove is true (VTT-936); else a move (VTT-939).
  */
 export function playerClickFor(
   st: State,
@@ -307,12 +309,14 @@ export function playerClickFor(
   watchable: readonly string[],
   cell: { x: number; y: number },
 ): ClientCommand | null {
-  const scene = currentSceneId(st);
+  const sceneId = currentSceneId(st);
+  const scene = st.Scenes[sceneId];
+  if (!scene || (scene.Visible !== undefined && !scene.Visible[doorKey(cell.x, cell.y)])) return null;
   const here = Object.values(st.Tokens)
-    .filter((t) => t.SceneID === scene && t.X === cell.x && t.Y === cell.y)
+    .filter((t) => t.SceneID === sceneId && t.X === cell.x && t.Y === cell.y)
     .map((t) => t.ActorID);
   const others = watchable.filter((id) => id !== ui.selectedActorId && here.includes(id)).sort();
   if (others.length > 0) return setViewpoint(others[0]!);
-  if (here.includes(ui.selectedActorId)) return null;
+  if (here.includes(ui.selectedActorId) || blocksMove(scene, cell)) return null;
   return moveCommandFor(st, me, ui, cell);
 }

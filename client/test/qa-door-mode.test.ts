@@ -9,8 +9,9 @@ import { newState, type State } from "../src/state";
 import type { Me } from "../src/metadata";
 import { ok, settle } from "./support/answers";
 
-// Requirements: VTT-884, VTT-885, VTT-888, VTT-876, VTT-886, VTT-919, VTT-408,
-// and the ticket's Done item 6 (the DM's arming stands).
+// Requirements: VTT-936, VTT-938, VTT-939, VTT-885, VTT-888, VTT-876, VTT-886,
+// VTT-940, VTT-408, and Done item 6 of docs/superpowers/specs/'s
+// 2026-11-20-a-door-has-a-button-design.md (the DM's arming stands).
 
 const ARM_DOORS = '[data-action="arm-doors"]';
 const WORK_DOOR = '[data-action="work-door"]';
@@ -221,25 +222,31 @@ test("VTT-408: a player's click on a plain square moves the watched character's 
   expect(await clickCell(w, PLAIN)).toEqual(["move tok-lera to 1,0"]);
 });
 
-for (const [label, cell] of [["a closed door", CLOSED_DOOR], ["an open door", OPEN_DOOR]] as const) {
-  test(`VTT-884 VTT-408: a player's click on ${label} square moves the watched token there, as the same click does where no door is`, async () => {
-    const doored = await playerWindow(true);
-    expect(doored.root.querySelector(ARM_DOORS)).toBeNull(); // VTT-885, in the window
-    const onDoor = await clickCell(doored, cell);
-    const plain = await playerWindow(false);
-    const onFloor = await clickCell(plain, cell);
-    expect(onDoor.filter((s) => s.startsWith("open ") || s.startsWith("close "))).toEqual([]);
-    expect(onDoor).toEqual([`move tok-lera to ${cell.x},${cell.y}`]);
-    expect(onDoor).toEqual(onFloor);
-  });
-}
+test("VTT-936 VTT-938: a player's click on a closed door square sends nothing, where the same click on a square with no door moves", async () => {
+  const doored = await playerWindow(true);
+  expect(doored.root.querySelector(ARM_DOORS)).toBeNull(); // VTT-885, in the window
+  expect(await clickCell(doored, CLOSED_DOOR)).toHaveLength(0);
+  const plain = await playerWindow(false);
+  expect(await clickCell(plain, CLOSED_DOOR)).toEqual([`move tok-lera to ${CLOSED_DOOR.x},${CLOSED_DOOR.y}`]);
+});
 
-test("VTT-884 VTT-919: a player's click on an open door square holding a listed party member's token switches to them, as the same click does where no door is", async () => {
+test("VTT-938 VTT-939 VTT-408: a player's click on an open door square moves the watched token there, as the same click does where no door is", async () => {
+  const doored = await playerWindow(true);
+  expect(doored.root.querySelector(ARM_DOORS)).toBeNull(); // VTT-885, in the window
+  const onDoor = await clickCell(doored, OPEN_DOOR);
+  const plain = await playerWindow(false);
+  const onFloor = await clickCell(plain, OPEN_DOOR);
+  expect(onDoor.filter((s) => s.startsWith("open ") || s.startsWith("close "))).toHaveLength(0);
+  expect(onDoor).toEqual([`move tok-lera to ${OPEN_DOOR.x},${OPEN_DOOR.y}`]);
+  expect(onDoor).toEqual(onFloor);
+});
+
+test("VTT-938 VTT-940: a player's click on an open door square holding a listed party member's token switches to them, as the same click does where no door is", async () => {
   const doored = await playerWindow(true);
   const onDoor = await clickCell(doored, OCCUPIED_OPEN_DOOR);
   const plain = await playerWindow(false);
   const onFloor = await clickCell(plain, OCCUPIED_OPEN_DOOR);
-  expect(onDoor.filter((s) => s.startsWith("open ") || s.startsWith("close "))).toEqual([]);
+  expect(onDoor.filter((s) => s.startsWith("open ") || s.startsWith("close "))).toHaveLength(0);
   expect(onDoor).toEqual(["viewpoint act-bren"]);
   expect(onDoor).toEqual(onFloor);
 });

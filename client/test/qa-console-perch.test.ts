@@ -680,7 +680,7 @@ function viewpointsSent(w: Win, from: number): string[] {
 
 describe("a player's board click", () => {
   for (const flag of [false, true]) {
-    test(`VTT-919: on a listed party member's token switches to it (flag ${flag})`, async () => {
+    test(`VTT-940: on a listed party member's token switches to it (flag ${flag})`, async () => {
       const w = await openWindow({ kind: "role", role: "player" });
       w.frame({ viewpointChanged: { actorId: "act-b" } });
       w.frame({
@@ -698,7 +698,7 @@ describe("a player's board click", () => {
     });
   }
 
-  test("VTT-919: on an unlisted party member's token does not switch to it", async () => {
+  test("VTT-940: on an unlisted party member's token does not switch to it", async () => {
     const w = await openWindow({ kind: "role", role: "player" });
     w.frame({ viewpointChanged: { actorId: "act-b" } });
     w.frame({ watchableChanged: { actors: [{ actorId: "act-b", name: "Bree" }, { actorId: "act-c", name: "Cy" }] } });
@@ -712,7 +712,7 @@ describe("a player's board click", () => {
     expect(sentCommands(w, before).map((c) => c.command.case)).toEqual(["moveToken"]);
   });
 
-  test("VTT-919: on the watched one's own token sends no switch", async () => {
+  test("VTT-940: on the watched one's own token sends no switch", async () => {
     const w = await openWindow({ kind: "role", role: "player" });
     w.frame({ viewpointChanged: { actorId: "act-b" } });
     w.frame({ watchableChanged: { actors: [{ actorId: "act-b", name: "Bree" }, { actorId: "act-c", name: "Cy" }] } });
