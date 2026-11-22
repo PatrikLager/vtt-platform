@@ -13,6 +13,7 @@ move it are named explicitly rather than left to inference.
 
 import importlib.util
 import os
+import shutil
 import tempfile
 import unittest
 
@@ -22,9 +23,10 @@ tsmi = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tsmi)
 
 
-def tree(**files):
+def tree(test, **files):
     """A minimal repo root with the shape inputs_hash expects."""
     root = tempfile.mkdtemp()
+    test.addCleanup(shutil.rmtree, root, True)
     base = {
         "client/src/wire.ts": "export const a = 1\n",
         "client/test/wire.test.ts": "test('a', () => {})\n",
@@ -50,38 +52,38 @@ class InputsHash(unittest.TestCase):
     def test_the_same_tree_hashes_the_same(self):
         # The control. A hash that moved on its own would call every report out
         # of date, and the client's mutation would never read as measured.
-        root = tree()
+        root = tree(self)
         self.assertEqual(tsmi.inputs_hash(root), tsmi.inputs_hash(root))
 
     def test_a_mutated_source_moves_it(self):
-        a = tsmi.inputs_hash(tree())
-        b = tsmi.inputs_hash(tree(**{"client/src/wire.ts": "export const a = 2\n"}))
+        a = tsmi.inputs_hash(tree(self))
+        b = tsmi.inputs_hash(tree(self, **{"client/src/wire.ts": "export const a = 2\n"}))
         self.assertNotEqual(a, b)
 
     def test_a_TEST_change_moves_it(self):
         # Tests decide whether a mutant lives, so an edited test invalidates the
         # report exactly as much as an edited source does. Easy to forget,
         # because "mutate" names only client/src.
-        a = tsmi.inputs_hash(tree())
-        b = tsmi.inputs_hash(tree(**{"client/test/wire.test.ts": "test('b', () => {})\n"}))
+        a = tsmi.inputs_hash(tree(self))
+        b = tsmi.inputs_hash(tree(self, **{"client/test/wire.test.ts": "test('b', () => {})\n"}))
         self.assertNotEqual(a, b)
 
     def test_a_new_source_file_moves_it(self):
         # Deletions and additions must count, not just edits to known files.
-        a = tsmi.inputs_hash(tree())
-        b = tsmi.inputs_hash(tree(**{"client/src/extra.ts": "export const b = 1\n"}))
+        a = tsmi.inputs_hash(tree(self))
+        b = tsmi.inputs_hash(tree(self, **{"client/src/extra.ts": "export const b = 1\n"}))
         self.assertNotEqual(a, b)
 
     def test_the_stryker_config_moves_it(self):
-        a = tsmi.inputs_hash(tree())
-        b = tsmi.inputs_hash(tree(**{"stryker.conf.json": '{"mutate":["client/src/**/*.tsx"]}\n'}))
+        a = tsmi.inputs_hash(tree(self))
+        b = tsmi.inputs_hash(tree(self, **{"stryker.conf.json": '{"mutate":["client/src/**/*.tsx"]}\n'}))
         self.assertNotEqual(a, b)
 
     def test_a_stryker_version_bump_moves_it(self):
         # A different mutator emits different mutants; the old report describes
         # a population that no longer exists.
-        a = tsmi.inputs_hash(tree())
-        b = tsmi.inputs_hash(tree(**{
+        a = tsmi.inputs_hash(tree(self))
+        b = tsmi.inputs_hash(tree(self, **{
             "package.json": '{"devDependencies":{"@stryker-mutator/core":"9.0.0"}}\n'}))
         self.assertNotEqual(a, b)
 
@@ -89,8 +91,8 @@ class InputsHash(unittest.TestCase):
         # The checker and the adjudication file change the VERDICT, which
         # `task check` recomputes from a current report every run; counting
         # them would call that report out of date for nothing.
-        a = tsmi.inputs_hash(tree())
-        b = tsmi.inputs_hash(tree(**{
+        a = tsmi.inputs_hash(tree(self))
+        b = tsmi.inputs_hash(tree(self, **{
             "tools/check-ts-mutation.py": "# edited\n",
             "tools/ts-mutation-equivalents.txt": "client/src/wire.ts 1:1 X y\n    reason\n",
             "README.md": "# edited\n"}))
@@ -99,7 +101,7 @@ class InputsHash(unittest.TestCase):
     def test_a_missing_mutated_tree_is_not_UNCHANGED(self):
         # Fail towards out of date: a client/src that is not there is a lookup
         # that went wrong, not evidence that nothing changed.
-        root = tree()
+        root = tree(self)
         for f in os.listdir(os.path.join(root, "client/src")):
             os.remove(os.path.join(root, "client/src", f))
         os.rmdir(os.path.join(root, "client/src"))
@@ -111,7 +113,7 @@ class InputsHash(unittest.TestCase):
     def test_a_package_json_that_is_not_an_object_still_hashes(self):
         for text in ("[]\n", '{"devDependencies": []}\n'):
             with self.subTest(text=text):
-                self.assertIsNotNone(tsmi.inputs_hash(tree(**{"package.json": text})))
+                self.assertIsNotNone(tsmi.inputs_hash(tree(self, **{"package.json": text})))
 
 
 class OutsideTheClient(unittest.TestCase):
@@ -119,7 +121,7 @@ class OutsideTheClient(unittest.TestCase):
     from outside client/ (VTT-516)."""
 
     def moved(self, rel, content):
-        return tsmi.inputs_hash(tree()) != tsmi.inputs_hash(tree(**{rel: content}))
+        return tsmi.inputs_hash(tree(self)) != tsmi.inputs_hash(tree(self, **{rel: content}))
 
     def test_the_generated_contract_moves_it(self):
         # VTT-516
@@ -145,7 +147,7 @@ class OutsideTheClient(unittest.TestCase):
         self.assertTrue(self.moved("campaigns/example/maps/cellar.json", '{"cells": [1]}\n'))
 
     def test_a_missing_contract_tree_is_not_UNCHANGED(self):
-        root = tree()
+        root = tree(self)
         os.remove(os.path.join(root, "contract/gen/ts/vtt/v1/events_pb.ts"))
         for d in ("contract/gen/ts/vtt/v1", "contract/gen/ts/vtt", "contract/gen/ts"):
             os.rmdir(os.path.join(root, d))

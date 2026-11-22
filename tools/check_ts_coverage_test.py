@@ -16,6 +16,7 @@ import importlib.util
 import io
 import pathlib
 import os
+import shutil
 import unittest
 
 _spec = importlib.util.spec_from_file_location(
@@ -185,6 +186,7 @@ class SourceWalk(unittest.TestCase):
     def test_the_extension_rule(self):
         import tempfile, os
         root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
         src = os.path.join(root, "client", "src", "view")
         os.makedirs(src)
         for name in ("a.ts", "b.tsx", "c.mts", "d.cts", "e.d.ts", "f.js", "g.json"):
@@ -197,6 +199,7 @@ class SourceWalk(unittest.TestCase):
         # Divergence puts files in `measured` that are not in `expected`.
         import tempfile, os
         root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
         src = os.path.join(root, "client", "src")
         outside = os.path.join(root, "shared")
         os.makedirs(src); os.makedirs(outside)

@@ -27,7 +27,10 @@ def flags(src, suffix=".go"):
     with tempfile.NamedTemporaryFile("w", suffix=suffix, delete=False) as f:
         f.write(textwrap.dedent(src))
         path = f.name
-    return [(kind.strip(), ln) for _, ln, _, kind, _ in ccw.check(path)]
+    try:
+        return [(kind.strip(), ln) for _, ln, _, kind, _ in ccw.check(path)]
+    finally:
+        Path(path).unlink()
 
 
 class CheckCommentWrap(unittest.TestCase):
@@ -89,6 +92,7 @@ class CheckCommentWrap(unittest.TestCase):
         # and flagged 168 correctly-wrapped lines. Raw len() is the metric.
         indented = "\t\t// " + "x" * 70 + "\n"
         with tempfile.NamedTemporaryFile("w", suffix=".go", delete=False) as f:
+            self.addCleanup(Path(f.name).unlink)
             f.write(indented)
             path = f.name
         self.assertEqual([], ccw.check(path))

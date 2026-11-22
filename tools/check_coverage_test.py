@@ -25,9 +25,10 @@ _spec.loader.exec_module(cc)
 PKG = "github.com/PatrikLager/vtt-platform/internal"
 
 
-def profile(*blocks, mode="set"):
+def profile(test, *blocks, mode="set"):
     """Write a temp profile. Each block is (pkgpath, file, nstmt, count)."""
     fh = tempfile.NamedTemporaryFile("w", suffix=".out", delete=False)
+    test.addCleanup(os.remove, fh.name)
     fh.write(f"mode: {mode}\n")
     for i, (pkg, name, nstmt, count) in enumerate(blocks):
         fh.write(f"{pkg}/{name}:{i + 1}.1,{i + 1}.20 {nstmt} {count}\n")
@@ -35,15 +36,17 @@ def profile(*blocks, mode="set"):
     return fh.name
 
 
-def expectfile(*pkgs):
+def expectfile(test, *pkgs):
     fh = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False)
+    test.addCleanup(os.remove, fh.name)
     fh.write("\n".join(pkgs) + "\n")
     fh.close()
     return fh.name
 
 
-def thresholds(text):
+def thresholds(test, text):
     fh = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False)
+    test.addCleanup(os.remove, fh.name)
     fh.write(text)
     fh.close()
     return fh.name
@@ -70,8 +73,8 @@ class GateTest(unittest.TestCase):
         Regression: 'internal/engnie' for 'internal/engine' dropped a 97.5
         floor to 85.0 and exited 0.
         """
-        p = profile((f"{PKG}/engine", "apply.go", 100, 1))
-        t = thresholds(f"{PKG}/engnie 97.5\n")
+        p = profile(self, (f"{PKG}/engine", "apply.go", 100, 1))
+        t = thresholds(self, f"{PKG}/engnie 97.5\n")
         code, _, err = self.gate(t, [p])
         self.assertEqual(code, 1)
         self.assertIn("engnie", err)
@@ -86,9 +89,9 @@ class GateTest(unittest.TestCase):
         entry, so nothing notices when it stops being measured — the round-2
         review proved exactly that hole.
         """
-        p = profile((f"{PKG}/engine", "apply.go", 100, 1),
+        p = profile(self, (f"{PKG}/engine", "apply.go", 100, 1),
                     (f"{PKG}/newpkg", "x.go", 92, 1), (f"{PKG}/newpkg", "x.go", 8, 0))
-        t = thresholds(f"{PKG}/engine 85.0\n")
+        t = thresholds(self, f"{PKG}/engine 85.0\n")
         code, _, err = self.gate(t, [p])
         self.assertEqual(code, 1)
         self.assertIn("newpkg", err)
@@ -101,22 +104,22 @@ class GateTest(unittest.TestCase):
         thirteen floors fell to 85 and the gate exited 0 with engine's 97.7%
         measured against 85.
         """
-        p = profile((f"{PKG}/engine", "apply.go", 100, 1))
+        p = profile(self, (f"{PKG}/engine", "apply.go", 100, 1))
         code, _, err = self.gate("/nonexistent/coverage-thresholds.txt", [p])
         self.assertEqual(code, 1)
         self.assertIn("does not exist", err)
 
     def test_empty_thresholds_file_is_fatal(self):
-        p = profile((f"{PKG}/engine", "apply.go", 100, 1))
-        code, _, err = self.gate(thresholds("# only a comment\n"), [p])
+        p = profile(self, (f"{PKG}/engine", "apply.go", 100, 1))
+        code, _, err = self.gate(thresholds(self, "# only a comment\n"), [p])
         self.assertEqual(code, 1)
         self.assertIn("no floors", err)
 
     # --- core enforcement ---
 
     def test_below_floor_fails_and_names_the_package(self):
-        p = profile((f"{PKG}/engine", "apply.go", 80, 1), (f"{PKG}/engine", "apply.go", 20, 0))
-        t = thresholds(f"{PKG}/engine 85.0\n")
+        p = profile(self, (f"{PKG}/engine", "apply.go", 80, 1), (f"{PKG}/engine", "apply.go", 20, 0))
+        t = thresholds(self, f"{PKG}/engine 85.0\n")
         code, _, err = self.gate(t, [p])
         self.assertEqual(code, 1)
         self.assertIn("80.0%", err)
@@ -124,8 +127,8 @@ class GateTest(unittest.TestCase):
 
     def test_at_floor_exactly_passes(self):
         """85.0 against a floor of 85.0 must pass — the floor is inclusive."""
-        p = profile((f"{PKG}/engine", "apply.go", 85, 1), (f"{PKG}/engine", "apply.go", 15, 0))
-        t = thresholds(f"{PKG}/engine 85.0\n")
+        p = profile(self, (f"{PKG}/engine", "apply.go", 85, 1), (f"{PKG}/engine", "apply.go", 15, 0))
+        t = thresholds(self, f"{PKG}/engine 85.0\n")
         code, _, _ = self.gate(t, [p])
         self.assertEqual(code, 0)
 
@@ -138,8 +141,8 @@ class GateTest(unittest.TestCase):
         This codebase has a documented history of test comments asserting
         things that are not true; a stale test NAME is the same defect.
         """
-        p = profile((f"{PKG}/newpkg", "x.go", 80, 1), (f"{PKG}/newpkg", "x.go", 20, 0))
-        code, _, err = self.gate(thresholds(f"{PKG}/newpkg 85.0\n"), [p])
+        p = profile(self, (f"{PKG}/newpkg", "x.go", 80, 1), (f"{PKG}/newpkg", "x.go", 20, 0))
+        code, _, err = self.gate(thresholds(self, f"{PKG}/newpkg 85.0\n"), [p])
         self.assertEqual(code, 1, "a brand-new package must still face the 85 floor")
         self.assertIn("newpkg", err)
 
@@ -151,8 +154,8 @@ class GateTest(unittest.TestCase):
         the single quiet edit by which ANY floor could be weakened — in the
         file whose entire purpose is preventing exactly that.
         """
-        p = profile((f"{PKG}/engine", "apply.go", 97, 1), (f"{PKG}/engine", "apply.go", 3, 0))
-        code, _, err = self.gate(thresholds(f"{PKG}/engine 40.0\n"), [p])
+        p = profile(self, (f"{PKG}/engine", "apply.go", 97, 1), (f"{PKG}/engine", "apply.go", 3, 0))
+        code, _, err = self.gate(thresholds(self, f"{PKG}/engine 40.0\n"), [p])
         self.assertEqual(code, 1)
         # The literal 85 also pins FLOOR itself: editing FLOOR down breaks
         # this assertion, so the constant cannot be weakened silently either.
@@ -166,26 +169,26 @@ class GateTest(unittest.TestCase):
         guard the message read "below its floor of nan%", sending a reader
         hunting a coverage regression that does not exist.
         """
-        p = profile((f"{PKG}/engine", "apply.go", 100, 1))
+        p = profile(self, (f"{PKG}/engine", "apply.go", 100, 1))
         for literal in ("nan", "NaN", "inf", "Infinity", "1e400"):
             with self.subTest(literal):
-                code, _, err = self.gate(thresholds(f"{PKG}/engine {literal}\n"), [p])
+                code, _, err = self.gate(thresholds(self, f"{PKG}/engine {literal}\n"), [p])
                 self.assertEqual(code, 1)
                 self.assertIn("not a real percentage", err)
                 self.assertNotIn("nan%", err)
 
     def test_every_bad_threshold_line_is_reported_at_once(self):
         """One round trip, not one per bad line — matching the set-equality fatals."""
-        p = profile((f"{PKG}/engine", "apply.go", 100, 1))
-        t = thresholds(f"{PKG}/engine 40.0\n{PKG}/store 10.0\n{PKG}/rules garbage\n")
+        p = profile(self, (f"{PKG}/engine", "apply.go", 100, 1))
+        t = thresholds(self, f"{PKG}/engine 40.0\n{PKG}/store 10.0\n{PKG}/rules garbage\n")
         code, _, err = self.gate(t, [p])
         self.assertEqual(code, 1)
         for expected in ("engine", "store", "rules"):
             self.assertIn(expected, err)
 
     def test_floor_exactly_at_the_minimum_is_allowed(self):
-        p = profile((f"{PKG}/engine", "apply.go", 90, 1), (f"{PKG}/engine", "apply.go", 10, 0))
-        code, _, _ = self.gate(thresholds(f"{PKG}/engine 85.0\n"), [p])
+        p = profile(self, (f"{PKG}/engine", "apply.go", 90, 1), (f"{PKG}/engine", "apply.go", 10, 0))
+        code, _, _ = self.gate(thresholds(self, f"{PKG}/engine 85.0\n"), [p])
         self.assertEqual(code, 0, "85.0 is the minimum, not below it")
 
     # Merging is no longer this script's job: `go tool covdata merge` does it
@@ -208,29 +211,29 @@ class GateTest(unittest.TestCase):
         this guard was (correctly, then) deleted as redundant and had to come
         back when the pipeline changed.
         """
-        p = profile((f"{PKG}/engine", "apply.go", 100, 1))
-        t = thresholds(f"{PKG}/engine 85.0\n")
-        e = expectfile(f"{PKG}/engine", f"{PKG}/untested")
+        p = profile(self, (f"{PKG}/engine", "apply.go", 100, 1))
+        t = thresholds(self, f"{PKG}/engine 85.0\n")
+        e = expectfile(self, f"{PKG}/engine", f"{PKG}/untested")
         code, _, err = self.gate(t, [p], e)
         self.assertEqual(code, 1)
         self.assertIn("untested", err)
         self.assertIn("no coverage data", err)
 
     def test_missing_expected_file_is_fatal(self):
-        p = profile((f"{PKG}/engine", "apply.go", 100, 1))
-        code, _, err = self.gate(thresholds(f"{PKG}/engine 85.0\n"), [p],
+        p = profile(self, (f"{PKG}/engine", "apply.go", 100, 1))
+        code, _, err = self.gate(thresholds(self, f"{PKG}/engine 85.0\n"), [p],
                                  "/nonexistent/expected.txt")
         self.assertEqual(code, 1)
         self.assertIn("invisible to the gate", err)
 
     def test_missing_profile_is_fatal(self):
-        code, _, err = self.gate(thresholds(f"{PKG}/engine 85.0\n"), [])
+        code, _, err = self.gate(thresholds(self, f"{PKG}/engine 85.0\n"), [])
         self.assertEqual(code, 1)
         self.assertIn("missing or empty", err)
 
     def test_all_packages_excluded_is_fatal_without_traceback(self):
-        p = profile(("github.com/PatrikLager/vtt-platform/contract/gen/vtt/v1", "x.pb.go", 10, 0))
-        code, _, err = self.gate(thresholds(f"{PKG}/engine 85.0\n"), [p])
+        p = profile(self, ("github.com/PatrikLager/vtt-platform/contract/gen/vtt/v1", "x.pb.go", 10, 0))
+        code, _, err = self.gate(thresholds(self, f"{PKG}/engine 85.0\n"), [p])
         self.assertEqual(code, 1)
         self.assertIn("no measurable packages", err)
 
@@ -250,32 +253,33 @@ class GateTest(unittest.TestCase):
         ]:
             with self.subTest(name):
                 fh = tempfile.NamedTemporaryFile("w", suffix=".out", delete=False)
+                self.addCleanup(os.remove, fh.name)
                 fh.write(body)
                 fh.close()
-                code, _, err = self.gate(thresholds(f"{PKG}/engine 85.0\n"), [fh.name])
+                code, _, err = self.gate(thresholds(self, f"{PKG}/engine 85.0\n"), [fh.name])
                 self.assertEqual(code, 1)
                 self.assertIn("malformed", err)
 
     # --- file paths containing spaces must not corrupt attribution ---
 
     def test_paths_with_spaces_parse_correctly(self):
-        p = profile((f"{PKG}/engine", "a file.go", 100, 1))
-        code, out, _ = self.gate(thresholds(f"{PKG}/engine 85.0\n"), [p])
+        p = profile(self, (f"{PKG}/engine", "a file.go", 100, 1))
+        code, out, _ = self.gate(thresholds(self, f"{PKG}/engine 85.0\n"), [p])
         self.assertEqual(code, 0)
         self.assertIn(f"{PKG}/engine", out)
 
     # --- the ratchet reminds you to turn it ---
 
     def test_well_above_floor_suggests_a_raise(self):
-        p = profile((f"{PKG}/engine", "apply.go", 98, 1), (f"{PKG}/engine", "apply.go", 2, 0))
-        code, out, _ = self.gate(thresholds(f"{PKG}/engine 85.0\n"), [p])
+        p = profile(self, (f"{PKG}/engine", "apply.go", 98, 1), (f"{PKG}/engine", "apply.go", 2, 0))
+        code, out, _ = self.gate(thresholds(self, f"{PKG}/engine 85.0\n"), [p])
         self.assertEqual(code, 0)
         self.assertIn("consider ratcheting", out)
 
     def test_just_above_floor_does_not_nag(self):
         """Run-to-run variance must not produce advice on every build."""
-        p = profile((f"{PKG}/engine", "apply.go", 856, 1), (f"{PKG}/engine", "apply.go", 144, 0))
-        code, out, _ = self.gate(thresholds(f"{PKG}/engine 85.0\n"), [p])
+        p = profile(self, (f"{PKG}/engine", "apply.go", 856, 1), (f"{PKG}/engine", "apply.go", 144, 0))
+        code, out, _ = self.gate(thresholds(self, f"{PKG}/engine 85.0\n"), [p])
         self.assertEqual(code, 0)
         self.assertNotIn("consider ratcheting", out)
 

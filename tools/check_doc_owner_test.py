@@ -12,6 +12,7 @@ import importlib.util
 import io
 import os
 import pathlib
+import shutil
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -23,9 +24,10 @@ cdo = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cdo)
 
 
-def tree(**files):
-    """A temp dir of .go files; returns its path (caller cleans up)."""
+def tree(test, **files):
+    """A temp dir of .go files; returns its path."""
     d = tempfile.mkdtemp()
+    test.addCleanup(shutil.rmtree, d, True)
     for name, body in files.items():
         p = pathlib.Path(d) / name
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -43,7 +45,7 @@ def run(root):
 class DocOwnerTest(unittest.TestCase):
     def test_a_comment_left_behind_by_an_inserted_function_is_caught(self):
         """The defect, exactly as it appeared twice in internal/harness/soak.go."""
-        root = tree(**{"a.go": '''package p
+        root = tree(self, **{"a.go": '''package p
 
 // alpha does the alpha thing.
 func beta() {}
@@ -67,7 +69,7 @@ func alpha() {}
         still pass that test and both miss this — which is the shape the gate
         was written for. The finding must name the FIRST doc, not the second.
         """
-        root = tree(**{"a.go": '''package p
+        root = tree(self, **{"a.go": '''package p
 
 // alpha reports whether the log grew.
 //
@@ -95,7 +97,7 @@ func alpha() {}
         is no blank line after the block because there is nothing after it at
         all. gofmt would add the newline, but a linter reads what is on disk.
         """
-        root = tree(**{
+        root = tree(self, **{
             "a.go": '''package p
 
 // alpha marshals the frame.
@@ -121,7 +123,7 @@ func alpha() {}
         headers, package prose, a note before an import block. Only a first
         word that NAMES A REAL FUNCTION makes it an orphaned doc.
         """
-        root = tree(**{"a.go": '''package p
+        root = tree(self, **{"a.go": '''package p
 
 // Wire format notes: everything below is protojson.
 
@@ -134,7 +136,7 @@ func alpha() {}
         """Indented comments are never doc comments, and blank lines follow them
         constantly. Scanning them would flag ordinary code the moment somebody
         wrote a step comment naming the helper it is about to call."""
-        root = tree(**{"a.go": '''package p
+        root = tree(self, **{"a.go": '''package p
 
 func beta() {
 	// alpha is what we are about to call.
@@ -157,7 +159,7 @@ func alpha() {}
         The opening word is a bare `alpha` for the same reason: `alpha's` does
         not survive word extraction, so it too passed with the hatch disabled.
         """
-        root = tree(**{"a.go": '''package p
+        root = tree(self, **{"a.go": '''package p
 
 // alpha is the counterpart of this one, which runs on the way out.
 //
@@ -176,7 +178,7 @@ func alpha() {}
         empty, so the block is skipped whole), and a name wearing this repo's
         habitual backticks (skip the strip and `alpha` never equals alpha).
         """
-        root = tree(**{"a.go": '''package p
+        root = tree(self, **{"a.go": '''package p
 
 //
 // `alpha` does the alpha thing.
@@ -191,13 +193,13 @@ func alpha() {}
     def test_an_empty_scan_is_a_failure_not_a_pass(self):
         """A gate that reports success over zero files is how check:mutation
         exited 0 with the disk full. Nothing scanned is nothing proven."""
-        code, _, err = run(os.path.join(tempfile.mkdtemp(), "not-a-directory"))
+        code, _, err = run(os.path.join(tree(self), "not-a-directory"))
         self.assertEqual(code, 2)
         self.assertIn("no Go files", err)
 
     def test_a_correctly_placed_comment_passes(self):
         """The control. A gate that flags correct code gets switched off."""
-        root = tree(**{"a.go": '''package p
+        root = tree(self, **{"a.go": '''package p
 
 // alpha does the alpha thing.
 func alpha() {}
@@ -216,7 +218,7 @@ func beta() {}
         `//nolint:gocyclo`. Demanding those be rewritten would be a gate whose
         first act is to break correct code, which is how gates get disabled.
         """
-        root = tree(**{"a.go": '''package p
+        root = tree(self, **{"a.go": '''package p
 
 // Complexity: straight-line validation, splitting it would only move branches.
 //
@@ -231,12 +233,12 @@ func beta() {}
 
     def test_a_function_with_no_doc_is_not_a_finding(self):
         """Missing docs are a different argument, and not this gate's."""
-        root = tree(**{"a.go": "package p\n\nfunc alpha() {}\n"})
+        root = tree(self, **{"a.go": "package p\n\nfunc alpha() {}\n"})
         self.assertEqual(run(root)[0], 0)
 
     def test_methods_are_checked_too(self):
         """A receiver must not hide the defect — most of this repo is methods."""
-        root = tree(**{"a.go": '''package p
+        root = tree(self, **{"a.go": '''package p
 
 // alpha reports something.
 func (s *S) beta() {}
@@ -249,7 +251,7 @@ func (s *S) alpha() {}
 
     def test_a_function_named_in_another_file_still_counts(self):
         """The comment's owner is usually elsewhere by the time this is noticed."""
-        root = tree(**{
+        root = tree(self, **{
             "a.go": "package p\n\n// alpha does the alpha thing.\nfunc beta() {}\n",
             "b.go": "package p\n\nfunc alpha() {}\n",
         })
@@ -264,7 +266,7 @@ func (s *S) alpha() {}
         were correct prose. A gate that is wrong three times in four gets
         switched off. Revisit if the hatch above proves cheap to apply.
         """
-        root = tree(**{
+        root = tree(self, **{
             "a_test.go": "package p\n\n// alpha does it.\nfunc beta() {}\n\nfunc alpha() {}\n",
             "gen/c.go": "package p\n\n// alpha does it.\nfunc beta() {}\n\nfunc alpha() {}\n",
             # A scannable file, or the empty-scan guard exits 2 and this passes

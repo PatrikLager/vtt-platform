@@ -16,6 +16,7 @@ import io
 import os
 import pathlib
 import re
+import shutil
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -41,9 +42,10 @@ def register(rows, tag="TT", header=HEADER):
     return body
 
 
-def tree(**files):
+def tree(test, **files):
     """A temp dir laid out like the repository; returns its path."""
     d = tempfile.mkdtemp()
+    test.addCleanup(shutil.rmtree, d, True)
     for name, body in files.items():
         p = pathlib.Path(d) / name
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -61,9 +63,9 @@ def run(root):
 GO_TEST = "package p\n\n// TT-001\nfunc TestAlpha(t *testing.T) {}\n"
 
 
-def clean_fixture():
+def clean_fixture(test):
     """One row, one Go test citing it, one specification naming it."""
-    return tree(**{
+    return tree(test, **{
         "docs/requirements.md": register(
             ["| TT-001 | Alpha holds. | internal/p/alpha_test.go#TestAlpha |"]),
         "docs/specifications/001-alpha.md": "# SPEC-001\n\n## Requirements\n\nTT-001.\n",
@@ -77,7 +79,7 @@ class RequirementsChainTest(unittest.TestCase):
 
     # VTT-001
     def test_a_test_citing_an_id_no_row_defines_is_refused(self):
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register([]),
             "internal/p/alpha_test.go": "package p\n\n// TT-999\nfunc TestAlpha(t *testing.T) {}\n",
         })
@@ -88,7 +90,7 @@ class RequirementsChainTest(unittest.TestCase):
 
     # VTT-001
     def test_a_specification_naming_an_id_no_row_defines_is_refused(self):
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register([]),
             "docs/specifications/001-alpha.md": "# SPEC-001\n\nThis record carries TT-999.\n",
             "internal/p/alpha_test.go": "package p\n\nfunc TestAlpha(t *testing.T) {}\n",
@@ -102,7 +104,7 @@ class RequirementsChainTest(unittest.TestCase):
 
     # VTT-002
     def test_evidence_naming_a_missing_file_is_refused(self):
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register(
                 ["| TT-001 | Alpha holds. | internal/p/nowhere_test.go#TestAlpha |"]),
             "internal/p/alpha_test.go": GO_TEST,
@@ -114,7 +116,7 @@ class RequirementsChainTest(unittest.TestCase):
 
     # VTT-002
     def test_evidence_naming_a_file_that_does_not_carry_the_id_is_refused(self):
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register(
                 ["| TT-001 | Alpha holds. | internal/p/alpha_test.go#TestAlpha |"]),
             "internal/p/alpha_test.go": "package p\n\nfunc TestAlpha(t *testing.T) {}\n",
@@ -132,7 +134,7 @@ class RequirementsChainTest(unittest.TestCase):
             "tools/alpha_test.py": "# TT-001\ndef test_beta():\n    pass\n",
             "client/test/alpha.test.ts": '// TT-001\ntest("beta holds", () => {});\n',
         }.items():
-            root = tree(**{
+            root = tree(self, **{
                 "docs/requirements.md": register(
                     [f"| TT-001 | Alpha holds. | {name}#TestAlpha |"]),
                 name: body,
@@ -146,7 +148,7 @@ class RequirementsChainTest(unittest.TestCase):
 
     def test_a_check_declared_in_each_language_is_found(self):
         """The control for the case above: every declaration shape resolves."""
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register([
                 "| TT-001 | Alpha holds. | internal/p/alpha_test.go#TestAlpha |",
                 "| TT-002 | Beta holds. | tools/beta_test.py#test_beta |",
@@ -166,7 +168,7 @@ class RequirementsChainTest(unittest.TestCase):
     def test_an_evidence_entry_without_a_check_name_is_refused(self):
         """A path alone is not evidence: rule 8 wants the name, and a bare path
         is how a sentence in the cell would otherwise be read."""
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register(
                 ["| TT-001 | Alpha holds. | internal/p/alpha_test.go |"]),
             "internal/p/alpha_test.go": GO_TEST,
@@ -176,7 +178,7 @@ class RequirementsChainTest(unittest.TestCase):
         self.assertIn("names no check", err)
 
     def test_a_sentence_in_the_evidence_cell_is_refused(self):
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register(
                 ["| TT-001 | Alpha holds. | Two tests aim at this and neither can see it. |"]),
             "internal/p/alpha_test.go": GO_TEST,
@@ -186,7 +188,7 @@ class RequirementsChainTest(unittest.TestCase):
     # --- the two answers that are not paths ----------------------------------
 
     def test_open_and_a_named_reading_pass(self):
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register([
                 "| TT-001 | Alpha holds. | **OPEN — no test yet** |",
                 "| TT-002 | Beta holds. | **READING — Phase 4b** |",
@@ -198,7 +200,7 @@ class RequirementsChainTest(unittest.TestCase):
         self.assertIn("2 rows", out)
 
     def test_a_reading_that_names_no_review_is_refused(self):
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register(
                 ["| TT-001 | Alpha holds. | **READING —** |"]),
             "internal/p/alpha_test.go": "package p\n\nfunc TestAlpha(t *testing.T) {}\n",
@@ -208,7 +210,7 @@ class RequirementsChainTest(unittest.TestCase):
         self.assertIn("names no review", err)
 
     def test_a_blank_evidence_cell_is_refused(self):
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register(
                 ["| TT-001 | Alpha holds. |  |"]),
             "internal/p/alpha_test.go": "package p\n\nfunc TestAlpha(t *testing.T) {}\n",
@@ -222,7 +224,7 @@ class RequirementsChainTest(unittest.TestCase):
     # VTT-003
     def test_a_row_id_of_another_shape_is_refused(self):
         """A per-subject series is what the dispenser cannot see."""
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register(
                 ["| TT-VIS-001 | Alpha holds. | **OPEN — no test yet** |"]),
             "internal/p/alpha_test.go": "package p\n\nfunc TestAlpha(t *testing.T) {}\n",
@@ -235,7 +237,7 @@ class RequirementsChainTest(unittest.TestCase):
     # VTT-003
     def test_a_row_numbered_zero_is_refused(self):
         """The dispenser counts from one; a hand-typed zero is not an allocation."""
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register(
                 ["| TT-000 | Alpha holds. | **OPEN — no test yet** |"]),
             "internal/p/alpha_test.go": "package p\n\nfunc TestAlpha(t *testing.T) {}\n",
@@ -246,7 +248,7 @@ class RequirementsChainTest(unittest.TestCase):
 
     # VTT-004
     def test_two_rows_sharing_an_id_are_refused(self):
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register([
                 "| TT-001 | Alpha holds. | **OPEN — no test yet** |",
                 "| TT-001 | Alpha holds again. | **OPEN — no test yet** |",
@@ -260,7 +262,7 @@ class RequirementsChainTest(unittest.TestCase):
     def test_markup_around_a_row_id_is_read_through(self):
         """The dispenser strips backticks, bold and underscores when it counts;
         the gate reads the same way, or a decorated row is a phantom."""
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register([
                 "| `TT-001` | Alpha holds. | internal/p/alpha_test.go#TestAlpha |",
                 "| **TT-002** | Beta holds. | **OPEN — no test yet** |",
@@ -273,7 +275,7 @@ class RequirementsChainTest(unittest.TestCase):
 
     def test_an_escaped_separator_in_a_sentence_does_not_split_the_row(self):
         """The dispenser writes `\\|` for a `|` in the sentence."""
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register(
                 ["| TT-001 | Alpha \\| beta holds. | internal/p/alpha_test.go#TestAlpha |"]),
             "internal/p/alpha_test.go": GO_TEST,
@@ -284,7 +286,7 @@ class RequirementsChainTest(unittest.TestCase):
     # --- citations -------------------------------------------------------------
 
     def test_two_ids_on_one_comment_line_both_resolve(self):
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register([
                 "| TT-001 | Alpha holds. | internal/p/alpha_test.go#TestAlpha |",
                 "| TT-002 | Beta holds. | internal/p/alpha_test.go#TestAlpha |",
@@ -297,7 +299,7 @@ class RequirementsChainTest(unittest.TestCase):
     def test_a_comma_inside_a_typescript_name_is_part_of_the_name(self):
         """283 client test names carry a comma; the separator is a comma that
         begins the next path#Check, and nothing else."""
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register([
                 "| TT-001 | Alpha holds. | client/test/g.test.ts#gamma, then delta, internal/p/alpha_test.go#TestAlpha |",
             ]),
@@ -308,7 +310,7 @@ class RequirementsChainTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
 
     def test_a_row_with_fewer_than_three_cells_is_refused_as_malformed(self):
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register(
                 ["| TT-001 | Alpha holds. | internal/p/alpha_test.go#TestAlpha"]),
             "internal/p/alpha_test.go": GO_TEST,
@@ -320,7 +322,7 @@ class RequirementsChainTest(unittest.TestCase):
     def test_another_projects_tag_is_not_read_as_a_claim(self):
         """This file's own fixtures, seen from the real register: a TT id in a
         VTT-tagged tree is data, not a citation, and the reverse."""
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register([]),
             "internal/p/alpha_test.go": "package p\n\n// XX-999 DS-001\nfunc TestAlpha(t *testing.T) {}\n",
         })
@@ -328,7 +330,7 @@ class RequirementsChainTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
 
     def test_test_files_outside_the_scanned_roots_and_generated_trees_are_skipped(self):
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register([]),
             "internal/p/alpha_test.go": "package p\n\nfunc TestAlpha(t *testing.T) {}\n",
             "internal/p/gen/g_test.go": "package g\n\n// TT-999\nfunc TestG(t *testing.T) {}\n",
@@ -342,13 +344,13 @@ class RequirementsChainTest(unittest.TestCase):
     # --- nothing scanned is nothing proven --------------------------------------
 
     def test_a_missing_register_is_a_failure_not_a_pass(self):
-        root = tree(**{"internal/p/alpha_test.go": "package p\n\nfunc TestAlpha(t *testing.T) {}\n"})
+        root = tree(self, **{"internal/p/alpha_test.go": "package p\n\nfunc TestAlpha(t *testing.T) {}\n"})
         code, _, err = run(root)
         self.assertEqual(code, 2)
         self.assertIn("no register", err)
 
     def test_a_register_with_no_tag_is_a_failure(self):
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register([], tag=None),
             "internal/p/alpha_test.go": "package p\n\nfunc TestAlpha(t *testing.T) {}\n",
         })
@@ -357,7 +359,7 @@ class RequirementsChainTest(unittest.TestCase):
         self.assertIn("project:", err)
 
     def test_a_register_with_no_requirements_header_is_a_failure(self):
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register([], header="| Id | Where |\n|---|---|\n"),
             "internal/p/alpha_test.go": "package p\n\nfunc TestAlpha(t *testing.T) {}\n",
         })
@@ -366,14 +368,14 @@ class RequirementsChainTest(unittest.TestCase):
         self.assertIn("header", err)
 
     def test_a_tree_with_no_test_files_is_a_failure(self):
-        root = tree(**{"docs/requirements.md": register([]), "internal/p/p.go": "package p\n"})
+        root = tree(self, **{"docs/requirements.md": register([]), "internal/p/p.go": "package p\n"})
         code, _, err = run(root)
         self.assertEqual(code, 2)
         self.assertIn("no test files", err)
 
     def test_an_empty_table_passes_and_says_so(self):
         """An empty register is a step, not a defect."""
-        root = tree(**{
+        root = tree(self, **{
             "docs/requirements.md": register([]),
             "internal/p/alpha_test.go": "package p\n\nfunc TestAlpha(t *testing.T) {}\n",
         })
@@ -382,7 +384,7 @@ class RequirementsChainTest(unittest.TestCase):
         self.assertIn("0 rows", out)
 
     def test_a_clean_fixture_passes_and_prints_the_completion_line(self):
-        code, out, err = run(clean_fixture())
+        code, out, err = run(clean_fixture(self))
         self.assertEqual(code, 0, err)
         self.assertRegex(out, r"check:requirements-chain: 1 rows?, 1 test files?, 1 specifications?")
 

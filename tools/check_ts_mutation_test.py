@@ -150,7 +150,11 @@ def entry(path, where, mutator, replacement, reason="reason", lines=TS_LINES, sp
 
 
 def entries(*texts):
-    return ctm.read_equivalents(equivalents_file("".join(texts)))
+    path = equivalents_file("".join(texts))
+    try:
+        return ctm.read_equivalents(path)
+    finally:
+        os.remove(path)
 
 
 class Equivalents(unittest.TestCase):

@@ -89,8 +89,9 @@ def row(id_, evidence, text="A fixture rule"):
 class Tree(object):
     """A synthetic repository laid out like the real one."""
 
-    def __init__(self):
+    def __init__(self, test):
         self.root = tempfile.mkdtemp(prefix="qa-chain-")
+        test.addCleanup(shutil.rmtree, self.root, True)
         os.makedirs(os.path.join(self.root, "docs", "specifications"))
 
     def write(self, rel, content):
@@ -130,10 +131,10 @@ class Tree(object):
         return run_checker(self.root)
 
 
-def baseline():
+def baseline(test):
     """An empty register and one uncited test file: the smallest tree that
     scans something."""
-    t = Tree()
+    t = Tree(test)
     t.register()
     t.go_test("internal/fixture/held_test.go")
     return t
@@ -147,7 +148,7 @@ class Citations(unittest.TestCase):
     def test_a_test_file_citing_an_undefined_id_is_refused_under_each_root(self):
         for root in ("internal", "cmd", "client", "tools", "contract"):
             with self.subTest(root=root):
-                t = baseline()
+                t = baseline(self)
                 rel = t.go_test(root + "/fixture/cited_test.go", cites=UNDEFINED)
                 code, out, err = t.run()
                 self.assertEqual(code, 1, err)
@@ -165,7 +166,7 @@ class Citations(unittest.TestCase):
         )
         for kind, place in cases:
             with self.subTest(kind=kind):
-                t = baseline()
+                t = baseline(self)
                 rel = place(t)
                 code, out, err = t.run()
                 self.assertEqual(code, 1, err)
@@ -175,7 +176,7 @@ class Citations(unittest.TestCase):
     # REQ / TICKET item 3: "a file under docs/specifications/ names <TAG>-999
     # and no row defines it".
     def test_a_specification_naming_an_undefined_id_is_refused(self):
-        t = baseline()
+        t = baseline(self)
         rel = t.spec("010-fixture.md", UNDEFINED)
         code, out, err = t.run()
         self.assertEqual(code, 1, err)
@@ -187,7 +188,7 @@ class Citations(unittest.TestCase):
     # dispenser's OPEN cell is a row; SPEC, "How it works": the evidence cell
     # may hold "`**OPEN — no test yet**`".
     def test_a_citation_resolves_to_a_row_whatever_the_rows_evidence(self):
-        t = baseline()
+        t = baseline(self)
         t.register(rows=[row(DEFINED, OPEN)])
         t.go_test("internal/fixture/cited_test.go", cites=DEFINED)
         t.spec("010-fixture.md", DEFINED)
@@ -198,7 +199,7 @@ class Citations(unittest.TestCase):
     # SPEC, "How the chain is checked": "Only the register's own tag reads as
     # a citation."
     def test_another_projects_tag_is_data_not_a_citation(self):
-        t = baseline()
+        t = baseline(self)
         t.go_test("internal/fixture/rival_test.go", cites="RIVAL-999")
         t.py_test("tools/rival_test.py", cites="RIVAL-999")
         t.spec("010-fixture.md", "RIVAL-999")
@@ -218,7 +219,7 @@ class Citations(unittest.TestCase):
         )
         for label, rel in cases:
             with self.subTest(case=label):
-                t = baseline()
+                t = baseline(self)
                 if rel.endswith(".py"):
                     t.py_test(rel, cites=UNDEFINED)
                 else:
@@ -231,7 +232,7 @@ class Rows(unittest.TestCase):
     # REQ / TICKET item 3: "a row's evidence names a file that does not
     # exist". SPEC: an evidence entry is "`<repo-relative path>#<check name>`".
     def test_an_evidence_file_that_does_not_exist_is_refused(self):
-        t = baseline()
+        t = baseline(self)
         missing = "internal/fixture/missing_test.go"
         t.register(rows=[row(DEFINED, missing + "#TestHeld")])
         code, out, err = t.run()
@@ -240,7 +241,7 @@ class Rows(unittest.TestCase):
 
     # REQ / TICKET item 3: "one that does not carry the row's id".
     def test_an_evidence_file_that_does_not_carry_the_id_is_refused(self):
-        t = baseline()
+        t = baseline(self)
         rel = "internal/fixture/held_test.go"  # exists, declares TestHeld, cites nothing
         t.register(rows=[row(DEFINED, rel + "#TestHeld")])
         code, out, err = t.run()
@@ -250,7 +251,7 @@ class Rows(unittest.TestCase):
     # SPEC, "How the chain is checked": refuses an evidence entry that names
     # "a check the file does not declare".
     def test_an_evidence_file_that_does_not_declare_the_check_is_refused(self):
-        t = baseline()
+        t = baseline(self)
         rel = t.go_test("internal/fixture/cited_test.go", cites=DEFINED, name="TestHeld")
         t.register(rows=[row(DEFINED, rel + "#TestNope")])
         code, out, err = t.run()
@@ -260,7 +261,7 @@ class Rows(unittest.TestCase):
     # SPEC, "How the chain is checked": refuses "an evidence entry that names
     # no check"; the entry shape is "`<repo-relative path>#<check name>`".
     def test_an_evidence_entry_that_names_no_check_is_refused(self):
-        t = baseline()
+        t = baseline(self)
         rel = t.go_test("internal/fixture/cited_test.go", cites=DEFINED)
         t.register(rows=[row(DEFINED, rel)])
         code, out, err = t.run()
@@ -271,7 +272,7 @@ class Rows(unittest.TestCase):
     # a `def` in a Python file, or the quoted test name in a TypeScript file";
     # "entries comma-separated". All three kinds, in one cell, hold one row.
     def test_a_check_is_a_go_func_a_python_def_or_a_quoted_ts_name(self):
-        t = baseline()
+        t = baseline(self)
         go = t.go_test("internal/fixture/cited_test.go", cites=DEFINED, name="TestHeld")
         py = t.py_test("tools/held_test.py", cites=DEFINED, name="test_held")
         ts = t.ts_test("client/test/held.test.ts", cites=DEFINED, name="the door stays shut")
@@ -284,7 +285,7 @@ class Rows(unittest.TestCase):
     # SPEC: "the quoted test name in a TypeScript file". A name the file does
     # not quote is "a check the file does not declare".
     def test_a_ts_name_the_file_does_not_quote_is_refused(self):
-        t = baseline()
+        t = baseline(self)
         ts = t.ts_test("client/test/held.test.ts", cites=DEFINED, name="the door stays shut")
         t.register(rows=[row(DEFINED, ts + "#the door swings open")])
         code, out, err = t.run()
@@ -294,7 +295,7 @@ class Rows(unittest.TestCase):
     # SPEC: "entries comma-separated". Each entry is checked: one bad entry
     # among good ones is still refused, and the bad one is the one named.
     def test_each_comma_separated_entry_is_checked(self):
-        t = baseline()
+        t = baseline(self)
         good = t.go_test("internal/fixture/good_test.go", cites=DEFINED, name="TestGood")
         bad = t.go_test("internal/fixture/bad_test.go", cites=None, name="TestBad")
         t.register(rows=[row(DEFINED, "%s#TestGood, %s#TestBad" % (good, bad))])
@@ -312,7 +313,7 @@ class Rows(unittest.TestCase):
         )
         for label, bad_id in cases:
             with self.subTest(case=label):
-                t = baseline()
+                t = baseline(self)
                 t.register(rows=[row(bad_id, OPEN)])
                 code, out, err = t.run()
                 self.assertEqual(code, 1, err)
@@ -324,7 +325,7 @@ class Rows(unittest.TestCase):
     def test_an_id_wrapped_in_markup_is_read_through(self):
         for label, wrapped in (("backticks", "`%s`"), ("bold", "**%s**")):
             with self.subTest(case=label):
-                t = baseline()
+                t = baseline(self)
                 rel = t.go_test("internal/fixture/cited_test.go", cites=DEFINED)
                 t.register(rows=[row(wrapped % DEFINED, rel + "#TestHeld")])
                 code, out, err = t.run()
@@ -334,7 +335,7 @@ class Rows(unittest.TestCase):
     # REQ / TICKET item 3: "two rows share an id". TICKET, rules: "no two rows
     # share one".
     def test_two_rows_sharing_an_id_are_refused(self):
-        t = baseline()
+        t = baseline(self)
         t.register(rows=[row(DEFINED, OPEN, "First"), row(DEFINED, OPEN, "Second")])
         code, out, err = t.run()
         self.assertEqual(code, 1, err)
@@ -344,7 +345,7 @@ class Rows(unittest.TestCase):
     def test_a_blank_evidence_cell_is_refused(self):
         for label, cell in (("empty", ""), ("spaces", "   ")):
             with self.subTest(case=label):
-                t = baseline()
+                t = baseline(self)
                 t.register(rows=[row(DEFINED, cell)])
                 code, out, err = t.run()
                 self.assertEqual(code, 1, err)
@@ -353,7 +354,7 @@ class Rows(unittest.TestCase):
     # SPEC, "How the chain is checked": refuses "a `READING` that names no
     # review".
     def test_a_reading_that_names_no_review_is_refused(self):
-        t = baseline()
+        t = baseline(self)
         t.register(rows=[row(DEFINED, READING_BARE)])
         code, out, err = t.run()
         self.assertEqual(code, 1, err)
@@ -362,7 +363,7 @@ class Rows(unittest.TestCase):
     # SPEC, "How it works": the evidence cell may hold "`**READING — <the
     # review>**`".
     def test_a_reading_that_names_its_review_passes(self):
-        t = baseline()
+        t = baseline(self)
         t.register(rows=[row(DEFINED, READING_NAMED)])
         code, out, err = t.run()
         self.assertEqual(code, 0, err)
@@ -372,7 +373,7 @@ class Rows(unittest.TestCase):
     # dispenser wrote, with the dispenser's own OPEN cells, passes.
     @unittest.skipUnless(os.access(DISPENSER, os.X_OK), "dispenser not installed")
     def test_a_register_the_dispenser_wrote_passes(self):
-        t = baseline()
+        t = baseline(self)
         reg = os.path.join(t.root, "docs", "requirements.md")
         for sentence in ("A first fixture rule", "A second fixture rule"):
             proc = subprocess.run(
@@ -392,7 +393,7 @@ class NothingScanned(unittest.TestCase):
     # REQ: "exit 0 clean, 1 findings on stderr, 2 nothing scanned". SPEC: "a
     # run that scans nothing fails". No register: nothing to scan against.
     def test_no_register_exits_2(self):
-        t = Tree()
+        t = Tree(self)
         t.go_test("internal/fixture/held_test.go")
         code, out, err = t.run()
         self.assertEqual(code, 2, err)
@@ -400,7 +401,7 @@ class NothingScanned(unittest.TestCase):
     # REQ: "2 nothing scanned". A register with nothing to scan around it: no
     # test file under any root and no specification.
     def test_no_test_files_and_no_specifications_exits_2(self):
-        t = Tree()
+        t = Tree(self)
         t.register()
         code, out, err = t.run()
         self.assertEqual(code, 2, err)
@@ -410,14 +411,14 @@ class NothingScanned(unittest.TestCase):
     # the run cannot be clean. Which non-zero code is not determined by the
     # spec; the assertion is only that it is not 0.
     def test_a_register_without_a_project_line_is_not_clean(self):
-        t = baseline()
+        t = baseline(self)
         t.register(project_line=False)
         code, out, err = t.run()
         self.assertNotEqual(code, 0, out)
 
     # SPEC, "How the chain is checked": "An empty register passes".
     def test_an_empty_register_passes(self):
-        t = baseline()
+        t = baseline(self)
         code, out, err = t.run()
         self.assertEqual(code, 0, err)
         self.assertEqual(err, "")
@@ -462,6 +463,7 @@ class RealTreeInjected(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.root = tempfile.mkdtemp(prefix="qa-chain-real-")
+        cls.addClassCleanup(shutil.rmtree, cls.root, True)
         for d in cls.ROOTS:
             src = os.path.join(REPO, d)
             if os.path.isdir(src):
