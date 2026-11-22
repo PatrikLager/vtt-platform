@@ -39,7 +39,7 @@ cmd/vtt/campaign_abilities_fit_test.go  0.0
 cmd/vtt/campaign_fit_test.go  0.0
 cmd/vtt/campaign_spend_fit_test.go  0.0
 cmd/vtt/cli_test.go  22.9
-cmd/vtt/client_e2e_test.go  33.3
+cmd/vtt/client_e2e_test.go  32.0
 cmd/vtt/client_run.go  23.3
 cmd/vtt/client_soak.go  31.1
 cmd/vtt/dialer_test.go  14.7
@@ -48,10 +48,10 @@ cmd/vtt/embed.go  62.0
 cmd/vtt/events_tail.go  28.9
 cmd/vtt/events_tail_truncation_test.go  22.6
 cmd/vtt/harness_boot.go  44.1
-cmd/vtt/harness_boot_test.go  24.1
+cmd/vtt/harness_boot_test.go  20.0
 cmd/vtt/invite.go  23.6
 cmd/vtt/joinlink.go  25.4
-cmd/vtt/library_test.go  35.7
+cmd/vtt/library_test.go  30.9
 cmd/vtt/main.go  39.2
 cmd/vtt/maps.go  76.3
 cmd/vtt/maps_e2e_test.go  28.3
@@ -70,6 +70,7 @@ cmd/vtt/qa_fixture_startup_test.go  0.0
 cmd/vtt/qa_get_ruleset_test.go  0.0
 cmd/vtt/qa_invite_names_test.go  0.0
 cmd/vtt/qa_invite_role_test.go  0.0
+cmd/vtt/qa_mint_role_test.go  0.0
 cmd/vtt/qa_note_schema_test.go  0.0
 cmd/vtt/qa_resource_change_dump_test.go  7.6
 cmd/vtt/qa_ruleset_by_role_test.go  0.0
@@ -331,11 +332,13 @@ internal/harness/one_log_test.go  0.0
 internal/harness/qa_client_switch_test.go  0.0
 internal/harness/qa_log_seat_test.go  0.0
 internal/harness/qa_one_log_test.go  0.0
+internal/harness/qa_scenario_names_test.go  0.0
+internal/harness/qa_scenario_role_test.go  0.0
 internal/harness/qa_soak_log_test.go  0.0
 internal/harness/qa_world_seat_test.go  0.0
-internal/harness/scenario.go  49.4
-internal/harness/scenario_test.go  19.8
-internal/harness/soak.go  40.5
+internal/harness/scenario.go  46.7
+internal/harness/scenario_test.go  15.5
+internal/harness/soak.go  40.0
 internal/harness/soak_drain_internal_test.go  24.6
 internal/harness/soak_log_seat_test.go  0.0
 internal/harness/soak_test.go  34.6
