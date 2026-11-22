@@ -354,6 +354,7 @@ test("every input the console owns is reachable by its stable data-field", () =>
 
 // --- exact refusal messages -------------------------------------------------
 
+// VTT-951
 test("each guard refuses with its own exact wording", () => {
   // One message per guard, and they must differ: a DM told "invalid" cannot
   // tell which box to fix.
@@ -374,6 +375,7 @@ test("each guard refuses with its own exact wording", () => {
     const h = run();
     expect(h.notices).toEqual([want]);
     expect(h.sent).toHaveLength(0);
+    expect([want, h.confirmCount()]).toEqual([want, 0]);
     seen.push(want);
   }
   expect(new Set(seen).size).toBe(seen.length);
@@ -578,24 +580,73 @@ test("removing a token sends its trimmed id and clears the field", async () => {
 // command, sharing actor-id with Add rather than a field of its own — naming
 // an actor to remove needs nothing else.
 //
-// NO CONFIRMATION, and that is this file's own rule rather than an omission:
-// dm.ts's header says exactly one control asks first, and it is the one whose
-// damage lands OUTSIDE the room (rotating the join link strands copies held by
-// people who are not here). A removal lands on the log every seat at this
-// table can see.
+// The harness answers Remove's question yes; the question's own tests follow.
+// VTT-947
 test("removing an actor sends its trimmed id and clears the field", async () => {
-  const h = harness();
-  fill(h, { "actor-id": " a1 " });
-  // Through the event, for the reason the token twin above states.
-  h.field("actor-id").dispatchEvent(new Event("input"));
-  h.action("remove-actor").click();
-  const [p] = payloads(h);
-  expect(p!.case).toBe("removeActor");
-  expect(p!.value["actorId"]).toBe("a1");
-  await h.settle();
+  try {
+    const h = harness();
+    fill(h, { "actor-id": " a1 " });
+    // Through the event, for the reason the token twin above states.
+    h.field("actor-id").dispatchEvent(new Event("input"));
+    h.action("remove-actor").click();
+    expect(h.confirmCount()).toBe(1);
+    expect(h.sent).toHaveLength(1);
+    const [p] = payloads(h);
+    expect(p!.case).toBe("removeActor");
+    expect(p!.value["actorId"]).toBe("a1");
+    await h.settle();
 
-  const next = harness();
-  expect(next.field("actor-id").value).toBe("");
+    const next = harness();
+    expect(next.field("actor-id").value).toBe("");
+  } finally {
+    type(harness(), { "actor-id": "" });
+  }
+});
+
+// VTT-950
+test("Remove asks first, naming the actor by its name, else by its id, and a no sends nothing", () => {
+  const ask = (typed: string) => {
+    const h = harness(leraTable());
+    h.setConfirm(false);
+    fill(h, { "actor-id": typed });
+    h.action("remove-actor").click();
+    return { asked: h.confirmMessages(), sent: h.sent.length, notices: h.notices };
+  };
+  const lost = "Nothing brings it back, and its tokens leave the board.";
+  expect(ask("  a1 ")).toEqual({ asked: [`Remove Gobo? ${lost}`], sent: 0, notices: [] });
+  expect(ask("a3")).toEqual({ asked: [`Remove a3? ${lost}`], sent: 0, notices: [] });
+  expect(ask("a9")).toEqual({ asked: [`Remove a9? ${lost}`], sent: 0, notices: [] });
+});
+
+// VTT-948
+test("a Remove the DM declines keeps the actor field as typed, at the next paint too", () => {
+  try {
+    const h = harness(leraTable());
+    h.setConfirm(false);
+    type(h, { "actor-id": " a1 " });
+    h.action("remove-actor").click();
+    expect([h.confirmCount(), h.sent.length]).toEqual([1, 0]);
+    expect(h.field("actor-id").value).toBe(" a1 ");
+    expect(harness(leraTable()).field("actor-id").value).toBe(" a1 ");
+  } finally {
+    type(harness(), { "actor-id": "" });
+  }
+});
+
+// VTT-523
+test("a Remove pressed again while its command is unanswered asks nothing and sends nothing", async () => {
+  const h = harness(leraTable(), { answer: "held" });
+  try {
+    fill(h, { "actor-id": "a1" });
+    h.action("remove-actor").click();
+    const asked = h.confirmCount();
+    h.action("remove-actor").click();
+    expect(h.confirmCount()).toBe(asked);
+    expect(h.sent.map((c) => c.command.case)).toEqual(["removeActor"]);
+  } finally {
+    h.release(refused("not authorized"));
+    await h.settle();
+  }
 });
 
 // VTT-229
@@ -755,6 +806,7 @@ test("no maps configured means no Maps group at all, not an empty one", () => {
 
 // --- whitespace is not content ----------------------------------------------
 
+// VTT-951
 test("a whitespace-only id is refused everywhere one is required", () => {
   // Kills the `.trim()` removals in the GUARDS specifically: without trim,
   // "   " is truthy and the command goes out with a blank id.
@@ -796,6 +848,7 @@ test("a whitespace-only id is refused everywhere one is required", () => {
   removeActor.action("remove-actor").click();
   expect(removeActor.sent).toHaveLength(0);
   expect(removeActor.notices).toEqual(["name the actor to remove"]);
+  expect(removeActor.confirmCount()).toBe(0);
 
   const removeToken = harness();
   fill(removeToken, { "token-id": "   " });

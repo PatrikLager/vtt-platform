@@ -372,19 +372,15 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
           clears: ["actor-id", "actor-name", "actor-kind"],
         };
       }), "add-actor"),
-      // Takes an actor out of the world for good, and every token it has on
-      // the board with it (retraction-leaves Task 9, spec §5.2) — the DM's
-      // reach for the one command in this arc that emits a batch. Shares
-      // actorId with Add rather than a field of its own: naming an actor to
-      // remove needs nothing else, which is exactly how Remove sits beside
-      // Place one group down.
-      //
-      // NO CONFIRMATION, per this file's own opening rule: exactly one control
-      // asks first, and it is the one whose damage lands OUTSIDE the room. A
-      // removal lands on the log every seat at this table can see.
+      // Ask inside the press `sending` runs, after the empty check: a press that
+      // `sending` holds back, or that the check stops, must ask the DM nothing.
+      // VTT-950 VTT-947 VTT-948 VTT-951
       button("Remove", sending(d, "remove-actor", () => {
-        if (actorId.value.trim() === "") return void d.notify("name the actor to remove");
-        return { command: removeActor(actorId.value.trim()), clears: ["actor-id"], rereads: true };
+        const id = actorId.value.trim();
+        if (id === "") return void d.notify("name the actor to remove");
+        const shown = d.st.Actors[id]?.name || id;
+        if (!d.confirm(`Remove ${shown}? Nothing brings it back, and its tokens leave the board.`)) return;
+        return { command: removeActor(id), clears: ["actor-id"], rereads: true };
       }), "remove-actor"),
     ),
   );
