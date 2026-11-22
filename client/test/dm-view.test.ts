@@ -354,7 +354,7 @@ test("every input the console owns is reachable by its stable data-field", () =>
 
 // --- exact refusal messages -------------------------------------------------
 
-// VTT-951
+// VTT-951 VTT-955
 test("each guard refuses with its own exact wording", () => {
   // One message per guard, and they must differ: a DM told "invalid" cannot
   // tell which box to fix.
@@ -556,24 +556,107 @@ test("a token's ids are trimmed and its coordinates parsed, defaulting to 0", ()
 
 // removeToken (retraction-leaves Task 8, fix round 1): the restored DM
 // control, sharing token-id with Place rather than a field of its own.
+//
+// The harness answers Remove token's question yes; its own tests follow.
+// VTT-953
 test("removing a token sends its trimmed id and clears the field", async () => {
-  const h = harness();
-  fill(h, { "token-id": " t1 " });
-  // THROUGH THE EVENT, the way "placing a token clears exactly the token
-  // fields" does it further down. `fill` assigns the DOM value only, and
-  // dm.ts's draft buffer is written by the `input` handler — so without this
-  // line the draft was never populated and the "clears the field" half of
-  // this test passed whether or not anything was cleared. That vacuum is how
-  // this handler's clearDraft call survived mutation (measured 2026-09-01).
-  h.field("token-id").dispatchEvent(new Event("input"));
-  h.action("remove-token").click();
-  const [p] = payloads(h);
-  expect(p!.case).toBe("removeToken");
-  expect(p!.value["tokenId"]).toBe("t1");
-  await h.settle();
+  try {
+    const h = harness();
+    fill(h, { "token-id": " t1 " });
+    // THROUGH THE EVENT, the way "placing a token clears exactly the token
+    // fields" does it further down. `fill` assigns the DOM value only, and
+    // dm.ts's draft buffer is written by the `input` handler — so without this
+    // line the draft was never populated and the "clears the field" half of
+    // this test passed whether or not anything was cleared. That vacuum is how
+    // this handler's clearDraft call survived mutation (measured 2026-09-01).
+    h.field("token-id").dispatchEvent(new Event("input"));
+    h.action("remove-token").click();
+    expect(h.confirmCount()).toBe(1);
+    expect(h.sent).toHaveLength(1);
+    const [p] = payloads(h);
+    expect(p!.case).toBe("removeToken");
+    expect(p!.value["tokenId"]).toBe("t1");
+    await h.settle();
 
-  const next = harness();
-  expect(next.field("token-id").value).toBe("");
+    const next = harness();
+    expect(next.field("token-id").value).toBe("");
+  } finally {
+    type(harness(), { "token-id": "" });
+  }
+});
+
+/**
+ * leraTable's actors, with a token for each arm of Remove token's naming. No
+ * actor a9 is held, and every empty name is "", as the fold writes it.
+ */
+function tokenTable(): State {
+  const st = leraTable();
+  const token = (id: string, actor: string, name: string, gmName: string) => {
+    st.Tokens[id] = {
+      ID: id, SceneID: "s1", ActorID: actor, X: 0, Y: 0,
+      Name: name, Notes: "", GMName: gmName, GMNotes: "",
+    };
+  };
+  token("t-gm", "a1", "a hunched goblin", "Goblin Cutter");
+  token("t-actor", "a1", "a hunched goblin", "");
+  token("t-seen", "a3", "a shadow", "");
+  token("t-bare", "a3", "", "");
+  token("t-gone", "a9", "", "");
+  return st;
+}
+
+// VTT-952
+test("Remove token asks first, naming the token by its GM name, its actor's name, its name or its id, and a no sends nothing", () => {
+  const ask = (typed: string) => {
+    const h = harness(tokenTable());
+    h.setConfirm(false);
+    fill(h, { "token-id": typed });
+    h.action("remove-token").click();
+    return { asked: h.confirmMessages(), sent: h.sent.length, notices: h.notices };
+  };
+  const asked = (shown: string) => ({
+    asked: [`Remove ${shown} from the board? Its place, names and notes go with it.`],
+    sent: 0,
+    notices: [],
+  });
+  expect(ask("t-gm")).toEqual(asked("Goblin Cutter"));
+  expect(ask("  t-gm ")).toEqual(asked("Goblin Cutter"));
+  expect(ask("t-actor")).toEqual(asked("Gobo"));
+  expect(ask("t-seen")).toEqual(asked("a shadow"));
+  expect(ask("t-bare")).toEqual(asked("t-bare"));
+  expect(ask("t-gone")).toEqual(asked("t-gone"));
+  expect(ask(" t9 ")).toEqual(asked("t9"));
+});
+
+// VTT-954
+test("a Remove token the DM declines keeps the token field as typed, at the next paint too", () => {
+  try {
+    const h = harness(tokenTable());
+    h.setConfirm(false);
+    type(h, { "token-id": " t-gm " });
+    h.action("remove-token").click();
+    expect([h.confirmCount(), h.sent.length]).toEqual([1, 0]);
+    expect(h.field("token-id").value).toBe(" t-gm ");
+    expect(harness(tokenTable()).field("token-id").value).toBe(" t-gm ");
+  } finally {
+    type(harness(), { "token-id": "" });
+  }
+});
+
+// VTT-523
+test("a Remove token pressed again while its command is unanswered asks nothing and sends nothing", async () => {
+  const h = harness(tokenTable(), { answer: "held" });
+  try {
+    fill(h, { "token-id": "t-gm" });
+    h.action("remove-token").click();
+    const asked = h.confirmCount();
+    h.action("remove-token").click();
+    expect(h.confirmCount()).toBe(asked);
+    expect(h.sent.map((c) => c.command.case)).toEqual(["removeToken"]);
+  } finally {
+    h.release(refused("not authorized"));
+    await h.settle();
+  }
 });
 
 // removeActor (retraction-leaves Task 9): the DM control for the batch
@@ -806,7 +889,7 @@ test("no maps configured means no Maps group at all, not an empty one", () => {
 
 // --- whitespace is not content ----------------------------------------------
 
-// VTT-951
+// VTT-951 VTT-955
 test("a whitespace-only id is refused everywhere one is required", () => {
   // Kills the `.trim()` removals in the GUARDS specifically: without trim,
   // "   " is truthy and the command goes out with a blank id.
@@ -855,6 +938,7 @@ test("a whitespace-only id is refused everywhere one is required", () => {
   removeToken.action("remove-token").click();
   expect(removeToken.sent).toHaveLength(0);
   expect(removeToken.notices).toEqual(["name the token to remove"]);
+  expect(removeToken.confirmCount()).toBe(0);
 });
 
 test("a token's y coordinate is carried through, not just its x", () => {

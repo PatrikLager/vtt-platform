@@ -17,7 +17,7 @@ client/src/state.ts  61.2
 client/src/view/art-assets.ts  68.9
 client/src/view/camera.ts  44.2
 client/src/view/canvas.ts  71.6
-client/src/view/dm.ts  29.7
+client/src/view/dm.ts  28.6
 client/src/view/doors.ts  22.0
 client/src/view/feed.ts  15.1
 client/src/view/focus.ts  19.1

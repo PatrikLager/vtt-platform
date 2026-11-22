@@ -432,13 +432,16 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
           clears: ["token-id", "token-scene", "token-actor", "token-x", "token-y"],
         };
       }), "place-token"),
-      // Takes a piece off the board for good (retraction-leaves Task 8, spec
-      // §5.1) — the DM control this branch's own Task 3 left without one
-      // when the Undo group came out. Shares tokId with Place rather than a
-      // field of its own: naming a token to remove needs nothing else.
+      // Ask inside the press `sending` runs, after the empty check: a press that
+      // `sending` holds back, or that the check stops, must ask the DM nothing.
+      // VTT-952 VTT-953 VTT-954 VTT-955
       button("Remove", sending(d, "remove-token", () => {
-        if (!tokId.value.trim()) return void d.notify("name the token to remove");
-        return { command: removeToken(tokId.value.trim()), clears: ["token-id"] };
+        const id = tokId.value.trim();
+        if (id === "") return void d.notify("name the token to remove");
+        const tok = d.st.Tokens[id];
+        const shown = (tok && (tok.GMName || d.st.Actors[tok.ActorID]?.name || tok.Name)) || id;
+        if (!d.confirm(`Remove ${shown} from the board? Its place, names and notes go with it.`)) return;
+        return { command: removeToken(id), clears: ["token-id"] };
       }), "remove-token"),
     ),
   );
