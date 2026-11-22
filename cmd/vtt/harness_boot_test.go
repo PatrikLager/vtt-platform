@@ -14,6 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/PatrikLager/vtt-platform/internal/campaign"
+	"github.com/PatrikLager/vtt-platform/internal/harness"
+	"github.com/PatrikLager/vtt-platform/internal/identity"
 	"github.com/PatrikLager/vtt-platform/internal/mapdef"
 )
 
@@ -217,4 +220,47 @@ func sortedMapIDs(maps map[string]*mapdef.Map) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func mintInvitesInFreshCampaign(t *testing.T, ps []harness.Participant) (string, map[string]string, map[string]string, error) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := campaign.EnsureDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	tokens, ids, err := mintInvites(dir, &harness.Scenario{Participants: ps})
+	return dir, tokens, ids, err
+}
+
+// VTT-942
+func TestMintInvitesRefusesAParticipantDeclaredPlayer(t *testing.T) {
+	_, _, _, err := mintInvitesInFreshCampaign(t, []harness.Participant{
+		{Name: "dm", Role: "dm"}, {Name: "Anna", Role: "player"}})
+	if err == nil || !strings.Contains(err.Error(), "becomes a player when given a character") {
+		t.Fatalf("mintInvites = %v, want CreateInvite's refusal of a player", err)
+	}
+}
+
+// VTT-942
+func TestMintInvitesMintsEachParticipantAtTheRoleItDeclares(t *testing.T) {
+	ps := []harness.Participant{
+		{Name: "dm", Role: "dm"}, {Name: "agent", Role: "agent"}, {Name: "Kalle", Role: "spectator"}}
+	dir, tokens, ids, err := mintInvitesInFreshCampaign(t, ps)
+	if err != nil {
+		t.Fatalf("mintInvites: %v", err)
+	}
+	db, err := identity.Open(campaign.LogPath(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	for _, p := range ps {
+		got, err := db.Verify(tokens[p.Name])
+		if err != nil {
+			t.Fatalf("Verify %s's token: %v", p.Name, err)
+		}
+		if got.Role != identity.Role(p.Role) || got.ID != ids[p.Name] {
+			t.Errorf("%s minted as %+v, want role %s and id %s", p.Name, got, p.Role, ids[p.Name])
+		}
+	}
 }

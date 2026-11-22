@@ -352,12 +352,8 @@ func mintInvites(campaignPath string, sc *harness.Scenario) (tokens, ids map[str
 	tokens = make(map[string]string, len(sc.Participants))
 	ids = make(map[string]string, len(sc.Participants))
 	for _, p := range sc.Participants {
-		// Mint a scenario's player a spectator: only a grant makes a player (SPEC-009).
-		role := identity.Role(p.Role)
-		if role == identity.RolePlayer {
-			role = identity.RoleSpectator
-		}
-		token, id, err := idb.CreateInvite(p.Name, role)
+		// VTT-942
+		token, id, err := idb.CreateInvite(p.Name, identity.Role(p.Role))
 		if err != nil {
 			return nil, nil, fmt.Errorf("vtt client run: mint invite for %q: %w", p.Name, err)
 		}

@@ -255,3 +255,43 @@ func TestNoScenarioOrSoakParticipantIsNamedForARole(t *testing.T) {
 		}
 	}
 }
+
+func writeScenarioWithParticipants(t *testing.T, participants string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "participants.json")
+	body := `{"name": "participants", "participants": [` + participants + `],
+		"steps": [{"by": "dm", "command": {"startSession": {"name": "s1"}},
+		"expect": {"ok": true}}]}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// VTT-941
+func TestLoadScenarioRefusesAParticipantDeclaredPlayer(t *testing.T) {
+	path := writeScenarioWithParticipants(t,
+		`{"name": "dm", "role": "dm"}, {"name": "Anna", "role": "player"}`)
+	_, err := harness.LoadScenario(path)
+	if err == nil {
+		t.Fatal("LoadScenario accepted a participant declared player")
+	}
+	for _, want := range []string{`"Anna"`, "spectator"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("LoadScenario error %q does not say %s", err, want)
+		}
+	}
+}
+
+// VTT-941
+func TestLoadScenarioLoadsDMAgentAndSpectatorParticipants(t *testing.T) {
+	path := writeScenarioWithParticipants(t, `{"name": "dm", "role": "dm"},
+		{"name": "agent", "role": "agent"}, {"name": "Kalle", "role": "spectator"}`)
+	sc, err := harness.LoadScenario(path)
+	if err != nil {
+		t.Fatalf("LoadScenario: %v", err)
+	}
+	if len(sc.Participants) != 3 || sc.Participants[2].Role != "spectator" {
+		t.Errorf("Participants = %+v, want dm, agent and Kalle as spectator", sc.Participants)
+	}
+}

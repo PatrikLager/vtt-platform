@@ -201,20 +201,8 @@ type NoteAtProbe struct {
 	TextContains string `json:"textContains,omitempty"`
 }
 
-// LoadScenario reads and strictly parses a scenario file: unknown JSON
-// fields are errors (json.Decoder.DisallowUnknownFields), and every step is
-// decoded and validated individually so failures name the offending step
-// index (task-2-brief.md's binding requirement) — e.g. "harness: scenario
-// step 2: json: unknown field \"bogus\"", or "harness: scenario step 0:
-// expect is required when command is set".
-//
-// Validation here is deliberately structural only (exactly one of
-// Command/Reconnect per step; Expect required with Command; exactly one
-// probe kind per Probe) — it does NOT protojson-parse Command's contents;
-// that happens in the engine at execution time (RunScenario), where a
-// malformed ClientCommand surfaces as that step's own failure rather than a
-// load-time error, keeping the two concerns (shape vs. wire semantics)
-// separate.
+// LoadScenario reads and strictly parses a scenario file (VTT-941); RunScenario
+// parses each step's command when it runs it.
 func LoadScenario(path string) (*Scenario, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -248,6 +236,12 @@ func parseScenario(data []byte) (*Scenario, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&raw); err != nil {
 		return nil, fmt.Errorf("parse scenario: %w", err)
+	}
+	// VTT-941
+	for _, p := range raw.Participants {
+		if p.Role == "player" {
+			return nil, fmt.Errorf("scenario participant %q: a participant becomes a player when given a character; declare them a spectator", p.Name)
+		}
 	}
 
 	sc := &Scenario{Name: raw.Name, Participants: raw.Participants, Probes: raw.Probes, Ruleset: raw.Ruleset, Adventures: raw.Adventures, Maps: raw.Maps}
