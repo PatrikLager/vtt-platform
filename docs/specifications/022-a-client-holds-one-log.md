@@ -141,8 +141,12 @@ the console's Remove actor asks the DM first, naming the actor, sends
 nothing and leaves its field as typed on a no, sends one `remove_actor` on
 a yes, and asks nothing for a blank field, is held by
 `client/test/dm-view.test.ts` and `client/test/qa-remove-asks-first.test.ts`
-(VTT-947, VTT-948, VTT-950, VTT-951). That the panel
-offers, for the actor it acts as, only the abilities of the window's list
+(VTT-947, VTT-948, VTT-950, VTT-951). That the console's Remove token asks
+the DM first, naming the token, sends nothing and leaves its field as typed
+on a no, sends one `remove_token` on a yes, and asks nothing for a blank
+field, is held by `client/test/dm-view.test.ts` and
+`client/test/qa-remove-token-asks-first.test.ts` (VTT-952 to VTT-955). That
+the panel offers, for the actor it acts as, only the abilities of the window's list
 that the actor's sheet names, in a player's, a DM's and an agent's window,
 is held by `client/test/panel-offers.test.ts`,
 `client/test/qa-window-offers.test.ts`,
@@ -1089,6 +1093,18 @@ trimmed id (VTT-947). The question and the notice sit inside the press
 `sending` runs, so a press its lock holds back shows, asks and sends
 nothing.
 
+**The console's Remove token asks first.** While no `remove_token` it sent
+is unanswered, Remove token pressed with a token id that is not blank asks
+the DM through `DMDeps.confirm`: "Remove <token> from the board? Its place,
+names and notes go with it.", the token shown by its GM name in the
+console's fold for the trimmed id, else its actor's name, as a DM's board titles a token
+(VTT-484), else its name, else the trimmed id (VTT-952); pressed with
+`token-id` empty or white space, it shows `name the token to remove`, asks
+nothing and sends nothing (VTT-955). A no sends nothing and leaves
+`token-id` as typed (VTT-954); a yes sends one `remove_token` naming the
+trimmed id (VTT-953). As for Remove actor, a press its lock holds back
+shows, asks and sends nothing.
+
 **The console's roster.** `renderDMConsole` draws "Who may do what" whenever
 the roster was read: one row per participant `/api/participants` answered,
 with their name and the role it answered (SPEC-009). A player's row offers
@@ -1355,4 +1371,5 @@ VTT-862, VTT-863, VTT-864, VTT-865, VTT-866, VTT-871, VTT-872, VTT-876,
 VTT-881, VTT-882, VTT-883, VTT-885, VTT-886, VTT-887, VTT-888,
 VTT-901, VTT-902, VTT-903, VTT-904, VTT-905, VTT-917, VTT-918,
 VTT-920, VTT-932, VTT-933, VTT-934, VTT-935, VTT-936, VTT-937, VTT-938,
-VTT-939, VTT-940, VTT-947, VTT-948, VTT-950, VTT-951.
+VTT-939, VTT-940, VTT-947, VTT-948, VTT-950, VTT-951, VTT-952, VTT-953,
+VTT-954, VTT-955.
