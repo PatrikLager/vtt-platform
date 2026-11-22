@@ -137,7 +137,11 @@ revocation and a removal of an actor read the roster again once accepted and
 a Say, an Add actor and a Place at no answer, by
 `client/test/dm-view.test.ts`, `client/test/qa-console-perch.test.ts` and
 `client/e2e/handover.spec.ts` (VTT-901 to VTT-905, VTT-932, VTT-933). That
-the panel
+the console's Remove actor asks the DM first, naming the actor, sends
+nothing and leaves its field as typed on a no, sends one `remove_actor` on
+a yes, and asks nothing for a blank field, is held by
+`client/test/dm-view.test.ts` and `client/test/qa-remove-asks-first.test.ts`
+(VTT-947, VTT-948, VTT-950, VTT-951). That the panel
 offers, for the actor it acts as, only the abilities of the window's list
 that the actor's sheet names, in a player's, a DM's and an agent's window,
 is held by `client/test/panel-offers.test.ts`,
@@ -1073,6 +1077,18 @@ properties, so with no ruleset served the console
 offers no give and still offers a take of each id a sheet names. Whether the
 server accepts either is SPEC-013's.
 
+**The console's Remove actor asks first.** While no `remove_actor` it sent
+is unanswered, Remove actor pressed with an actor id that is not blank asks
+the DM through `DMDeps.confirm`: "Remove <actor>? Nothing brings it back,
+and its tokens leave the board.", the actor shown by its name in the
+console's fold for the trimmed id, else by the id (VTT-950); pressed with
+`actor-id` empty or white space, it shows `name the actor to remove`, asks
+nothing and sends nothing (VTT-951). A no sends nothing and leaves
+`actor-id` as typed (VTT-948); a yes sends one `remove_actor` naming the
+trimmed id (VTT-947). The question and the notice sit inside the press
+`sending` runs, so a press its lock holds back shows, asks and sends
+nothing.
+
 **The console's roster.** `renderDMConsole` draws "Who may do what" whenever
 the roster was read: one row per participant `/api/participants` answered,
 with their name and the role it answered (SPEC-009). A player's row offers
@@ -1339,4 +1355,4 @@ VTT-862, VTT-863, VTT-864, VTT-865, VTT-866, VTT-871, VTT-872, VTT-876,
 VTT-881, VTT-882, VTT-883, VTT-885, VTT-886, VTT-887, VTT-888,
 VTT-901, VTT-902, VTT-903, VTT-904, VTT-905, VTT-917, VTT-918,
 VTT-920, VTT-932, VTT-933, VTT-934, VTT-935, VTT-936, VTT-937, VTT-938,
-VTT-939, VTT-940.
+VTT-939, VTT-940, VTT-947, VTT-948, VTT-950, VTT-951.
