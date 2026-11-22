@@ -4,14 +4,14 @@
   "adventures": "adventures",
   "participants": [
     {"name": "dm", "role": "dm"},
-    {"name": "player", "role": "player"},
-    {"name": "spectator", "role": "spectator"}
+    {"name": "Anna", "role": "spectator"},
+    {"name": "Kalle", "role": "spectator"}
   ],
   "steps": [
     {"by": "dm", "command": {"loadAdventure": {"adventureId": "goblin-ambush"}}, "expect": {"ok": true}},
 
-    {"by": "player", "command": {"loadAdventure": {"adventureId": "goblin-ambush"}}, "expect": {"deniedContaining": "not authorized"}},
-    {"by": "spectator", "command": {"loadAdventure": {"adventureId": "goblin-ambush"}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "Anna", "command": {"loadAdventure": {"adventureId": "goblin-ambush"}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "Kalle", "command": {"loadAdventure": {"adventureId": "goblin-ambush"}}, "expect": {"deniedContaining": "not authorized"}},
 
     {"by": "dm", "command": {"loadAdventure": {"adventureId": "no-such-adventure"}}, "expect": {"deniedContaining": "unknown adventure"}},
 

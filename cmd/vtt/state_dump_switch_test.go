@@ -196,7 +196,7 @@ func TestAPlayersDumpNamesItsLogAgainstARealGateway(t *testing.T) {
 		t.Fatalf("scenario: err=%v steps=%+v", err, rep)
 	}
 
-	out, err := runCLI(t, "state", "dump", "--server", boot.WSURL, "--token", boot.Tokens["player"])
+	out, err := runCLI(t, "state", "dump", "--server", boot.WSURL, "--token", boot.Tokens["Anna"])
 	if err != nil {
 		t.Fatalf("a player's dump: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestAPlayersDumpNamesItsLogAgainstARealGateway(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &fields); err != nil || json.Unmarshal(fields["log"], &log) != nil || log != "act-ash" {
 		t.Fatalf("a player's dump names log %s, want act-ash, its first party member by id (err %v)", fields["log"], err)
 	}
-	envs := freshDialOf(t, boot.WSURL, boot.Tokens["player"], log)
+	envs := freshDialOf(t, boot.WSURL, boot.Tokens["Anna"], log)
 	st, err := harness.Fold(envs)
 	if err != nil {
 		t.Fatal(err)

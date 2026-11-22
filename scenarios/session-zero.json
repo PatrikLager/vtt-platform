@@ -3,8 +3,8 @@
   "maps": "scenarios/maps",
   "participants": [
     {"name": "dm", "role": "dm"},
-    {"name": "player", "role": "player"},
-    {"name": "spectator", "role": "spectator"}
+    {"name": "Anna", "role": "spectator"},
+    {"name": "Kalle", "role": "spectator"}
   ],
   "steps": [
     {"by": "dm", "command": {"startSession": {"name": "Session Zero"}}, "expect": {"ok": true}},
@@ -14,18 +14,18 @@
     {"by": "dm", "command": {"loadMap": {"mapId": "camp"}}, "expect": {"ok": true}},
 
     {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-fighter", "name": "Asme", "kind": "ACTOR_KIND_PARTY_MEMBER"}}}, "expect": {"ok": true}},
-    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-fighter", "participantId": "{{id:player}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-fighter", "participantId": "{{id:Anna}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-healer", "name": "Ilva", "kind": "ACTOR_KIND_PARTY_MEMBER"}}}, "expect": {"ok": true}},
-    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-healer", "participantId": "{{id:player}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-healer", "participantId": "{{id:Anna}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-goblin-archer", "name": "Goblin Archer", "kind": "ACTOR_KIND_NON_PARTY"}}}, "expect": {"ok": true}},
 
     {"by": "dm", "command": {"placeToken": {"tokenId": "tok-fighter", "sceneId": "ambush", "actorId": "act-fighter", "position": {"x": 1, "y": 4}}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"placeToken": {"tokenId": "tok-healer", "sceneId": "camp", "actorId": "act-healer", "position": {"x": 1, "y": 1}}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"placeToken": {"tokenId": "tok-goblin-archer", "sceneId": "ambush", "actorId": "act-goblin-archer", "position": {"x": 19, "y": 8}}}, "expect": {"ok": true}},
 
-    {"by": "player", "command": {"moveToken": {"tokenId": "tok-fighter", "to": {"x": 19, "y": 8}}}, "expect": {"deniedContaining": "you cannot see that square"}},
+    {"by": "Anna", "command": {"moveToken": {"tokenId": "tok-fighter", "to": {"x": 19, "y": 8}}}, "expect": {"deniedContaining": "you cannot see that square"}},
 
-    {"by": "player", "command": {"moveToken": {"tokenId": "tok-fighter", "to": {"x": 2, "y": 4}}}, "expect": {"ok": true}},
+    {"by": "Anna", "command": {"moveToken": {"tokenId": "tok-fighter", "to": {"x": 2, "y": 4}}}, "expect": {"ok": true}},
 
     {"by": "dm", "command": {"moveToken": {"tokenId": "tok-goblin-archer", "to": {"x": 2, "y": 8}}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"moveToken": {"tokenId": "tok-goblin-archer", "to": {"x": 19, "y": 8}}}, "expect": {"ok": true}},

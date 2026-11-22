@@ -191,7 +191,7 @@ func newSoakWorld(ids map[string]string) *soakWorld {
 	return &soakWorld{
 		st: engine.NewState(),
 		roles: map[string]string{
-			"dm": "dm", "player1": "player", "player2": "player", "agent": "agent",
+			"dm": "dm", "Anna": "player", "Lisa": "player", "agent": "agent",
 		},
 		ids: ids,
 		// nextBroadcastOrdinal/nextDeliveryOrdinal start at their zero value
@@ -529,7 +529,7 @@ func (w *soakWorld) deliverInOrder(ordinal int64, env *vttv1.Envelope) {
 // --- fixed test ids ----------------------------------------------------------
 
 func soakTestIDs() map[string]string {
-	return map[string]string{"player1": "id-player1", "player2": "id-player2"}
+	return map[string]string{"Anna": "id-Anna", "Lisa": "id-Lisa"}
 }
 
 // --- Step 1: generator determinism -------------------------------------------
@@ -1130,7 +1130,7 @@ func TestASoakCheckpointFailsACharacterStreamThatSkips(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ids := soakTestIDs()
 		w := newSoakWorld(ids)
-		w.skipFor = map[string]int64{"player1": 10}
+		w.skipFor = map[string]int64{"Anna": 10}
 
 		var log bytes.Buffer
 		rep, err := harness.RunSoak(context.Background(),
@@ -1139,17 +1139,17 @@ func TestASoakCheckpointFailsACharacterStreamThatSkips(t *testing.T) {
 			t.Fatalf("RunSoak: %v", err)
 		}
 		if rep.Pass {
-			t.Fatalf("a soak whose player1 was never sent sequence 10 passed:\n%s", log.String())
+			t.Fatalf("a soak whose Anna was never sent sequence 10 passed:\n%s", log.String())
 		}
-		const want = "[checkpoint 1] FAIL: player1's stream breaks its log: sequence 11 after 9"
+		const want = "[checkpoint 1] FAIL: Anna's stream breaks its log: sequence 11 after 9"
 		if !strings.Contains(log.String(), want) {
 			t.Fatalf("the first checkpoint did not name the skip (%q):\n%s", want, log.String())
 		}
-		if strings.Contains(log.String(), "[checkpoint 2] FAIL: player1") {
-			t.Fatalf("a later checkpoint blamed player1 again for the same skip:\n%s", log.String())
+		if strings.Contains(log.String(), "[checkpoint 2] FAIL: Anna") {
+			t.Fatalf("a later checkpoint blamed Anna again for the same skip:\n%s", log.String())
 		}
-		if strings.Contains(log.String(), "player2's stream") {
-			t.Fatalf("player2, sent every sequence, was blamed:\n%s", log.String())
+		if strings.Contains(log.String(), "Lisa's stream") {
+			t.Fatalf("Lisa, sent every sequence, was blamed:\n%s", log.String())
 		}
 	})
 }
@@ -1163,7 +1163,7 @@ func TestTheLastSoakCheckpointReadsWhatALateFanOutDelivers(t *testing.T) {
 			w := newSoakWorld(ids)
 			w.slowBroadcast = 50 * time.Millisecond
 			if skip > 0 {
-				w.skipFor = map[string]int64{"player1": skip}
+				w.skipFor = map[string]int64{"Anna": skip}
 			}
 			var out bytes.Buffer
 			rep, err := harness.RunSoak(context.Background(),
@@ -1180,8 +1180,8 @@ func TestTheLastSoakCheckpointReadsWhatALateFanOutDelivers(t *testing.T) {
 	if !pass {
 		t.Fatalf("fixture: the clean run failed:\n%s", log)
 	}
-	if pass, log, _ = run(t, secondLast); pass || !strings.Contains(log, "player1's stream breaks its log") {
-		t.Fatalf("player1 was never sent the second-to-last event, %d, and the soak did not say so:\n%s",
+	if pass, log, _ = run(t, secondLast); pass || !strings.Contains(log, "Anna's stream breaks its log") {
+		t.Fatalf("Anna was never sent the second-to-last event, %d, and the soak did not say so:\n%s",
 			secondLast, log)
 	}
 }
@@ -1195,7 +1195,7 @@ func TestAPeriodicSoakCheckpointReadsWhatALateFanOutDelivers(t *testing.T) {
 			w := newSoakWorld(ids)
 			w.slowBroadcast = 50 * time.Millisecond
 			if skip > 0 {
-				w.skipFor = map[string]int64{"player1": skip}
+				w.skipFor = map[string]int64{"Anna": skip}
 			}
 			var out bytes.Buffer
 			if _, err := harness.RunSoak(context.Background(),
@@ -1211,8 +1211,8 @@ func TestAPeriodicSoakCheckpointReadsWhatALateFanOutDelivers(t *testing.T) {
 	if strings.Contains(clean, "FAIL") {
 		t.Fatalf("fixture: the clean run failed:\n%s", clean)
 	}
-	if log, _ := run(t, skip); !strings.Contains(log, "[checkpoint 1] FAIL: player1's stream breaks its log") {
-		t.Fatalf("player1 was never sent %d, the event before checkpoint 1's last, and checkpoint 1 did not say so:\n%s",
+	if log, _ := run(t, skip); !strings.Contains(log, "[checkpoint 1] FAIL: Anna's stream breaks its log") {
+		t.Fatalf("Anna was never sent %d, the event before checkpoint 1's last, and checkpoint 1 did not say so:\n%s",
 			skip, log)
 	}
 }

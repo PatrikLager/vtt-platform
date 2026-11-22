@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -428,6 +429,16 @@ func (g *qaSLSGateway) append(c *qaSLSConn, envs []*vttv1.Envelope) (int64, erro
 	trial := g.state.Snapshot()
 	sess := g.session
 	first := int64(len(g.world) + 1)
+	role := c.role
+	if role == "player" || role == "spectator" {
+		role = "spectator"
+		for _, a := range g.state.Actors {
+			if slices.Contains(a.GetControllerIds(), c.pid) {
+				role = "player"
+				break
+			}
+		}
+	}
 	for i, e := range envs {
 		probe := proto.Clone(e).(*vttv1.Envelope)
 		g.stamp(probe, first+int64(i), &sess)
@@ -438,7 +449,7 @@ func (g *qaSLSGateway) append(c *qaSLSConn, envs []*vttv1.Envelope) (int64, erro
 	for i, e := range envs {
 		g.stamp(e, first+int64(i), &g.session)
 		e.EventId = fmt.Sprintf("ev-%d", e.Sequence)
-		e.ActorRole = c.role
+		e.ActorRole = role
 		e.ParticipantId = c.pid
 		if err := engine.Apply(g.state, e); err != nil {
 			return 0, err
@@ -554,7 +565,7 @@ type qaSLSOutcome struct {
 
 func qaSLSConfig() harness.SoakConfig {
 	return harness.SoakConfig{Seed: 1, Events: 200, CheckEvery: 25,
-		IDs: map[string]string{"player1": "pid-player1", "player2": "pid-player2"}}
+		IDs: map[string]string{"Anna": "pid-Anna", "Lisa": "pid-Lisa"}}
 }
 
 func qaSLSRun(t *testing.T, cfg harness.SoakConfig, knobs qaSLSKnobs) qaSLSOutcome {
@@ -621,7 +632,7 @@ func qaSLSToggling() qaSLSKnobs {
 	return qaSLSKnobs{
 		anyPartyMember: true,
 		toggleWhen: func(g *qaSLSGateway, c *qaSLSConn) bool {
-			return (c.name == "player1" && len(g.world)%9 == 0) || (c.name == "player2" && len(g.world)%14 == 0)
+			return (c.name == "Anna" && len(g.world)%9 == 0) || (c.name == "Lisa" && len(g.world)%14 == 0)
 		},
 	}
 }
@@ -646,10 +657,10 @@ func TestQASLSTwinEachPlayerOnTheLogItWasGrantedPasses(t *testing.T) {
 	for _, f := range o.g.fresh {
 		held[f.name] = f.held
 	}
-	if held["player1"] == "" || held["player2"] == "" || held["player1"] == held["player2"] {
+	if held["Anna"] == "" || held["Lisa"] == "" || held["Anna"] == held["Lisa"] {
 		t.Fatalf("degenerate fixture: the players must end on two different logs, got %v", held)
 	}
-	a, b := o.g.logs[held["player1"]], o.g.logs[held["player2"]]
+	a, b := o.g.logs[held["Anna"]], o.g.logs[held["Lisa"]]
 	if len(a) < 2 || len(b) < 2 || proto.Equal(a[0], b[0]) {
 		t.Fatalf("degenerate fixture: the two logs must differ in a payload and hold more than one entry")
 	}
@@ -695,24 +706,24 @@ func TestQASLSTwinSameLogViewpointThenContinuingEntriesPasses(t *testing.T) {
 // VTT-416 VTT-429
 func TestQASLSTwinSeatOnNobodyPasses(t *testing.T) {
 	cfg := qaSLSConfig()
-	cfg.IDs = map[string]string{"player1": "pid-player1"}
+	cfg.IDs = map[string]string{"Anna": "pid-Anna"}
 	o := qaSLSRun(t, cfg, qaSLSKnobs{})
 	qaSLSPassed(t, o)
 	nobody := 0
 	for _, f := range o.g.fresh {
-		if f.name == "player2" && f.held == "" {
+		if f.name == "Lisa" && f.held == "" {
 			nobody++
 		}
 	}
 	if nobody == 0 {
-		t.Fatalf("degenerate fixture: no checkpoint dialled player2 while it held nobody")
+		t.Fatalf("degenerate fixture: no checkpoint dialled Lisa while it held nobody")
 	}
 }
 
 // VTT-411
 func TestQASLSSwitchFromNobodyNotStartingAtOneFails(t *testing.T) {
 	o := qaSLSRun(t, qaSLSConfig(), qaSLSKnobs{switchFault: func(g *qaSLSGateway, c *qaSLSConn, from, to string) int {
-		if c.name == "player1" && from == "" && to != "" {
+		if c.name == "Anna" && from == "" && to != "" {
 			return 1
 		}
 		return 0
@@ -734,7 +745,7 @@ func TestQASLSSwitchBetweenLogsNotStartingAtOneFails(t *testing.T) {
 			k := qaSLSToggling()
 			k.noSessions = tc.noSessions
 			k.switchFault = func(g *qaSLSGateway, c *qaSLSConn, from, to string) int {
-				if c.name == "player1" && from != "" && to != "" {
+				if c.name == "Anna" && from != "" && to != "" {
 					return tc.mode
 				}
 				return 0
@@ -754,7 +765,7 @@ func TestQASLSSwitchFaultAfterTheLastPeriodicCheckpointFailsTheFinalOne(t *testi
 			toggled := false
 			k := qaSLSKnobs{anyPartyMember: true, noSessions: true}
 			k.toggleWhen = func(g *qaSLSGateway, c *qaSLSConn) bool {
-				if c.name != "player1" || toggled || g.round("player1") != last {
+				if c.name != "Anna" || toggled || g.round("Anna") != last {
 					return false
 				}
 				toggled = true
@@ -762,7 +773,7 @@ func TestQASLSSwitchFaultAfterTheLastPeriodicCheckpointFailsTheFinalOne(t *testi
 			}
 			if faulty {
 				k.switchFault = func(g *qaSLSGateway, c *qaSLSConn, from, to string) int {
-					if toggled && c.name == "player1" && from != "" && to != "" {
+					if toggled && c.name == "Anna" && from != "" && to != "" {
 						return 2
 					}
 					return 0
@@ -804,7 +815,7 @@ func qaSLSAlterFirst(entries []*vttv1.Envelope, pick func(e *vttv1.Envelope) boo
 func qaSLSFreshFaults() map[string]func(g *qaSLSGateway, c *qaSLSConn, held string, entries []*vttv1.Envelope) (string, []*vttv1.Envelope) {
 	only := func(f func(g *qaSLSGateway, held string, entries []*vttv1.Envelope) bool) func(g *qaSLSGateway, c *qaSLSConn, held string, entries []*vttv1.Envelope) (string, []*vttv1.Envelope) {
 		return func(g *qaSLSGateway, c *qaSLSConn, held string, entries []*vttv1.Envelope) (string, []*vttv1.Envelope) {
-			if c.name == "player1" && held != "" && f(g, held, entries) {
+			if c.name == "Anna" && held != "" && f(g, held, entries) {
 				g.fired++
 			}
 			return held, entries
@@ -836,7 +847,7 @@ func qaSLSFreshFaults() map[string]func(g *qaSLSGateway, c *qaSLSConn, held stri
 		}),
 		"the other player's log": func(g *qaSLSGateway, c *qaSLSConn, held string, entries []*vttv1.Envelope) (string, []*vttv1.Envelope) {
 			other := qaSLSOther(g, held)
-			if c.name != "player1" || held == "" || other == "" {
+			if c.name != "Anna" || held == "" || other == "" {
 				return held, entries
 			}
 			swapped := g.entriesOf(other, 0)
@@ -852,7 +863,7 @@ func qaSLSFreshFaults() map[string]func(g *qaSLSGateway, c *qaSLSConn, held stri
 			return held, swapped
 		},
 		"one entry short": func(g *qaSLSGateway, c *qaSLSConn, held string, entries []*vttv1.Envelope) (string, []*vttv1.Envelope) {
-			if c.name != "player1" || len(entries) < 2 {
+			if c.name != "Anna" || len(entries) < 2 {
 				return held, entries
 			}
 			g.fired++
@@ -879,7 +890,7 @@ func TestQASLSFreshDialFoldingOtherwiseThanTheHeldLogFails(t *testing.T) {
 // VTT-416
 func TestQASLSLiveEntryDifferingOnlyInPayloadFails(t *testing.T) {
 	o := qaSLSRun(t, qaSLSConfig(), qaSLSKnobs{liveAlter: func(g *qaSLSGateway, c *qaSLSConn, e *vttv1.Envelope) {
-		if c.name == "player1" && e.GetActorAdded().GetActor().GetActorId() == qaSLSMarkerID {
+		if c.name == "Anna" && e.GetActorAdded().GetActor().GetActorId() == qaSLSMarkerID {
 			e.GetActorAdded().Actor.Name = "eyes of " + qaSLSOther(g, c.shown)
 			g.fired++
 		}
@@ -904,7 +915,7 @@ func TestQASLSFreshFoldFaultOnlyAtTheFinalCheckpointFails(t *testing.T) {
 
 func qaSLSTold(pick func(g *qaSLSGateway, held string) string) func(g *qaSLSGateway, c *qaSLSConn, held string, entries []*vttv1.Envelope) (string, []*vttv1.Envelope) {
 	return func(g *qaSLSGateway, c *qaSLSConn, held string, entries []*vttv1.Envelope) (string, []*vttv1.Envelope) {
-		if c.name != "player1" || held == "" {
+		if c.name != "Anna" || held == "" {
 			return held, entries
 		}
 		told := pick(g, held)
@@ -955,9 +966,9 @@ func TestQASLSFreshDialOfASeatOnNobodyToldALogFails(t *testing.T) {
 	for _, withEntries := range []bool{false, true} {
 		t.Run(fmt.Sprintf("withEntries=%v", withEntries), func(t *testing.T) {
 			cfg := qaSLSConfig()
-			cfg.IDs = map[string]string{"player1": "pid-player1"}
+			cfg.IDs = map[string]string{"Anna": "pid-Anna"}
 			o := qaSLSRun(t, cfg, qaSLSKnobs{fresh: func(g *qaSLSGateway, c *qaSLSConn, held string, entries []*vttv1.Envelope) (string, []*vttv1.Envelope) {
-				if c.name != "player2" || held != "" {
+				if c.name != "Lisa" || held != "" {
 					return held, entries
 				}
 				other := qaSLSOther(g, "")
@@ -993,7 +1004,7 @@ func TestQASLSFreshDialToldAnotherLogOnlyAtTheFinalCheckpointFails(t *testing.T)
 // VTT-428
 func TestQASLSFreshDialNamesTheLogTheSeatHolds(t *testing.T) {
 	nobody := qaSLSConfig()
-	nobody.IDs = map[string]string{"player1": "pid-player1"}
+	nobody.IDs = map[string]string{"Anna": "pid-Anna"}
 	for _, tc := range []struct {
 		name  string
 		cfg   harness.SoakConfig
@@ -1015,14 +1026,14 @@ func TestQASLSFreshDialNamesTheLogTheSeatHolds(t *testing.T) {
 				}
 				seen[f.name][f.held] = true
 			}
-			if len(seen["player1"]) == 0 || len(seen["player2"]) == 0 {
+			if len(seen["Anna"]) == 0 || len(seen["Lisa"]) == 0 {
 				t.Fatalf("degenerate fixture: a player was never dialled fresh (%v)", seen)
 			}
-			if tc.name == "switching" && len(seen["player1"]) < 2 {
-				t.Fatalf("degenerate fixture: player1 held one log at every checkpoint (%v)", seen)
+			if tc.name == "switching" && len(seen["Anna"]) < 2 {
+				t.Fatalf("degenerate fixture: Anna held one log at every checkpoint (%v)", seen)
 			}
-			if tc.name == "one on nobody" && !seen["player2"][""] {
-				t.Fatalf("degenerate fixture: player2 never held nobody at a checkpoint (%v)", seen)
+			if tc.name == "one on nobody" && !seen["Lisa"][""] {
+				t.Fatalf("degenerate fixture: Lisa never held nobody at a checkpoint (%v)", seen)
 			}
 		})
 	}

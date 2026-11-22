@@ -460,7 +460,7 @@
     "participantId": "p-dm",
     "actorControlGranted": {
       "actorId": "act-lera",
-      "participantId": "p-player",
+      "participantId": "p-Anna",
       "kind": "ACTOR_KIND_PARTY_MEMBER"
     }
   },
@@ -498,7 +498,7 @@
     "sequence": "8",
     "sessionId": "sess-1",
     "actorRole": "player",
-    "participantId": "p-player",
+    "participantId": "p-Anna",
     "tokenMoved": {
       "tokenId": "tok-lera",
       "sceneId": "scn-exit",

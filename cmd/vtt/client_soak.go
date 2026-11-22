@@ -25,7 +25,7 @@ var errSoakFailed = errors.New("vtt client soak: soak failed")
 // newClientSoakCmd runs the wire-level soak (docs/superpowers/specs/
 // 2026-07-24-simulation-harness-design.md §5): self-contained by default
 // (boots a throwaway server via harness_boot.go's bootSelfContained, minting
-// invites for harness.SoakParticipants()'s fixed four-role roster), or
+// invites for harness.SoakParticipants()'s fixed roster), or
 // against a live server when --server/--tokens are both given — the exact
 // same two-mode shape newClientRunCmd already establishes.
 func newClientSoakCmd() *cobra.Command {

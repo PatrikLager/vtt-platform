@@ -3,9 +3,9 @@
     "act-lera": {
       "actor_id": "act-lera",
       "name": "Lera",
-      "controller_id": "p-player",
+      "controller_id": "p-Anna",
       "controller_ids": [
-        "p-player"
+        "p-Anna"
       ],
       "kind": 1
     },

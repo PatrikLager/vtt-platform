@@ -900,12 +900,16 @@ func (s *qaLSSoak) handle(name string, cmd *vttv1.ClientCommand) (*vttv1.Command
 	if err != nil {
 		return deny(err)
 	}
+	stamp := role
+	if qaLSIsLogRole(role) {
+		stamp = "player"
+	}
 	base := int64(len(s.world)) + 1
 	session, sessions := s.session, s.sessions
 	for i, e := range envs {
 		e.EventId = fmt.Sprintf("qals-soak-world-%d", base+int64(i))
 		e.Sequence = base + int64(i)
-		e.ActorRole = role
+		e.ActorRole = stamp
 		e.ParticipantId = pid
 		if _, ok := e.GetPayload().(*vttv1.Envelope_SessionStarted); ok {
 			sessions++
@@ -1082,18 +1086,18 @@ func TestQALSCleanSoakWithCharacterLogsPasses(t *testing.T) {
 	s := qaLSNewSoak()
 	rep := qaLSRunSoak(t, s)
 	qaLSAssertCleanSoak(t, s, rep)
-	for _, p := range []string{"player1", "player2"} {
+	for _, p := range []string{"Anna", "Lisa"} {
 		if len(s.logs[p]) == 0 || len(s.logs[p]) == len(s.world) {
 			t.Errorf("fixture: %s's log has %d entries against a world of %d; it must be sent a log that is not the world", p, len(s.logs[p]), len(s.world))
 		}
 	}
-	t.Logf("accepted %d, denied %d, world %d, player1 log %d, checkpoints %d, dials %v", s.accepted, len(s.denials), len(s.world), len(s.logs["player1"]), rep.Checkpoints, s.dials)
+	t.Logf("accepted %d, denied %d, world %d, Anna log %d, checkpoints %d, dials %v", s.accepted, len(s.denials), len(s.world), len(s.logs["Anna"]), rep.Checkpoints, s.dials)
 }
 
 // VTT-359
 func TestQALSCleanSoakWithSilentPlayersPasses(t *testing.T) {
 	s := qaLSNewSoak()
-	s.silent["player1"], s.silent["player2"] = true, true
+	s.silent["Anna"], s.silent["Lisa"] = true, true
 	rep := qaLSRunSoak(t, s)
 	qaLSAssertCleanSoak(t, s, rep)
 }
@@ -1108,13 +1112,13 @@ func qaLSSoakBreak(t *testing.T, breakFrom func(accepted int) int) {
 	from := breakFrom(clean.accepted)
 
 	s := qaLSNewSoak()
-	s.breakName, s.breakFrom = "player1", from
+	s.breakName, s.breakFrom = "Anna", from
 	rep := qaLSRunSoak(t, s)
 	if !s.shifted {
 		t.Fatalf("fixture: the break from accepted %d was never delivered (accepted %d)", from, s.accepted)
 	}
 	if rep.Pass {
-		t.Errorf("SoakReport.Pass = true with player1's stream broken at accepted command %d", s.breakAccepted)
+		t.Errorf("SoakReport.Pass = true with Anna's stream broken at accepted command %d", s.breakAccepted)
 	}
 	drainer := ((s.breakAccepted + qaLSSoakCheckEvery - 1) / qaLSSoakCheckEvery) * qaLSSoakCheckEvery
 	drainerNumber := drainer / qaLSSoakCheckEvery
@@ -1133,23 +1137,23 @@ func qaLSSoakBreak(t *testing.T, breakFrom func(accepted int) int) {
 	var named []int
 	for _, i := range inserted {
 		t.Logf("line %d only in the broken run: %s", i, lines[i])
-		if strings.Contains(lines[i], "player2") {
-			t.Errorf("line %d blames player2, whose stream was clean: %s", i, lines[i])
+		if strings.Contains(lines[i], "Lisa") {
+			t.Errorf("line %d blames Lisa, whose stream was clean: %s", i, lines[i])
 		}
-		if strings.Contains(lines[i], "player1") {
+		if strings.Contains(lines[i], "Anna") {
 			named = append(named, i)
 		}
 	}
 	t.Logf("break delivered at accepted %d (report line %d); draining checkpoint after accepted %d ends at line %d; dials %v",
 		s.breakAccepted, s.breakLine, drainer, windowEnd, s.dials)
 	if len(named) == 0 {
-		t.Fatalf("no report line names player1")
+		t.Fatalf("no report line names Anna")
 	}
 	inWindow := 0
 	for _, i := range named {
 		switch {
 		case i < s.breakLine:
-			t.Errorf("line %d names player1 before the break was delivered (line %d): %s", i, s.breakLine, lines[i])
+			t.Errorf("line %d names Anna before the break was delivered (line %d): %s", i, s.breakLine, lines[i])
 		case i < windowEnd:
 			inWindow++
 			got := qaLSCheckpointNumbers.FindAllStringSubmatch(lines[i], -1)
@@ -1157,11 +1161,11 @@ func qaLSSoakBreak(t *testing.T, breakFrom func(accepted int) int) {
 				t.Errorf("line %d names checkpoints %v, want only checkpoint %d, the one that drained the break: %s", i, got, drainerNumber, lines[i])
 			}
 		default:
-			t.Errorf("line %d names player1 after the draining checkpoint (ends at line %d): %s", i, windowEnd, lines[i])
+			t.Errorf("line %d names Anna after the draining checkpoint (ends at line %d): %s", i, windowEnd, lines[i])
 		}
 	}
 	if inWindow == 0 {
-		t.Errorf("no line naming player1 was written by the checkpoint that drained the break")
+		t.Errorf("no line naming Anna was written by the checkpoint that drained the break")
 	}
 	own := false
 	for j := s.breakLine; j < windowEnd && j < len(lines); j++ {

@@ -3,10 +3,10 @@
   "maps": "scenarios/maps",
   "participants": [
     {"name": "dm", "role": "dm"},
-    {"name": "ana", "role": "player"},
-    {"name": "bo", "role": "player"},
-    {"name": "cy", "role": "player"},
-    {"name": "dee", "role": "player"}
+    {"name": "ana", "role": "spectator"},
+    {"name": "bo", "role": "spectator"},
+    {"name": "cy", "role": "spectator"},
+    {"name": "dee", "role": "spectator"}
   ],
   "steps": [
     {"by": "dm", "command": {"startSession": {"name": "Shared Control"}}, "expect": {"ok": true}},

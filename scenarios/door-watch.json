@@ -9,11 +9,11 @@
     },
     {
       "name": "watcher",
-      "role": "player"
+      "role": "spectator"
     },
     {
       "name": "latecomer",
-      "role": "player"
+      "role": "spectator"
     }
   ],
   "steps": [

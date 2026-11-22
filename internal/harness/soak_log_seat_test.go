@@ -37,7 +37,7 @@ type soakLogView struct {
 
 func newSoakLogs() *soakLogs {
 	return &soakLogs{
-		actor:   map[string]string{"player1": "pc-player1", "player2": "pc-player2"},
+		actor:   map[string]string{"Anna": "pc-Anna", "Lisa": "pc-Lisa"},
 		views:   map[*fakeConn]*soakLogView{},
 		dialsOf: map[string]int{},
 	}
@@ -50,7 +50,7 @@ func (l *soakLogs) dial(w *soakWorld, c *fakeConn, name string, after int64, log
 	}
 	l.dialsOf[name]++
 	fresh := l.dialsOf[name] > 1
-	tuned := fresh && name == "player1"
+	tuned := fresh && name == "Anna"
 	if tuned {
 		l.named = append(l.named, log)
 	}
@@ -112,11 +112,11 @@ func (l *soakLogs) deliver(c *fakeConn, env *vttv1.Envelope) bool {
 		return false
 	}
 	v.next++
-	if v.live && c.name == "player1" && v.next == l.liveSwitchAt {
+	if v.live && c.name == "Anna" && v.next == l.liveSwitchAt {
 		c.trySwitch("pc-other")
 	}
 	e := l.entry(v, env)
-	if v.live && c.name == "player1" && v.next == l.liveCorruptAt {
+	if v.live && c.name == "Anna" && v.next == l.liveCorruptAt {
 		e.Payload = &vttv1.Envelope_TokenMoved{TokenMoved: &vttv1.TokenMoved{TokenId: "no-such-token"}}
 	}
 	c.trySend(e)
@@ -159,11 +159,11 @@ func TestASoakCheckpointFailsALogSeatWhoseFreshDialFoldsDifferently(t *testing.T
 		t.Fatalf("a soak whose players' fresh dials replay their logs failed:\n%s", out)
 	}
 	_, rep, out := runLogSoak(t, func(l *soakLogs) { l.freshRenames = true })
-	if rep.Pass || !strings.Contains(out, "FAIL: player1's fold of pc-player1's log") {
-		t.Fatalf("a fresh dial of player1 whose session differs in its name only did not fail:\n%s", out)
+	if rep.Pass || !strings.Contains(out, "FAIL: Anna's fold of pc-Anna's log") {
+		t.Fatalf("a fresh dial of Anna whose session differs in its name only did not fail:\n%s", out)
 	}
-	if strings.Contains(out, "FAIL: player2") {
-		t.Fatalf("player2, whose fresh dials replay its log, was blamed:\n%s", out)
+	if strings.Contains(out, "FAIL: Lisa") {
+		t.Fatalf("Lisa, whose fresh dials replay its log, was blamed:\n%s", out)
 	}
 }
 
@@ -174,12 +174,12 @@ func TestASoakCheckpointDialsALogSeatNamingTheLogItHolds(t *testing.T) {
 		t.Fatalf("a soak whose dials naming no log open another log failed:\n%s", out)
 	}
 	for _, named := range logs.named {
-		if named != "pc-player1" {
-			t.Fatalf("player1's fresh dials named %q, want each to name pc-player1", logs.named)
+		if named != "pc-Anna" {
+			t.Fatalf("Anna's fresh dials named %q, want each to name pc-Anna", logs.named)
 		}
 	}
 	if len(logs.named) == 0 {
-		t.Fatal("no checkpoint dialled player1")
+		t.Fatal("no checkpoint dialled Anna")
 	}
 }
 
@@ -187,53 +187,53 @@ func TestASoakCheckpointDialsALogSeatNamingTheLogItHolds(t *testing.T) {
 func TestALogSeatsFreshDialThatOverflowsResumesTheSameLog(t *testing.T) {
 	logs, rep, out := runLogSoak(t, func(l *soakLogs) { l.freshOverflow = 3 })
 	if logs.freshOverflow != 0 {
-		t.Fatal("fixture: no fresh dial of player1 overflowed")
+		t.Fatal("fixture: no fresh dial of Anna overflowed")
 	}
 	if !rep.Pass {
-		t.Fatalf("a fresh dial of player1 that overflowed and resumed failed:\n%s", out)
+		t.Fatalf("a fresh dial of Anna that overflowed and resumed failed:\n%s", out)
 	}
 }
 
 // VTT-429
 func TestASoakCheckpointFailsAFreshDialToldAnotherLog(t *testing.T) {
 	_, rep, out := runLogSoak(t, func(l *soakLogs) { l.freshToldOther = true })
-	if rep.Pass || !strings.Contains(out, "FAIL: player1's fresh dial was told pc-other, not pc-player1") {
-		t.Fatalf("a fresh dial of player1 told another log did not fail:\n%s", out)
+	if rep.Pass || !strings.Contains(out, "FAIL: Anna's fresh dial was told pc-other, not pc-Anna") {
+		t.Fatalf("a fresh dial of Anna told another log did not fail:\n%s", out)
 	}
 }
 
 // VTT-411
 func TestASoakCheckpointFailsALogSeatThatKeepsItsOldLogAfterASwitch(t *testing.T) {
 	_, rep, out := runLogSoak(t, func(l *soakLogs) { l.liveSwitchAt = 5 })
-	const want = "FAIL: player1's stream breaks its log: sequence 5 straight after a switch to pc-other"
+	const want = "FAIL: Anna's stream breaks its log: sequence 5 straight after a switch to pc-other"
 	if rep.Pass || strings.Count(out, want) != 1 {
-		t.Fatalf("player1's stream, told pc-other and kept on its old log, was not failed once (%q):\n%s", want, out)
+		t.Fatalf("Anna's stream, told pc-other and kept on its old log, was not failed once (%q):\n%s", want, out)
 	}
-	if strings.Count(out, "FAIL: player1") != 1 || strings.Contains(out, "FAIL: player2") {
-		t.Fatalf("the break was blamed more than once, or on player2:\n%s", out)
+	if strings.Count(out, "FAIL: Anna") != 1 || strings.Contains(out, "FAIL: Lisa") {
+		t.Fatalf("the break was blamed more than once, or on Lisa:\n%s", out)
 	}
 }
 
 // VTT-431
 func TestASoakCheckpointFailsAFreshDialThatDoesNotFold(t *testing.T) {
 	_, rep, out := runLogSoak(t, func(l *soakLogs) { l.freshCorrupt = true })
-	if rep.Pass || !strings.Contains(out, "FAIL: player1's fresh dial of pc-player1's log did not fold") {
-		t.Fatalf("a fresh dial of player1 that does not fold did not fail:\n%s", out)
+	if rep.Pass || !strings.Contains(out, "FAIL: Anna's fresh dial of pc-Anna's log did not fold") {
+		t.Fatalf("a fresh dial of Anna that does not fold did not fail:\n%s", out)
 	}
 }
 
 // VTT-430
 func TestASoakCheckpointFailsAFreshDialThatEndsShortOfItsHead(t *testing.T) {
 	_, rep, out := runLogSoak(t, func(l *soakLogs) { l.freshEndsAt = 2 })
-	if rep.Pass || !strings.Contains(out, "FAIL: player1's fresh dial never reached sequence") {
-		t.Fatalf("a fresh dial of player1 that ends short of its head did not fail:\n%s", out)
+	if rep.Pass || !strings.Contains(out, "FAIL: Anna's fresh dial never reached sequence") {
+		t.Fatalf("a fresh dial of Anna that ends short of its head did not fail:\n%s", out)
 	}
 }
 
 // VTT-431
 func TestASoakCheckpointFailsALogSeatWhoseLiveRunDoesNotFold(t *testing.T) {
 	_, rep, out := runLogSoak(t, func(l *soakLogs) { l.liveCorruptAt = 3 })
-	if rep.Pass || !strings.Contains(out, "FAIL: player1's fold of pc-player1's log failed") {
-		t.Fatalf("player1's live run, which does not fold, did not fail:\n%s", out)
+	if rep.Pass || !strings.Contains(out, "FAIL: Anna's fold of pc-Anna's log failed") {
+		t.Fatalf("Anna's live run, which does not fold, did not fail:\n%s", out)
 	}
 }

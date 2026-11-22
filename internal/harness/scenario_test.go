@@ -228,3 +228,30 @@ func TestLoadScenarioAcceptsEachSingleProbeKind(t *testing.T) {
 		})
 	}
 }
+
+// VTT-943
+func TestNoScenarioOrSoakParticipantIsNamedForARole(t *testing.T) {
+	files, err := filepath.Glob("../../scenarios/*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("found no scenario file under ../../scenarios")
+	}
+	rosters := map[string][]harness.Participant{"harness.SoakParticipants()": harness.SoakParticipants()}
+	for _, f := range files {
+		sc, err := harness.LoadScenario(f)
+		if err != nil {
+			t.Fatalf("LoadScenario: %v", err)
+		}
+		rosters[f] = sc.Participants
+	}
+	for source, participants := range rosters {
+		for _, p := range participants {
+			base := strings.TrimRight(strings.ToLower(p.Name), "0123456789")
+			if base == "player" || base == "spectator" {
+				t.Errorf("%s: participant %q is named for a role a grant or a revocation changes; name them for a person", source, p.Name)
+			}
+		}
+	}
+}

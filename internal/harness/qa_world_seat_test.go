@@ -522,8 +522,18 @@ func (s *qaWSSoak) controls(name, tokenID string) bool {
 }
 
 func (s *qaWSSoak) eventFor(c *qaWSConn, cmd *vttv1.ClientCommand) (*vttv1.Envelope, string) {
-	env := &vttv1.Envelope{ActorRole: s.roles[c.name], ParticipantId: s.ids[c.name]}
-	player := s.roles[c.name] == "player"
+	role := s.roles[c.name]
+	player := role != "dm" && role != "agent"
+	if player {
+		role = "spectator"
+		for _, a := range s.state.Actors {
+			if slices.Contains(a.GetControllerIds(), s.ids[c.name]) {
+				role = "player"
+				break
+			}
+		}
+	}
+	env := &vttv1.Envelope{ActorRole: role, ParticipantId: s.ids[c.name]}
 	switch x := cmd.GetCommand().(type) {
 	case *vttv1.ClientCommand_MoveToken:
 		m := x.MoveToken
@@ -669,7 +679,7 @@ func TestQAWSSoakFailsWhenOnlyOneWorldSeatHearsADenial(t *testing.T) {
 
 func TestQAWSSoakDoesNotReadCharacterSeats(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		s := qaWSNewSoak("player1", "player2")
+		s := qaWSNewSoak("Anna", "Lisa")
 		rep, progress := qaWSRunSoak(t, s)
 		if s.strays != 2 {
 			t.Fatalf("the leak reached %d seats, want 2", s.strays)

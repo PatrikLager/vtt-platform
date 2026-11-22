@@ -124,23 +124,9 @@ func TestClientRunMissingScenarioArgErrors(t *testing.T) {
 	}
 }
 
-// TestClientRunSelfContainedRunsCommittedThreeRoleExitScenario is the P6
-// Task 4 fix-round proof: a completely BARE `vtt client run
-// scenarios/three-role-exit.json`, self-contained (no --server/--tokens, no
-// test-side substitution of any kind — this is exactly what a human running
-// the committed file straight from a shell would type) must pass on its
-// own. scenarios/three-role-exit.json's "act-lera" AddActor step embeds
-// {{id:player}} in its controllerId; before this fix round nothing supplied
-// an ids map to harness.RunScenario at all (the parameter didn't exist),
-// and mintInvites (harness_boot.go) discarded the minted participant id via
-// `token, _, err` — so this scenario's "player moves own token" step always
-// came back denied (ControllerId stayed the literal, never-matching string
-// "{{id:player}}"). This is genuine behavioral RED against the pre-fix
-// code, captured in the P6 Task 4 report's fix-round section (the assertion
-// below is exactly what failed, at the exact step the report names), not a
-// hypothetical: `vtt client run`'s self-contained boot glue now threads
-// bootSelfContained's IDs field through to RunScenario's ids parameter, so
-// this resolves automatically.
+// TestClientRunSelfContainedRunsCommittedThreeRoleExitScenario runs the
+// committed scenario bare, as from a shell: its grant step needs the ids
+// bootSelfContained mints, which RunScenario substitutes for {{id:<name>}}.
 func TestClientRunSelfContainedRunsCommittedThreeRoleExitScenario(t *testing.T) {
 	out, err := runCLI(t, "client", "run", filepath.Join("..", "..", "scenarios", "three-role-exit.json"))
 	if err != nil {

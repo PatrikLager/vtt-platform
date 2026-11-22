@@ -446,7 +446,7 @@
     "participantId": "p-dm",
     "actorControlGranted": {
       "actorId": "act-hero",
-      "participantId": "p-player",
+      "participantId": "p-Anna",
       "kind": "ACTOR_KIND_PARTY_MEMBER"
     }
   },
@@ -517,7 +517,7 @@
     "sequence": "10",
     "sessionId": "sess-1",
     "actorRole": "player",
-    "participantId": "p-player",
+    "participantId": "p-Anna",
     "narrationAdded": {
       "text": "I raise my sword and step forward.",
       "as": "Lera"

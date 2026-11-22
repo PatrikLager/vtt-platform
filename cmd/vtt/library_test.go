@@ -14,15 +14,6 @@ package main
 // glue (composeServer, invite minting) that only cmd/vtt is allowed to
 // import (internal/harness's P1 arch rule forbids it — see client.go's
 // package comment) — "cmd may compose".
-//
-// Participant-id placeholder resolution (P6 Task 4 fix round): this file no
-// longer does any of its own — internal/harness/engine.go's RunScenario now
-// takes an ids parameter and resolves scenarios/three-role-exit.json's
-// {{id:player}} placeholder itself, once, before dispatch. Both tests below
-// get their ids map "for free": the self-contained path from
-// bootSelfContained's IDs field (harness_boot.go), the live-subprocess path
-// from mintInvites (also harness_boot.go, reused directly rather than
-// duplicated) threaded into tokens.json's additive "ids" field.
 
 import (
 	"context"
@@ -307,28 +298,10 @@ func runLibraryScenarioSelfContained(t *testing.T, path string) {
 
 // --- vtt serve as a real subprocess (spec §8 literal) -----------------
 
-// TestThreeRoleExitScenarioOverLiveServeSubprocess is spec §8's second exit
-// criterion: three-role-exit.json green not just self-contained (covered by
-// TestScenarioLibraryRunsSelfContained's glob) but against a REAL `vtt
-// serve` process — the actual built binary, run as an OS subprocess on a
-// temp campaign and a freshly-picked free port, with invites minted
-// test-side (mintInvites, harness_boot.go — reused directly, not
-// duplicated) and the ORIGINAL, unmodified committed scenario file driven
-// via `vtt client run --server --tokens` (in-process, through runCLI —
-// cli_test.go's established pattern; only the SERVER side needs to be a
-// genuine separate process for this to prove anything the in-process
-// composeServer tests don't already cover). The minted participant ids flow
-// through tokens.json's additive "ids" field — RunScenario resolves
-// three-role-exit.json's {{id:player}} placeholder from that, the same
-// mechanism a real operator would use (tokens.json's ids come from `vtt
-// invite`'s own printed "participant id: ..." line).
-// Process.Kill is this test's own teardown (brief, verbatim, predates
-// serve.go's SIGTERM shutdown path — see serve_e2e_test.go's
-// TestServeSubprocessExitsCleanlyOnSIGTERM for that path's own coverage):
-// Kill remains a valid, simpler teardown choice here since this test
-// doesn't need to observe a graceful stop, just end the subprocess. The
-// connection-drain carry-forward (docs/superpowers/sdd/progress.md) is
-// still open regardless of which teardown a given test uses.
+// TestThreeRoleExitScenarioOverLiveServeSubprocess runs
+// scenarios/three-role-exit.json by `vtt client run --server --tokens`
+// against a `vtt serve` subprocess; the ids mintInvites returns travel in
+// tokens.json's "ids" field, from which RunScenario resolves {{id:<name>}}.
 func TestThreeRoleExitScenarioOverLiveServeSubprocess(t *testing.T) {
 	binPath := buildVTTBinary(t)
 

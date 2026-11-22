@@ -1,9 +1,9 @@
 // Soak mode is the wire-level keystone (docs/superpowers/specs/2026-07-24-
 // simulation-harness-design.md §5, task-5-brief.md): a seeded generator
-// drives the platform's fixed four-role roster (dm, two players, agent)
-// through a long, mixed, AUTHORIZED-by-construction command sequence (plus
-// a deliberate slice of authz-denied attempts, asserted denied), over the
-// SAME wire-only Client/Dialer/Conn surface client.go and engine.go already
+// drives SoakParticipants' fixed roster through a long, mixed,
+// AUTHORIZED-by-construction command sequence (plus a deliberate slice of
+// authz-denied attempts, asserted denied), over the SAME wire-only
+// Client/Dialer/Conn surface client.go and engine.go already
 // established — RunSoak imports nothing beyond what this package already
 // imports (see client.go's package comment for the P1 boundary this file is
 // bound by too). At checkpoints and at the end, it proves the platform's
@@ -112,16 +112,16 @@ type SoakReport struct {
 func SoakParticipants() []Participant {
 	return []Participant{
 		{Name: soakDM, Role: "dm"},
-		{Name: soakPlayer1, Role: "player"},
-		{Name: soakPlayer2, Role: "player"},
+		{Name: soakPlayer1, Role: "spectator"},
+		{Name: soakPlayer2, Role: "spectator"},
 		{Name: soakAgent, Role: "agent"},
 	}
 }
 
 const (
 	soakDM      = "dm"
-	soakPlayer1 = "player1"
-	soakPlayer2 = "player2"
+	soakPlayer1 = "Anna"
+	soakPlayer2 = "Lisa"
 	soakAgent   = "agent"
 
 	// soakObserverName is the world seat whose continuously-drained history is
@@ -1143,20 +1143,9 @@ func (m *soakModel) planLoadMap(rng *rand.Rand) soakStep {
 	}}
 }
 
-// planAddActor assigns the FIRST two addActor draws (in whatever order they
-// land across the whole run — deterministic per seed, not a fixed prefix of
-// the run) to player1 then player2, in that priority order; every subsequent
-// addActor stays uncontrolled (NPC). This guarantees both players eventually
-// get a controllable actor without the mix needing a dedicated "assign
-// ownership" bucket of its own.
-//
-// ASSIGNING IS NOW THE NEXT STEP, NOT THIS ONE. add_actor stopped accepting a
-// controller on 2026-08-24 (visibility spec §5.1): creating an actor makes a
-// character, and a grant is what gives it a controller AND a standing. So this
-// records the intention in m.pendingGrant and planStep issues the grant on the
-// following draw. The cost is real and is the point — an agent creating an NPC
-// it will run sends two commands — and the soak paying it is what keeps this
-// generator an honest model of what a client may do.
+// Keep planAddActor's grant on the next draw, through m.pendingGrant: the
+// gateway refuses an add_actor naming a controller (validateAddActor).
+// soakPlayerNames' order decides who is granted the first two actors.
 func (m *soakModel) planAddActor(rng *rand.Rand, ids map[string]string) soakStep {
 	m.actorN++
 	id := fmt.Sprintf("soak-actor-%d", m.actorN)

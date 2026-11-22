@@ -4,8 +4,8 @@
   "maps": "scenarios/maps",
   "participants": [
     {"name": "dm", "role": "dm"},
-    {"name": "fighter", "role": "player"},
-    {"name": "spectator", "role": "spectator"}
+    {"name": "fighter", "role": "spectator"},
+    {"name": "Kalle", "role": "spectator"}
   ],
   "steps": [
     {"by": "dm", "command": {"startSession": {"name": "Goblin Fight"}}, "expect": {"ok": true}},
@@ -53,7 +53,7 @@
     {"by": "dm", "command": {"removeCondition": {"actorId": "act-archer", "conditionId": "dazed"}}, "expect": {"deniedContaining": "not present"}},
 
     {"by": "fighter", "command": {"useAbility": {"actorId": "act-cutter", "abilityId": "goblin-scimitar", "targetIds": ["act-fighter"]}}, "expect": {"deniedContaining": "not authorized"}},
-    {"by": "spectator", "command": {"useAbility": {"actorId": "act-fighter", "abilityId": "longsword-strike", "targetIds": ["act-cutter"]}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "Kalle", "command": {"useAbility": {"actorId": "act-fighter", "abilityId": "longsword-strike", "targetIds": ["act-cutter"]}}, "expect": {"deniedContaining": "not authorized"}},
 
     {"by": "dm", "command": {"moveToken": {"tokenId": "tok-archer", "to": {"x": 30, "y": 0}}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"useAbility": {"actorId": "act-archer", "abilityId": "goblin-shortbow", "targetIds": ["act-fighter"]}}, "expect": {"deniedContaining": "out of range"}},
