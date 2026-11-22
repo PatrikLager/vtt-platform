@@ -9,9 +9,10 @@
   ],
   "steps": [
     {"by": "dm", "command": {"loadAdventure": {"adventureId": "goblin-ambush"}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-fighter", "participantId": "{{id:Anna}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
 
-    {"by": "Anna", "command": {"loadAdventure": {"adventureId": "goblin-ambush"}}, "expect": {"deniedContaining": "not authorized"}},
-    {"by": "Kalle", "command": {"loadAdventure": {"adventureId": "goblin-ambush"}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "Anna", "command": {"loadAdventure": {"adventureId": "goblin-ambush"}}, "expect": {"deniedContaining": "not authorized: role \"player\" may not issue \"load_adventure\""}},
+    {"by": "Kalle", "command": {"loadAdventure": {"adventureId": "goblin-ambush"}}, "expect": {"deniedContaining": "not authorized: role \"spectator\" may not issue \"load_adventure\""}},
 
     {"by": "dm", "command": {"loadAdventure": {"adventureId": "no-such-adventure"}}, "expect": {"deniedContaining": "unknown adventure"}},
 

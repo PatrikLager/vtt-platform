@@ -1,5 +1,14 @@
 {
   "Actors": {
+    "act-lera": {
+      "actor_id": "act-lera",
+      "name": "Lera",
+      "controller_id": "p-Anna",
+      "controller_ids": [
+        "p-Anna"
+      ],
+      "kind": 1
+    },
     "act-npc": {
       "actor_id": "act-npc",
       "name": "NPC",
@@ -162,5 +171,5 @@
       "Y": 0
     }
   },
-  "headSequence": 4
+  "headSequence": 6
 }

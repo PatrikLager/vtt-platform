@@ -11,23 +11,25 @@
     {"by": "dm", "command": {"loadMap": {"mapId": "scn-deny"}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-npc", "name": "NPC", "kind": "ACTOR_KIND_NON_PARTY"}}}, "expect": {"ok": true}},
     {"by": "dm", "command": {"placeToken": {"tokenId": "tok-npc", "sceneId": "scn-deny", "actorId": "act-npc", "position": {"x": 0, "y": 0}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-lera", "name": "Lera", "kind": "ACTOR_KIND_PARTY_MEMBER"}}}, "expect": {"ok": true}},
+    {"by": "dm", "command": {"grantActorControl": {"actorId": "act-lera", "participantId": "{{id:Anna}}", "kind": "ACTOR_KIND_PARTY_MEMBER"}}, "expect": {"ok": true}},
 
-    {"by": "Anna", "command": {"loadMap": {"mapId": "scn-annex"}}, "expect": {"deniedContaining": "not authorized"}},
-    {"by": "Anna", "command": {"addActor": {"actor": {"actorId": "act-player-deny", "name": "nope", "kind": "ACTOR_KIND_NON_PARTY"}}}, "expect": {"deniedContaining": "not authorized"}},
-    {"by": "Anna", "command": {"placeToken": {"tokenId": "tok-player-deny", "sceneId": "scn-deny", "actorId": "act-npc", "position": {"x": 1, "y": 1}}}, "expect": {"deniedContaining": "not authorized"}},
-    {"by": "Anna", "command": {"startSession": {"name": "nope"}}, "expect": {"deniedContaining": "not authorized"}},
-    {"by": "Anna", "command": {"endSession": {}}, "expect": {"deniedContaining": "not authorized"}},
-    {"by": "Anna", "command": {"moveToken": {"tokenId": "tok-npc", "to": {"x": 2, "y": 2}}}, "expect": {"deniedContaining": "not authorized"}},
+    {"by": "Anna", "command": {"loadMap": {"mapId": "scn-annex"}}, "expect": {"deniedContaining": "not authorized: role \"player\" may not issue \"load_map\""}},
+    {"by": "Anna", "command": {"addActor": {"actor": {"actorId": "act-player-deny", "name": "nope", "kind": "ACTOR_KIND_NON_PARTY"}}}, "expect": {"deniedContaining": "not authorized: role \"player\" may not issue \"add_actor\""}},
+    {"by": "Anna", "command": {"placeToken": {"tokenId": "tok-player-deny", "sceneId": "scn-deny", "actorId": "act-npc", "position": {"x": 1, "y": 1}}}, "expect": {"deniedContaining": "not authorized: role \"player\" may not issue \"place_token\""}},
+    {"by": "Anna", "command": {"startSession": {"name": "nope"}}, "expect": {"deniedContaining": "not authorized: role \"player\" may not issue \"start_session\""}},
+    {"by": "Anna", "command": {"endSession": {}}, "expect": {"deniedContaining": "not authorized: role \"player\" may not issue \"end_session\""}},
+    {"by": "Anna", "command": {"moveToken": {"tokenId": "tok-npc", "to": {"x": 2, "y": 2}}}, "expect": {"deniedContaining": "not authorized: token \"tok-npc\" is not controlled by participant"}},
 
     {"by": "dm", "command": {"grantActorControl": {"actorId": "act-npc", "participantId": "{{id:Anna}}"}}, "expect": {"deniedContaining": "must say what the actor IS"}},
     {"by": "dm", "command": {"addActor": {"actor": {"actorId": "act-seeded", "name": "Seeded", "kind": "ACTOR_KIND_NON_PARTY", "controllerId": "{{id:Anna}}"}}}, "expect": {"deniedContaining": "control is conferred by grant_actor_control"}},
 
-    {"by": "Kalle", "command": {"moveToken": {"tokenId": "tok-npc", "to": {"x": 3, "y": 3}}}, "expect": {"deniedContaining": "not authorized"}},
-    {"by": "Kalle", "command": {"loadMap": {"mapId": "scn-annex"}}, "expect": {"deniedContaining": "not authorized"}},
-    {"by": "Kalle", "command": {"addActor": {"actor": {"actorId": "act-spectator-deny", "name": "nope", "kind": "ACTOR_KIND_NON_PARTY"}}}, "expect": {"deniedContaining": "not authorized"}},
-    {"by": "Kalle", "command": {"placeToken": {"tokenId": "tok-spectator-deny", "sceneId": "scn-deny", "actorId": "act-npc", "position": {"x": 4, "y": 4}}}, "expect": {"deniedContaining": "not authorized"}},
-    {"by": "Kalle", "command": {"startSession": {"name": "nope"}}, "expect": {"deniedContaining": "not authorized"}},
-    {"by": "Kalle", "command": {"endSession": {}}, "expect": {"deniedContaining": "not authorized"}}
+    {"by": "Kalle", "command": {"moveToken": {"tokenId": "tok-npc", "to": {"x": 3, "y": 3}}}, "expect": {"deniedContaining": "not authorized: role \"spectator\" may not issue \"move_token\""}},
+    {"by": "Kalle", "command": {"loadMap": {"mapId": "scn-annex"}}, "expect": {"deniedContaining": "not authorized: role \"spectator\" may not issue \"load_map\""}},
+    {"by": "Kalle", "command": {"addActor": {"actor": {"actorId": "act-spectator-deny", "name": "nope", "kind": "ACTOR_KIND_NON_PARTY"}}}, "expect": {"deniedContaining": "not authorized: role \"spectator\" may not issue \"add_actor\""}},
+    {"by": "Kalle", "command": {"placeToken": {"tokenId": "tok-spectator-deny", "sceneId": "scn-deny", "actorId": "act-npc", "position": {"x": 4, "y": 4}}}, "expect": {"deniedContaining": "not authorized: role \"spectator\" may not issue \"place_token\""}},
+    {"by": "Kalle", "command": {"startSession": {"name": "nope"}}, "expect": {"deniedContaining": "not authorized: role \"spectator\" may not issue \"start_session\""}},
+    {"by": "Kalle", "command": {"endSession": {}}, "expect": {"deniedContaining": "not authorized: role \"spectator\" may not issue \"end_session\""}}
   ],
   "probes": [
     {"tokenAt": {"tokenId": "tok-npc", "x": 0, "y": 0}},

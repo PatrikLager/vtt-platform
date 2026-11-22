@@ -44,6 +44,7 @@ const scenarioLibraryGlob = "../../scenarios/*.json"
 // step always runs — see internal/harness/engine.go's RunScenario doc
 // comment — so a failure names exactly which step or probe broke, not just
 // "something failed").
+// VTT-944
 func TestScenarioLibraryRunsSelfContained(t *testing.T) {
 	paths, err := filepath.Glob(scenarioLibraryGlob)
 	if err != nil {

@@ -150,5 +150,31 @@
       "actorId": "act-npc",
       "position": {}
     }
+  },
+  {
+    "eventId": "evt-5",
+    "sequence": "5",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorAdded": {
+      "actor": {
+        "actorId": "act-lera",
+        "name": "Lera",
+        "kind": "ACTOR_KIND_PARTY_MEMBER"
+      }
+    }
+  },
+  {
+    "eventId": "evt-6",
+    "sequence": "6",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "actorControlGranted": {
+      "actorId": "act-lera",
+      "participantId": "p-Anna",
+      "kind": "ACTOR_KIND_PARTY_MEMBER"
+    }
   }
 ]

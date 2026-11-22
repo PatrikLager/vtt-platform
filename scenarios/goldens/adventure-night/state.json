@@ -72,6 +72,10 @@
           "max": 28
         }
       },
+      "controller_id": "p-Anna",
+      "controller_ids": [
+        "p-Anna"
+      ],
       "kind": 1,
       "ability_ids": [
         "crossbow-shot",
@@ -5252,5 +5256,5 @@
       "Y": 0
     }
   },
-  "headSequence": 12
+  "headSequence": 13
 }
