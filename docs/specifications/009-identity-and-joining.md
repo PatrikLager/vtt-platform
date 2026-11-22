@@ -5,7 +5,10 @@
 Accepted. Implemented by `internal/identity/identity.go`,
 `internal/gateway/join.go`, `internal/gateway/authz.go`,
 `internal/gateway/server.go`, `internal/gateway/presence.go`,
-`internal/gateway/metadata.go`, `cmd/vtt/invite.go`, `client/src/join.ts`,
+`internal/gateway/metadata.go`, `cmd/vtt/invite.go`,
+`cmd/vtt/harness_boot.go`, `internal/harness/scenario.go`,
+`internal/harness/soak.go`, `scenarios/denials.json`,
+`scenarios/adventure-night.json`, `client/src/join.ts`,
 `client/src/app.ts`, `client/src/view/join.ts` and `client/src/view/dm.ts`;
 pinned by the checks the rows under Requirements name, in
 `internal/identity/identity_test.go`, `internal/identity/qa_names_test.go`,
@@ -32,8 +35,12 @@ pinned by the checks the rows under Requirements name, in
 `internal/gateway/qa_removal_test.go`,
 `internal/gateway/qa_remove_roles_test.go`, `client/test/dm-view.test.ts`,
 `client/test/qa-boot.test.ts`, `client/test/qa-survivor-rules.test.ts`,
-`client/e2e/booting.spec.ts`, `internal/engine/role_test.go` and
-`internal/engine/qa_role_test.go`.
+`client/e2e/booting.spec.ts`, `internal/engine/role_test.go`,
+`internal/engine/qa_role_test.go`, `internal/harness/scenario_test.go`,
+`internal/harness/qa_scenario_role_test.go`,
+`internal/harness/qa_scenario_names_test.go`, `cmd/vtt/harness_boot_test.go`,
+`cmd/vtt/qa_mint_role_test.go`, `cmd/vtt/library_test.go` and
+`cmd/vtt/scenario_goldens_test.go`.
 
 ## Principles served
 
@@ -253,6 +260,23 @@ are `ADD COLUMN` statements in `migrateLocked` and nothing else (grep `ALTER
 TABLE` in `internal/identity/identity.go`), so a column this package does not
 name is left in place and is inert.
 
+**A scenario's participants are minted the roles their file declares.**
+`harness.LoadScenario` refuses a scenario declaring a participant `player`,
+before it checks any step, naming the participant and saying to declare them
+a spectator (VTT-941). In a self-contained boot of `vtt client run` or
+`vtt client soak` (`bootSelfContained`), `mintInvites` in
+`cmd/vtt/harness_boot.go` mints each participant at the role declared,
+unchanged (VTT-942), so any other role `CreateInvite` does not mint fails
+there, naming the participant.
+`harness.SoakParticipants` never passes through `LoadScenario`: a `player` in
+it would fail at the mint with `CreateInvite`'s refusal. No participant of a
+scenario file directly under `scenarios/`, nor of `harness.SoakParticipants`,
+has a name that, ignoring case and trailing digits, is `player` or
+`spectator` (VTT-943). In `scenarios/denials.json` and
+`scenarios/adventure-night.json`, each step standing for a player's refusal
+is sent after an accepted `grant_actor_control` gives its sender an actor,
+and expects the player's text (VTT-944).
+
 ## Consequences
 
 A join at a shut door, with a wrong secret, against a spent budget or against
@@ -296,8 +320,8 @@ dm-and-agent in `commandRoles`. Which commands append nothing is SPEC-007's.
 A campaign's DM is minted out of band, by `vtt invite`. `CreateInvite`, and so
 `vtt invite`, mints dm, agent and spectator and refuses player with
 `identity: a participant becomes a player when given a character; invite them
-as a spectator`, minting nothing (VTT-911); `mintInvites` mints a scenario's
-player as a spectator. `ParseRole` accepts player (VTT-912), so a stored
+as a spectator`, minting nothing (VTT-911). `ParseRole` accepts player
+(VTT-912), so a stored
 `player` row parses, and `roleIn` judges it as it judges a stored
 spectator.
 
@@ -312,4 +336,4 @@ VTT-072, VTT-073, VTT-074, VTT-075, VTT-076, VTT-077, VTT-256, VTT-352,
 VTT-376, VTT-542, VTT-543, VTT-544, VTT-545, VTT-546, VTT-548, VTT-549,
 VTT-550, VTT-551, VTT-552, VTT-553, VTT-554, VTT-555, VTT-556, VTT-557,
 VTT-558, VTT-564, VTT-566, VTT-568, VTT-569, VTT-570, VTT-571, VTT-667,
-VTT-890, VTT-911, VTT-912, VTT-929.
+VTT-890, VTT-911, VTT-912, VTT-929, VTT-941, VTT-942, VTT-943, VTT-944.
