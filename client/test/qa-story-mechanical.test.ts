@@ -34,7 +34,7 @@ const HIDDEN: Kind[] = ["tokenHidden"];
 const DOORS: Kind[] = ["doorOpened", "doorClosed"];
 const KEPT = new Set<Kind>([
   "sessionStarted", "sessionEnded", "actorAdded", "actorRemoved", "conditionApplied",
-  "conditionRemoved", "abilityUsed", "attackRolled", "narrationAdded", "whisperAdded",
+  "conditionRemoved", "abilityUsed", "attackRolled", "narrationAdded", "whisperAdded", "rulesetNamed",
 ]);
 const LEFT_OUT: { kind: Kind; id: string }[] = [
   ...SHEET.map((kind) => ({ kind, id: "VTT-809" })),
@@ -87,6 +87,7 @@ const SCRIPT: Payload[] = [
   { case: "actorControlRevoked", value: { actorId: "a1", participantId: "p1" } },
   { case: "actorRemoved", value: { actorId: "a2" } },
   { case: "narrationAdded", value: { text: "The cellar falls quiet", anchorFromSeq: 27n, anchorToSeq: 28n } },
+  { case: "rulesetNamed", value: { rulesetId: "qa-rules", version: "1", name: "Plain Rules" } },
   { case: "sessionEnded", value: {} },
 ];
 
@@ -160,7 +161,7 @@ for (const role of ROLES) {
   for (const v of Object.keys(VARIANTS) as Variant[]) {
     const log = worldLog(v);
 
-    // VTT-822
+    // VTT-984
     test(`${role.name}, ${v}: the Story holds exactly the game's lines, in log order`, () => {
       const d = draw(log, role);
       expect(d.story).toEqual(expectedStory(log, d.names));
@@ -373,7 +374,7 @@ function runLog(between: [boolean, Payload][]): Envelope[] {
 }
 
 for (const role of ROLES) {
-  // VTT-809 VTT-810 VTT-818 VTT-822
+  // VTT-809 VTT-810 VTT-818 VTT-984
   test(`${role.name}: a party member corrected at its first sight draws no "now has", "can now use" or "is at" line`, () => {
     const d = draw(firstSightLog(), role);
     expect(d.story).toEqual(["session started — Night one", "Tobbe is in the party", "Mira is in the party"]);
@@ -381,7 +382,7 @@ for (const role of ROLES) {
     if (role.dm) expect(d.ticker).toContain("Mira can now use hunters-flurry");
   });
 
-  // VTT-822 VTT-809
+  // VTT-984 VTT-809
   test(`${role.name}: a bare condition behind a run with a correction's sheet frame between is drawn`, () => {
     const d = draw(runLog([
       [false, { case: "actorControlGranted", value: { actorId: "a3", participantId: "p2", kind: ActorKind.PARTY_MEMBER } }],
@@ -390,7 +391,7 @@ for (const role of ROLES) {
     expect(d.story).toEqual(["session started — Night one", "Tobbe is in the party", "Mira is in the party", "Mira gained prone"]);
   });
 
-  // VTT-822 VTT-810
+  // VTT-984 VTT-810
   test(`${role.name}: a grant with an event id ends the run, and the bare condition behind it is drawn, the grant is not`, () => {
     const d = draw(runLog([
       [true, { case: "actorControlGranted", value: { actorId: "a3", participantId: "p2", kind: ActorKind.PARTY_MEMBER } }],
@@ -398,7 +399,7 @@ for (const role of ROLES) {
     expect(d.story).toEqual(["session started — Night one", "Tobbe is in the party", "Mira is in the party", "Mira gained prone"]);
   });
 
-  // VTT-822
+  // VTT-984
   test(`${role.name}: a run's bare grant and bare condition directly behind it are left out with it`, () => {
     const d = draw(runLog([
       [false, { case: "actorControlGranted", value: { actorId: "a3", participantId: "p2", kind: ActorKind.PARTY_MEMBER } }],
@@ -410,7 +411,7 @@ for (const role of ROLES) {
 // ---- buildFeed directly ----
 
 for (const v of Object.keys(VARIANTS) as Variant[]) {
-  // VTT-809 VTT-810 VTT-818 VTT-820 VTT-822 VTT-823
+  // VTT-809 VTT-810 VTT-818 VTT-820 VTT-984 VTT-823
   test(`buildFeed, ${v}: its entries hold every kept event once and no left-out one`, () => {
     const log = worldLog(v);
     const feed = buildFeed(log);
@@ -465,7 +466,7 @@ for (const role of ROLES) {
     expect(d.beats[beatOf(d, "The door creaks")]!.querySelectorAll("p").length).toBe(1);
   });
 
-  // VTT-822
+  // VTT-984
   test(`${role.name}: a narration anchored over a kept entry and left-out ones is drawn once`, () => {
     const d = draw(narrationLog(true, 3n, 6n), role);
     expect(d.story.filter((l) => l === "Tobbe steps into the light").length).toBe(1);
@@ -473,7 +474,7 @@ for (const role of ROLES) {
     expect(d.story.some((l) => l.includes("moved to") || l.includes(" is at ") || l.includes("→"))).toBe(false);
   });
 
-  // VTT-822
+  // VTT-984
   test(`${role.name}: a removal that carries an event id is drawn, and the same actor's add behind it`, () => {
     const log = [
       env(1, true, SESSION),
@@ -485,7 +486,7 @@ for (const role of ROLES) {
     expect(d.story).toEqual(["session started — Night one", "Mira is in the party", "Mira left", "Mira is in the party"]);
   });
 
-  // VTT-822
+  // VTT-984
   test(`${role.name}: a bare removal followed by another actor's add is drawn, and that add`, () => {
     const log = [
       env(1, true, SESSION),
@@ -497,7 +498,7 @@ for (const role of ROLES) {
     expect(d.story).toEqual(["session started — Night one", "Mira is in the party", "Mira left", "Tobbe is in the party"]);
   });
 
-  // VTT-822
+  // VTT-984
   test(`${role.name}: an ability's use, a roll and a whisper read as today`, () => {
     const d = draw(worldLog("no entry carries one"), role);
     expect(d.story).toContain("Tobbe used hunters-flurry on Goblin: hit, rolled 14");

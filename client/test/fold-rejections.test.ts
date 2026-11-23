@@ -810,3 +810,34 @@ test("command and file ids of exactly 128 bytes are ACCEPTED", () => {
   expect(st.Actors["a1"]!.moduleId).toBe(id("m"));
 });
 
+// --- the ruleset a log names ------------------------------------------------
+
+const named = (seq: number, rulesetId: string, version: string, name: string) =>
+  env(seq, { rulesetNamed: { rulesetId, version, name } });
+const atBound = { id: "é".repeat(64), version: "ü".repeat(64), name: "é".repeat(128) };
+
+// VTT-974
+test("a rulesetNamed whose id, version or name is empty is rejected, naming the field, in that order", () => {
+  const { id, version, name } = atBound;
+  rejects([started, named(2, "", version, name)], "ruleset id is shorter than 1 bytes");
+  rejects([started, named(2, id, "", name)], "ruleset version is shorter than 1 bytes");
+  rejects([started, named(2, id, version, "")], "ruleset name is shorter than 1 bytes");
+  rejects([started, named(2, "", "", "")], "ruleset id is shorter than 1 bytes");
+  rejects([started, named(2, id, "", "")], "ruleset version is shorter than 1 bytes");
+});
+
+// VTT-974
+test("a rulesetNamed whose id or version is over 128 UTF-8 bytes, or whose name is over 256, is rejected", () => {
+  const { id, version, name } = atBound;
+  rejects([started, named(2, id + "i", version, name)], "ruleset id exceeds 128 bytes");
+  rejects([started, named(2, id, version + "v", name)], "ruleset version exceeds 128 bytes");
+  rejects([started, named(2, id, version, name + "n")], "ruleset name exceeds 256 bytes");
+  rejects([started, named(2, id, version + "v", name + "n")], "ruleset version exceeds 128 bytes");
+});
+
+// VTT-974
+test("a rulesetNamed whose id, version and name are each exactly at its bound is ACCEPTED", () => {
+  const { id, version, name } = atBound;
+  const st = fold([started, named(2, id, version, name)]);
+  expect([st.RulesetID, st.RulesetVersion, st.RulesetName]).toEqual([id, version, name]);
+});

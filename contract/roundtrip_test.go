@@ -119,6 +119,9 @@ func TestResourceAddedEnvelopeRoundTrip(t *testing.T) {
 func TestResourceRemovedEnvelopeRoundTrip(t *testing.T) {
 	roundTrip(t, "resource_removed_envelope.json", &vttv1.Envelope{})
 }
+func TestRulesetNamedEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "ruleset_named_envelope.json", &vttv1.Envelope{})
+}
 func TestUpsertNoteCommandRoundTrip(t *testing.T) {
 	roundTrip(t, "upsert_note_command.json", &vttv1.ClientCommand{})
 }

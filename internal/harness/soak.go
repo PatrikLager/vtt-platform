@@ -711,6 +711,9 @@ func statesEqual(a, b *engine.State) bool {
 	if !reflect.DeepEqual(a.Notes, b.Notes) {
 		return false
 	}
+	if a.RulesetID != b.RulesetID || a.RulesetVersion != b.RulesetVersion || a.RulesetName != b.RulesetName {
+		return false
+	}
 	if len(a.Actors) != len(b.Actors) {
 		return false
 	}

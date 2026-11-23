@@ -527,7 +527,7 @@ func (pr *Projection) classify(env *vttv1.Envelope, now sightView) verdict {
 	}
 
 	switch p := env.GetPayload().(type) {
-	case *vttv1.Envelope_SessionStarted, *vttv1.Envelope_SessionEnded:
+	case *vttv1.Envelope_SessionStarted, *vttv1.Envelope_SessionEnded, *vttv1.Envelope_RulesetNamed:
 		return forwarded
 
 	case *vttv1.Envelope_NarrationAdded:

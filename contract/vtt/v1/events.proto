@@ -582,6 +582,14 @@ message ResourceRemoved {
   string resource = 2;
 }
 
+// RulesetNamed names the ruleset, and its version, the outcomes after it are
+// decided under (SPEC-026).
+message RulesetNamed {
+  string ruleset_id = 1;
+  string version = 2;
+  string name = 3;
+}
+
 // NoteVisibility says who may read a note. An enum rather than a bool:
 // protojson omits a false bool, so a secret note would travel as an absent
 // field, indistinguishable from a writer who said nothing. A note recorded
@@ -664,5 +672,7 @@ message Envelope {
     // A sheet's resources change in play (SPEC-007).
     ResourceAdded resource_added = 38;
     ResourceRemoved resource_removed = 39;
+    // The ruleset the outcomes after it are decided under (SPEC-007).
+    RulesetNamed ruleset_named = 40;
   }
 }

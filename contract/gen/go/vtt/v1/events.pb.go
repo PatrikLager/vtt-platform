@@ -2587,6 +2587,68 @@ func (x *ResourceRemoved) GetResource() string {
 	return ""
 }
 
+// RulesetNamed names the ruleset, and its version, the outcomes after it are
+// decided under (SPEC-026).
+type RulesetNamed struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RulesetId     string                 `protobuf:"bytes,1,opt,name=ruleset_id,json=rulesetId,proto3" json:"ruleset_id,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RulesetNamed) Reset() {
+	*x = RulesetNamed{}
+	mi := &file_vtt_v1_events_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RulesetNamed) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RulesetNamed) ProtoMessage() {}
+
+func (x *RulesetNamed) ProtoReflect() protoreflect.Message {
+	mi := &file_vtt_v1_events_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RulesetNamed.ProtoReflect.Descriptor instead.
+func (*RulesetNamed) Descriptor() ([]byte, []int) {
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *RulesetNamed) GetRulesetId() string {
+	if x != nil {
+		return x.RulesetId
+	}
+	return ""
+}
+
+func (x *RulesetNamed) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *RulesetNamed) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
 type NoteUpserted struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -2599,7 +2661,7 @@ type NoteUpserted struct {
 
 func (x *NoteUpserted) Reset() {
 	*x = NoteUpserted{}
-	mi := &file_vtt_v1_events_proto_msgTypes[33]
+	mi := &file_vtt_v1_events_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2611,7 +2673,7 @@ func (x *NoteUpserted) String() string {
 func (*NoteUpserted) ProtoMessage() {}
 
 func (x *NoteUpserted) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_events_proto_msgTypes[33]
+	mi := &file_vtt_v1_events_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2624,7 +2686,7 @@ func (x *NoteUpserted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NoteUpserted.ProtoReflect.Descriptor instead.
 func (*NoteUpserted) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_events_proto_rawDescGZIP(), []int{33}
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *NoteUpserted) GetKey() string {
@@ -2664,7 +2726,7 @@ type NoteDeleted struct {
 
 func (x *NoteDeleted) Reset() {
 	*x = NoteDeleted{}
-	mi := &file_vtt_v1_events_proto_msgTypes[34]
+	mi := &file_vtt_v1_events_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2676,7 +2738,7 @@ func (x *NoteDeleted) String() string {
 func (*NoteDeleted) ProtoMessage() {}
 
 func (x *NoteDeleted) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_events_proto_msgTypes[34]
+	mi := &file_vtt_v1_events_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2689,7 +2751,7 @@ func (x *NoteDeleted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NoteDeleted.ProtoReflect.Descriptor instead.
 func (*NoteDeleted) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_events_proto_rawDescGZIP(), []int{34}
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *NoteDeleted) GetKey() string {
@@ -2713,7 +2775,7 @@ type AdventureLoaded struct {
 
 func (x *AdventureLoaded) Reset() {
 	*x = AdventureLoaded{}
-	mi := &file_vtt_v1_events_proto_msgTypes[35]
+	mi := &file_vtt_v1_events_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2725,7 +2787,7 @@ func (x *AdventureLoaded) String() string {
 func (*AdventureLoaded) ProtoMessage() {}
 
 func (x *AdventureLoaded) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_events_proto_msgTypes[35]
+	mi := &file_vtt_v1_events_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2738,7 +2800,7 @@ func (x *AdventureLoaded) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AdventureLoaded.ProtoReflect.Descriptor instead.
 func (*AdventureLoaded) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_events_proto_rawDescGZIP(), []int{35}
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *AdventureLoaded) GetAdventureId() string {
@@ -2799,6 +2861,7 @@ type Envelope struct {
 	//	*Envelope_AbilityTaken
 	//	*Envelope_ResourceAdded
 	//	*Envelope_ResourceRemoved
+	//	*Envelope_RulesetNamed
 	Payload       isEnvelope_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2806,7 +2869,7 @@ type Envelope struct {
 
 func (x *Envelope) Reset() {
 	*x = Envelope{}
-	mi := &file_vtt_v1_events_proto_msgTypes[36]
+	mi := &file_vtt_v1_events_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2818,7 +2881,7 @@ func (x *Envelope) String() string {
 func (*Envelope) ProtoMessage() {}
 
 func (x *Envelope) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_events_proto_msgTypes[36]
+	mi := &file_vtt_v1_events_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2831,7 +2894,7 @@ func (x *Envelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Envelope.ProtoReflect.Descriptor instead.
 func (*Envelope) Descriptor() ([]byte, []int) {
-	return file_vtt_v1_events_proto_rawDescGZIP(), []int{36}
+	return file_vtt_v1_events_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *Envelope) GetEventId() string {
@@ -3144,6 +3207,15 @@ func (x *Envelope) GetResourceRemoved() *ResourceRemoved {
 	return nil
 }
 
+func (x *Envelope) GetRulesetNamed() *RulesetNamed {
+	if x != nil {
+		if x, ok := x.Payload.(*Envelope_RulesetNamed); ok {
+			return x.RulesetNamed
+		}
+	}
+	return nil
+}
+
 type isEnvelope_Payload interface {
 	isEnvelope_Payload()
 }
@@ -3276,6 +3348,11 @@ type Envelope_ResourceRemoved struct {
 	ResourceRemoved *ResourceRemoved `protobuf:"bytes,39,opt,name=resource_removed,json=resourceRemoved,proto3,oneof"`
 }
 
+type Envelope_RulesetNamed struct {
+	// The ruleset the outcomes after it are decided under (SPEC-007).
+	RulesetNamed *RulesetNamed `protobuf:"bytes,40,opt,name=ruleset_named,json=rulesetNamed,proto3,oneof"`
+}
+
 func (*Envelope_TokenMoved) isEnvelope_Payload() {}
 
 func (*Envelope_AttackRolled) isEnvelope_Payload() {}
@@ -3334,6 +3411,8 @@ func (*Envelope_ResourceAdded) isEnvelope_Payload() {}
 
 func (*Envelope_ResourceRemoved) isEnvelope_Payload() {}
 
+func (*Envelope_RulesetNamed) isEnvelope_Payload() {}
+
 type AbilityUsed_Roll struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Expression    string                 `protobuf:"bytes,1,opt,name=expression,proto3" json:"expression,omitempty"`
@@ -3345,7 +3424,7 @@ type AbilityUsed_Roll struct {
 
 func (x *AbilityUsed_Roll) Reset() {
 	*x = AbilityUsed_Roll{}
-	mi := &file_vtt_v1_events_proto_msgTypes[41]
+	mi := &file_vtt_v1_events_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3357,7 +3436,7 @@ func (x *AbilityUsed_Roll) String() string {
 func (*AbilityUsed_Roll) ProtoMessage() {}
 
 func (x *AbilityUsed_Roll) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_events_proto_msgTypes[41]
+	mi := &file_vtt_v1_events_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3408,7 +3487,7 @@ type AbilityUsed_Outcome struct {
 
 func (x *AbilityUsed_Outcome) Reset() {
 	*x = AbilityUsed_Outcome{}
-	mi := &file_vtt_v1_events_proto_msgTypes[42]
+	mi := &file_vtt_v1_events_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3420,7 +3499,7 @@ func (x *AbilityUsed_Outcome) String() string {
 func (*AbilityUsed_Outcome) ProtoMessage() {}
 
 func (x *AbilityUsed_Outcome) ProtoReflect() protoreflect.Message {
-	mi := &file_vtt_v1_events_proto_msgTypes[42]
+	mi := &file_vtt_v1_events_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3654,7 +3733,12 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\x05value\x18\x03 \x01(\v2\x10.vtt.v1.ResourceR\x05value\"H\n" +
 	"\x0fResourceRemoved\x12\x19\n" +
 	"\bactor_id\x18\x01 \x01(\tR\aactorId\x12\x1a\n" +
-	"\bresource\x18\x02 \x01(\tR\bresource\"\x82\x01\n" +
+	"\bresource\x18\x02 \x01(\tR\bresource\"[\n" +
+	"\fRulesetNamed\x12\x1d\n" +
+	"\n" +
+	"ruleset_id\x18\x01 \x01(\tR\trulesetId\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"\x82\x01\n" +
 	"\fNoteUpserted\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\x12\n" +
@@ -3666,7 +3750,7 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\"H\n" +
 	"\x0fAdventureLoaded\x12!\n" +
 	"\fadventure_id\x18\x01 \x01(\tR\vadventureId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\x9e\x10\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\xdb\x10\n" +
 	"\bEnvelope\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1a\n" +
 	"\bsequence\x18\x02 \x01(\x03R\bsequence\x12;\n" +
@@ -3711,7 +3795,8 @@ const file_vtt_v1_events_proto_rawDesc = "" +
 	"\rability_given\x18$ \x01(\v2\x14.vtt.v1.AbilityGivenH\x00R\fabilityGiven\x12;\n" +
 	"\rability_taken\x18% \x01(\v2\x14.vtt.v1.AbilityTakenH\x00R\fabilityTaken\x12>\n" +
 	"\x0eresource_added\x18& \x01(\v2\x15.vtt.v1.ResourceAddedH\x00R\rresourceAdded\x12D\n" +
-	"\x10resource_removed\x18' \x01(\v2\x17.vtt.v1.ResourceRemovedH\x00R\x0fresourceRemovedB\t\n" +
+	"\x10resource_removed\x18' \x01(\v2\x17.vtt.v1.ResourceRemovedH\x00R\x0fresourceRemoved\x12;\n" +
+	"\rruleset_named\x18( \x01(\v2\x14.vtt.v1.RulesetNamedH\x00R\frulesetNamedB\t\n" +
 	"\apayload*^\n" +
 	"\tActorKind\x12\x1a\n" +
 	"\x16ACTOR_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
@@ -3735,7 +3820,7 @@ func file_vtt_v1_events_proto_rawDescGZIP() []byte {
 }
 
 var file_vtt_v1_events_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_vtt_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_vtt_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_vtt_v1_events_proto_goTypes = []any{
 	(ActorKind)(0),                // 0: vtt.v1.ActorKind
 	(NoteVisibility)(0),           // 1: vtt.v1.NoteVisibility
@@ -3772,43 +3857,44 @@ var file_vtt_v1_events_proto_goTypes = []any{
 	(*AbilityTaken)(nil),          // 32: vtt.v1.AbilityTaken
 	(*ResourceAdded)(nil),         // 33: vtt.v1.ResourceAdded
 	(*ResourceRemoved)(nil),       // 34: vtt.v1.ResourceRemoved
-	(*NoteUpserted)(nil),          // 35: vtt.v1.NoteUpserted
-	(*NoteDeleted)(nil),           // 36: vtt.v1.NoteDeleted
-	(*AdventureLoaded)(nil),       // 37: vtt.v1.AdventureLoaded
-	(*Envelope)(nil),              // 38: vtt.v1.Envelope
-	nil,                           // 39: vtt.v1.Actor.AttributesEntry
-	nil,                           // 40: vtt.v1.Actor.ResourcesEntry
-	nil,                           // 41: vtt.v1.SceneCreated.TilesEntry
-	nil,                           // 42: vtt.v1.SceneSeen.TilesEntry
-	(*AbilityUsed_Roll)(nil),      // 43: vtt.v1.AbilityUsed.Roll
-	(*AbilityUsed_Outcome)(nil),   // 44: vtt.v1.AbilityUsed.Outcome
-	(*structpb.Struct)(nil),       // 45: google.protobuf.Struct
-	(*timestamppb.Timestamp)(nil), // 46: google.protobuf.Timestamp
+	(*RulesetNamed)(nil),          // 35: vtt.v1.RulesetNamed
+	(*NoteUpserted)(nil),          // 36: vtt.v1.NoteUpserted
+	(*NoteDeleted)(nil),           // 37: vtt.v1.NoteDeleted
+	(*AdventureLoaded)(nil),       // 38: vtt.v1.AdventureLoaded
+	(*Envelope)(nil),              // 39: vtt.v1.Envelope
+	nil,                           // 40: vtt.v1.Actor.AttributesEntry
+	nil,                           // 41: vtt.v1.Actor.ResourcesEntry
+	nil,                           // 42: vtt.v1.SceneCreated.TilesEntry
+	nil,                           // 43: vtt.v1.SceneSeen.TilesEntry
+	(*AbilityUsed_Roll)(nil),      // 44: vtt.v1.AbilityUsed.Roll
+	(*AbilityUsed_Outcome)(nil),   // 45: vtt.v1.AbilityUsed.Outcome
+	(*structpb.Struct)(nil),       // 46: google.protobuf.Struct
+	(*timestamppb.Timestamp)(nil), // 47: google.protobuf.Timestamp
 }
 var file_vtt_v1_events_proto_depIdxs = []int32{
 	2,  // 0: vtt.v1.TokenMoved.from:type_name -> vtt.v1.GridPosition
 	2,  // 1: vtt.v1.TokenMoved.to:type_name -> vtt.v1.GridPosition
 	4,  // 2: vtt.v1.AttackRolled.rolls:type_name -> vtt.v1.DieRoll
 	5,  // 3: vtt.v1.AttackRolled.modifiers:type_name -> vtt.v1.Modifier
-	39, // 4: vtt.v1.Actor.attributes:type_name -> vtt.v1.Actor.AttributesEntry
-	40, // 5: vtt.v1.Actor.resources:type_name -> vtt.v1.Actor.ResourcesEntry
-	45, // 6: vtt.v1.Actor.module_data:type_name -> google.protobuf.Struct
+	40, // 4: vtt.v1.Actor.attributes:type_name -> vtt.v1.Actor.AttributesEntry
+	41, // 5: vtt.v1.Actor.resources:type_name -> vtt.v1.Actor.ResourcesEntry
+	46, // 6: vtt.v1.Actor.module_data:type_name -> google.protobuf.Struct
 	0,  // 7: vtt.v1.Actor.kind:type_name -> vtt.v1.ActorKind
 	0,  // 8: vtt.v1.ActorControlGranted.kind:type_name -> vtt.v1.ActorKind
 	2,  // 9: vtt.v1.SceneObject.at:type_name -> vtt.v1.GridPosition
-	41, // 10: vtt.v1.SceneCreated.tiles:type_name -> vtt.v1.SceneCreated.TilesEntry
+	42, // 10: vtt.v1.SceneCreated.tiles:type_name -> vtt.v1.SceneCreated.TilesEntry
 	12, // 11: vtt.v1.SceneCreated.objects:type_name -> vtt.v1.SceneObject
-	42, // 12: vtt.v1.SceneSeen.tiles:type_name -> vtt.v1.SceneSeen.TilesEntry
+	43, // 12: vtt.v1.SceneSeen.tiles:type_name -> vtt.v1.SceneSeen.TilesEntry
 	12, // 13: vtt.v1.SceneSeen.objects:type_name -> vtt.v1.SceneObject
 	2,  // 14: vtt.v1.DoorOpened.at:type_name -> vtt.v1.GridPosition
 	2,  // 15: vtt.v1.DoorClosed.at:type_name -> vtt.v1.GridPosition
 	8,  // 16: vtt.v1.ActorAdded.actor:type_name -> vtt.v1.Actor
 	2,  // 17: vtt.v1.TokenPlaced.position:type_name -> vtt.v1.GridPosition
-	43, // 18: vtt.v1.AbilityUsed.rolls:type_name -> vtt.v1.AbilityUsed.Roll
-	44, // 19: vtt.v1.AbilityUsed.outcomes:type_name -> vtt.v1.AbilityUsed.Outcome
+	44, // 18: vtt.v1.AbilityUsed.rolls:type_name -> vtt.v1.AbilityUsed.Roll
+	45, // 19: vtt.v1.AbilityUsed.outcomes:type_name -> vtt.v1.AbilityUsed.Outcome
 	7,  // 20: vtt.v1.ResourceAdded.value:type_name -> vtt.v1.Resource
 	1,  // 21: vtt.v1.NoteUpserted.visibility:type_name -> vtt.v1.NoteVisibility
-	46, // 22: vtt.v1.Envelope.occurred_at:type_name -> google.protobuf.Timestamp
+	47, // 22: vtt.v1.Envelope.occurred_at:type_name -> google.protobuf.Timestamp
 	3,  // 23: vtt.v1.Envelope.token_moved:type_name -> vtt.v1.TokenMoved
 	6,  // 24: vtt.v1.Envelope.attack_rolled:type_name -> vtt.v1.AttackRolled
 	13, // 25: vtt.v1.Envelope.scene_created:type_name -> vtt.v1.SceneCreated
@@ -3821,9 +3907,9 @@ var file_vtt_v1_events_proto_depIdxs = []int32{
 	27, // 32: vtt.v1.Envelope.condition_applied:type_name -> vtt.v1.ConditionApplied
 	28, // 33: vtt.v1.Envelope.condition_removed:type_name -> vtt.v1.ConditionRemoved
 	29, // 34: vtt.v1.Envelope.narration_added:type_name -> vtt.v1.NarrationAdded
-	35, // 35: vtt.v1.Envelope.note_upserted:type_name -> vtt.v1.NoteUpserted
-	36, // 36: vtt.v1.Envelope.note_deleted:type_name -> vtt.v1.NoteDeleted
-	37, // 37: vtt.v1.Envelope.adventure_loaded:type_name -> vtt.v1.AdventureLoaded
+	36, // 35: vtt.v1.Envelope.note_upserted:type_name -> vtt.v1.NoteUpserted
+	37, // 36: vtt.v1.Envelope.note_deleted:type_name -> vtt.v1.NoteDeleted
+	38, // 37: vtt.v1.Envelope.adventure_loaded:type_name -> vtt.v1.AdventureLoaded
 	9,  // 38: vtt.v1.Envelope.actor_control_granted:type_name -> vtt.v1.ActorControlGranted
 	10, // 39: vtt.v1.Envelope.actor_control_revoked:type_name -> vtt.v1.ActorControlRevoked
 	16, // 40: vtt.v1.Envelope.door_opened:type_name -> vtt.v1.DoorOpened
@@ -3838,14 +3924,15 @@ var file_vtt_v1_events_proto_depIdxs = []int32{
 	32, // 49: vtt.v1.Envelope.ability_taken:type_name -> vtt.v1.AbilityTaken
 	33, // 50: vtt.v1.Envelope.resource_added:type_name -> vtt.v1.ResourceAdded
 	34, // 51: vtt.v1.Envelope.resource_removed:type_name -> vtt.v1.ResourceRemoved
-	7,  // 52: vtt.v1.Actor.ResourcesEntry.value:type_name -> vtt.v1.Resource
-	11, // 53: vtt.v1.SceneCreated.TilesEntry.value:type_name -> vtt.v1.TileRef
-	11, // 54: vtt.v1.SceneSeen.TilesEntry.value:type_name -> vtt.v1.TileRef
-	55, // [55:55] is the sub-list for method output_type
-	55, // [55:55] is the sub-list for method input_type
-	55, // [55:55] is the sub-list for extension type_name
-	55, // [55:55] is the sub-list for extension extendee
-	0,  // [0:55] is the sub-list for field type_name
+	35, // 52: vtt.v1.Envelope.ruleset_named:type_name -> vtt.v1.RulesetNamed
+	7,  // 53: vtt.v1.Actor.ResourcesEntry.value:type_name -> vtt.v1.Resource
+	11, // 54: vtt.v1.SceneCreated.TilesEntry.value:type_name -> vtt.v1.TileRef
+	11, // 55: vtt.v1.SceneSeen.TilesEntry.value:type_name -> vtt.v1.TileRef
+	56, // [56:56] is the sub-list for method output_type
+	56, // [56:56] is the sub-list for method input_type
+	56, // [56:56] is the sub-list for extension type_name
+	56, // [56:56] is the sub-list for extension extendee
+	0,  // [0:56] is the sub-list for field type_name
 }
 
 func init() { file_vtt_v1_events_proto_init() }
@@ -3853,7 +3940,7 @@ func file_vtt_v1_events_proto_init() {
 	if File_vtt_v1_events_proto != nil {
 		return
 	}
-	file_vtt_v1_events_proto_msgTypes[36].OneofWrappers = []any{
+	file_vtt_v1_events_proto_msgTypes[37].OneofWrappers = []any{
 		(*Envelope_TokenMoved)(nil),
 		(*Envelope_AttackRolled)(nil),
 		(*Envelope_SceneCreated)(nil),
@@ -3883,6 +3970,7 @@ func file_vtt_v1_events_proto_init() {
 		(*Envelope_AbilityTaken)(nil),
 		(*Envelope_ResourceAdded)(nil),
 		(*Envelope_ResourceRemoved)(nil),
+		(*Envelope_RulesetNamed)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -3890,7 +3978,7 @@ func file_vtt_v1_events_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_vtt_v1_events_proto_rawDesc), len(file_vtt_v1_events_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   43,
+			NumMessages:   44,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

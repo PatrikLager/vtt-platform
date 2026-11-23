@@ -1,6 +1,6 @@
 // The Story's beats (SPEC-022). Keep an anchored narration in the beat of the
 // events its range names, and leave out the runs reintroductions names and
-// every entry told() refuses (VTT-822). Leave them out here alone: the fold,
+// every entry told() refuses (VTT-984). Leave them out here alone: the fold,
 // the namer and the Events panel are handed the whole log.
 
 import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
@@ -8,7 +8,7 @@ import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 type Kind = NonNullable<Envelope["payload"]["case"]>;
 
 // Decide here whether the Story draws each kind the contract adds
-// (VTT-809, VTT-810, VTT-818, VTT-822, VTT-823).
+// (VTT-809, VTT-810, VTT-818, VTT-984, VTT-823).
 const STORY: Record<Kind, boolean> = {
   sessionStarted: true,
   sessionEnded: true,
@@ -20,6 +20,7 @@ const STORY: Record<Kind, boolean> = {
   attackRolled: true,
   narrationAdded: true,
   whisperAdded: true,
+  rulesetNamed: true,
   doorOpened: true,
   doorClosed: true,
   resourceChanged: false,
@@ -121,7 +122,7 @@ export function buildFeed(whole: Envelope[]): FeedEntry[] {
     .sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0));
 }
 
-// VTT-820 VTT-822
+// VTT-820 VTT-984
 function told(e: Envelope): boolean {
   const kind = e.payload.case;
   if (kind === undefined) return true;
@@ -129,7 +130,7 @@ function told(e: Envelope): boolean {
   return STORY[kind] && (!door || e.eventId !== "");
 }
 
-// Find the runs in the whole log, before told() leaves an entry out (VTT-822).
+// Find the runs in the whole log, before told() leaves an entry out (VTT-984).
 function reintroductions(log: readonly Envelope[]): Set<Envelope> {
   const out = new Set<Envelope>();
   for (let i = 0; i + 1 < log.length; i++) {

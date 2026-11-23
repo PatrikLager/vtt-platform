@@ -1,0 +1,8 @@
+[
+  {"eventId": "evt-6", "sequence": "6", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm", "rulesetNamed": {"version": "1", "name": "Plain Rules"}},
+  {"eventId": "evt-6", "sequence": "6", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm", "rulesetNamed": {"rulesetId": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé", "version": "1", "name": "Plain Rules"}},
+  {"eventId": "evt-6", "sequence": "6", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm", "rulesetNamed": {"rulesetId": "qa-rules", "name": "Plain Rules"}},
+  {"eventId": "evt-6", "sequence": "6", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm", "rulesetNamed": {"rulesetId": "qa-rules", "version": "üüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüüv", "name": "Plain Rules"}},
+  {"eventId": "evt-6", "sequence": "6", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm", "rulesetNamed": {"rulesetId": "qa-rules", "version": "1"}},
+  {"eventId": "evt-6", "sequence": "6", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm", "rulesetNamed": {"rulesetId": "qa-rules", "version": "1", "name": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"}}
+]

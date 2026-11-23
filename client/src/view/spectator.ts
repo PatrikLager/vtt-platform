@@ -174,6 +174,8 @@ export function describe(e: Envelope, names: Namer): string {
       return `roll ${p.value.total}`;
     case "adventureLoaded":
       return `adventure ${p.value.adventureId} loaded`;
+    case "rulesetNamed":
+      return `rules: ${p.value.name}, version ${p.value.version}`;
     case undefined:
       return "something happened";
   }

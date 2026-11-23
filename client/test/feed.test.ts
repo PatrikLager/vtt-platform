@@ -252,7 +252,7 @@ test("an unset payload alongside real events leaves the real ones intact", () =>
   expect(feed.map((e) => Number(e.seq))).toEqual([1, 2, 3]);
 });
 
-// VTT-822
+// VTT-984
 test("a removal that carries an event id, or that another actor's introduction follows, is told", () => {
   const removed = (seq: number, actorId: string, eventId: string) =>
     create(EnvelopeSchema, {
@@ -268,7 +268,7 @@ test("a removal that carries an event id, or that another actor's introduction f
   expect(told([removed(1, "a1", ""), added(2, "a2", "")])).toEqual(["actorRemoved 1", "actorAdded 2"]);
 });
 
-// VTT-822
+// VTT-984
 test("an entry with no event id that is not a removal is told with the add behind it", () => {
   const used = create(EnvelopeSchema, {
     sequence: 1n, payload: { case: "abilityUsed", value: { actorId: "a1", abilityId: "wave" } },
@@ -281,7 +281,7 @@ test("an entry with no event id that is not a removal is told with the add behin
   expect(told).toEqual(["abilityUsed 1", "actorAdded 2"]);
 });
 
-// VTT-822
+// VTT-984
 test("a bare removal is told when the entry after it holds nothing this client reads", () => {
   const gone = create(EnvelopeSchema, {
     sequence: 1n, payload: { case: "actorRemoved", value: create(ActorRemovedSchema, { actorId: "a1" }) },
@@ -302,7 +302,7 @@ test("buildFeed tells a bare removal and an actorAdded with no actor after it", 
   expect(told).toEqual(["actorRemoved 1", "actorAdded 2"]);
 });
 
-// VTT-809 VTT-810 VTT-818 VTT-820 VTT-822 VTT-823
+// VTT-809 VTT-810 VTT-818 VTT-820 VTT-984 VTT-823
 test("buildFeed keeps each kind the Story draws and leaves out the rest, an entry with an event id and one with none", () => {
   const leftOut = new Set([
     "resourceChanged", "abilityGiven", "abilityTaken", "resourceAdded", "resourceRemoved",
@@ -333,7 +333,7 @@ test("a narration anchored only to an entry the Story leaves out is its own beat
     .toEqual([[1, [1], []], [3, [3], []], [4, [], ["She winces."]]]);
 });
 
-// VTT-822
+// VTT-984
 test("a correction's sheet frame ends a run, and the bare condition behind it is told", () => {
   const own = (seq: number, payload: Envelope["payload"]) => create(EnvelopeSchema, { sequence: BigInt(seq), payload });
   const told = buildFeed([

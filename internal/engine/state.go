@@ -124,6 +124,12 @@ type State struct {
 	Sessions   []Session
 	Conditions map[string][]ActorCondition // keyed by actor id
 	Notes      map[string]Note             // keyed by note key
+
+	// The ruleset the log last names (SPEC-026). Keep each `json:",omitempty"`:
+	// the dump of a log that names none writes nothing of one (VTT-987).
+	RulesetID      string `json:",omitempty"`
+	RulesetVersion string `json:",omitempty"`
+	RulesetName    string `json:",omitempty"`
 }
 
 func NewState() *State {
@@ -217,6 +223,7 @@ func (st *State) Snapshot() *State {
 	for k, v := range st.Notes {
 		out.Notes[k] = v
 	}
+	out.RulesetID, out.RulesetVersion, out.RulesetName = st.RulesetID, st.RulesetVersion, st.RulesetName
 	return out
 }
 

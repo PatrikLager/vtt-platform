@@ -1,0 +1,12 @@
+[
+  { "eventId": "evt-1", "sequence": "1", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "sessionStarted": { "name": "Night" } },
+  { "eventId": "evt-2", "sequence": "2", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "actorAdded": { "actor": { "actorId": "act-lera", "name": "Lera", "kind": "ACTOR_KIND_PARTY_MEMBER" } } },
+  { "eventId": "evt-3", "sequence": "3", "sessionId": "sess-1", "actorRole": "player", "participantId": "p-lera",
+    "rulesetNamed": { "rulesetId": "qa-rules", "version": "1", "name": "Plain Rules" } },
+  { "eventId": "evt-4", "sequence": "4", "sessionId": "sess-1", "actorRole": "dm", "participantId": "p-dm",
+    "rulesetNamed": { "rulesetId": "qa-rules", "version": "1.1 é", "name": "Plain Rules" } },
+  { "eventId": "evt-5", "sequence": "5", "sessionId": "sess-1", "actorRole": "agent", "participantId": "p-agent",
+    "rulesetNamed": { "rulesetId": "other-rules", "version": "2", "name": "Other <Rules> & more" } }
+]

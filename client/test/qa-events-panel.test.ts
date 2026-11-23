@@ -171,7 +171,7 @@ function moves(n: number, reason: (i: number) => string = reasonOf): Frame[] {
 
 const logWith = (n: number) => [...SETUP, ...moves(n)];
 
-/** Of SETUP the Story draws the session's start and Bram's add (VTT-822). */
+/** Of SETUP the Story draws the session's start and Bram's add (VTT-984). */
 const SETUP_DRAWN = 2;
 
 /** Conditions 1..n Bram gains, condition i named tag(i): entries the Story draws. */
@@ -380,7 +380,7 @@ for (const role of ["player", "spectator"] as const) {
     expect(Array.from(r.querySelectorAll("h2")).map((h) => h.textContent)).not.toContain("Events");
   });
 
-  // VTT-822
+  // VTT-984
   test(`qaEP: ${role}: the Story still shows every entry it draws, more than 40 included`, async () => {
     const { r } = await openSeat(role, drawnLogWith(45));
     const rows = feedRows(r);
@@ -406,7 +406,7 @@ for (const role of ["player", "spectator"] as const) {
 }
 
 for (const role of ["dm", "agent"] as const) {
-  // VTT-822
+  // VTT-984
   test(`qaEP: ${role}: the Story shows every entry it draws while the panel shows 40`, async () => {
     const { r } = await openWorld(role, drawnLogWith(45));
     expect(ticks(r)).toHaveLength(40);

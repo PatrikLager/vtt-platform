@@ -503,6 +503,14 @@ function apply(st: State, env: Envelope): void {
       checkLen("adventure id", p.value.adventureId, 1, 128);
       checkLen("adventure name", p.value.name, 0, 256);
       return;
+    case "rulesetNamed":
+      checkLen("ruleset id", p.value.rulesetId, 1, 128);
+      checkLen("ruleset version", p.value.version, 1, 128);
+      checkLen("ruleset name", p.value.name, 1, 256);
+      st.RulesetID = p.value.rulesetId;
+      st.RulesetVersion = p.value.version;
+      st.RulesetName = p.value.name;
+      return;
     case "abilityUsed":
       checkLen("ability id", p.value.abilityId, 1, 128);
       return;
@@ -650,6 +658,11 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
       if (n.Visibility !== NoteVisibility.UNSPECIFIED) note["Visibility"] = n.Visibility;
       return note;
     }),
+    // Keep these three optional in State: JSON.stringify drops an undefined
+    // key as engine.State's `json:",omitempty"` drops "" (VTT-987).
+    RulesetID: st.RulesetID,
+    RulesetName: st.RulesetName,
+    RulesetVersion: st.RulesetVersion,
     Scenes: sortedMap(st.Scenes, (s) => {
       // `?? {}` / `?? []` are the same defaulting state.ts's comment on
       // Scene calls for: these fields are optional only to let bare test

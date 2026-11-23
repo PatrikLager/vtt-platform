@@ -645,6 +645,8 @@ function everyCase(): Record<PayloadCase, Envelope> {
       actorId: "act-c1", resource: "vigor", value: { current: 2, max: 3 } } } }),
     resourceRemoved: env({ payload: { case: "resourceRemoved", value: {
       actorId: "act-c1", resource: "vigor" } } }),
+    rulesetNamed: env({ payload: { case: "rulesetNamed", value: {
+      rulesetId: "rules-plain", version: "3", name: "Plain Rules" } } }),
   };
 }
 

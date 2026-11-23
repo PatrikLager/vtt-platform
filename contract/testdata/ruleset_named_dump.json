@@ -1,0 +1,25 @@
+{
+  "Actors": {
+    "act-lera": {
+      "actor_id": "act-lera",
+      "name": "Lera",
+      "kind": 1
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "RulesetID": "other-rules",
+  "RulesetName": "Other \u003cRules\u003e \u0026 more",
+  "RulesetVersion": "2",
+  "Scenes": {},
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Night",
+      "StartSeq": 1,
+      "EndSeq": 0
+    }
+  ],
+  "Tokens": {},
+  "headSequence": 5
+}

@@ -202,6 +202,10 @@ export interface State {
   Sessions: Session[];
   Conditions: Record<string, ActorCondition[]>;
   Notes: Record<string, Note>;
+  /** The ruleset the log last names; SPEC-026. */
+  RulesetID?: string;
+  RulesetVersion?: string;
+  RulesetName?: string;
 }
 
 /**

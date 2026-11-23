@@ -11,7 +11,7 @@ import {
   TokenRemovedSchema, ActorRemovedSchema, TokenHiddenSchema, TokenDescribedSchema,
   ActorControlGrantedSchema, ActorControlRevokedSchema, DoorOpenedSchema, DoorClosedSchema,
   WhisperAddedSchema, AbilityGivenSchema, AbilityTakenSchema, ResourceAddedSchema, ResourceRemovedSchema,
-  type Envelope,
+  RulesetNamedSchema, type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderSpectator, describe as describeEvent, CELL, boardCamera, paneSize,
   DEFAULT_PANE_W, DEFAULT_PANE_H, type ViewExtras } from "../src/view/spectator";
@@ -202,7 +202,7 @@ function storyWorld(): State {
 }
 const STORY = namer(storyWorld(), [], false, [{ id: "cleave", name: "Cleave" }]);
 
-// VTT-476 VTT-475 VTT-477 VTT-816 VTT-813 VTT-814 VTT-821
+// VTT-476 VTT-475 VTT-477 VTT-816 VTT-813 VTT-814 VTT-821 VTT-985
 test("describe renders a real label for every event kind, not the fallback", () => {
   const gob = { actorId: "act-gob" };
   const cases: [Envelope, string][] = [
@@ -283,6 +283,8 @@ test("describe renders a real label for every event kind, not the fallback", () 
       "Ama now has vigor at 0"],
     [env(35, { case: "resourceRemoved", value: create(ResourceRemovedSchema, { actorId: "act-ama", resource: "vigor" }) }),
       "Ama no longer has vigor"],
+    [env(36, { case: "rulesetNamed", value: create(RulesetNamedSchema, { rulesetId: "qa-rules", version: "2", name: "Plain Rules" }) }),
+      "rules: Plain Rules, version 2"],
   ];
 
   for (const [e, want] of cases) {
@@ -292,6 +294,21 @@ test("describe renders a real label for every event kind, not the fallback", () 
   for (const f of EnvelopeSchema.oneofs.find((o) => o.name === "payload")!.fields) {
     expect(covered.has(f.localName as Envelope["payload"]["case"])).toBe(true);
   }
+});
+
+// VTT-984 VTT-985
+test("the Story and the Events panel word a rulesetNamed by the ruleset's name and its version, with an event id or none", () => {
+  const named = (eventId: string, seq: number, version: string) => create(EnvelopeSchema, {
+    eventId, sequence: BigInt(seq),
+    payload: { case: "rulesetNamed", value: create(RulesetNamedSchema, { rulesetId: "qa-rules", version, name: "Plain Rules" }) },
+  });
+  const log = [named("", 1, "1"), named("e2", 2, "1.1")];
+  const root = render(fold(log), log, { ticker: true, dm: true });
+  expect(Array.from(root.querySelectorAll(".feed .beat p"), (n) => n.textContent))
+    .toEqual(["rules: Plain Rules, version 1", "rules: Plain Rules, version 1.1"]);
+  expect(Array.from(root.querySelectorAll(".ticker .tick"), (n) => n.textContent))
+    .toEqual(["rules: Plain Rules, version 1.1", "rules: Plain Rules, version 1"]);
+  expect(root.textContent).not.toContain("qa-rules");
 });
 
 // What C7 fills in a payload of every case: the fixture's actor and token ids.
@@ -1531,7 +1548,7 @@ test("the ticker section carries its class, and headings carry none", () => {
   for (const h of Array.from(root.querySelectorAll("h2"))) expect(h.className).toBe("");
 });
 
-// VTT-445 VTT-822
+// VTT-445 VTT-984
 test("a window not asked for the Events panel draws none, and its Story still draws the game's lines", () => {
   // More entries than the Events panel shows, so a bounded Story goes red.
   const log = Array.from({ length: 45 }, (_, i) =>
@@ -1545,7 +1562,7 @@ test("a window not asked for the Events panel draws none, and its Story still dr
     .toEqual(log.map((e) => describeEvent(e, names)));
 });
 
-// VTT-822 VTT-810 VTT-818
+// VTT-984 VTT-810 VTT-818
 test("at a companion's first sight the Story draws no line for its run, its control or its arrival", () => {
   // The log's own entries carry no event id; what it forwards from the world does.
   const own = (seq: number, payload: Envelope["payload"]): Envelope =>
@@ -1570,7 +1587,7 @@ test("at a companion's first sight the Story draws no line for its run, its cont
   expect(root.querySelector('[data-token-id="t2"]')).not.toBeNull();
 });
 
-// VTT-809 VTT-810 VTT-822
+// VTT-809 VTT-810 VTT-984
 test("a party member corrected at its first sight draws no line of its sheet or its control, and the Events panel draws each", () => {
   // The log's own entries carry no event id; what it forwards from the world does.
   const own = (seq: number, payload: Envelope["payload"]): Envelope =>

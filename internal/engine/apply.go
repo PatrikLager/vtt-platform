@@ -535,6 +535,20 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		}
 		return nil // testimony, not state — AbilityUsed's pattern: the compile batch's FIRST event, meaning arrives via the SceneCreated/ActorAdded/TokenPlaced/NoteUpserted/NarrationAdded events that follow it in the same batch (adventure-format spec §3, internal/adventure's Compile)
 
+	case *vttv1.Envelope_RulesetNamed:
+		rn := p.RulesetNamed
+		if n := len(rn.GetRulesetId()); n == 0 || n > maxIDBytes {
+			return fmt.Errorf("engine: ruleset id must be 1-%d bytes, got %d", maxIDBytes, n)
+		}
+		if n := len(rn.GetVersion()); n == 0 || n > maxIDBytes {
+			return fmt.Errorf("engine: ruleset version must be 1-%d bytes, got %d", maxIDBytes, n)
+		}
+		if n := len(rn.GetName()); n == 0 || n > maxNameBytes {
+			return fmt.Errorf("engine: ruleset name must be 1-%d bytes, got %d", maxNameBytes, n)
+		}
+		st.RulesetID, st.RulesetVersion, st.RulesetName = rn.GetRulesetId(), rn.GetVersion(), rn.GetName()
+		return nil
+
 	case *vttv1.Envelope_ResourceChanged:
 		rc := p.ResourceChanged
 		actor, ok := st.Actors[rc.ActorId]
