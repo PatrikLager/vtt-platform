@@ -524,10 +524,15 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
           clears: ["note-visibility"],
         };
       }), "upsert-note"),
-      button("Delete", () => {
-        if (!noteKey.value.trim()) return d.notify("name the note to delete");
-        d.send(deleteNote(noteKey.value.trim()));
-      }, "delete-note"),
+      // Ask inside the press `sending` runs, after the empty check (SPEC-022).
+      // VTT-956 VTT-957 VTT-958 VTT-959 VTT-960 VTT-961 VTT-962 VTT-963
+      button("Delete", sending(d, "delete-note", () => {
+        const key = noteKey.value.trim();
+        if (key === "") return void d.notify("name the note to delete");
+        const shown = d.st.Notes[key]?.Title || key;
+        if (!d.confirm(`Delete the note "${shown}"? Its title and text go with it.`)) return;
+        return { command: deleteNote(key), clears: [] };
+      }), "delete-note"),
     ),
   );
 

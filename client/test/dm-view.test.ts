@@ -354,7 +354,7 @@ test("every input the console owns is reachable by its stable data-field", () =>
 
 // --- exact refusal messages -------------------------------------------------
 
-// VTT-951 VTT-955
+// VTT-951 VTT-955 VTT-959
 test("each guard refuses with its own exact wording", () => {
   // One message per guard, and they must differ: a DM told "invalid" cannot
   // tell which box to fix.
@@ -788,11 +788,101 @@ test("a note's key, title and text are trimmed on the way out", () => {
   ]);
 });
 
-test("deleting a note trims its key", () => {
+// The harness answers Delete note's question yes; its own tests follow.
+// VTT-957
+test("deleting a note trims its key", async () => {
   const h = harness();
   fill(h, { "note-key": "  k  " });
   h.button("Delete").click();
+  expect(h.confirmCount()).toBe(1);
   expect(payloads(h)).toEqual([{ case: "deleteNote", value: expect.objectContaining({ key: "k" }) }]);
+  await h.settle();
+});
+
+/** A note with a title and one whose title is "", as the fold writes it. */
+function noteTable(): State {
+  const st = newState();
+  st.Notes["ravine"] = {
+    Title: "The Ravine", Text: "The trail is watched.", UpdatedSeq: 1, Visibility: NoteVisibility.PUBLIC,
+  };
+  st.Notes["cellar"] = { Title: "", Text: "Rats.", UpdatedSeq: 2, Visibility: NoteVisibility.SECRET };
+  return st;
+}
+
+// VTT-956
+test("Delete note asks first, naming the note by its title, else by its key, and a no sends nothing", () => {
+  const ask = (typed: string) => {
+    const h = harness(noteTable());
+    h.setConfirm(false);
+    fill(h, { "note-key": typed });
+    h.button("Delete").click();
+    return { asked: h.confirmMessages(), sent: h.sent.length, notices: h.notices };
+  };
+  const asked = (shown: string) => ({
+    asked: [`Delete the note "${shown}"? Its title and text go with it.`],
+    sent: 0,
+    notices: [],
+  });
+  expect(ask("ravine")).toEqual(asked("The Ravine"));
+  expect(ask("  ravine ")).toEqual(asked("The Ravine"));
+  expect(ask("cellar")).toEqual(asked("cellar"));
+  expect(ask(" moor ")).toEqual(asked("moor"));
+});
+
+// VTT-958
+test("a Delete note the DM declines keeps the key field as typed, at the next paint too", () => {
+  try {
+    const h = harness(noteTable());
+    h.setConfirm(false);
+    type(h, { "note-key": " ravine " });
+    h.button("Delete").click();
+    expect([h.confirmCount(), h.sent.length]).toEqual([1, 0]);
+    expect(h.field("note-key").value).toBe(" ravine ");
+    expect(harness(noteTable()).field("note-key").value).toBe(" ravine ");
+  } finally {
+    type(harness(), { "note-key": "" });
+  }
+});
+
+// VTT-960
+test("a Delete note pressed again while its command is unanswered asks nothing and sends nothing, and sends once answered", async () => {
+  const h = harness(noteTable(), { answer: "held" });
+  try {
+    fill(h, { "note-key": "ravine" });
+    h.button("Delete").click();
+    h.button("Delete").click();
+    expect([h.confirmCount(), h.sent.map((c) => c.command.case)]).toEqual([1, ["deleteNote"]]);
+
+    h.release(refused("not authorized"));
+    await h.settle();
+    h.button("Delete").click();
+    expect([h.confirmCount(), h.sent.map((c) => c.command.case)]).toEqual([2, ["deleteNote", "deleteNote"]]);
+  } finally {
+    h.release(refused("not authorized"));
+    await h.settle();
+  }
+});
+
+// VTT-962
+test("a Delete note whose send rejects lets it go, clears nothing, asks no repaint, and reports the error", async () => {
+  const thrown = new Error("send rejected");
+  const h = harness(noteTable(), { answer: thrown });
+  const reported = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    type(h, { "note-key": "ravine" });
+    h.button("Delete").click();
+    await h.settle();
+    h.button("Delete").click();
+    await h.settle();
+
+    expect(h.sent).toHaveLength(2);
+    expect(h.repaints()).toBe(0);
+    expect(harness().field("note-key").value).toBe("ravine");
+    expect(reported.mock.calls).toEqual([[thrown], [thrown]]);
+  } finally {
+    reported.mockRestore();
+    type(harness(), { "note-key": "" });
+  }
 });
 
 // --- adventures -------------------------------------------------------------
@@ -889,7 +979,7 @@ test("no maps configured means no Maps group at all, not an empty one", () => {
 
 // --- whitespace is not content ----------------------------------------------
 
-// VTT-951 VTT-955
+// VTT-951 VTT-955 VTT-959
 test("a whitespace-only id is refused everywhere one is required", () => {
   // Kills the `.trim()` removals in the GUARDS specifically: without trim,
   // "   " is truthy and the command goes out with a blank id.
@@ -918,6 +1008,8 @@ test("a whitespace-only id is refused everywhere one is required", () => {
   fill(note, { "note-key": "   " });
   note.button("Delete").click();
   expect(note.sent).toHaveLength(0);
+  expect(note.notices).toEqual(["name the note to delete"]);
+  expect(note.confirmCount()).toBe(0);
 
   // The two Remove controls, which share their id boxes with Add and Place.
   // Without the trim, "   " is truthy and the removal goes out naming a blank
@@ -2295,6 +2387,14 @@ const FORMS: Form[] = [
     cleared: { ".note-visibility": "" },
     press: click('[data-action="upsert-note"]'),
   },
+  {
+    // Save note's key: the two share the box, and a walk types every form
+    // into one console.
+    name: "Delete note",
+    typed: { [box("note-key")]: "ravine" },
+    cleared: {},
+    press: click('[data-action="delete-note"]'),
+  },
   grantForm("act-r1"),
 ];
 
@@ -2319,7 +2419,7 @@ function forgetEveryForm(): void {
   enter(everyForm(), Object.fromEntries(all.flatMap((f) => Object.keys(f.typed)).map((s) => [s, ""])));
 }
 
-// VTT-517 VTT-538
+// VTT-517 VTT-538 VTT-963
 test("a refused command leaves every field of its form as typed", async () => {
   try {
     for (const form of FORMS) {
@@ -2399,7 +2499,7 @@ test("an accepted command clears the fields of its own form and of no other", as
   }
 });
 
-// VTT-523 VTT-541
+// VTT-523 VTT-541 VTT-960
 test("a control whose command is unanswered sends nothing when pressed again, each row its own", async () => {
   const controls = [...FORMS, describeForm("tok-r2"), grantForm("act-r2")];
   const h = everyForm("held");
@@ -2429,7 +2529,7 @@ test("a control whose command is unanswered sends nothing when pressed again, ea
   }
 });
 
-// VTT-524
+// VTT-524 VTT-961
 test("a press that sends changes nothing the next render draws until its answer", async () => {
   const h = everyForm("held");
   try {
