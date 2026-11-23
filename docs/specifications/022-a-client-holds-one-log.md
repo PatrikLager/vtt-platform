@@ -82,26 +82,28 @@ until it is changed, by `client/test/focus.test.ts`, `client/test/app.test.ts`,
 to VTT-522, VTT-534); and that a console field keeps what was typed until
 the server accepts the command it fed, that a press of one of the console's
 controls that clear a field, Send and Enter in the console's `say-text`
-among them, of its Delete note, or of a player's panel's Send or Enter in
-`say-text`, whose command is unanswered sends nothing, that such a command
-holds back no other console control, the console's Send and Enter counting
-as one, that a press of one of them that sends changes nothing drawn until
-its answer, that at a refusal of what one of those controls sent neither the
-console nor the panel asks for a repaint of its own, and that such a send
-whose promise rejects clears nothing and frees its control, by
-`client/test/dm-view.test.ts`, `client/test/app.test.ts`,
-`client/test/spectator-view.test.ts`, `client/test/qa-refused-command.test.ts`,
+among them, of its Delete note or a Remove condition button, or of a
+player's panel's Send or Enter in `say-text`, whose command is unanswered
+sends nothing, that such a command holds back no other console control, the
+console's Send and Enter counting as one, that a press of one of them that
+sends changes nothing drawn until its answer, that at a refusal of what one of
+those controls sent neither the console nor the panel asks for a repaint of
+its own, and that such a send whose promise rejects clears nothing and frees
+its control, by `client/test/dm-view.test.ts`, `client/test/app.test.ts`,
+`client/test/spectator-view.test.ts`,
+`client/test/qa-refused-command.test.ts`,
 `client/test/qa-refused-line.test.ts`, `client/test/qa-say-boxes.test.ts`,
 `client/test/qa-console-say.test.ts`, `client/test/qa-panel-say.test.ts`,
-`client/test/qa-delete-note-asks-first.test.ts` and
+`client/test/qa-delete-note-asks-first.test.ts`,
+`client/test/qa-remove-condition-asks-first.test.ts` and
 `client/e2e/refusals.spec.ts` (VTT-517, VTT-523, VTT-524, VTT-526, VTT-533,
-VTT-535, VTT-536, VTT-537, VTT-538, VTT-541, VTT-960 to VTT-963); and that
-the DM console draws a Say whatever its DM or agent controls, that the
-player panel draws one for a player alone and no trace of one for a DM or an
-agent, that both line boxes name `/ooc`, that a player's line speaks as
-their party member and the console's as what `say-as` holds, that `/ooc`
-steps out of character, and that a line out of character is drawn under its
-speaker in `(( ))`, by `client/test/dm-view.test.ts`,
+VTT-535, VTT-536, VTT-537, VTT-538, VTT-541, VTT-960 to VTT-963, VTT-966 to
+VTT-969); and that the DM console draws a Say whatever its DM or agent
+controls, that the player panel draws one for a player alone and no trace of
+one for a DM or an agent, that both line boxes name `/ooc`, that a player's
+line speaks as their party member and the console's as what `say-as` holds,
+that `/ooc` steps out of character, and that a line out of character is drawn
+under its speaker in `(( ))`, by `client/test/dm-view.test.ts`,
 `client/test/spectator-view.test.ts`, `client/test/app.test.ts`,
 `client/test/player.test.ts`, `client/test/commands.test.ts`,
 `client/test/feed.test.ts`, `client/test/qa-speaking.test.ts`,
@@ -151,10 +153,15 @@ the console's Delete note asks the DM first, naming the note, sends nothing
 and leaves its key as typed on a no, sends one `delete_note` on a yes, and
 asks nothing for a blank key, is held by `client/test/dm-view.test.ts` and
 `client/test/qa-delete-note-asks-first.test.ts` (VTT-956 to VTT-959). That
-the panel offers, for the actor it acts as, only the abilities of the window's list
-that the actor's sheet names, in a player's, a DM's and an agent's window,
-is held by `client/test/panel-offers.test.ts`,
-`client/test/qa-window-offers.test.ts`,
+a button of the console's "Remove condition" group asks the DM first,
+naming the actor and the condition as the button does, sends nothing on a
+no and one `remove_condition` on a yes, is held by
+`client/test/dm-view.test.ts`,
+`client/test/qa-remove-condition-asks-first.test.ts` and
+`client/e2e/conditions.spec.ts` (VTT-964, VTT-965). That the panel offers, for
+the actor it acts as, only the abilities of the window's list that the actor's
+sheet names, in a player's, a DM's and an agent's window, is held by
+`client/test/panel-offers.test.ts`, `client/test/qa-window-offers.test.ts`,
 `client/test/qa-ability-target.test.ts`, `client/test/qa-panel-say.test.ts`
 and `client/test/spectator-view.test.ts` (VTT-695); that a window reads
 `/api/ruleset` again when a player's set changes, or when a change of role
@@ -801,15 +808,15 @@ alla formulär" and "Töm ändå", 2026-10-29). The console's controls that
 clear a field, Start session, Add actor, Remove actor, Add from JSON, Place
 token, Remove token, a row's Describe, Save note, a row's Grant, a row's
 Give, and the Say's Send and Enter in its `say-text`, each send through
-`sending` in `client/src/view/dm.ts`, and so do an ability's take chip and
-Delete note, which clear nothing. A player's panel's Send, and Enter in its
-`say-text`, send through `submit` in `renderPlayerPanel`. Both are handed
-`act` from `client/src/app.ts` as `send`: it resolves to the command's
-`CommandResult`, shows a refusal as the toast of its error, with nothing
-before it (VTT-604), and paints at every answer before the console's or the
-panel's own handling of that answer runs. Until the answer, what was typed
-for the command stays in its field and in `draft` or `PlayerUIState`. When
-the server accepts it (`ok`):
+`sending` in `client/src/view/dm.ts`, and so do an ability's take chip,
+Delete note and a Remove condition button, which clear nothing. A player's
+panel's Send, and Enter in its `say-text`, send through `submit` in
+`renderPlayerPanel`. Both are handed `act` from `client/src/app.ts` as `send`:
+it resolves to the command's `CommandResult`, shows a refusal as the toast of
+its error, with nothing before it (VTT-604), and paints at every answer before
+the console's or the panel's own handling of that answer runs. Until the
+answer, what was typed for the command stays in its field and in `draft` or
+`PlayerUIState`. When the server accepts it (`ok`):
 - the console clears the drafts of the fields that fed the command, Save
   note's key, title and text, Delete note's key and the Say's `say-as`
   excepted, and, for a row's Give, both its value fields whether or not they
@@ -827,41 +834,42 @@ Text typed into a field that is cleared, after the command was sent, is
 cleared with it. Any other answer clears nothing and asks for no repaint of
 its own: a refusal, and the `ok: false` that `Wire.send` gives a command on a
 socket that is not open or that closes before the result arrives, alike
-(VTT-517, VTT-518, VTT-538, VTT-963). A refusal is not logged:
+(VTT-517, VTT-518, VTT-538, VTT-963, VTT-969). A refusal is not logged:
 `git grep -n 'console\.' client/src` finds only the handlers of a rejected
 send, in `sending` and in `submit`.
 
-**One press, one command** (VTT-523, VTT-535, VTT-960). While a command one
-of those console controls sent is unanswered, pressing that control again
-sends nothing; while a line the console's Say or a player's panel sent is
-unanswered, its Send and Enter in its `say-text` send nothing. The console
-keeps its locks in `unanswered`, beside `draft`, so they last across paints,
-one per control: keyed by the control's action, by the action and the row's
-token or actor id for a Describe or a Grant, by the action, the row's actor
-id and the ability's id for a Give or a take, and by `actor-json` for Add
-from JSON; the Say's Send and Enter share one, keyed `add-narration`. So a
-command one of them sent holds back no other, another row's Describe or
-Grant, Remove actor beside Add actor and Delete note beside Save note
-included, though Add and Remove actor share `actor-id`, and Save and Delete
-note `note-key`, and a give unanswered holds back only that actor's give of
-that ability; the Say's Send and Enter count as one (VTT-541). The panel's
-lock is `PlayerUIState.saying`, one for Send and Enter. A press the
-console's own checks refuse, or a line in which `readLine` finds nothing to
-send, in the console's Say or a player's panel, sends nothing and takes no
-lock. A lock is taken when the command is sent and freed at its answer,
-whatever it is, a socket's close included, or when the send's promise
-rejects.
+**One press, one command** (VTT-523, VTT-535, VTT-960, VTT-966). While a
+command one of those console controls sent is unanswered, pressing that
+control again sends nothing; while a line the console's Say or a player's
+panel sent is unanswered, its Send and Enter in its `say-text` send nothing.
+The console keeps its locks in `unanswered`, beside `draft`, so they last
+across paints, one per control: keyed by the control's action, by the action
+and the row's token or actor id for a Describe or a Grant, by the action, the
+row's actor id and the ability's id for a Give or a take, by the action, the
+actor's id and the condition's id for a Remove condition button, and by
+`actor-json` for Add from JSON; the Say's Send and Enter share one, keyed
+`add-narration`. So a command one of them sent holds back no other, another
+row's Describe or Grant, Remove actor beside Add actor and Delete note beside
+Save note included, though Add and Remove actor share `actor-id`, and Save and
+Delete note `note-key`, and a give unanswered holds back only that actor's
+give of that ability and a removal only that actor's button for that
+condition; the Say's Send and Enter count as one (VTT-541). The panel's lock
+is `PlayerUIState.saying`, one for Send and Enter. A press the console's own
+checks refuse, or a line in which `readLine` finds nothing to send, in the
+console's Say or a player's panel, sends nothing and takes no lock. A lock is
+taken when the command is sent and freed at its answer, whatever it is, a
+socket's close included, or when the send's promise rejects.
 
 **A press of one of those controls that sends draws nothing new before its
-answer** (VTT-524, VTT-536, VTT-961; the owner's ruling "Nej, osynligt lås"
-of 2026-10-29). A press of one of them that sends neither clears, nor
-disables, nor repaints anything, and a press a lock stops shows no notice
-and asks for no repaint. The toast, or the cleared field, follows the
+answer** (VTT-524, VTT-536, VTT-961, VTT-967; the owner's ruling "Nej,
+osynligt lås" of 2026-10-29). A press of one of them that sends neither
+clears, nor disables, nor repaints anything, and a press a lock stops shows no
+notice and asks for no repaint. The toast, or the cleared field, follows the
 answer.
 
 **A send of one of those controls whose promise rejects** clears nothing,
 asks for no repaint, frees the control that sent it, and passes its error to
-`console.error` (VTT-526, VTT-537, VTT-962; the owner's ruling
+`console.error` (VTT-526, VTT-537, VTT-962, VTT-968; the owner's ruling
 "console.error(e)" of 2026-10-29).
 
 **The panel is the character's sheet.** The panel is headed by the name of the
@@ -1045,11 +1053,11 @@ draft (VTT-533).
 group whenever an actor of the world holds a condition: one button per
 condition each actor holds (`data-action` `remove-condition`), labelled the
 actor's name in the fold, else its id, `: `, the condition as
-`Namer.condition` names it, and ` ✕`, which sends `removeCondition` with
-the actor's and the condition's ids (VTT-864). Its namer is the one the
-value fields of a give are named by (above), and `app.ts` hands
-`DMDeps.conditions` the conditions of the newest `/api/ruleset` read's
-answer (VTT-865).
+`Namer.condition` names it, and ` ✕`, which asks first (below) and on a
+yes sends `removeCondition` with the actor's and the condition's ids
+(VTT-864, VTT-965). Its namer is the one the value fields of a give are named
+by (above), and `app.ts` hands `DMDeps.conditions` the conditions of the
+newest `/api/ruleset` read's answer (VTT-865).
 
 **The console's abilities.** `renderDMConsole` draws, after "Remove condition"
 and before "Who controls what", an "Abilities" group whenever the world holds
@@ -1126,6 +1134,17 @@ VTT-533, VTT-962). A key the fold holds no note of is asked by that key and
 sent; the server refuses a `delete_note` naming a key its own state holds no
 note of (`engine.Apply`). As for Remove actor, a press its lock holds back
 shows, asks and sends nothing.
+
+**The console's Remove condition asks first.** While no `remove_condition` it
+sent is unanswered, a button of the "Remove condition" group asks the DM
+through `DMDeps.confirm`: `Remove <condition> from <actor>? Nothing in the
+console puts it back.`, the condition and the actor named by the two strings
+the button's label shows (VTT-964). A no sends nothing; a yes sends one
+`remove_condition` naming the actor's id and the condition's id (VTT-965), and
+clears nothing. The console sends no `use_ability`, the command through which
+a ruleset applies a condition (`git grep -n useAbility client/src/view` finds
+it in `player.ts` alone, whose panel a DM's window also draws). As for Remove
+actor, a press its lock holds back shows, asks and sends nothing.
 
 **The console's roster.** `renderDMConsole` draws "Who may do what" whenever
 the roster was read: one row per participant `/api/participants` answered,
@@ -1395,4 +1414,4 @@ VTT-901, VTT-902, VTT-903, VTT-904, VTT-905, VTT-917, VTT-918,
 VTT-920, VTT-932, VTT-933, VTT-934, VTT-935, VTT-936, VTT-937, VTT-938,
 VTT-939, VTT-940, VTT-947, VTT-948, VTT-950, VTT-951, VTT-952, VTT-953,
 VTT-954, VTT-955, VTT-956, VTT-957, VTT-958, VTT-959, VTT-960, VTT-961,
-VTT-962, VTT-963.
+VTT-962, VTT-963, VTT-964, VTT-965, VTT-966, VTT-967, VTT-968, VTT-969.
