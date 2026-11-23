@@ -29,7 +29,7 @@ const dazed = JSON.parse(readFileSync(join(shipped, "conditions", "dazed.json"),
 
 const attributes = (fort: number) => ({ str: 0, dex: 0, con: 0, max_hp: 20, ac: 10, fort, ref: 10, will: 10 });
 
-// VTT-862 VTT-863 VTT-864 VTT-865
+// VTT-862 VTT-863 VTT-864 VTT-865 VTT-964 VTT-965
 test("a DM's window names a condition a hit applies on its dot, its Story, its Events panel and its removal button", async ({ page }) => {
   expect(dazed.name).not.toBe("");
   expect(dazed.description).not.toBe("");
@@ -59,7 +59,13 @@ test("a DM's window names a condition a hit applies on its dot, its Story, its E
 
   const remove = page.locator('[data-action="remove-condition"]');
   await expect(remove).toHaveText([`Dummy: ${dazed.name} ✕`]);
+  let asked = "";
+  page.once("dialog", (d) => {
+    asked = d.message();
+    void d.accept();
+  });
   await remove.click();
   await expect(page.locator(".feed")).toContainText(`Dummy lost ${dazed.name}`, { timeout: 10_000 });
   await expect(dot).toHaveCount(0);
+  expect(asked).toBe(`Remove ${dazed.name} from Dummy? Nothing in the console puts it back.`);
 });

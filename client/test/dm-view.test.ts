@@ -180,8 +180,9 @@ test("no control in the DM console retracts anything", () => {
 
 // --- conditions -------------------------------------------------------------
 
-// VTT-864
-test("a condition on an actor gets a removal button that sends removeCondition", () => {
+// The harness answers Remove condition's question yes; its own tests follow.
+// VTT-864 VTT-965
+test("a condition on an actor gets a removal button that sends removeCondition", async () => {
   const st = newState();
   st.Actors["a1"] = {
     actorId: "a1", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
@@ -189,8 +190,10 @@ test("a condition on an actor gets a removal button that sends removeCondition",
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 3 }];
   const h = harness(st);
   h.button("A: dazed ✕")!.click();
+  expect([h.confirmCount(), h.sent.length]).toEqual([1, 1]);
   expect(h.sent[0]!.command.case).toBe("removeCondition");
   expect(h.sent[0]!.command.value).toMatchObject({ actorId: "a1", conditionId: "dazed" });
+  await h.settle();
 });
 
 const CONSOLE_CONDITIONS: ConditionDef[] = [
@@ -233,12 +236,94 @@ test("with no list a removal button names the condition by its id", () => {
   expect(removalLabels(harness(conditionsOn({ a1: "Lera" })))).toEqual(["Lera: dazed ✕", "Lera: prone ✕"]);
 });
 
-// VTT-864
-test("a removal button named by the list still sends the actor's and the condition's ids", () => {
+// VTT-864 VTT-965
+test("a removal button named by the list still sends the actor's and the condition's ids", async () => {
   const h = harness(conditionsOn({ a1: "Lera" }), { conditions: CONSOLE_CONDITIONS });
   h.button("Lera: Dazed ✕")!.click();
+  expect([h.confirmCount(), h.sent.length]).toEqual([1, 1]);
   expect(h.sent[0]!.command.case).toBe("removeCondition");
   expect(h.sent[0]!.command.value).toMatchObject({ actorId: "a1", conditionId: "dazed" });
+  await h.settle();
+});
+
+// VTT-964
+test("a removal button asks first, naming the actor and the condition as it reads them, and a no sends nothing", () => {
+  const ask = (st: State, label: string, conditions?: ConditionDef[]) => {
+    const h = harness(st, conditions === undefined ? {} : { conditions });
+    h.setConfirm(false);
+    h.button(label)!.click();
+    return { asked: h.confirmMessages(), sent: h.sent.length, notices: h.notices };
+  };
+  const asked = (condition: string, actor: string) => ({
+    asked: [`Remove ${condition} from ${actor}? Nothing in the console puts it back.`],
+    sent: 0,
+    notices: [],
+  });
+  const scouted = conditionsOn({ a1: "Lera" });
+  scouted.Tokens["t1"] = { ID: "t1", SceneID: "s1", ActorID: "a1", X: 0, Y: 0, GMName: "The Scout" };
+  expect(ask(scouted, "Lera: Dazed ✕", CONSOLE_CONDITIONS)).toEqual(asked("Dazed", "Lera"));
+  expect(ask(conditionsOn({ a1: "Lera" }), "Lera: prone ✕", CONSOLE_CONDITIONS)).toEqual(asked("prone", "Lera"));
+  expect(ask(conditionsOn({ a1: "" }), "a1: Dazed ✕", CONSOLE_CONDITIONS)).toEqual(asked("Dazed", "a1"));
+  expect(ask(conditionsOn({ a2: undefined }), "a2: prone ✕", CONSOLE_CONDITIONS)).toEqual(asked("prone", "a2"));
+  expect(ask(conditionsOn({ a1: "Lera" }), "Lera: dazed ✕")).toEqual(asked("dazed", "Lera"));
+});
+
+/** Each removal a harness sent, as `<actor>/<condition>`. */
+const removals = (h: Harness) =>
+  h.sent.map((c) => (c.command.case === "removeCondition"
+    ? `${c.command.value.actorId}/${c.command.value.conditionId}`
+    : c.command.case));
+
+// VTT-966 VTT-541
+test("a removal button pressed again while its command is unanswered asks nothing and sends nothing, holds back no other, and sends once answered", async () => {
+  const table = () => conditionsOn({ a1: "Lera", a2: "Bo" });
+  const h = harness(table(), { answer: "held" });
+  let repainted: Harness | undefined;
+  try {
+    h.button("Lera: dazed ✕").click();
+    h.button("Lera: dazed ✕").click();
+    repainted = harness(table(), { answer: "held" });
+    repainted.button("Lera: dazed ✕").click();
+    expect([h.confirmCount(), removals(h)]).toEqual([1, ["a1/dazed"]]);
+    expect([repainted.confirmCount(), repainted.sent.length]).toEqual([0, 0]);
+
+    h.button("Lera: prone ✕").click();
+    h.button("Bo: dazed ✕").click();
+    expect([h.confirmCount(), removals(h)]).toEqual([3, ["a1/dazed", "a1/prone", "a2/dazed"]]);
+
+    h.release(refused("not authorized"));
+    await h.settle();
+    h.button("Lera: dazed ✕").click();
+    expect([h.confirmCount(), removals(h)]).toEqual([4, ["a1/dazed", "a1/prone", "a2/dazed", "a1/dazed"]]);
+  } finally {
+    h.release(refused("not authorized"));
+    repainted?.release(refused("not authorized"));
+    await h.settle();
+  }
+});
+
+// VTT-968
+test("a removal button whose send rejects lets it go, asks no repaint, and reports the error, which goes no further", async () => {
+  const thrown = new Error("send rejected");
+  const h = harness(conditionsOn({ a1: "Lera" }), { answer: thrown });
+  const reported = spyOn(console, "error").mockImplementation(() => {});
+  let escaped = 0;
+  const onError = () => {
+    escaped++;
+  };
+  window.addEventListener("error", onError);
+  try {
+    h.button("Lera: dazed ✕").click();
+    await h.settle();
+    h.button("Lera: dazed ✕").click();
+    await h.settle();
+
+    expect([h.sent.length, h.repaints(), escaped]).toEqual([2, 0, 0]);
+    expect(reported.mock.calls).toEqual([[thrown], [thrown]]);
+  } finally {
+    window.removeEventListener("error", onError);
+    reported.mockRestore();
+  }
 });
 
 test("with no conditions the removal group is absent entirely", () => {
@@ -2268,7 +2353,10 @@ test("a describe field with no draft shows the token's present text", async () =
 // what each field it clears reads when nothing has been typed in it. A field
 // is named by a selector, because the selects carry no data-field.
 
-/** Two tokens with text of their own and two actors, so every form draws. */
+/**
+ * Two tokens with text of their own and two actors with a condition each, so
+ * every form draws.
+ */
 function tableForEveryForm(): State {
   const st = newState();
   for (const id of ["tok-r1", "tok-r2"]) {
@@ -2282,6 +2370,7 @@ function tableForEveryForm(): State {
       actorId: id, name: id, moduleId: "", attributes: {}, resources: {},
       controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
     };
+    st.Conditions[id] = [{ ID: "dazed", Source: "dm", AppliedSeq: 1 }];
   }
   return st;
 }
@@ -2332,6 +2421,14 @@ function grantForm(actor: string): Form {
     typed: { [target]: "p-bo", [kind]: "ACTOR_KIND_NON_PARTY" },
     cleared: { [target]: "", [kind]: "" },
     press: click(`${grantRow(actor)} .grant`),
+  };
+}
+
+/** A removal button: no field feeds it, and it clears none. */
+function removeConditionForm(actor: string): Form {
+  return {
+    name: `Remove condition ${actor}`, typed: {}, cleared: {},
+    press: (h) => h.button(`${actor}: dazed ✕`).click(),
   };
 }
 
@@ -2395,6 +2492,7 @@ const FORMS: Form[] = [
     cleared: {},
     press: click('[data-action="delete-note"]'),
   },
+  removeConditionForm("act-r1"),
   grantForm("act-r1"),
 ];
 
@@ -2419,7 +2517,7 @@ function forgetEveryForm(): void {
   enter(everyForm(), Object.fromEntries(all.flatMap((f) => Object.keys(f.typed)).map((s) => [s, ""])));
 }
 
-// VTT-517 VTT-538 VTT-963
+// VTT-517 VTT-538 VTT-963 VTT-969
 test("a refused command leaves every field of its form as typed", async () => {
   try {
     for (const form of FORMS) {
@@ -2499,9 +2597,9 @@ test("an accepted command clears the fields of its own form and of no other", as
   }
 });
 
-// VTT-523 VTT-541 VTT-960
+// VTT-523 VTT-541 VTT-960 VTT-966
 test("a control whose command is unanswered sends nothing when pressed again, each row its own", async () => {
-  const controls = [...FORMS, describeForm("tok-r2"), grantForm("act-r2")];
+  const controls = [...FORMS, describeForm("tok-r2"), removeConditionForm("act-r2"), grantForm("act-r2")];
   const h = everyForm("held");
   let repainted: Harness | undefined;
   try {
@@ -2529,7 +2627,7 @@ test("a control whose command is unanswered sends nothing when pressed again, ea
   }
 });
 
-// VTT-524 VTT-961
+// VTT-524 VTT-961 VTT-967
 test("a press that sends changes nothing the next render draws until its answer", async () => {
   const h = everyForm("held");
   try {
@@ -2554,7 +2652,7 @@ test("a press that sends changes nothing the next render draws until its answer"
 // VTT-523
 test("a press the console's own guard refuses holds nothing back", async () => {
   try {
-    for (const form of FORMS.filter((f) => !f.name.startsWith("Describe"))) {
+    for (const form of FORMS.filter((f) => !/^(Describe|Remove condition) /.test(f.name))) {
       forgetEveryForm();
       const h = everyForm(refused("not authorized"));
       form.press(h);

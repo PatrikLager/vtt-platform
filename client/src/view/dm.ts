@@ -542,9 +542,13 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
   for (const [actor, list] of Object.entries(d.st.Conditions)) {
     const held = d.st.Actors[actor]?.name || actor;
     for (const c of list) {
-      condRow.push(
-        button(`${held}: ${names.condition(c.ID)} ✕`, () => d.send(removeCondition(actor, c.ID)), "remove-condition"),
-      );
+      const condition = names.condition(c.ID);
+      // Ask inside the press `sending` runs (SPEC-022).
+      // VTT-964 VTT-965 VTT-966 VTT-967 VTT-968 VTT-969
+      condRow.push(button(`${held}: ${condition} ✕`, sending(d, `remove-condition:${actor}:${c.ID}`, () => {
+        if (!d.confirm(`Remove ${condition} from ${held}? Nothing in the console puts it back.`)) return;
+        return { command: removeCondition(actor, c.ID), clears: [] };
+      }), "remove-condition"));
     }
   }
   if (condRow.length > 0) wrap.appendChild(group("Remove condition", ...condRow));
