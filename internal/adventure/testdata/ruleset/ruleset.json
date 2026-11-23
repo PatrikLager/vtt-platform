@@ -2,6 +2,7 @@
   "id": "proving-grounds-mini",
   "name": "Proving Grounds Mini",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "vim",

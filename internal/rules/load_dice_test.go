@@ -21,6 +21,7 @@ func TestLoadRejectsDiceInThresholdWhen(t *testing.T) {
   "id": "test-ruleset",
   "name": "Test Ruleset",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "brawn",
@@ -75,6 +76,7 @@ func TestLoadRejectsDiceInDefaultMaxExpr(t *testing.T) {
   "id": "test-ruleset",
   "name": "Test Ruleset",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "brawn",
@@ -188,6 +190,7 @@ func TestLoadRejectsExpressionSizedDiceInThresholdWhen(t *testing.T) {
   "id": "test-ruleset",
   "name": "Test Ruleset",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "brawn",
@@ -241,6 +244,7 @@ func TestLoadRejectsExpressionSizedDiceInDefaultMaxExpr(t *testing.T) {
   "id": "test-ruleset",
   "name": "Test Ruleset",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "brawn",

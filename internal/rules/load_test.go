@@ -294,6 +294,7 @@ func TestLoadRejectsThresholdMissingRemoveWhenFalse(t *testing.T) {
   "id": "test-ruleset",
   "name": "Test Ruleset",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "brawn",
@@ -347,6 +348,7 @@ func TestLoadAcceptsThresholdExplicitFalse(t *testing.T) {
   "id": "test-ruleset",
   "name": "Test Ruleset",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "brawn",
@@ -474,6 +476,7 @@ func TestLoadRejectsANumberKeyThatIsNotAnIdentifier(t *testing.T) {
   "id": "test-ruleset",
   "name": "Test Ruleset",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "brawn",
@@ -521,6 +524,7 @@ func TestLoadRejectsAResourceKeyThatIsNotAnIdentifier(t *testing.T) {
   "id": "test-ruleset",
   "name": "Test Ruleset",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "brawn",

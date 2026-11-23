@@ -18,6 +18,9 @@ type Ruleset struct {
 	Name          string
 	FormatVersion string
 
+	// Version is the version the ruleset declares, as written (VTT-970).
+	Version string
+
 	// Properties is every property the ruleset declares, in its order;
 	// Load refuses a key declared twice (VTT-612).
 	Properties []Property

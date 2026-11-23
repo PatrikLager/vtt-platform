@@ -13,7 +13,7 @@ import (
 func qaSKRuleset(t *testing.T) *rules.Ruleset {
 	t.Helper()
 	dir := t.TempDir()
-	manifest := `{"id":"qa-skrs","name":"QA Sheet Keys","format_version":"3","properties":[
+	manifest := `{"id":"qa-skrs","name":"QA Sheet Keys","format_version":"3","version":"1","properties":[
 	{"key":"qa_alpha","type":"number","name":"Alpha","description":"A number."},
 	{"key":"qa_num","type":"number","name":"Num","description":"A number."},
 	{"key":"qa_zeta","type":"number","name":"Zeta","description":"A number."},

@@ -31,7 +31,7 @@ func writeProperties(t *testing.T, dir string, edit func(props []map[string]any)
 	props := baseProperties()
 	edit(props)
 	raw, err := json.MarshalIndent(map[string]any{
-		"id": "test-ruleset", "name": "Test Ruleset", "format_version": "3", "properties": props,
+		"id": "test-ruleset", "name": "Test Ruleset", "format_version": "3", "version": "1", "properties": props,
 	}, "", "  ")
 	if err != nil {
 		t.Fatal(err)

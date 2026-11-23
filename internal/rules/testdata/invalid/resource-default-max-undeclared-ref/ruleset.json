@@ -2,6 +2,7 @@
   "id": "resource-default-max-undeclared-ref",
   "name": "Test Ruleset",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "brawn",

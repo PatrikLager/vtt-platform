@@ -2,6 +2,7 @@
   "id": "smoke-fail",
   "name": "Smoke Fail",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "focus",

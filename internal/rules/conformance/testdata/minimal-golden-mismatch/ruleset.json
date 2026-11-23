@@ -2,6 +2,7 @@
   "id": "minimal",
   "name": "Minimal",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "str",

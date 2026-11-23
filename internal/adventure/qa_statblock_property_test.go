@@ -18,6 +18,7 @@ const qaPFAdvManifest = `{
   "id": "qa-pf-adv",
   "name": "QA Statblock Ruleset",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {"key": "vim", "type": "number", "name": "Zeal", "description": "Eagerness to act."},
     {"key": "brace", "type": "number", "name": "Stance", "description": "How firmly one stands."},

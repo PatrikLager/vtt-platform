@@ -378,6 +378,7 @@ func writeSpliceFixture(t *testing.T, dir, pExprSrc string) {
   "id": "splice-check",
   "name": "Splice Check",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "vim",

@@ -2,22 +2,25 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PatrikLager/vtt-platform/internal/rules/schema/ruleset.schema.json",
   "title": "Ruleset manifest (ruleset.json)",
-  "description": "The top-level manifest of a rulesets/<id>/ directory: identity, format version, every property the ruleset's actors carry, each named in the table's words, and, optionally, how a character's sheet is laid out and the name for an ability that spends no resource. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
+  "description": "The top-level manifest of a rulesets/<id>/ directory: identity, format version, the ruleset's own version, every property the ruleset's actors carry, each named in the table's words, and, optionally, how a character's sheet is laid out and the name for an ability that spends no resource. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
   "type": "object",
   "required": [
     "id",
     "name",
-    "format_version"
+    "format_version",
+    "version"
   ],
   "additionalProperties": false,
   "properties": {
     "id": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "The ruleset's id. Must not be empty. At most 128 bytes of UTF-8."
     },
     "name": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "The ruleset's display name. Must not be empty. At most 256 bytes of UTF-8."
     },
     "format_version": {
       "type": "string",
@@ -25,6 +28,11 @@
         "3"
       ],
       "description": "Only \"3\" is accepted by this loader. Any other value, a retired format's among them, is refused with what format \"3\" declares (docs/adr/012-the-rules-contract.md). See atom.schema.json for the atoms/*.json this format composes abilities from."
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The ruleset's own version: free text its author declares and keeps true, not the format's, which is format_version. Must not be empty. At most 128 bytes of UTF-8."
     },
     "properties": {
       "type": "array",

@@ -34,7 +34,7 @@ func qaPFDefaultNames() qaPFNames {
 
 func qaPFBuild(n qaPFNames) qaPFSet {
 	manifest := qaPFDoc{
-		"id": "qa-pf", "name": "QA Property Format", "format_version": "3",
+		"id": "qa-pf", "name": "QA Property Format", "format_version": "3", "version": "1",
 		"properties": []any{
 			qaPFDoc{"key": n.guard, "type": "number", "name": "Parry", "description": "How well one turns a blow aside."},
 			qaPFDoc{"key": n.brawn, "type": "number", "name": "Might", "description": "How hard one pushes."},
@@ -608,7 +608,7 @@ func TestQAPFFormatVersionIsReadBeforeTheRestOfTheFile(t *testing.T) {
 	}
 }
 
-// VTT-861
+// VTT-973
 func TestQAPFUnknownManifestFieldIsRefused(t *testing.T) {
 	s := qaPFBase()
 	s.manifest()["attributes"] = []any{"brawn"}

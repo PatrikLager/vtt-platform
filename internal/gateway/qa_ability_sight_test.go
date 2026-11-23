@@ -28,6 +28,7 @@ var qaasRulesetFiles = map[string]string{
   "id": "qa-sight",
   "name": "QA Sight",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "knack",

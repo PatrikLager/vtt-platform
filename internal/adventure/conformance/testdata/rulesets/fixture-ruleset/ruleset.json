@@ -2,6 +2,7 @@
   "id": "fixture-ruleset",
   "name": "Fixture Ruleset",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "vim",

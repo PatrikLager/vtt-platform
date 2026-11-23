@@ -120,7 +120,7 @@ func qaRuleManifest(nums []string, res []map[string]any) map[string]any {
 		}
 		props = append(props, e)
 	}
-	return map[string]any{"id": "qa-rules", "name": "QA Rules", "format_version": "3", "properties": props}
+	return map[string]any{"id": "qa-rules", "name": "QA Rules", "format_version": "3", "version": "1", "properties": props}
 }
 
 func (s qaRuleSet) write(t *testing.T) string {

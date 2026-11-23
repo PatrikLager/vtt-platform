@@ -82,7 +82,7 @@ func qaSheetWriteRuleset(t *testing.T, sheet any) *rules.Ruleset {
 	t.Helper()
 	dir := t.TempDir()
 	m := map[string]any{
-		"id": "qa-sheet", "name": "QA Sheet", "format_version": "3",
+		"id": "qa-sheet", "name": "QA Sheet", "format_version": "3", "version": "1",
 		"properties": []any{
 			map[string]any{"key": "zeta", "type": "number", "name": "Zeta", "description": "z"},
 			map[string]any{"key": "alpha", "type": "number", "name": "Alpha", "description": "a"},

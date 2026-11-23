@@ -20,6 +20,9 @@ const formatVersionWant = `this loader reads format_version "3", which declares 
 // maxIDBytes mirrors internal/engine's bound on an id (SPEC-018).
 const maxIDBytes = 128
 
+// maxNameBytes mirrors internal/engine's bound on a name (SPEC-018).
+const maxNameBytes = 256
+
 // Load reads and validates the ruleset directory at dir: every file strictly
 // decoded, every expression parsed, every property and condition a resource,
 // threshold or composed atom reads checked against what the ruleset declares
@@ -73,6 +76,7 @@ func loadV2(dir string, manifest *loadedManifest) (*Ruleset, error) {
 		ID:            manifest.ID,
 		Name:          manifest.Name,
 		FormatVersion: manifest.FormatVersion,
+		Version:       manifest.Version,
 		Properties:    manifest.properties,
 		Conditions:    conditions,
 		Atoms:         atoms,
@@ -104,6 +108,7 @@ type manifestJSON struct {
 	ID            string         `json:"id"`
 	Name          string         `json:"name"`
 	FormatVersion string         `json:"format_version"`
+	Version       string         `json:"version"`
 	Properties    []propertyJSON `json:"properties"`
 	// A pointer, so that "sheet": [] is told apart from no sheet (VTT-825).
 	Sheet *[]sheetPageJSON `json:"sheet"`
@@ -152,6 +157,7 @@ type loadedManifest struct {
 	ID            string
 	Name          string
 	FormatVersion string
+	Version       string
 	properties    []Property
 	path          string
 	sheet         *[]sheetPageJSON
@@ -196,6 +202,9 @@ func loadManifest(path string) (*loadedManifest, error) {
 	if raw.Name == "" {
 		return nil, fieldErr(path, "name", "must not be empty")
 	}
+	if raw.Version == "" {
+		return nil, fieldErr(path, "version", "must not be empty")
+	}
 	freeUsageName := ""
 	if raw.FreeUsageName != nil {
 		if *raw.FreeUsageName == "" {
@@ -223,7 +232,7 @@ func loadManifest(path string) (*loadedManifest, error) {
 	}
 
 	return &loadedManifest{
-		ID: raw.ID, Name: raw.Name, FormatVersion: raw.FormatVersion, properties: props,
+		ID: raw.ID, Name: raw.Name, FormatVersion: raw.FormatVersion, Version: raw.Version, properties: props,
 		path: path, sheet: raw.Sheet, freeUsageName: freeUsageName,
 	}, nil
 }
@@ -444,7 +453,7 @@ func (u *Usage) UnmarshalJSON(data []byte) error {
 }
 
 // UnmarshalJSON decodes a ShownUsage from the bare string "at_will" or an
-// object {"spends": "<resource key>"}, refusing any other field (VTT-861).
+// object {"spends": "<resource key>"}, refusing any other field (VTT-973).
 func (u *ShownUsage) UnmarshalJSON(data []byte) error {
 	var asString string
 	if err := json.Unmarshal(data, &asString); err == nil {
@@ -1239,6 +1248,15 @@ func decodeStrict(path string, v any) error {
 }
 
 func checkManifestBounds(path string, raw *manifestJSON) error {
+	if len(raw.ID) > maxIDBytes {
+		return fieldErr(path, "id", fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(raw.ID)))
+	}
+	if len(raw.Version) > maxIDBytes {
+		return fieldErr(path, "version", fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(raw.Version)))
+	}
+	if len(raw.Name) > maxNameBytes {
+		return fieldErr(path, "name", fmt.Sprintf("must be at most %d bytes, got %d", maxNameBytes, len(raw.Name)))
+	}
 	for i, p := range raw.Properties {
 		if len(p.Key) > maxIDBytes {
 			return fieldErr(path, fmt.Sprintf("properties[%d].key", i), fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(p.Key)))

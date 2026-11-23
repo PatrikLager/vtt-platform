@@ -48,6 +48,7 @@ func qaKeysLoadedRuleset(t *testing.T) *rules.Ruleset {
   "id": "qa-keys",
   "name": "QA keys",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {"key": "qa_num", "type": "number", "name": "QA number", "description": "A number."},
     {"key": "qa_num_two", "type": "number", "name": "QA number two", "description": "Another number."},

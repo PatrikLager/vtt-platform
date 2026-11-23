@@ -2,6 +2,7 @@
   "id": "invalid-fixture",
   "name": "Invalid Fixture",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "vim",

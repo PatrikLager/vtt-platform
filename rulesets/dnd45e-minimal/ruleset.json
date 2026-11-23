@@ -3,6 +3,7 @@
   "name": "D&D 4.5e (Minimal)",
   "free_usage_name": "At will",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "str",

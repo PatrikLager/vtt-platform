@@ -2,6 +2,7 @@
   "id": "tavern-brawl",
   "name": "Tavern Brawl",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "brawn",

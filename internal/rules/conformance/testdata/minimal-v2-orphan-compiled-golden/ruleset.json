@@ -2,6 +2,7 @@
   "id": "minimal-v2",
   "name": "Minimal V2",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "str",

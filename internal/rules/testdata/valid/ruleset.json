@@ -3,6 +3,7 @@
   "name": "Test Ruleset",
   "free_usage_name": "Freely",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "pool_a",

@@ -188,7 +188,7 @@ func TestQADescFreeUsageNameEmptyRefused(t *testing.T) {
 	qaMustRefuse(t, dir, "ruleset.json", "free_usage_name", "must not be empty")
 }
 
-// VTT-861
+// VTT-973
 func TestQADescUnknownManifestFieldStillRefused(t *testing.T) {
 	dir := qaCopyRuleset(t, "tavern-brawl")
 	qaEdit(t, filepath.Join(dir, "ruleset.json"), func(m map[string]any) {
@@ -203,7 +203,7 @@ func TestQADescUnknownManifestFieldStillRefused(t *testing.T) {
 	qaMustRefuse(t, dir, "ruleset.json", "Bogus_Field")
 }
 
-// VTT-861
+// VTT-973
 func TestQADescKnownFieldsLoadAlongsideSheet(t *testing.T) {
 	dir := qaCopyRuleset(t, "dnd45e-minimal")
 	qaEdit(t, filepath.Join(dir, "ruleset.json"), func(m map[string]any) {

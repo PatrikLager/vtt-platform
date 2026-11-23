@@ -2,6 +2,7 @@
   "id": "test-ruleset",
   "name": "Test Ruleset",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "brawn",

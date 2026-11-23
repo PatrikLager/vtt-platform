@@ -2,6 +2,7 @@
   "id": "minimal-missing-golden",
   "name": "Minimal Missing Golden",
   "format_version": "3",
+  "version": "1",
   "properties": [
     {
       "key": "str",

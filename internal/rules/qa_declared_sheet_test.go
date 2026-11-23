@@ -330,7 +330,7 @@ func TestQASheetUnnamedAtWillRefusalNamesAnAtWillAbility(t *testing.T) {
 	}
 }
 
-// VTT-861.
+// VTT-973.
 func TestQASheetRefusesAnUnknownField(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -355,7 +355,7 @@ func TestQASheetRefusesAnUnknownField(t *testing.T) {
 	}
 }
 
-// VTT-861: a field whose name matches a defined one without regard to case
+// VTT-973: a field whose name matches a defined one without regard to case
 // is not an undefined field.
 func TestQASheetCaseVariantOfADefinedFieldIsNotUndefined(t *testing.T) {
 	rs := qaSheetMustLoad(t, map[string]string{"SHEET": qaSheetSheet(`{"NAME":"P","Sections":[{"name":"S","VALUES":["brawn"]}]}`, qaSheetMoves)["sheet"]})
@@ -383,7 +383,7 @@ func TestQASheetSchemaDescribesTheSheet(t *testing.T) {
 		return m
 	}
 	props := obj(root["properties"], "top properties")
-	fields := []string{"id", "name", "format_version", "properties", "sheet", "free_usage_name"}
+	fields := []string{"id", "name", "format_version", "version", "properties", "sheet", "free_usage_name"}
 	for _, k := range fields {
 		if _, ok := props[k]; !ok {
 			t.Errorf("schema top level lacks %q", k)
@@ -395,7 +395,7 @@ func TestQASheetSchemaDescribesTheSheet(t *testing.T) {
 	if root["additionalProperties"] != false {
 		t.Error("schema top level admits fields the format does not define")
 	}
-	if req, _ := root["required"].([]any); len(req) != 3 {
+	if req, _ := root["required"].([]any); len(req) != 4 {
 		t.Errorf("sheet must stay optional: required = %v", root["required"])
 	}
 	sheet := obj(props["sheet"], "sheet")
