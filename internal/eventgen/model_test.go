@@ -67,7 +67,7 @@ func TestAWalkDrawsEveryKind(t *testing.T) {
 		"addNarration", "upsertNote", "deleteNote",
 		"openDoor", "closeDoor", "grantControl", "revokeControl",
 		"applyCondition", "removeCondition", "removeToken", "removeActor",
-		"giveAbility", "takeAbility", "addResource", "removeResource",
+		"giveAbility", "takeAbility", "addResource", "removeResource", "rulesetNamed",
 	}
 	seen := map[string]int{}
 	for seed := int64(1); seed <= 5; seed++ {

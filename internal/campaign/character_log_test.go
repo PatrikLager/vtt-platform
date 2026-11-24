@@ -96,6 +96,10 @@ func describe(env *vttv1.Envelope) string {
 		return "NarrationAdded " + p.NarrationAdded.GetText()
 	case *vttv1.Envelope_ActorRemoved:
 		return "ActorRemoved " + p.ActorRemoved.GetActorId()
+	case *vttv1.Envelope_RulesetNamed:
+		return "RulesetNamed " + p.RulesetNamed.GetRulesetId() + " " + p.RulesetNamed.GetVersion()
+	case *vttv1.Envelope_AbilityUsed:
+		return "AbilityUsed " + p.AbilityUsed.GetActorId() + " " + p.AbilityUsed.GetAbilityId()
 	default:
 		return fmt.Sprintf("%T", p)
 	}
@@ -172,7 +176,7 @@ func TestANonPartyActorHasNoLog(t *testing.T) {
 	}
 }
 
-// VTT-663 VTT-372
+// VTT-981 VTT-372
 func TestALateLogOpensWithThePresent(t *testing.T) {
 	c := openTemp(t)
 	must(t, c, cenv(nextID(), &vttv1.SessionStarted{Name: "Night one"}))
@@ -208,7 +212,7 @@ func TestALateLogOpensWithThePresent(t *testing.T) {
 	assertFoldsAtEveryPrefix(t, "asme's log", got)
 }
 
-// VTT-663
+// VTT-981
 func TestALogOpensWhenAGrantMakesAPartyMember(t *testing.T) {
 	c := openTemp(t)
 	hallWithHero(t, c, 2)
@@ -229,7 +233,7 @@ func TestALogOpensWhenAGrantMakesAPartyMember(t *testing.T) {
 	assertFoldsAtEveryPrefix(t, "the goblin's log", got)
 }
 
-// VTT-663
+// VTT-981
 func TestALogOpensForAPartyMemberThatHadNone(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "campaign")
 	if err := campaign.EnsureDir(dir); err != nil {
@@ -402,7 +406,7 @@ func TestAReopenAfterADropDoesNotRepeatIt(t *testing.T) {
 	assertTheGoblinArrives(t, openAt(t, dir), hero, 0)
 }
 
-// VTT-663
+// VTT-981
 func TestALogOpeningMidBatchIsTheWorldBeforeItsEvent(t *testing.T) {
 	c := openTemp(t)
 	must(t, c, cenv(nextID(), partyMember("bard")))
@@ -764,7 +768,7 @@ func assertBoardAndSessionAsTheWorld(t *testing.T, c *campaign.Campaign, actorID
 	}
 }
 
-// VTT-316 VTT-318
+// VTT-316 VTT-982
 func TestALogPausesWhileItsActorIsNotAPartyMember(t *testing.T) {
 	for _, reuse := range []bool{false, true} {
 		t.Run(map[bool]string{false: "moves and a new session", true: "an id reused while paused"}[reuse], func(t *testing.T) {
@@ -819,7 +823,7 @@ func TestALogPausesWhileItsActorIsNotAPartyMember(t *testing.T) {
 	}
 }
 
-// VTT-318
+// VTT-982
 func TestANewActorUnderAnOldIdContinuesItsLog(t *testing.T) {
 	c := openTemp(t)
 	hallWithHero(t, c, 2)

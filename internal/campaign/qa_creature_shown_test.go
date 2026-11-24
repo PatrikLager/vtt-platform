@@ -332,7 +332,7 @@ func TestQACSAKindChangeInSightRewritesTheCreatureInAPlayersLog(t *testing.T) {
 		t.Errorf("VTT-468: the creature's token is not on the log's board after the grant")
 	}
 	if len(q.log(qacsBeast)) == 0 {
-		t.Errorf("VTT-663: the creature made a party member has no log of its own")
+		t.Errorf("VTT-981: the creature made a party member has no log of its own")
 	}
 	own := len(q.log(qacsBeast))
 	before := len(q.log(qacsHero))
@@ -354,7 +354,7 @@ func TestQACSAKindChangeInSightRewritesTheCreatureInAPlayersLog(t *testing.T) {
 	qacsFoldEntries(t, q.log(qacsBeast))
 }
 
-// VTT-481 VTT-318
+// VTT-481 VTT-982
 func TestQACSAResumedLogMeetsACreatureThatJoinedThePartyDuringItsPause(t *testing.T) {
 	q := qacsOpen(t)
 	q.append(qacsEnvGrant(qacsHero, "p-ayla", vttv1.ActorKind_ACTOR_KIND_NON_PARTY))

@@ -364,7 +364,7 @@ func qaPauseSplit(r []campaign.CharacterEntry) (session, hides, rest []campaign.
 	return r[:i], r[i:j], r[j:]
 }
 
-// qaPauseCheckResume checks VTT-318 for r, the entries one resuming event
+// qaPauseCheckResume checks VTT-982 for r, the entries one resuming event
 // added to a log whose entries before it were before, against world after it.
 func qaPauseCheckResume(t *testing.T, before, r []campaign.CharacterEntry, world *engine.State) (rest []campaign.CharacterEntry) {
 	t.Helper()
@@ -574,9 +574,9 @@ func TestQAPauseRevocationAndAKindlessGrantDoNotPause(t *testing.T) {
 	qaPauseFoldAll(t, w.log(qaPauseEye))
 }
 
-// VTT-663 against VTT-318: the opening carries the open session and the public
+// VTT-981 against VTT-982: the opening carries the open session and the public
 // notes; the resume carries neither, and hides every token the board holds.
-// VTT-318
+// VTT-982
 func TestQAPauseTheResumeIsNotASecondOpening(t *testing.T) {
 	w := qaPauseOpen(t)
 	w.append(qaPauseScene(qaPauseRoomA))
@@ -610,10 +610,10 @@ func TestQAPauseTheResumeIsNotASecondOpening(t *testing.T) {
 	qaPauseNoDrops(t, w)
 }
 
-// VTT-318 and the ticket's item 5: a resume hides every token the paused board
+// VTT-982 and the ticket's item 5: a resume hides every token the paused board
 // holds before it places what is in view, so a token moved during the pause
 // stands on its new square.
-// VTT-318
+// VTT-982
 func TestQAPauseAResumeHidesEveryHeldTokenThenPlacesTheWorld(t *testing.T) {
 	w := qaPauseOpen(t)
 	qaPauseBase(w, true)
@@ -665,9 +665,9 @@ func TestQAPauseAResumeHidesEveryHeldTokenThenPlacesTheWorld(t *testing.T) {
 	qaPauseNoDrops(t, w)
 }
 
-// VTT-318: the resume's first entries bring the log to the world's open
+// VTT-982: the resume's first entries bring the log to the world's open
 // session, before any token hide, and the next session event then folds.
-// VTT-318
+// VTT-982
 func TestQAPauseAResumeBringsTheLogToTheWorldsOpenSession(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -751,7 +751,7 @@ func TestQAPauseAResumeBringsTheLogToTheWorldsOpenSession(t *testing.T) {
 // The ticket's item 5, its pause case's last sentence, and the owner's ruling:
 // a non-party actor the paused board held is removed during the pause and its
 // id reused; the resume hides its token, withdraws it, then introduces the new one.
-// VTT-318
+// VTT-982
 func TestQAPauseAReusedIdIsWithdrawnBeforeItsNewActorIsIntroduced(t *testing.T) {
 	for _, newTok := range []string{"tok-visitor-new", qaPauseTokVisitor} {
 		t.Run("new token "+newTok, func(t *testing.T) {
@@ -806,7 +806,7 @@ func TestQAPauseAReusedIdIsWithdrawnBeforeItsNewActorIsIntroduced(t *testing.T) 
 // The ticket's TestANewActorUnderAnOldIdContinuesItsLog case and the owner's
 // ruling: a removed party member's id is reused for another party member; the
 // log continues, the old one is withdrawn before the new one is introduced.
-// VTT-318
+// VTT-982
 func TestQAPauseANewPartyMemberUnderAnOldIdContinuesItsLog(t *testing.T) {
 	cases := []struct {
 		name                string
@@ -878,10 +878,10 @@ func TestQAPauseANewPartyMemberUnderAnOldIdContinuesItsLog(t *testing.T) {
 	}
 }
 
-// VTT-316 and VTT-318 within one batch: the frames of an event appended while
+// VTT-316 and VTT-982 within one batch: the frames of an event appended while
 // the actor is a party member are written, those of events while it is not are
 // not, and a resume at the batch's end brings the board to the world.
-// VTT-316 VTT-318
+// VTT-316 VTT-982
 func TestQAPausePauseAndResumeInsideOneBatch(t *testing.T) {
 	w := qaPauseOpen(t)
 	qaPauseBase(w, true)
@@ -983,9 +983,9 @@ func TestQAPauseARefusedResumeChangesNoMemory(t *testing.T) {
 	}
 }
 
-// VTT-324 and VTT-318: a log paused across a reopen resumes without a second
+// VTT-324 and VTT-982: a log paused across a reopen resumes without a second
 // opening and hides every token its board holds.
-// VTT-318 VTT-324
+// VTT-982 VTT-324
 func TestQAPauseALogPausedAcrossAReopenResumes(t *testing.T) {
 	for _, sessionChanges := range []bool{false, true} {
 		t.Run(fmt.Sprintf("the session changes during the pause %v", sessionChanges), func(t *testing.T) {
@@ -1193,9 +1193,9 @@ func TestQAPauseARefusedPauseChangesNoMemory(t *testing.T) {
 	}
 }
 
-// VTT-318: a resume where the eye now stands in a scene created during the
+// VTT-982: a resume where the eye now stands in a scene created during the
 // pause hides the old board, and the log holds the new scene and its token.
-// VTT-318
+// VTT-982
 func TestQAPauseAResumeIntoASceneCreatedDuringThePause(t *testing.T) {
 	w := qaPauseOpen(t)
 	qaPauseBase(w, true)
@@ -1307,10 +1307,10 @@ func TestQAPauseAnAnchorAcrossAResumeWithNoResumeEntries(t *testing.T) {
 	}
 }
 
-// VTT-318 with VTT-320 and VTT-323: status that changed during the pause, on an
+// VTT-982 with VTT-320 and VTT-323: status that changed during the pause, on an
 // actor in view and on the eye itself, does not stop the next events about
 // them from being written after the resume.
-// VTT-318 VTT-323
+// VTT-982 VTT-323
 func TestQAPauseStatusChangedDuringThePauseStillFoldsAfterTheResume(t *testing.T) {
 	w := qaPauseOpen(t)
 	qaPauseBase(w, true)

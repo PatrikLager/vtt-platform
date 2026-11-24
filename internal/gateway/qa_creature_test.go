@@ -531,7 +531,7 @@ func qaCreatureLine(e campaign.CharacterEntry) string {
 	return fmt.Sprintf("ws=%d %s", e.WorldSeq, b)
 }
 
-// VTT-316 VTT-663 VTT-321
+// VTT-316 VTT-981 VTT-321
 func TestQACreatureGrantOpensTheCreaturesOwnLog(t *testing.T) {
 	tb, _, pID := qaCreatureSetup(t)
 	tb.dm.mustOK(qaCreatureMove(qaCreatureTokGob, 5, 0))
@@ -559,7 +559,7 @@ func TestQACreatureGrantOpensTheCreaturesOwnLog(t *testing.T) {
 	// VTT-321
 	qaCreatureContiguous(t, log, "VTT-321")
 
-	// VTT-663
+	// VTT-981
 	k := -1
 	for i, e := range log {
 		if e.WorldSeq != 0 {
@@ -568,10 +568,10 @@ func TestQACreatureGrantOpensTheCreaturesOwnLog(t *testing.T) {
 		}
 	}
 	if k <= 0 {
-		t.Fatalf("VTT-663: want opening entries before the grant's frames, first caused entry at %d", k)
+		t.Fatalf("VTT-981: want opening entries before the grant's frames, first caused entry at %d", k)
 	}
 	if log[k].WorldSeq != g {
-		t.Errorf("VTT-663: the first caused entry is of world event %d, want the grant %d", log[k].WorldSeq, g)
+		t.Errorf("VTT-981: the first caused entry is of world event %d, want the grant %d", log[k].WorldSeq, g)
 	}
 	earlierIDs := map[string]bool{}
 	for _, e := range world {
@@ -581,22 +581,22 @@ func TestQACreatureGrantOpensTheCreaturesOwnLog(t *testing.T) {
 	}
 	for i, e := range log {
 		if e.WorldSeq != 0 && e.WorldSeq < g {
-			t.Errorf("VTT-663: entry %d forwarded from world event %d, appended before the grant", i, e.WorldSeq)
+			t.Errorf("VTT-981: entry %d forwarded from world event %d, appended before the grant", i, e.WorldSeq)
 		}
 		if id := e.Env.GetEventId(); id != "" && earlierIDs[id] {
-			t.Errorf("VTT-663: entry %d carries the id of an event appended before the grant: %s", i, qaCreatureLine(e))
+			t.Errorf("VTT-981: entry %d carries the id of an event appended before the grant: %s", i, qaCreatureLine(e))
 		}
 	}
 	opening := log[:k]
 	ss := opening[0].Env.GetSessionStarted()
 	if ss == nil || ss.GetName() != qaCreatureOpenName || opening[0].Env.GetSessionId() != tb.sessID {
-		t.Errorf("VTT-663: the opening's first entry is %s, want SessionStarted %q of session %s", qaCreatureLine(opening[0]), qaCreatureOpenName, tb.sessID)
+		t.Errorf("VTT-981: the opening's first entry is %s, want SessionStarted %q of session %s", qaCreatureLine(opening[0]), qaCreatureOpenName, tb.sessID)
 	}
 	var noteKeys []string
 	heroIntroduced := false
 	for i, e := range opening {
 		if i > 0 && (e.Env.GetSessionStarted() != nil || e.Env.GetSessionEnded() != nil) {
-			t.Errorf("VTT-663: the opening holds a second session entry: %s", qaCreatureLine(e))
+			t.Errorf("VTT-981: the opening holds a second session entry: %s", qaCreatureLine(e))
 		}
 		if n := e.Env.GetNoteUpserted(); n != nil {
 			noteKeys = append(noteKeys, n.GetKey())
@@ -606,22 +606,22 @@ func TestQACreatureGrantOpensTheCreaturesOwnLog(t *testing.T) {
 			case qaCreatureHero:
 				heroIntroduced = true
 			case qaCreatureGoblin:
-				t.Errorf("VTT-663: the opening introduces the goblin, which was not of the party before the grant: %s", qaCreatureLine(e))
+				t.Errorf("VTT-981: the opening introduces the goblin, which was not of the party before the grant: %s", qaCreatureLine(e))
 			}
 		}
 	}
 	if !heroIntroduced {
-		t.Errorf("VTT-663: the opening does not introduce the party's hero")
+		t.Errorf("VTT-981: the opening does not introduce the party's hero")
 	}
 	if fmt.Sprint(noteKeys) != fmt.Sprint([]string{"qa-a-lore", "qa-b-lore"}) {
-		t.Errorf("VTT-663: the opening's public notes are %q, want [qa-a-lore qa-b-lore]", noteKeys)
+		t.Errorf("VTT-981: the opening's public notes are %q, want [qa-a-lore qa-b-lore]", noteKeys)
 	}
 	for _, e := range log {
 		if n := e.Env.GetNoteUpserted(); n != nil && (n.GetKey() == "qa-secret" || n.GetKey() == "qa-c-gone") {
-			t.Errorf("VTT-663: the log holds note %q, which was not a public note before the grant", n.GetKey())
+			t.Errorf("VTT-981: the log holds note %q, which was not a public note before the grant", n.GetKey())
 		}
 		if e.Env.GetSessionStarted() != nil && e.Env.GetSessionStarted().GetName() == "S1" {
-			t.Errorf("VTT-663: the log holds the ended session S1")
+			t.Errorf("VTT-981: the log holds the ended session S1")
 		}
 	}
 
@@ -900,22 +900,22 @@ func qaCreatureExpectResume(t *testing.T, paused, log []campaign.CharacterEntry,
 	}
 	got := rest[:k]
 	if len(got) != len(want) {
-		t.Errorf("VTT-318: the resume wrote %d entries before the decision's frames, want %d", len(got), len(want))
+		t.Errorf("VTT-982: the resume wrote %d entries before the decision's frames, want %d", len(got), len(want))
 	}
 	for i := 0; i < len(got) && i < len(want); i++ {
 		w := proto.Clone(want[i]).(*vttv1.Envelope)
 		w.Sequence = got[i].Env.GetSequence()
 		if !proto.Equal(got[i].Env, w) {
 			b, _ := protojson.Marshal(w)
-			t.Errorf("VTT-318: resume entry %d is %s, want %s", i, qaCreatureLine(got[i]), b)
+			t.Errorf("VTT-982: resume entry %d is %s, want %s", i, qaCreatureLine(got[i]), b)
 		}
 	}
 	if k == len(rest) || rest[k].WorldSeq != g {
-		t.Errorf("VTT-318: the resume entries are not followed by the resuming event %d's frames", g)
+		t.Errorf("VTT-982: the resume entries are not followed by the resuming event %d's frames", g)
 	}
 }
 
-// VTT-318 VTT-316 VTT-321 VTT-326 VTT-921 VTT-342
+// VTT-982 VTT-316 VTT-321 VTT-326 VTT-921 VTT-342
 func TestQACreatureASecondPartyGrantResumesTheOldLog(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -965,7 +965,7 @@ func TestQACreatureASecondPartyGrantResumesTheOldLog(t *testing.T) {
 			}
 			log := tb.log(qaCreatureGoblin)
 			qaCreatureExpectResume(t, paused, log, qaCreatureResumeEntries(tc.endHeld, tc.startName, startID, held), g3)
-			// VTT-318 VTT-319
+			// VTT-982 VTT-319
 			placed := false
 			for _, e := range log {
 				if tp := e.Env.GetTokenPlaced(); e.WorldSeq == g3 && tp != nil && tp.GetTokenId() == qaCreatureTokGob {
@@ -973,7 +973,7 @@ func TestQACreatureASecondPartyGrantResumesTheOldLog(t *testing.T) {
 				}
 			}
 			if !placed {
-				t.Errorf("VTT-318: the resuming grant's frames do not place the goblin's token on its present square 6,0")
+				t.Errorf("VTT-982: the resuming grant's frames do not place the goblin's token on its present square 6,0")
 			}
 			for _, e := range log {
 				// VTT-316
@@ -987,7 +987,7 @@ func TestQACreatureASecondPartyGrantResumesTheOldLog(t *testing.T) {
 					t.Errorf("VTT-316: the log holds the public note made during the pause: %s", qaCreatureLine(e))
 				}
 				if ss := e.Env.GetSessionStarted(); ss != nil && ss.GetName() == "S3" {
-					t.Errorf("VTT-318: the log holds S3, which opened and closed during the pause")
+					t.Errorf("VTT-982: the log holds S3, which opened and closed during the pause")
 				}
 			}
 			resumedWritten := false
@@ -1011,7 +1011,7 @@ func TestQACreatureASecondPartyGrantResumesTheOldLog(t *testing.T) {
 	}
 }
 
-// VTT-318 VTT-316 VTT-321 VTT-326 VTT-450
+// VTT-982 VTT-316 VTT-321 VTT-326 VTT-450
 func TestQACreatureAnActorAddedAgainUnderItsIdContinuesItsLog(t *testing.T) {
 	tb, pl, _, pID := qaCreatureRunning(t)
 	m := pl.mark()
@@ -1145,7 +1145,7 @@ func TestQACreatureTheDefaultIsTheFirstPartyMemberById(t *testing.T) {
 	}
 }
 
-// VTT-783 VTT-318 VTT-321 VTT-326
+// VTT-783 VTT-982 VTT-321 VTT-326
 func TestQACreatureAnActorAddedAgainAsItIsNow(t *testing.T) {
 	tb, _, _, pID := qaCreatureRunning(t)
 	tb.dm.mustOK(qaCreatureRemove(qaCreatureGoblin))

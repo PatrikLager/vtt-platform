@@ -161,6 +161,8 @@ func (m *Model) env(payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_ResourceAdded{ResourceAdded: p}
 	case *vttv1.ResourceRemoved:
 		e.Payload = &vttv1.Envelope_ResourceRemoved{ResourceRemoved: p}
+	case *vttv1.RulesetNamed:
+		e.Payload = &vttv1.Envelope_RulesetNamed{RulesetNamed: p}
 	default:
 		// A NIL-PAYLOAD ENVELOPE FAILS TWO LAYERS AWAY as "unknown event
 		// variant", which reads as a missing arm in the fold rather than a
@@ -199,8 +201,10 @@ func (m *Model) Step(rng *rand.Rand, idx int) Action {
 		return m.changeSheet(rng, idx, r)
 	case r < 0.52 && m.canMoveToken():
 		return m.describeToken(rng, idx)
-	case r < 0.60:
+	case r < 0.58:
 		return m.addNarration(rng, idx)
+	case r < 0.60:
+		return m.nameRuleset(idx)
 	case r < 0.64:
 		return m.upsertNote(rng, idx)
 	case r < 0.68:
@@ -339,6 +343,19 @@ func (m *Model) addNarration(rng *rand.Rand, idx int) Action {
 	}
 	return Action{Env: m.env(na), Kind: "addNarration"}
 }
+
+// Draw from a set small enough that a walk names one id and version again,
+// and spend no rng draw (Step).
+func (m *Model) nameRuleset(idx int) Action {
+	id, version := rulesetIDs[idx%len(rulesetIDs)], rulesetVersions[idx/2%len(rulesetVersions)]
+	return Action{Env: m.env(&vttv1.RulesetNamed{RulesetId: id, Version: version, Name: "Rules " + id}),
+		Kind: "rulesetNamed", Anchors: true}
+}
+
+var (
+	rulesetIDs      = []string{"prop-rules", "prop-other-rules"}
+	rulesetVersions = []string{"1", "2"}
+)
 
 var noteVisibilities = []vttv1.NoteVisibility{
 	vttv1.NoteVisibility_NOTE_VISIBILITY_UNSPECIFIED,

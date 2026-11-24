@@ -24,7 +24,7 @@ type sheetTable struct {
 }
 
 // Keep the ally in the world before the player's first event: that is how a
-// log's opening finds a party member (VTT-663).
+// log's opening finds a party member (VTT-981).
 func newSheetTable(t *testing.T, ally *vttv1.Actor) *sheetTable {
 	t.Helper()
 	tb := &sheetTable{t: t, st: engine.NewState(), v: newViewer(t, player())}

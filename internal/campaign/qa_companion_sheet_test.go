@@ -242,7 +242,7 @@ func qaSheetAssertWhole(t *testing.T, at string, st, world *engine.State, id str
 	}
 }
 
-// qaSheetOpening holds VTT-663.
+// qaSheetOpening holds VTT-981.
 func qaSheetOpening(entries []campaign.CharacterEntry) []campaign.CharacterEntry {
 	for i, e := range entries {
 		if e.WorldSeq != 0 {
@@ -307,7 +307,7 @@ const (
 	qaSheetUnseenDoorOpen = 15
 )
 
-// VTT-663 VTT-658
+// VTT-981 VTT-658
 func TestQASheetALogOpensWithEachCompanionWithoutItsSheet(t *testing.T) {
 	l := qaSheetBuildUnseen(t)
 	c, seqs := qaSheetAppend(t, l.envs)
@@ -319,15 +319,15 @@ func TestQASheetALogOpensWithEachCompanionWithoutItsSheet(t *testing.T) {
 	bAdded := seqs[qaSheetUnseenBAdded-1]
 	opening := qaSheetOpening(entries)
 	if len(opening) == 0 {
-		t.Fatalf("VTT-663: B's log has no opening; entries %v", entries)
+		t.Fatalf("VTT-981: B's log has no opening; entries %v", entries)
 	}
 	if len(entries) <= len(opening) || entries[len(opening)].WorldSeq != bAdded {
-		t.Errorf("VTT-663: the entries after the opening are not B's ActorAdded's frames at world sequence %d", bAdded)
+		t.Errorf("VTT-981: the entries after the opening are not B's ActorAdded's frames at world sequence %d", bAdded)
 	}
-	// VTT-663
+	// VTT-981
 	first := opening[0].Env
 	if first.GetSessionStarted() == nil || first.GetSessionStarted().GetName() != "Night one" || first.GetSessionId() != world[0].GetSessionId() {
-		t.Errorf("VTT-663: the opening starts with %v, want the open session's SessionStarted", first)
+		t.Errorf("VTT-981: the opening starts with %v, want the open session's SessionStarted", first)
 	}
 	earlier := map[string]bool{}
 	for _, w := range world[:qaSheetUnseenBAdded-1] {
@@ -336,16 +336,16 @@ func TestQASheetALogOpensWithEachCompanionWithoutItsSheet(t *testing.T) {
 	var notes []string
 	for i, e := range opening {
 		if e.WorldSeq != 0 {
-			t.Errorf("VTT-663: opening entry %d carries world sequence %d", i, e.WorldSeq)
+			t.Errorf("VTT-981: opening entry %d carries world sequence %d", i, e.WorldSeq)
 		}
 		if e.Env.GetEventId() != "" && earlier[e.Env.GetEventId()] {
-			t.Errorf("VTT-663: opening entry %d is forwarded from earlier event %q", i, e.Env.GetEventId())
+			t.Errorf("VTT-981: opening entry %d is forwarded from earlier event %q", i, e.Env.GetEventId())
 		}
 		if n := e.Env.GetNoteUpserted(); n != nil {
 			notes = append(notes, n.GetKey())
 		}
 		if e.Env.GetNarrationAdded() != nil {
-			t.Errorf("VTT-663: the opening holds an earlier narration %v", e.Env)
+			t.Errorf("VTT-981: the opening holds an earlier narration %v", e.Env)
 		}
 		// VTT-658
 		if qaSheetCarries(e.Env, qaSheetA) {
@@ -354,15 +354,15 @@ func TestQASheetALogOpensWithEachCompanionWithoutItsSheet(t *testing.T) {
 	}
 	for i, e := range entries {
 		if id := e.Env.GetEventId(); id != "" && earlier[id] {
-			t.Errorf("VTT-663: entry %d is forwarded from event %q appended before B's log opened", i, id)
+			t.Errorf("VTT-981: entry %d is forwarded from event %q appended before B's log opened", i, id)
 		}
 	}
 	if fmt.Sprint(notes) != "[qa-public]" {
-		t.Errorf("VTT-663: the opening's notes %v, want [qa-public]", notes)
+		t.Errorf("VTT-981: the opening's notes %v, want [qa-public]", notes)
 	}
 	opened := qaSheetFoldEntries(t, opening)
 	if _, ok := opened.Actors[qaSheetB]; ok {
-		t.Errorf("VTT-663: the opening introduces B, who was no party member before the event")
+		t.Errorf("VTT-981: the opening introduces B, who was no party member before the event")
 	}
 	worldA := l.envs[4].GetActorAdded().GetActor()
 	// VTT-658
@@ -401,7 +401,7 @@ func TestQASheetACampaignLogIsWrittenNoCompanionSheetBeforeSight(t *testing.T) {
 	qaSheetAssertWhole(t, "VTT-486 at the end", qaSheetFoldEntries(t, entries), c.State(), qaSheetA)
 }
 
-// VTT-663 VTT-658 VTT-664 VTT-793
+// VTT-981 VTT-658 VTT-664 VTT-793
 func TestQASheetALogOpenedInSightOfACompanionBringsItsSheetAtTheOpeningEvent(t *testing.T) {
 	l := &qaSheetLog{}
 	l.session()
@@ -422,11 +422,11 @@ func TestQASheetALogOpenedInSightOfACompanionBringsItsSheetAtTheOpeningEvent(t *
 	grantSeq := seqs[len(seqs)-1]
 	opening := qaSheetOpening(entries)
 	if len(entries) <= len(opening) || entries[len(opening)].WorldSeq != grantSeq {
-		t.Errorf("VTT-663: the entries after the opening are not the grant's frames at world sequence %d", grantSeq)
+		t.Errorf("VTT-981: the entries after the opening are not the grant's frames at world sequence %d", grantSeq)
 	}
-	// VTT-663, VTT-658
+	// VTT-981, VTT-658
 	worldA := proto.Clone(l.envs[2].GetActorAdded().GetActor()).(*vttv1.Actor)
-	qaSheetAssertStripped(t, "VTT-663 in the opening", qaSheetFoldEntries(t, opening), worldA, []string{"p-a"})
+	qaSheetAssertStripped(t, "VTT-981 in the opening", qaSheetFoldEntries(t, opening), worldA, []string{"p-a"})
 	// VTT-664
 	qaSheetAssertWhole(t, "VTT-664 at the event that opened the log", qaSheetFoldEntries(t, entries), c.State(), qaSheetA)
 	// VTT-793

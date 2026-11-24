@@ -131,7 +131,7 @@ func (c *Campaign) fanOutLocked(envs []*vttv1.Envelope) ([]store.Entry, map[stri
 				lead = resume(l.fold, before)
 				l.resumes = append(l.resumes, ev.Sequence)
 				// Start from nothing seen, never from world: a held actor that changed
-				// while paused is corrected only then (VTT-318).
+				// while paused is corrected only then (VTT-982).
 				l.decision = perceive.New(eyesOf(id), nil)
 			}
 			fold, out, err := trial(l.fold, l.head, lead)
@@ -247,13 +247,16 @@ func appendEntries(entries []store.Entry, id string, cause int, frames []*vttv1.
 	return entries
 }
 
-// opening is what before holds of the open session, the public notes and the
-// party, each party member introduced unseen (VTT-663).
+// opening is what before holds of the open session, the ruleset it names, the
+// public notes and the party, each party member introduced unseen (VTT-981).
 func opening(before *engine.State) []*vttv1.Envelope {
 	var out []*vttv1.Envelope
 	if s, ok := openSession(before); ok {
 		out = append(out, &vttv1.Envelope{SessionId: s.ID,
 			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: s.Name}}})
+	}
+	if before.RulesetID != "" {
+		out = append(out, rulesetNamed(before))
 	}
 	// Perch through no eyes introduces exactly the party (SPEC-016).
 	out = append(out, perceive.New(perceive.Eyes{}, nil).Perch(perceive.Eyes{}, engine.NewState(), before, 0)...)
@@ -304,9 +307,9 @@ func (r *resumeScan) observe(st *engine.State, env *vttv1.Envelope) {
 	}
 }
 
-// resume brings a paused log to the world's open session in before, then
-// hides every token it holds, so the decision places what it sees on its
-// present square (VTT-318).
+// resume brings a paused log to the world's open session and ruleset in
+// before, then hides every token it holds, so the decision places what it
+// sees on its present square (VTT-982).
 func resume(fold, before *engine.State) []*vttv1.Envelope {
 	var out []*vttv1.Envelope
 	held, holds := openSession(fold)
@@ -317,6 +320,10 @@ func resume(fold, before *engine.State) []*vttv1.Envelope {
 	if isOpen && (!holds || held.ID != open.ID) {
 		out = append(out, &vttv1.Envelope{SessionId: open.ID,
 			Payload: &vttv1.Envelope_SessionStarted{SessionStarted: &vttv1.SessionStarted{Name: open.Name}}})
+	}
+	// Compare the id and the version alone, never the name (SPEC-026).
+	if before.RulesetID != "" && (fold.RulesetID != before.RulesetID || fold.RulesetVersion != before.RulesetVersion) {
+		out = append(out, rulesetNamed(before))
 	}
 	ids := make([]string, 0, len(fold.Tokens))
 	for id := range fold.Tokens {
@@ -337,6 +344,11 @@ func (c *Campaign) restartDecisionsLocked() {
 			l.decision = perceive.Resume(eyesOf(id), l.fold, c.state)
 		}
 	}
+}
+
+func rulesetNamed(st *engine.State) *vttv1.Envelope {
+	return &vttv1.Envelope{Payload: &vttv1.Envelope_RulesetNamed{RulesetNamed: &vttv1.RulesetNamed{
+		RulesetId: st.RulesetID, Version: st.RulesetVersion, Name: st.RulesetName}}}
 }
 
 func openSession(st *engine.State) (engine.Session, bool) {
