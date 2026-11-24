@@ -527,13 +527,15 @@ func resolveExtends(catalogue map[string]*Entry, extends, files map[string]strin
 	ids := slices.Sorted(maps.Keys(extends))
 	// Check every link before any walk: a walk reads the entry each link names.
 	for _, id := range ids {
-		parent, held := catalogue[extends[id]]
-		switch {
-		case extends[id] == "":
+		// Keep these refusals ifs, never a switch (tools/mutation-scope.md).
+		if extends[id] == "" {
 			return fieldErr(files[id], "extends", "must not be empty")
-		case !held:
+		}
+		parent, held := catalogue[extends[id]]
+		if !held {
 			return fieldErr(files[id], "extends", fmt.Sprintf("names %q, which the catalogue does not hold", extends[id]))
-		case parent.Form != catalogue[id].Form:
+		}
+		if parent.Form != catalogue[id].Form {
 			return fieldErr(files[id], "extends", fmt.Sprintf("names %q, which is of form %q, not %q", extends[id], parent.Form, catalogue[id].Form))
 		}
 	}
