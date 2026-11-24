@@ -43,6 +43,23 @@ export interface SheetPage {
   sections: SheetSection[];
 }
 
+/** FormDef is one form a ruleset declares, in the ruleset's words (VTT-1004). */
+export interface FormDef {
+  key: string;
+  name: string;
+  description: string;
+  properties: string[];
+}
+
+/** CatalogueEntry is one entry, its values after what it extends (VTT-1005). */
+export interface CatalogueEntry {
+  id: string;
+  name: string;
+  description: string;
+  form: string;
+  values: Record<string, number>;
+}
+
 export interface RulesetMeta {
   id: string;
   name: string;
@@ -51,6 +68,8 @@ export interface RulesetMeta {
   resources: string[];
   properties: Property[];
   sheet: SheetPage[];
+  forms: FormDef[];
+  catalogue: CatalogueEntry[];
   freeUsageName?: string;
 }
 

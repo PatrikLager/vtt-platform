@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -273,6 +274,57 @@ func qaRRCheckConditions(t *testing.T, rs *rules.Ruleset, raw json.RawMessage) {
 	}
 }
 
+func qaRRCheckForms(t *testing.T, rs *rules.Ruleset, raw json.RawMessage) {
+	t.Helper()
+	var got []struct {
+		Key, Name, Description string
+		Properties             []string
+	}
+	if err := json.Unmarshal(raw, &got); err != nil || got == nil {
+		t.Fatalf("forms not a list (%v): %s", err, raw)
+	}
+	if len(got) != len(rs.Forms) {
+		t.Fatalf("forms: %d entries, ruleset declares %d", len(got), len(rs.Forms))
+	}
+	for i, f := range rs.Forms {
+		g := got[i]
+		if g.Key != f.Key || g.Name != f.Name || g.Description != f.Description ||
+			g.Properties == nil || !slices.Equal(g.Properties, f.Properties) {
+			t.Errorf("forms[%d] = %+v, want %+v", i, g, f)
+		}
+	}
+}
+
+type qaRRServedEntry struct {
+	ID, Name, Description, Form string
+	Values                      map[string]int
+}
+
+func qaRRCheckCatalogue(t *testing.T, rs *rules.Ruleset, raw json.RawMessage) {
+	t.Helper()
+	var got []qaRRServedEntry
+	if err := json.Unmarshal(raw, &got); err != nil || got == nil {
+		t.Fatalf("catalogue not a list (%v): %s", err, raw)
+	}
+	if len(got) != len(rs.Catalogue) {
+		t.Fatalf("catalogue: %d entries, ruleset holds %d", len(got), len(rs.Catalogue))
+	}
+	if !slices.IsSortedFunc(got, func(a, b qaRRServedEntry) int { return strings.Compare(a.ID, b.ID) }) {
+		t.Errorf("catalogue not sorted by id: %s", raw)
+	}
+	for _, g := range got {
+		e, ok := rs.Catalogue[g.ID]
+		if !ok {
+			t.Errorf("catalogue entry %q not in the ruleset", g.ID)
+			continue
+		}
+		if g.Name != e.Name || g.Description != e.Description || g.Form != e.Form ||
+			g.Values == nil || !maps.Equal(g.Values, e.Values) {
+			t.Errorf("catalogue entry %+v, want %+v", g, *e)
+		}
+	}
+}
+
 func qaRRCheckBody(t *testing.T, rs *rules.Ruleset, body []byte) {
 	t.Helper()
 	obj := qaRRObject(t, body)
@@ -286,9 +338,11 @@ func qaRRCheckBody(t *testing.T, rs *rules.Ruleset, body []byte) {
 	qaRRCheckConditions(t, rs, obj["conditions"])
 	qaRRCheckResources(t, rs, obj["resources"])
 	qaRRCheckProperties(t, rs, obj["properties"])
+	qaRRCheckForms(t, rs, obj["forms"])
+	qaRRCheckCatalogue(t, rs, obj["catalogue"])
 }
 
-// VTT-632 VTT-710
+// VTT-632 VTT-710 VTT-1004 VTT-1005
 func TestQARRRulesetRouteAnswersEveryRole(t *testing.T) {
 	for name, rs := range qaRRFixtures(t) {
 		tbl := qaRRStart(t, rs, nil)
@@ -309,6 +363,8 @@ func TestQARRRulesetRouteAnswersEveryRole(t *testing.T) {
 			qaRRCheckConditions(t, rs, obj["conditions"])
 			qaRRCheckResources(t, rs, obj["resources"])
 			qaRRCheckProperties(t, rs, obj["properties"])
+			qaRRCheckForms(t, rs, obj["forms"])
+			qaRRCheckCatalogue(t, rs, obj["catalogue"])
 		}
 	}
 }
@@ -360,7 +416,7 @@ func TestQARRResourcesAreResourceKeysInDeclaredOrder(t *testing.T) {
 	}
 }
 
-// VTT-114 VTT-620
+// VTT-114 VTT-620 VTT-1004 VTT-1005
 func TestQARRNothingLoadedAnswersEmptyLists(t *testing.T) {
 	tbl := qaRRStart(t, nil, nil)
 	code, body := qaRRGet(t, tbl.url+"/api/ruleset", tbl.tokens[identity.RolePlayer])
@@ -368,7 +424,7 @@ func TestQARRNothingLoadedAnswersEmptyLists(t *testing.T) {
 		t.Fatalf("/api/ruleset: status %d: %s", code, body)
 	}
 	obj := qaRRObject(t, body)
-	for _, f := range []string{"abilities", "conditions", "resources", "properties"} {
+	for _, f := range []string{"abilities", "conditions", "resources", "properties", "forms", "catalogue"} {
 		qaRREmptyList(t, obj, f)
 	}
 	for route, field := range map[string]string{"/api/adventures": "adventures", "/api/maps": "maps"} {

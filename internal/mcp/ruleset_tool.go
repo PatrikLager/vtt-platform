@@ -22,9 +22,15 @@ const getRulesetDescription = "Read the table's ruleset as your role may: its id
 	"(`values`), the character's conditions (`conditions`), or the usages whose abilities it shows " +
 	"(`abilities`, each an ability's usage without its cost); `sheet` is [] when the ruleset " +
 	"declares none. It answers, as `freeUsageName`, the ruleset's name for an ability that spends " +
-	"no resource, to every role; it is absent when the ruleset gives none or none is loaded. With " +
-	"no ruleset loaded, id and name are empty and every list is []. Takes no arguments. For how to " +
-	"run this ruleset at the table, read get_ruleset_guide."
+	"no resource, to every role; it is absent when the ruleset gives none or none is loaded. It " +
+	"answers, to every role, as `forms`, the kinds of entry the ruleset declares, in the " +
+	"ruleset's order, each with its key, name, description and `properties`, the keys of the number " +
+	"properties its entries carry; and, as `catalogue`, every entry, sorted by id, each with its id, " +
+	"name, description, `form` (its form's key) and `values`, its numbers keyed by property after " +
+	"what it extends: its own, then those of the entry it extends that it does not set, and no key " +
+	"for a property neither gives; `forms` and `catalogue` are each [] when the ruleset declares " +
+	"none. With no ruleset loaded, id and name are empty and every list is []. Takes no arguments. " +
+	"For how to run this ruleset at the table, read get_ruleset_guide."
 
 func (s *Server) registerRulesetTool() {
 	s.mcp.AddTool(&mcpsdk.Tool{

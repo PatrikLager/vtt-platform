@@ -125,7 +125,26 @@ type rulesetJSON struct {
 	Resources     []string        `json:"resources"`
 	Properties    []propertyJSON  `json:"properties"`
 	Sheet         []sheetPageJSON `json:"sheet"`
+	Forms         []formJSON      `json:"forms"`
+	Catalogue     []entryJSON     `json:"catalogue"`
 	FreeUsageName string          `json:"freeUsageName,omitempty"`
+}
+
+// VTT-1004
+type formJSON struct {
+	Key         string   `json:"key"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Properties  []string `json:"properties"`
+}
+
+// VTT-1005
+type entryJSON struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Form        string         `json:"form"`
+	Values      map[string]int `json:"values"`
 }
 
 // VTT-831
@@ -164,6 +183,8 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 		Resources:  []string{},
 		Properties: []propertyJSON{},
 		Sheet:      []sheetPageJSON{},
+		Forms:      []formJSON{},
+		Catalogue:  []entryJSON{},
 	}
 	if s.ruleset != nil {
 		rs := s.ruleset
@@ -236,6 +257,20 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 			}
 			out.Sheet = append(out.Sheet, sheetPageJSON{Name: page.Name, Sections: sections})
 		}
+
+		for _, f := range rs.Forms {
+			out.Forms = append(out.Forms, formJSON{
+				Key: f.Key, Name: f.Name, Description: f.Description,
+				Properties: append([]string{}, f.Properties...),
+			})
+		}
+		for _, e := range rs.Catalogue {
+			out.Catalogue = append(out.Catalogue, entryJSON{
+				ID: e.ID, Name: e.Name, Description: e.Description, Form: e.Form, Values: e.Values,
+			})
+		}
+		// Keep the sort: Catalogue is a map (VTT-1005).
+		slices.SortFunc(out.Catalogue, func(a, b entryJSON) int { return strings.Compare(a.ID, b.ID) })
 	}
 	writeJSON(w, out)
 }

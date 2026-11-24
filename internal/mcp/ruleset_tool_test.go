@@ -15,7 +15,9 @@ import (
 // VTT-621
 func TestGetRulesetReturnsTheRulesetRouteVerbatim(t *testing.T) {
 	const answer = `{"id":"qa","name":"QA","abilities":[],"conditions":[],"resources":["pool_a"],` +
-		`"properties":[{"key":"pool_a","type":"resource","name":"Pool A","description":"What a stance spends."}]}`
+		`"properties":[{"key":"pool_a","type":"resource","name":"Pool A","description":"What a stance spends."}],` +
+		`"forms":[{"key":"kit","name":"Kit","description":"A carried thing.","properties":[]}],` +
+		`"catalogue":[{"id":"rope","name":"Rope","description":"A coil.","form":"kit","values":{}}]}`
 	fs := newFakeServer(t, func(conn *websocket.Conn, cmd *vttv1.ClientCommand) {})
 	var (
 		mu               sync.Mutex
@@ -138,6 +140,26 @@ func TestGetRulesetSaysItAnswersTheRulesetsNameForFreeUsage(t *testing.T) {
 		"absent when the ruleset gives none"} {
 		if !strings.Contains(description, want) {
 			t.Errorf("get_ruleset's description = %q, want it to say %q", description, want)
+		}
+	}
+}
+
+// VTT-1006
+func TestGetRulesetSaysItAnswersEveryRoleTheFormsAndTheCatalogue(t *testing.T) {
+	description := getRulesetToolDescription(t)
+	var sentence string
+	for _, s := range strings.Split(description, ". ") {
+		if strings.Contains(s, "`catalogue`") {
+			sentence = s
+		}
+	}
+	if sentence == "" {
+		t.Fatalf("get_ruleset's description = %q, want a sentence naming `catalogue`", description)
+	}
+	for _, want := range []string{"to every role", "`forms`", "`catalogue`", "after what it extends",
+		"[] when the ruleset declares none"} {
+		if !strings.Contains(sentence, want) {
+			t.Errorf("get_ruleset's sentence on the catalogue = %q, want it to say %q", sentence, want)
 		}
 	}
 }
