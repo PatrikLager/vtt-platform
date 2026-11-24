@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
@@ -337,6 +338,224 @@ func TestAnIDTwoOfAnEntryAnAbilityAndAConditionDeclareIsRefused(t *testing.T) {
 			_, err := rules.Load(dir)
 			want := fmt.Sprintf("rules: %s: field %q: %q is declared by %s too; an entry, an ability and a condition never share an id",
 				filepath.Join(dir, c.refused), "id", c.id, filepath.Join(dir, c.other))
+			if err == nil || err.Error() != want {
+				t.Fatalf("Load = %v, want %q", err, want)
+			}
+		})
+	}
+}
+
+func extendingEntry(id, extends string, values entryDoc) entryDoc {
+	e := entryDoc{"id": id, "name": "Entry " + id, "description": "An entry of the plain form.", "form": "qa-form"}
+	if extends != "" {
+		e["extends"] = extends
+	}
+	if values != nil {
+		e["values"] = values
+	}
+	return e
+}
+
+func expectValues(t *testing.T, rs *rules.Ruleset, want map[string]map[string]int) {
+	t.Helper()
+	for _, id := range slices.Sorted(maps.Keys(want)) {
+		got := rs.Catalogue[id]
+		if got == nil {
+			t.Fatalf("the catalogue holds no %q: %v", id, slices.Sorted(maps.Keys(rs.Catalogue)))
+		}
+		if !maps.Equal(got.Values, want[id]) {
+			t.Errorf("Catalogue[%q].Values = %v, want %v", id, got.Values, want[id])
+		}
+	}
+}
+
+// loadWithin fails the test, rather than hanging it, when rules.Load does not
+// return (VTT-1003).
+func loadWithin(t *testing.T, dir string) (*rules.Ruleset, error) {
+	t.Helper()
+	type loaded struct {
+		rs  *rules.Ruleset
+		err error
+	}
+	done := make(chan loaded, 1)
+	go func() {
+		rs, err := rules.Load(dir)
+		done <- loaded{rs, err}
+	}()
+	select {
+	case l := <-done:
+		return l.rs, l.err
+	case <-time.After(10 * time.Second):
+		t.Fatalf("rules.Load(%s) did not return", dir)
+		return nil, nil
+	}
+}
+
+// VTT-997 VTT-1002
+func TestTheFixturesExtendingEntryHoldsTheValuesOfTheOneItExtends(t *testing.T) {
+	rs, err := rules.Load("testdata/valid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectEntry(t, rs, rules.Entry{ID: "plain-crate", Name: "Plain Crate", Description: "The fixture's plain crate.", Form: "crate",
+		Values: map[string]int{"heft": 2}})
+	expectEntry(t, rs, rules.Entry{ID: "sturdy-crate", Name: "Sturdy Crate",
+		Description: "The fixture's sturdy crate, which extends its plain crate.", Form: "crate", Values: map[string]int{"heft": 2}})
+}
+
+// VTT-1002
+func TestAnExtendingEntryHoldsEveryValueItDoesNotSetItself(t *testing.T) {
+	for _, c := range []struct {
+		name                      string
+		parent, child, childWants entryDoc
+	}{
+		{"the child setting none", entryDoc{"heft": 3, "grit": -2}, nil, entryDoc{"heft": 3, "grit": -2}},
+		{"the child's value over the parent's", entryDoc{"heft": 3, "grit": -2}, entryDoc{"heft": 9}, entryDoc{"heft": 9, "grit": -2}},
+		{"a value the parent leaves unset", entryDoc{"heft": 3}, entryDoc{"grit": 4}, entryDoc{"heft": 3, "grit": 4}},
+		{"the child's zero over the parent's value", entryDoc{"heft": 3, "grit": -2}, entryDoc{"grit": 0}, entryDoc{"heft": 3, "grit": 0}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rs, err := rules.Load(catalogueRuleset(t, map[string]entryDoc{
+				"a-child.json":  extendingEntry("child-entry", "parent-entry", c.child),
+				"b-parent.json": extendingEntry("parent-entry", "", c.parent),
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			toInts := func(d entryDoc) map[string]int {
+				out := map[string]int{}
+				for k, v := range d {
+					out[k] = v.(int)
+				}
+				return out
+			}
+			expectValues(t, rs, map[string]map[string]int{"child-entry": toInts(c.childWants), "parent-entry": toInts(c.parent)})
+		})
+	}
+}
+
+// VTT-1000 VTT-1002
+func TestAnEntryExtendingOneThatHoldsNoValueForAPropertyHoldsNone(t *testing.T) {
+	rs, err := rules.Load(catalogueRuleset(t, map[string]entryDoc{
+		"a-child.json":  extendingEntry("child-entry", "parent-entry", nil),
+		"b-parent.json": extendingEntry("parent-entry", "", entryDoc{"heft": 3}),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectValues(t, rs, map[string]map[string]int{"child-entry": {"heft": 3}})
+	if v, held := rs.Catalogue["child-entry"].Values["grit"]; held {
+		t.Errorf("the extending entry holds %d for grit, which neither entry carries", v)
+	}
+}
+
+// VTT-1002
+func TestAnEntryHoldsValuesThroughAChainOfExtends(t *testing.T) {
+	rs, err := rules.Load(catalogueRuleset(t, map[string]entryDoc{
+		"a.json": extendingEntry("a-tip", "b-leaf", entryDoc{"heft": 4}),
+		"b.json": extendingEntry("b-leaf", "c-mid", nil),
+		"c.json": extendingEntry("c-mid", "d-root", entryDoc{"grit": 2}),
+		"d.json": extendingEntry("d-root", "", entryDoc{"heft": 1, "grit": 1}),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectValues(t, rs, map[string]map[string]int{
+		"a-tip":  {"heft": 4, "grit": 2},
+		"b-leaf": {"heft": 1, "grit": 2},
+		"c-mid":  {"heft": 1, "grit": 2},
+		"d-root": {"heft": 1, "grit": 1},
+	})
+}
+
+// VTT-1002
+func TestAnEntrysValuesDoNotDependOnTheOrderOfItsFilesOrIDs(t *testing.T) {
+	values := []entryDoc{{"heft": 1, "grit": 1}, {"grit": 2}, nil, {"heft": 4}}
+	want := []map[string]int{{"heft": 1, "grit": 1}, {"heft": 1, "grit": 2}, {"heft": 1, "grit": 2}, {"heft": 4, "grit": 2}}
+	for _, ids := range [][]string{{"d-root", "c-mid", "b-leaf", "a-tip"}, {"a-root", "b-mid", "c-leaf", "d-tip"}} {
+		for _, files := range [][]string{{"1", "2", "3", "4"}, {"4", "3", "2", "1"}, {"2", "4", "1", "3"}} {
+			t.Run(ids[0]+" in "+files[0], func(t *testing.T) {
+				docs := map[string]entryDoc{}
+				wants := map[string]map[string]int{}
+				for i, id := range ids {
+					extends := ""
+					if i > 0 {
+						extends = ids[i-1]
+					}
+					docs[files[i]+".json"] = extendingEntry(id, extends, values[i])
+					wants[id] = want[i]
+				}
+				rs, err := rules.Load(catalogueRuleset(t, docs))
+				if err != nil {
+					t.Fatal(err)
+				}
+				expectValues(t, rs, wants)
+			})
+		}
+	}
+}
+
+// VTT-1003
+func TestAnExtendsWrittenEmptyIsRefused(t *testing.T) {
+	e := plainEntry()
+	e["extends"] = ""
+	expectEntryRefusal(t, catalogueRuleset(t, withEntry(e)), "b-plain.json", "extends", "must not be empty")
+}
+
+// VTT-1003
+func TestAnExtendsNamingAnEntryTheCatalogueDoesNotHoldIsRefused(t *testing.T) {
+	for _, c := range []struct{ name, extends string }{
+		{"no id at all", "nowhere"},
+		{"an ability's id", "strike"},
+		{"a condition's id", "guarded"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e := plainEntry()
+			e["extends"] = c.extends
+			expectEntryRefusal(t, catalogueRuleset(t, withEntry(e)), "b-plain.json", "extends",
+				fmt.Sprintf("names %q, which the catalogue does not hold", c.extends))
+		})
+	}
+}
+
+// VTT-1003
+func TestAnExtendsNamingAnEntryOfAnotherFormIsRefused(t *testing.T) {
+	e := plainEntry()
+	e["extends"] = "crate-entry"
+	expectEntryRefusal(t, catalogueRuleset(t, withEntry(e)), "b-plain.json", "extends",
+		`names "crate-entry", which is of form "crate", not "qa-form"`)
+}
+
+// VTT-1003
+func TestACycleOfExtendsIsRefusedNamingEveryEntryInIt(t *testing.T) {
+	for _, c := range []struct {
+		name, file, cycle string
+		files             map[string]entryDoc
+	}{
+		{"of one", "a.json", `["a-self"]`, map[string]entryDoc{
+			"a.json": extendingEntry("a-self", "a-self", nil),
+		}},
+		{"of two", "b.json", `["p-two" "q-two"]`, map[string]entryDoc{
+			"a.json": extendingEntry("q-two", "p-two", entryDoc{"heft": 1}),
+			"b.json": extendingEntry("p-two", "q-two", nil),
+		}},
+		{"of three", "c.json", `["p-three" "q-one" "r-two"]`, map[string]entryDoc{
+			"a.json": extendingEntry("q-one", "p-three", nil),
+			"b.json": extendingEntry("r-two", "q-one", entryDoc{"grit": 1}),
+			"c.json": extendingEntry("p-three", "r-two", nil),
+		}},
+		{"reached from an entry outside it", "m.json", `["m-loop" "n-loop"]`, map[string]entryDoc{
+			"a.json": extendingEntry("a-way-in", "n-loop", nil),
+			"m.json": extendingEntry("m-loop", "n-loop", nil),
+			"n.json": extendingEntry("n-loop", "m-loop", nil),
+			"z.json": extendingEntry("z-free", "", entryDoc{"heft": 1}),
+		}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := catalogueRuleset(t, c.files)
+			_, err := loadWithin(t, dir)
+			want := fmt.Sprintf("rules: %s: field %q: is in a cycle of entries extending each other: %s",
+				filepath.Join(dir, "catalogue", c.file), "extends", c.cycle)
 			if err == nil || err.Error() != want {
 				t.Fatalf("Load = %v, want %q", err, want)
 			}

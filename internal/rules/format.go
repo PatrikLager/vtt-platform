@@ -317,7 +317,8 @@ type Form struct {
 // Entry is one thing a ruleset's catalogue holds, of the form Form (VTT-997).
 type Entry struct {
 	ID, Name, Description, Form string
-	// Values holds no key for a property the entry carries no value for (VTT-1000).
+	// Values holds the entry's own values over those its extends gives it, and
+	// no key for a property neither sets (VTT-1000, VTT-1002).
 	Values map[string]int
 }
 

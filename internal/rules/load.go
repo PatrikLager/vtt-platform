@@ -468,14 +468,15 @@ type entryJSON struct {
 }
 
 // loadCatalogue checks each entry under dir against the forms and returns the
-// entries and their files, each keyed by id (VTT-997, VTT-998, VTT-999).
+// entries and their files, each keyed by id, extends resolved (VTT-997 to
+// VTT-999, VTT-1002, VTT-1003).
 func loadCatalogue(dir string, forms []Form) (map[string]*Entry, map[string]string, error) {
 	listed := make(map[string]map[string]bool, len(forms))
 	for _, f := range forms {
 		listed[f.Key] = toSet(f.Properties)
 	}
 	out := map[string]*Entry{}
-	files := map[string]string{}
+	files, extends := map[string]string{}, map[string]string{}
 	paths, err := jsonFilesIn(dir)
 	if err != nil {
 		return nil, nil, err
@@ -508,8 +509,73 @@ func loadCatalogue(dir string, forms []Form) (map[string]*Entry, map[string]stri
 		}
 		files[raw.ID] = path
 		out[raw.ID] = &Entry{ID: raw.ID, Name: raw.Name, Description: raw.Description, Form: raw.Form, Values: values}
+		if raw.Extends != nil {
+			extends[raw.ID] = *raw.Extends
+		}
+	}
+	// Keep this after the loop: an extends may name an entry a later file declares.
+	if err := resolveExtends(out, extends, files); err != nil {
+		return nil, nil, err
 	}
 	return out, files, nil
+}
+
+// resolveExtends checks each entry's extends, in id order, then gives each
+// entry every value of its chain it does not set, the nearest first (VTT-1002,
+// VTT-1003).
+func resolveExtends(catalogue map[string]*Entry, extends, files map[string]string) error {
+	ids := slices.Sorted(maps.Keys(extends))
+	// Check every link before any walk: a walk reads the entry each link names.
+	for _, id := range ids {
+		parent, held := catalogue[extends[id]]
+		switch {
+		case extends[id] == "":
+			return fieldErr(files[id], "extends", "must not be empty")
+		case !held:
+			return fieldErr(files[id], "extends", fmt.Sprintf("names %q, which the catalogue does not hold", extends[id]))
+		case parent.Form != catalogue[id].Form:
+			return fieldErr(files[id], "extends", fmt.Sprintf("names %q, which is of form %q, not %q", extends[id], parent.Form, catalogue[id].Form))
+		}
+	}
+	resolved := make(map[string]map[string]int, len(ids))
+	for _, id := range ids {
+		values := maps.Clone(catalogue[id].Values)
+		// Keep the visited set: a cycle must end the walk (VTT-1003).
+		seen := map[string]bool{id: true}
+		for at, ok := extends[id]; ok; at, ok = extends[at] {
+			if seen[at] {
+				return cycleErr(at, extends, files)
+			}
+			seen[at] = true
+			for key, v := range catalogue[at].Values {
+				if _, set := values[key]; !set {
+					values[key] = v
+				}
+			}
+		}
+		resolved[id] = values
+	}
+	for id, values := range resolved {
+		catalogue[id].Values = values
+	}
+	return nil
+}
+
+// cycleErr refuses, on the file of its lowest id and naming every entry in it,
+// the cycle at lies in; pass only an entry a walk revisits (VTT-1003).
+func cycleErr(at string, extends, files map[string]string) error {
+	cycle := []string{at}
+	next := extends[at]
+	// Keep the range bound: no mutant of the stop may grow cycle without end.
+	for range len(extends) {
+		if next == at {
+			break
+		}
+		cycle = append(cycle, next)
+		next = extends[next]
+	}
+	slices.Sort(cycle)
+	return fieldErr(files[cycle[0]], "extends", fmt.Sprintf("is in a cycle of entries extending each other: %q", cycle))
 }
 
 // entryValues checks an entry's values, in key order, against the keys its

@@ -35,7 +35,7 @@
     "extends": {
       "type": "string",
       "minLength": 1,
-      "description": "Optional. The id of the entry this one extends."
+      "description": "Optional. The id of another entry of the same form, which this one extends: it holds every value of that entry, after that entry's own extends, that it does not set itself. Never empty, never an id the catalogue does not hold, and never a cycle of entries extending each other."
     },
     "values": {
       "type": "object",
@@ -44,7 +44,7 @@
         "minimum": -2147483648,
         "maximum": 2147483647
       },
-      "description": "Optional. The entry's value for each property it carries, keyed by the property's key, which its form lists: an integer within a 32-bit signed integer, never null. An entry need not carry every property its form lists, and holds no value for one it does not carry."
+      "description": "Optional. The entry's value for each property it carries, keyed by the property's key, which its form lists: an integer within a 32-bit signed integer, never null. An entry need not carry every property its form lists, and holds no value for one it neither carries nor inherits through extends."
     }
   }
 }
