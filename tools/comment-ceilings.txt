@@ -196,6 +196,7 @@ internal/engine/state.go  41.9
 internal/engine/terrain.go  49.3
 internal/engine/terrain_test.go  25.0
 internal/engine/visibility_fold_test.go  27.1
+internal/eventgen/draws_internal_test.go  1.5
 internal/eventgen/model.go  19.2
 internal/eventgen/model_test.go  12.8
 internal/gateway/ability_change.go  9.3
