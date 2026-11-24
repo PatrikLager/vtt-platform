@@ -55,6 +55,7 @@ Accepted. Implemented by `contract/vtt/v1/events.proto`
 `internal/gateway/qa_ability_change_command_test.go`,
 `internal/gateway/ability_value_test.go`,
 `internal/gateway/qa_ability_value_test.go`,
+`internal/gateway/ruleset_named_test.go`,
 `internal/gateway/add_actor_spend_test.go`,
 `internal/gateway/qa_add_actor_spend_test.go`,
 `cmd/vtt/mcp_ability_change_e2e_test.go`,
@@ -152,7 +153,7 @@ the id (VTT-764). Its `AbilityTaken` arm refuses an actor the state does
 not hold (`engine: ability_taken names unknown actor "<actor>"`), then an
 id the list does not name (`engine: actor "<actor>" does not name ability
 "<id>"`, VTT-721), and otherwise sets the list to a fresh one holding no
-occurrence of the id, the others in their order (VTT-767, VTT-768). Neither
+occurrence of the id, the others in their order (VTT-991, VTT-768). Neither
 arm changes anything else of the actor or of the state (VTT-715), and the
 client's fold refuses and changes what this one does (SPEC-022). A refused
 give or take reaches its issuer and appends nothing (SPEC-013). With a
@@ -208,11 +209,14 @@ resource's value under `resources`, appends the `AbilityGiven` and then a
 which the sheet names the ability and holds the resource at that value, a
 current of 0 included (VTT-760). A give carrying no `resources`, of an
 ability that spends no resource or whose resource the sheet holds, is the
-`AbilityGiven` alone (VTT-764). A `take_ability` appends the `AbilityTaken`
+`AbilityGiven` alone (VTT-764); no give's batch holds a `RulesetNamed`,
+since what a give writes is the DM's (VTT-990). A `take_ability` appends,
+after any `RulesetNamed` SPEC-026 says opens its batch (VTT-988), the
+`AbilityTaken`
 and, when the taken ability spends a resource the sheet holds that no other
 id the sheet names spends, a `ResourceRemoved` of it, and nothing else, so
 a resource several abilities spend stays while one of them is named
-(VTT-767). What each refuses, and with none served what each does, is
+(VTT-991). What each refuses, and with none served what each does, is
 SPEC-013's. The gateway reads no `current`: the give copies the value it
 carries whole, as `add_actor` copies an actor's.
 
@@ -277,7 +281,10 @@ empty:
   does not fit, each with its first fault, its keys, then its ability ids,
   then the spend rule, in byte order of their ids (VTT-678, VTT-681,
   VTT-688, VTT-777). With no ruleset, nothing is read (VTT-676, VTT-689,
-  VTT-778).
+  VTT-778). `composeServer` reads no ruleset id from the log, so a
+  campaign whose log names a ruleset of another id is served when its
+  sheets fit, and its next use or take records the switch (SPEC-026,
+  VTT-977).
 
 **A sheet's values in an adventure.** `actorJSON` and `resourceValJSON`
 decode an actor file's values through pointers, so `actorValues` sees what
@@ -413,6 +420,7 @@ VTT-617, VTT-618, VTT-670, VTT-671, VTT-672, VTT-674, VTT-675, VTT-676,
 VTT-677, VTT-678, VTT-679, VTT-680, VTT-681, VTT-683, VTT-684, VTT-688,
 VTT-689, VTT-690, VTT-700, VTT-715, VTT-717, VTT-718, VTT-720, VTT-721,
 VTT-722, VTT-729, VTT-746, VTT-747, VTT-748, VTT-749, VTT-750, VTT-751,
-VTT-760, VTT-764, VTT-767, VTT-768, VTT-769, VTT-770, VTT-771, VTT-772,
+VTT-760, VTT-764, VTT-768, VTT-769, VTT-770, VTT-771, VTT-772,
 VTT-773, VTT-775, VTT-776, VTT-777, VTT-778, VTT-785, VTT-786, VTT-787,
-VTT-789, VTT-791, VTT-792, VTT-802, VTT-804.
+VTT-789, VTT-791, VTT-792, VTT-802, VTT-804, VTT-977, VTT-988, VTT-990,
+VTT-991.

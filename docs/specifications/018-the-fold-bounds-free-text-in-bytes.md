@@ -7,6 +7,7 @@ Accepted. Implemented by `internal/engine/apply.go` (the const block with
 `maxMoveReasonBytes`, `maxNameBytes` and `maxIDBytes`, and `Apply`'s
 `SessionStarted`, `SceneCreated`, `ActorAdded`, `TokenPlaced`, `TokenMoved`,
 `NarrationAdded`, `WhisperAdded`, `NoteUpserted`, `AdventureLoaded`,
+`RulesetNamed`,
 `AbilityUsed`, `ConditionApplied`, `ResourceAdded`, `ActorControlGranted` and
 `ActorControlRevoked` arms, the last two through `controlTarget`,
 `keyLength` for an actor's keys, and the `AbilityGiven` and `AbilityTaken`
@@ -20,7 +21,9 @@ map's and an adventure's scene objects' ids by `internal/mapdef`'s
 `CheckObjectIDs`, which both loaders call, and for a ruleset's ability and
 condition ids, property keys and branch labels by
 `internal/rules/load.go`'s `maxIDBytes`, which the ruleset schemas in
-`internal/rules/schema/` state; stated to an agent by
+`internal/rules/schema/` state, and for a ruleset's manifest id, version
+and name by its `checkManifestBounds`, with `maxIDBytes` and
+`maxNameBytes`; stated to an agent by
 `tools/toolgen/main.go`'s `manifest` for `move_token`'s `reason`,
 `add_actor`'s actor `name`, `actorId`, `moduleId`, `attributes` and
 `resources`, `start_session`'s `name`, `place_token`'s `tokenId` and
@@ -56,6 +59,12 @@ Pinned by
 `internal/gateway/qa_ruleset_bound_test.go`,
 `internal/campaign/qa_ruleset_bound_test.go`,
 `client/test/qa-ruleset-bound.test.ts`,
+`internal/engine/ruleset_named_test.go`,
+`internal/engine/qa_ruleset_named_test.go`,
+`internal/rules/ruleset_version_test.go`,
+`internal/rules/qa_ruleset_version_test.go`,
+`cmd/vtt/ruleset_named_dump_test.go`,
+`client/test/qa-ruleset-named.test.ts`,
 `internal/engine/qa_cmd_id_bound_test.go`,
 `internal/gateway/qa_cmd_id_bound_test.go`,
 `internal/mapdef/qa_cmd_id_bound_test.go`,
@@ -71,7 +80,9 @@ Principle 5 of `docs/blueprint.md`: a bound may be raised and never lowered,
 and a field the log can already hold gains one only on one of the two
 tests in How it works, since a bound added later refuses every log that
 already holds a longer value; a field whose value becomes a key the table
-already bounds carries that bound from the change that adds the field.
+already bounds carries that bound from the change that adds the field, and
+so does a field whose value is copied from a file whose loader holds the
+same bound.
 
 ## How it works
 
@@ -90,10 +101,13 @@ already bounds carries that bound from the change that adds the field.
 | `SceneCreated.name` | 256 (`maxNameBytes`) | yes |
 | `ActorAdded`'s `Actor.name` | 256 (`maxNameBytes`) | yes |
 | `AdventureLoaded.name` | 256 (`maxNameBytes`) | yes |
+| `RulesetNamed.name` | 256 (`maxNameBytes`) | no |
 | `SceneCreated.scene_id` | 128 (`maxIDBytes`) | no |
 | `ActorAdded`'s `Actor.actor_id` | 128 (`maxIDBytes`) | no |
 | `TokenPlaced.token_id` | 128 (`maxIDBytes`) | no |
 | `AdventureLoaded.adventure_id` | 128 (`maxIDBytes`) | no |
+| `RulesetNamed.ruleset_id` | 128 (`maxIDBytes`) | no |
+| `RulesetNamed.version` | 128 (`maxIDBytes`) | no |
 | `ConditionApplied.condition_id` | 128 (`maxIDBytes`) | no |
 | `AbilityUsed.ability_id` | 128 (`maxIDBytes`) | no |
 | `ActorControlGranted.participant_id` | 128 (`maxIDBytes`) | no |
@@ -124,7 +138,10 @@ the same id, a repeat refused as `engine: object "<id>" appears twice in scene
 duplicate and a declared controller, then its name, then its module id, its
 resource names and its attribute names; a `TokenPlaced` for its id, then a
 duplicate, a known scene, a known actor and a position; an `AdventureLoaded`
-for its id, then its name; a `ConditionApplied` for its condition id, then a
+for its id, then its name; a `RulesetNamed` for its ruleset id, then its
+version, then its name, each refused empty as it is past its bound
+(`engine: ruleset name must be 1-256 bytes, got 0`); a `ConditionApplied`
+for its condition id, then a
 known actor, then a duplicate; a `ResourceAdded` for its resource name,
 refused as `engine: resource name must be 1-128 bytes, got <n>`, then a
 value, then a known actor, then a resource the actor already holds; an
@@ -156,7 +173,13 @@ value becomes a key of a field the table bounds carries that bound, without
 either test, from the change that adds the field: `ResourceAdded.resource`
 becomes a key of `Actor.resources`, and were it longer than an `ActorAdded`
 lets those keys be, the world could hold an actor whose `ActorAdded`,
-carrying the whole sheet into a character log, both folds refuse. No field
+carrying the whole sheet into a character log, both folds refuse. A field
+whose value the server copies from a file whose loader holds the same bound
+carries that bound, without either test, from the change that adds the
+field's event: `RulesetNamed`'s ruleset id, version and name are copied
+from the served ruleset's manifest, which `checkManifestBounds` holds to
+`maxIDBytes`, `maxIDBytes` and `maxNameBytes` (SPEC-024), so the entry
+naming a served ruleset folds (SPEC-026). No field
 outside the table meets the first: each of SPEC-013's player cells puts text
 it chose into the log only as a field of the table or as an id that
 `engine.Apply` or `Resolve` looks up, `add_whisper`'s text as a field of the
@@ -175,7 +198,7 @@ into `AbilityUsed.outcome_summary` or a reason, and the spectator's one cell,
 | `TileRef.kind`, `TileRef.material` | `BuildSceneCreated` writes them from `StandardTile`'s vocabulary |
 | `TileRef.art`, `SceneObject.art` | `BuildSceneCreated` writes an art id only when `internal/artlib` resolves it, and `isArtID` refuses one longer than `maxArtIDLen` |
 | `SceneCreated.tiles` keys | `BuildSceneCreated` writes a key only for a square of the grid |
-| `TokenHidden.token_id`, `SceneSeen.scene_id`, `SceneSeen.tiles`, `SceneSeen.visible` | none reaches the log: `internal/perceive/projection.go` builds them for one viewer from folded state (SPEC-016) |
+| `TokenHidden.token_id`, `SceneSeen.scene_id`, `SceneSeen.tiles`, `SceneSeen.visible` | none reaches the log: `internal/perceive/projection.go` builds them for one viewer from folded state, and `internal/campaign/fanout.go`'s `resume` a `TokenHidden` for each token a resuming log holds (SPEC-016, SPEC-021) |
 | `Envelope.event_id`, `Envelope.participant_id`, `Envelope.actor_role`, and `Envelope.session_id` but a `SessionStarted`'s | the server writes them: `newEventID`, the issuing participant's id and role, and `stampSessionIDAgainst`, which writes the open session's id or none |
 | `AttackRolled.attacker_id`, `AttackRolled.target_id`, `AttackRolled.expression`, `AttackRolled.versus`, `AttackRolled.outcome`, `Modifier.source` | nothing in production writes an `AttackRolled`, and `engine.Apply` reads none of it |
 | `SceneObject.kind` | nothing: it is a map's or an adventure's object `kind`, which no loader checks, and the fold keeps it; `describeBlockage` clips it where a player's move refusal names it (SPEC-013) |
@@ -187,14 +210,17 @@ into `AbilityUsed.outcome_summary` or a reason, and the spectator's one cell,
 
 The cells that say nothing or none rest on these searches, each a `git grep`
 over `'*.go' ':!*_test.go' ':!contract/gen' ':!contract-spike'`: `-E
-'TokenHidden\{|SceneSeen\{'` prints only `internal/perceive/projection.go`;
-`'AttackRolled{'` prints nothing; `ModuleData` prints nothing, so a
+'TokenHidden\{|SceneSeen\{'` prints only `internal/perceive/projection.go`
+and, for a resume's `TokenHidden`, `internal/campaign/fanout.go`'s `resume`;
+`'AttackRolled{'` prints nothing; `-E 'ModuleData *(:|=)[^=]'` prints
+nothing, so a
 `module_data` reaches the log only inside an `add_actor`'s actor, which
 `ToEvent` copies whole; and `-E 'o\.Kind|obj\.Kind' -- internal/mapdef
 internal/adventure ':!*_test.go'` prints only the loader's and
 `BuildSceneCreated`'s copies of an object's `kind`. `grep -n -E
 'len\([^)]*(Name|Expr|Src|Description)[^)]*\) >' internal/rules/load.go`
-prints nothing; and `-E 'len\([^)]*(Name|Notes)[^)]*\) >'
+prints only `checkManifestBounds`' bound on the manifest's `name`; and `-E
+'len\([^)]*(Name|Notes)[^)]*\) >'
 -- internal/mapdef internal/adventure internal/engine ':!*_test.go'
 ':!*/testdata/*'` prints only the bounds on a session's, a scene's, an
 actor's, an adventure's and a map's name, none on a token's text. `AbilityIds
@@ -213,13 +239,17 @@ tests.
 A string a map, an adventure or a ruleset file carries and its loader does not
 bound is under the same decision: a ruleset's display names, descriptions,
 an ability's among them, expressions, atom ids, param names and graph keys,
-its manifest's id, name and `free_usage_name`,
+its manifest's `free_usage_name`,
 its sheet's page and section names, and its guide; a map's or an adventure's
 `overrides` values and objects'
 `kind` and `art`; a map's or an adventure's placement `name`, `notes`,
 `gm_name` and `gm_notes`; and a map's placement `actor_id`. Where one reaches
-the log, it is only as a field of the tables above. Through
-`/api/ruleset` (SPEC-012), a ruleset's manifest id, name and
+the log, it is only as a field of the tables above. A ruleset's manifest
+id, version and name are not among them: each reaches the log as a field of
+`RulesetNamed` in the first table (SPEC-026), and `checkManifestBounds`
+refuses a manifest whose id or version is longer than `maxIDBytes` or whose
+name is longer than `maxNameBytes` (SPEC-024). Through
+`/api/ruleset` (SPEC-012), a ruleset's manifest
 `free_usage_name` and its conditions' and properties' display names and
 descriptions and its sheet's page and section names reach every
 participant, and an ability's display name and description reach the DM,
@@ -260,7 +290,15 @@ and `TestLoadAcceptsValuesExactlyOnEveryLimit`; `internal/rules/load.go` holds
 its own `maxIDBytes`, for a ruleset's ability and condition ids, its
 property keys and its resolutions' branch labels,
 which `TestTheIDBoundMirrorsEngine` pins to 128, and the ruleset schemas state
-it, which `TestTheSchemasStateTheIDBound` requires; nothing compares any copy
+it, which `TestTheSchemasStateTheIDBound` requires; with it and its own
+`maxNameBytes`, `checkManifestBounds` holds a manifest's id and version to
+128 bytes and its name to 256, which
+`TestARulesetWhoseIDVersionOrNameIsPastItsBoundIsRefused` and
+`TestARulesetWhoseIDVersionAndNameAreAtTheirBoundsLoads` pin, and
+`ruleset.schema.json`'s descriptions state the three, the id's required by
+`TestQAPFSchemasStateTheBoundsLoadEnforces`, the version's by
+`TestTheRulesetSchemaDescribesARequiredVersion` and the name's by no test;
+nothing compares any copy
 with the engine's constants. A map, an adventure or a ruleset over one of them
 is refused at load rather than at the fold, by an error naming the file and
 the field. The MCP `move_token` tool describes its `reason` field as at most
@@ -282,7 +320,8 @@ requires them to state it too. The `add_whisper` tool describes its `text` as
   bound would stop folding.
 - Changing a bound changes its mirrors in the same change: `fold.ts`'s
   literal, `internal/adventure`'s, `internal/mapdef`'s and `internal/rules`'
-  copy where there is one, the ruleset schemas' statement of the id bound, for
+  copy where there is one, the ruleset schemas' statement of the id bound
+  and `ruleset.schema.json`'s of the manifest's version and name, for
   a move's reason the tool's description, for a name the `add_actor` and
   `start_session` descriptions, and for an id the `add_actor` and
   `place_token` descriptions and `add_actor`'s module id, attribute and
@@ -295,18 +334,21 @@ requires them to state it too. The `add_whisper` tool describes its `text` as
 - No field joins the first table unless one of the two tests in How it works
   is met, or it is added with the bound of a key its value becomes, as
   `ResourceAdded.resource` became a key of `Actor.resources` (D2 of
-  `docs/superpowers/plans/2026-11-15-an-ability-is-given-with-its-value.md`).
+  `docs/superpowers/plans/2026-11-15-an-ability-is-given-with-its-value.md`),
+  or it is added with its event, its value copied from a file whose loader
+  holds the same bound, as `RulesetNamed`'s fields are (D2 of
+  `docs/superpowers/plans/2026-11-23-the-log-names-its-ruleset.md`).
   A change that takes away what holds a text in the second table, or
   that lets a role other than the DM and the agent write one, puts that text
   to the tests again.
 - A bound added to a field later refuses every log that already holds a
   longer value, as a lowered bound does; that cost is why a field joins the
   first table only on one of the two tests or as the mirror of a bounded
-  key.
+  key, or as a copy of a value its loader holds to the same bound.
 
 ## Requirements
 
 VTT-264, VTT-265, VTT-266, VTT-274, VTT-275, VTT-276, VTT-277, VTT-278,
 VTT-279, VTT-281, VTT-282, VTT-284, VTT-285, VTT-286, VTT-289, VTT-290,
 VTT-291, VTT-292, VTT-293, VTT-294, VTT-296, VTT-297, VTT-585, VTT-586,
-VTT-624, VTT-625, VTT-770, VTT-866.
+VTT-624, VTT-625, VTT-770, VTT-866, VTT-972, VTT-974.

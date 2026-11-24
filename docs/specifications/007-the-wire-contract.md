@@ -89,7 +89,11 @@ its batch by `TestARemovalRevokesEveryControlTheParticipantHolds` and
 `internal/gateway/remove_participant_test.go`; whom a whisper is to and from,
 by `TestAddWhisperCommandRoundTrip` and `TestWhisperAddedEnvelopeRoundTrip` in
 `contract/roundtrip_test.go`, and its tool by
-`TestAddWhisperSaysWhomItReachesAndHowToAnswer` (VTT-591).
+`TestAddWhisperSaysWhomItReachesAndHowToAnswer` (VTT-591); the ruleset the
+log names, by `TestRulesetNamedEnvelopeRoundTrip` in
+`contract/roundtrip_test.go`, and a take's batch opening with it, by
+`TestATakeNamesTheServedRulesetFirstWhenTheLogNamesNoneOrAnother` in
+`internal/gateway/ruleset_named_test.go` (VTT-988, VTT-992).
 Gated by `task check:drift` and `task check:breaking`, both inside `task
 check`.
 
@@ -219,12 +223,15 @@ is sent of each, SPEC-016's.
 
 A give and a take are each one batch through `campaign.AppendBatch`
 (`handleGiveAbility` and `handleTakeAbility` in
-`internal/gateway/ability_change.go`): the ability event first, then a
-give's `ResourceAdded` per resource it carries, in byte order of the names,
-at the value it carries, or a take's `ResourceRemoved` of the resource
-SPEC-025 says leaves with the ability. Each event of the batch carries the
-issuer's participant id and role (VTT-799), and the result carries the
-batch's first sequence.
+`internal/gateway/ability_change.go`). A take's, with a ruleset served,
+opens with a `RulesetNamed` of it when SPEC-026 says one opens it
+(VTT-988); a give's never does (VTT-990). Then
+comes the ability event, then a give's `ResourceAdded` per resource it
+carries, in byte order of the names, at the value it carries, or a take's
+`ResourceRemoved` of the resource SPEC-025 says leaves with the ability
+(VTT-991). Each event of the batch carries the issuer's participant id and
+role (VTT-799), and the result carries the batch's first sequence, the
+entry's when one opens it (VTT-992).
 
 The `give_ability` and `take_ability` tools require `actorId` and
 `abilityId`, documented as the id of the actor whose sheet changes and the
@@ -251,6 +258,17 @@ hold and an ability its sheet does not name. Each says that each
 player who controls the actor while it is a party member is told
 (VTT-735), which `WatchableChanged` carries (below) and SPEC-022's window
 shows.
+
+### The ruleset the log names
+
+`RulesetNamed`, arm 40 of `Envelope.payload`, carries `ruleset_id`
+(field 1), `version` (field 2) and `name` (field 3): a ruleset's id, its
+version and its display name, as its manifest declares them (SPEC-024). No
+command carries it: `commands.proto` names no `RulesetNamed`. The server
+writes it first in the batch of a
+`use_ability` or a `take_ability`, and into a character log's opening and
+resume; when it is written, what the fold holds after it and who is sent
+it are SPEC-026's, and the bounds on its fields SPEC-018's.
 
 ### Whom a line speaks as
 
@@ -309,7 +327,9 @@ one wins varies with load.
 SO A CLIENT MUST NOT CORRELATE BY ARRIVAL POSITION. Correlate a result by its
 `request_id` and events by their sequence; a result's `sequence` field names the
 first world event that command produced, on every connection, a player's
-included (the owner's ruling "Bara fönstret", 2026-10-19). A player's or a
+included (the owner's ruling "Bara fönstret", 2026-10-19), and for a
+`use_ability` or a `take_ability` whose batch opens with a `RulesetNamed`
+that is the entry's (SPEC-026). A player's or a
 spectator's events are numbered by the character log they watch, so their
 sequences are that log's and never the world's, and each later
 `ViewpointChanged` restarts them at the new log's first entry. On a player's
@@ -548,4 +568,4 @@ VTT-184, VTT-232, VTT-473, VTT-479, VTT-480, VTT-505, VTT-559, VTT-560,
 VTT-561, VTT-562, VTT-563, VTT-567, VTT-591, VTT-674, VTT-700, VTT-701,
 VTT-729, VTT-735, VTT-749, VTT-785, VTT-786, VTT-799, VTT-877, VTT-878,
 VTT-894, VTT-895, VTT-896, VTT-897, VTT-898, VTT-899, VTT-900, VTT-913,
-VTT-926.
+VTT-926, VTT-988, VTT-990, VTT-991, VTT-992.

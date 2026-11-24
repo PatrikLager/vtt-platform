@@ -19,7 +19,7 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `internal/gateway/note_validate.go` (`validateUpsertNote`),
 `internal/gateway/convert.go` (`ToEvent`, `voice`),
 `internal/gateway/ruleset.go` (`handleUseAbility`'s refusal of a use the
-sheet does not name) and
+sheet does not name, and `rulesetNamed` for a take) and
 `internal/gateway/server.go` (`answerCommand`, `authorize`,
 `handleSetViewpoint`, `handleCommand`, `validateForm`, `describeBlockage`,
 `doorSquare`, `reannounceControlChange`),
@@ -37,6 +37,7 @@ with `perceive.SeesActor` and `rules.UnknownTarget` for the sight gate,
 `ability_change_authz_test.go`, `ability_change_internal_test.go`,
 `ability_change_command_test.go`, `qa_ability_change_command_test.go`,
 `ability_value_test.go`, `qa_ability_value_test.go`,
+`ruleset_named_test.go`, `qa_ruleset_named_use_test.go`,
 `add_actor_spend_test.go`, `qa_add_actor_spend_test.go`,
 `use_ability_sheet_test.go`, `qa_use_unnamed_test.go`,
 `note_validate_test.go`, `convert_test.go`, `server_test.go`,
@@ -501,18 +502,24 @@ ability does not spend, a resource the sheet already holds, a resource the
 ability spends carried with no value, and then the fold's refusals
 (VTT-801).
 
-**What the take's handler reads of the snapshot.** With a ruleset served
+**What the take's handler reads of the snapshot.** With a ruleset served,
+`handleTakeAbility` puts first in the batch the `RulesetNamed` that
+`rulesetNamed` gives when the snapshot's log names no ruleset or another id
+or version than the one served (SPEC-026, VTT-988), and none when it names
+the served one's id and version (VTT-989). With a ruleset served
 and an actor the snapshot holds whose sheet names the taken ability,
 `orphanedBy` answers the resource that ability spends when the sheet holds
 it and no other id the sheet names spends it, and `handleTakeAbility`
-appends a `ResourceRemoved` of it after the `AbilityTaken` (VTT-767). With
-none served, or when there is no such resource, the take is the
-`AbilityTaken` alone (VTT-768).
+appends a `ResourceRemoved` of it after the `AbilityTaken` (VTT-991). With
+none served the take is the `AbilityTaken` alone (VTT-768, VTT-989); with
+one served and no such resource, it is the `AbilityTaken` after any
+`RulesetNamed`.
 
 **A give and a take.** A `give_ability` or a `take_ability` that `Authorize`
 and `validateForm` accept, and that its handler does not refuse, is one batch
-whose first envelope is the `AbilityGiven` or `AbilityTaken` `ToEvent` makes,
-carrying the command's actor and ability (SPEC-007), which
+holding the `AbilityGiven` or `AbilityTaken` `ToEvent` makes, first in a
+give's batch and first after any `RulesetNamed` in a take's, carrying the
+command's actor and ability (SPEC-007), which
 `campaign.AppendBatch` folds whole or not at all. The fold's refusals, of an
 actor the campaign does not hold, of a give of an id the sheet already names
 or of an empty id, of a resource the actor already holds, which a give meets
@@ -662,7 +669,7 @@ VTT-344, VTT-379, VTT-463, VTT-472, VTT-482, VTT-487, VTT-495, VTT-496,
 VTT-497, VTT-498, VTT-499, VTT-503, VTT-506, VTT-565, VTT-587, VTT-588,
 VTT-589, VTT-590, VTT-601, VTT-602, VTT-603, VTT-608, VTT-609, VTT-675,
 VTT-677, VTT-690, VTT-716, VTT-718, VTT-746, VTT-747, VTT-750, VTT-761,
-VTT-762, VTT-763, VTT-765, VTT-766, VTT-767, VTT-768, VTT-775, VTT-778,
+VTT-762, VTT-763, VTT-765, VTT-766, VTT-768, VTT-775, VTT-778,
 VTT-800, VTT-801, VTT-867, VTT-868, VTT-880, VTT-891, VTT-892, VTT-894,
 VTT-895, VTT-899, VTT-900, VTT-906, VTT-913, VTT-915, VTT-924, VTT-925,
-VTT-926, VTT-927, VTT-928.
+VTT-926, VTT-927, VTT-928, VTT-988, VTT-989, VTT-991.

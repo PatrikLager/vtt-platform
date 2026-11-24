@@ -38,7 +38,7 @@ actor, both outside the reason it gives for a log it cannot fold, by
 `client/test/feed.test.ts`, `client/test/qa-events-panel.test.ts`,
 `client/test/qa-companion-first-sight.test.ts` and
 `client/test/qa-story-mechanical.test.ts` (VTT-445 to VTT-448, VTT-809,
-VTT-810, VTT-812, VTT-818, VTT-820, VTT-822, VTT-823), and that the Events
+VTT-810, VTT-812, VTT-818, VTT-820, VTT-823, VTT-984), and that the Events
 panel labels a move with its reason, by `client/test/spectator-view.test.ts`,
 `client/test/qa-move-reason.test.ts` and `client/test/qa-events-panel.test.ts`
 (VTT-821); that a player and a spectator are offered the party
@@ -191,6 +191,17 @@ VTT-722, VTT-727); that the fold adds and removes a resource as
 `internal/engine/qa_resource_change_test.go`,
 `cmd/vtt/resource_change_dump_test.go` and
 `cmd/vtt/qa_resource_change_dump_test.go` (VTT-769 to VTT-774); that the
+fold names the ruleset a `rulesetNamed` names as `engine.Apply` does,
+refusals included, and that a log of them dumps as `vtt state dump` prints
+it, by `client/test/fold-ruleset-named.test.ts`,
+`client/test/qa-ruleset-named.test.ts`,
+`client/test/fold-rejections.test.ts` and `client/test/fold-parity.test.ts`,
+beside `internal/engine/ruleset_named_test.go`,
+`cmd/vtt/ruleset_named_dump_test.go` and
+`internal/harness/fold_golden_test.go` (VTT-974, VTT-979, VTT-983,
+VTT-987), and that the Story and the Events panel word it by the ruleset's
+name and its version, by `client/test/spectator-view.test.ts` and
+`client/test/app.test.ts` (VTT-985); that the
 Events panel words a give and a take, by
 `client/test/spectator-view.test.ts` and
 `client/test/qa-ability-change.test.ts` (VTT-813), and a resource added and
@@ -335,7 +346,7 @@ reason it gives for a log it cannot fold (VTT-393; the owner's rulings of
 Every role's window shows the Story, which `renderSpectator` draws with
 `renderFeed` from `buildFeed` (`client/src/view/feed.ts`): the entries of the
 log the window holds that `told` keeps, but the runs `reintroductions` names,
-below (VTT-822).
+below (VTT-984).
 Only a DM's and an agent's window shows the
 Events panel, by the owner's ruling B-3 of 2026-10-22, and the agent counts as
 the DM there, as it does for the DM's console, by the owner's ruling "Ja, som
@@ -358,7 +369,7 @@ that appends (SPEC-011, VTT-906), and `/api/me` answers a player's or a
 spectator's role from the actors they control (SPEC-012, VTT-889), so the
 role the page reads follows control. While the window
 gives the reason it cannot fold its log, that reason is all `paint` draws, so
-neither the Story nor the panel is shown (VTT-446, VTT-822).
+neither the Story nor the panel is shown (VTT-446, VTT-984).
 
 The Story is the game's story, and what is mechanical goes to the Events
 panel, by the owner's rulings of 2026-11-16. `told` reads `STORY` in
@@ -366,8 +377,12 @@ panel, by the owner's rulings of 2026-11-16. `told` reads `STORY` in
 a payload added to the contract fails `task client:typecheck` until the
 table says whether the Story draws it. The Story draws a `sessionStarted`, a
 `sessionEnded`, an `actorAdded`, an `actorRemoved`, a `conditionApplied`, a
-`conditionRemoved`, an `abilityUsed`, an `attackRolled`, a `narrationAdded`
-and a `whisperAdded` (VTT-822), and an envelope with no payload. It draws no
+`conditionRemoved`, an `abilityUsed`, an `attackRolled`, a `narrationAdded`,
+a `whisperAdded` and a `rulesetNamed` (VTT-984), and an envelope with no
+payload; a `rulesetNamed` with no event id is an opening's or a resume's
+(SPEC-021), and the Story draws it too, by the owner's ruling OD-2 of
+2026-11-23, so a player's window shows which ruleset its log names
+(SPEC-026). It draws no
 `resourceChanged`, `abilityGiven`, `abilityTaken`, `resourceAdded` or
 `resourceRemoved` (VTT-809), no `actorControlGranted` or
 `actorControlRevoked` (VTT-810), no `tokenPlaced`, `tokenMoved`,
@@ -558,6 +573,19 @@ and change what `engine.Apply`'s do (SPEC-025), nothing else of the actor or
 the state included (VTT-769 to VTT-773), so the client's fold of a log of
 resources added and removed dumps as `vtt state dump` prints it, its
 refusals included (VTT-774).
+
+Its `rulesetNamed` arm refuses a ruleset id, then a version, then a name
+that is empty or longer than its bound, 128, 128 and 256 bytes (SPEC-018),
+and otherwise sets the state's `RulesetID`, `RulesetVersion` and
+`RulesetName` to the entry's, replacing what they held and changing nothing
+else, as `engine.Apply`'s does (SPEC-026, VTT-974, VTT-979). The three are
+optional fields of `State`, absent until a `rulesetNamed` folds.
+`foldToDumpJSON` writes them under `RulesetID`, `RulesetName` and
+`RulesetVersion`, between `Notes` and `Scenes`, and `JSON.stringify` leaves
+out each that is absent, as Go's `omitempty` leaves out an empty one, so a
+log with no `rulesetNamed` dumps nothing of a ruleset (VTT-987) and the
+client's fold of a log naming rulesets dumps as `vtt state dump` prints it,
+its refusals included (VTT-983).
 
 Its `doorOpened` and `doorClosed` arms refuse a scene the fold does not hold,
 then an event with no position, then a non-empty `actorId` naming an actor
@@ -1037,7 +1065,9 @@ and joined by ", ", then ": " and its text, or its `from_actor_id` so named,
 entry names them, a resource as `Namer.resource` names it, and a condition
 as `Namer.condition` names it: a `conditionApplied` line reads the actor,
 ` gained ` and the condition, and a `conditionRemoved` line ` lost ` in its
-place (VTT-863).
+place (VTT-863). A `rulesetNamed` reads "rules: <name>, version <version>",
+the ruleset's display name and its version as the entry carries them, in
+the Story and on the Events panel alike (VTT-985).
 
 **The console's rewrite.** `renderDMConsole` in `client/src/view/dm.ts` draws,
 when the world holds a token, a "Describe tokens" group with one row per token
@@ -1405,7 +1435,7 @@ VTT-721, VTT-722, VTT-727, VTT-730, VTT-732, VTT-733, VTT-734,
 VTT-737, VTT-752, VTT-753, VTT-758, VTT-759, VTT-769, VTT-770,
 VTT-771, VTT-772, VTT-773, VTT-774, VTT-788, VTT-789, VTT-805,
 VTT-806, VTT-807, VTT-808, VTT-809, VTT-810, VTT-812, VTT-813, VTT-814,
-VTT-815, VTT-816, VTT-817, VTT-818, VTT-820, VTT-821, VTT-822,
+VTT-815, VTT-816, VTT-817, VTT-818, VTT-820, VTT-821,
 VTT-823, VTT-834, VTT-835, VTT-836, VTT-837, VTT-838, VTT-839, VTT-840,
 VTT-841, VTT-842, VTT-843, VTT-844, VTT-845, VTT-846, VTT-854, VTT-855,
 VTT-862, VTT-863, VTT-864, VTT-865, VTT-866, VTT-871, VTT-872, VTT-876,
@@ -1414,4 +1444,5 @@ VTT-901, VTT-902, VTT-903, VTT-904, VTT-905, VTT-917, VTT-918,
 VTT-920, VTT-932, VTT-933, VTT-934, VTT-935, VTT-936, VTT-937, VTT-938,
 VTT-939, VTT-940, VTT-947, VTT-948, VTT-950, VTT-951, VTT-952, VTT-953,
 VTT-954, VTT-955, VTT-956, VTT-957, VTT-958, VTT-959, VTT-960, VTT-961,
-VTT-962, VTT-963, VTT-964, VTT-965, VTT-966, VTT-967, VTT-968, VTT-969.
+VTT-962, VTT-963, VTT-964, VTT-965, VTT-966, VTT-967, VTT-968, VTT-969,
+VTT-974, VTT-979, VTT-983, VTT-984, VTT-985, VTT-987.

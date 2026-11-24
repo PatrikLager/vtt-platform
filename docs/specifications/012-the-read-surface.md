@@ -7,7 +7,7 @@ Accepted. Implemented by `internal/gateway/metadata.go` (`authed`,
 `handleRulesetGuide`, `handleAdventures`, `handleAdventureGuide`,
 `handleMaps`, `handleArtFile`, `adventureGuideRoles`, `rulesetGuideRoles`,
 `artContentTypes`, `DefaultCellPx`, `WithAdventureGuides`),
-`internal/gateway/ruleset.go` (`handleUseAbility`),
+`internal/gateway/ruleset.go` (`handleUseAbility`, `rulesetNamed`),
 `internal/gateway/adventure.go` (`handleLoadAdventure`) and
 `internal/gateway/server.go` (the `ruleset`, `roller`, `adventures` and
 `adventureGuides` fields of `Server`, `WithRuleset`, `WithAdventures`;
@@ -20,7 +20,8 @@ through `readMetadata` in `internal/mcp/door_tools.go`; pinned by
 `adventure_test.go`, `ruleset_test.go`, `ruleset_properties_test.go`,
 `qa_ruleset_route_test.go`, `ruleset_by_role_test.go`,
 `qa_ruleset_by_role_test.go`, `use_ability_sheet_test.go`,
-`qa_use_unnamed_test.go`, `artfile_internal_test.go`,
+`qa_use_unnamed_test.go`, `ruleset_named_test.go`,
+`qa_ruleset_named_use_test.go`, `artfile_internal_test.go`,
 `qa_art_root_test.go`, `sheet_route_test.go`, `qa_sheet_route_test.go`,
 `ability_description_route_test.go`,
 `qa_ability_description_route_test.go`,
@@ -280,12 +281,18 @@ called only in `handleArtFile`, and of its calls into `mapdef`, `adventure`,
 takes `st := s.campaign.State()`, and passes that snapshot to
 `handleUseAbility` (`rules.Resolve(s.ruleset, st, cmd, s.roller)`, once the
 sheet's refusal below has passed) or `handleLoadAdventure`
-(`adventure.Compile(adv, st)`). Each stamps the fields the compile leaves
+(`adventure.Compile(adv, st)`). `handleUseAbility` then puts first in the
+batch `Resolve` returns the `RulesetNamed` that `rulesetNamed` gives for
+that snapshot, when SPEC-026 says one opens a use's batch (VTT-975). Each
+stamps every event of its batch, that
+entry included, with the fields the compile leaves
 zero, `EventId` from `newEventID`, `ParticipantId`, `ActorRole` and
-`OccurredAt`, because `store.AppendBatch` requires an `EventId`, and appends
+`OccurredAt`, because `store.AppendBatch` requires an `EventId`, and the
+entry names its issuer (VTT-976); and each appends
 the whole batch with `campaign.AppendBatch`, which persists all of it or
 none. The result carries the first sequence of the batch, the convention
-SPEC-007 states for every command, and `handleLoadAdventure`'s carries the
+SPEC-007 states for every command, which is the entry's when one opens a
+use's batch, and `handleLoadAdventure`'s carries the
 compile's `Warnings` for the issuer; nothing broadcasts a warning. Every
 failure is an ok=false `CommandResult` on a connection that stays open: no
 ruleset (`gateway: no ruleset loaded`), the sheet's refusal of a use
@@ -351,4 +358,4 @@ VTT-129, VTT-130, VTT-131, VTT-132, VTT-133, VTT-134, VTT-135, VTT-136,
 VTT-137, VTT-578, VTT-581, VTT-619, VTT-620, VTT-621, VTT-631, VTT-632,
 VTT-633, VTT-682, VTT-691, VTT-692, VTT-693, VTT-694, VTT-702, VTT-709,
 VTT-710, VTT-711, VTT-831, VTT-832, VTT-833, VTT-851, VTT-852, VTT-853,
-VTT-859, VTT-860, VTT-889.
+VTT-859, VTT-860, VTT-889, VTT-975, VTT-976.

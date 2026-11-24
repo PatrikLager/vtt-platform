@@ -6,7 +6,8 @@ Accepted. Implemented by `internal/campaign/fanout.go`
 (`CharacterEntry`, `characterLog`, `causedEntry`, `CharacterLog`, `eyesOf`,
 `isPartyMember`, `loadCharacterLogsLocked`, `fanOutLocked`, `logIDs`,
 `trial`, `appendEntries`, `reanchor`, `record`, `resume`, `resumeScan`,
-`resumesOf`, `observe`, `restartDecisionsLocked`, `opening`, `openSession`)
+`resumesOf`, `observe`, `restartDecisionsLocked`, `opening`, `rulesetNamed`,
+`openSession`)
 and `internal/campaign/campaign.go` (`rebuildLocked`, `foldEvents`,
 `Campaign.appendLocked`, `Campaign.SubscribeCharacter`,
 `Campaign.WatchAppends`, `Campaign.Actors`, `Campaign.Close`),
@@ -33,7 +34,8 @@ Pinned by `internal/store/character_log_test.go`,
 `append_watch_test.go`, `qa_append_watch_test.go`,
 `every_log_told_test.go`, `character_log_oracle_test.go`,
 `ability_reopen_test.go`, `qa_ability_reopen_test.go`,
-`resource_reopen_test.go` and `poison_internal_test.go`, by
+`resource_reopen_test.go`, `ruleset_named_log_test.go`,
+`qa_ruleset_named_log_test.go` and `poison_internal_test.go`, by
 `internal/perceive/resume_from_fold_test.go`, and, for a creature a player
 runs, by `internal/gateway/creature_test.go`, `qa_creature_test.go`,
 `grantee_test.go` and `qa_grantee_test.go`, `tools/toolgen/main_test.go` and
@@ -77,9 +79,12 @@ active decision from its log and the world it is in
 (`restartDecisionsLocked`, VTT-325).
 
 **The opening.** A log opens before the frames of the first event after which
-its actor is a party member while its log is empty (VTT-663). It opens with
+its actor is a party member while its log is empty (VTT-981). It opens with
 the present as the world stood before that event: the open session's
-`SessionStarted`, with that session's id and name; then each party member, as
+`SessionStarted`, with that session's id and name; then, when that world
+names a ruleset, a `RulesetNamed` of the id, version and name it last names
+(SPEC-026), the opening's first entry when no session is open; then each
+party member, as
 `Perch` through no eyes introduces it (SPEC-016, VTT-658); then a
 `NoteUpserted` for each public note, by key. Nothing appended earlier is
 forwarded into it. Its decision starts from nothing seen
@@ -97,12 +102,16 @@ stored logs, and from a landed append (`Campaign.appendLocked`).
 **A pause and a resume.** A log whose actor is not a party member after an
 event, through a grant of another kind or the actor's removal, is paused: it
 keeps what it has and is written nothing. When the actor is a party member
-again, the log resumes without a second opening (VTT-318). Its first entries
+again, the log resumes without a second opening (VTT-982). Its first entries
 end the session it holds open if the world, before the resuming event, holds
 another or none, and start the world's open session, with its id and name, if
 the log holds none or another; sessions that opened and closed during the
-pause are not in the log. Then a `TokenHidden` for every token the log holds,
-by id. Its decision starts from nothing seen, so the frames for the resuming
+pause are not in the log. Then, when that world names a ruleset and the log's
+fold names none or another id or version, a `RulesetNamed` of the world's
+(SPEC-026); a fold that names the world's id and version is written none,
+and keeps the name it holds. Then a `TokenHidden` for every token the log
+holds, by id. Its decision starts from nothing seen, so the frames for the
+resuming
 event place what it sees on its present square and correct each held actor in
 sight, or withdraw and introduce afresh one that is reshaped (SPEC-016). A
 new actor added under an old id continues that id's log, and is withdrawn and
@@ -124,9 +133,9 @@ other actor: its kind is the last one stated for it, by its `ActorAdded` or by
 a grant, which writes it even when the participant already controls the actor
 (VTT-391), and a revocation alone leaves a party member a party member
 (VTT-392). Its log is therefore a party member's: it opens at the first event
-after which the creature is a party member (VTT-663), is paused by an event
+after which the creature is a party member (VTT-981), is paused by an event
 after which it is not, the non-party grant or the removal (VTT-316), and
-resumes without a second opening when it is one again (VTT-318).
+resumes without a second opening when it is one again (VTT-982).
 `grant_actor_control`'s `kind` tells the agent to grant such a creature
 `ACTOR_KIND_PARTY_MEMBER`, and to end the run by revoking the player before
 making it non-party (VTT-931); `revoke_actor_control`'s description tells it to
@@ -239,11 +248,13 @@ bound by these:
   through the new one's events, though each of them carries the new
   session's id.
 - A paused log misses every narration and every public note made during the
-  pause, and every session that opened and closed in it.
+  pause, and every session that opened and closed in it; of the rulesets the
+  world named during it, its resume brings the last one alone, and none when
+  its fold already names that one's id and version.
 - A creature possessed a second time resumes the log of the first
-  possession (VTT-318).
+  possession (VTT-982).
 - A creature added under the id of an earlier, removed actor continues that
-  actor's log, if it had one, once it is a party member (VTT-318). Of an id
+  actor's log, if it had one, once it is a party member (VTT-982). Of an id
   an actor has had, `engine.Apply` and `adventure.Compile` refuse only one a
   live actor holds (`grep -rn 'already exists", a.ActorId\|collides with an
   existing actor' --include='*.go' internal cmd tools | grep -v _test.go`):
@@ -277,8 +288,8 @@ bound by these:
 
 ## Requirements
 
-VTT-315, VTT-316, VTT-318, VTT-319, VTT-320, VTT-321, VTT-322, VTT-323,
+VTT-315, VTT-316, VTT-319, VTT-320, VTT-321, VTT-322, VTT-323,
 VTT-324, VTT-325, VTT-326, VTT-327, VTT-328, VTT-329, VTT-330, VTT-331,
 VTT-332, VTT-333, VTT-334, VTT-335, VTT-336, VTT-337, VTT-353, VTT-354,
 VTT-355, VTT-356, VTT-357, VTT-371, VTT-372, VTT-373, VTT-390, VTT-391,
-VTT-392, VTT-663, VTT-909, VTT-931.
+VTT-392, VTT-909, VTT-931, VTT-980, VTT-981, VTT-982.

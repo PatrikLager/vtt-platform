@@ -28,7 +28,8 @@ pinned by `internal/perceive/board_test.go`, `roster_test.go`,
 `qa_ability_correction_test.go`, `resource_event_internal_test.go`,
 `resource_correction_test.go`, `qa_resource_forward_test.go`,
 `qa_resource_correction_test.go`, `qa_sees_actor_test.go`,
-`door_opener_test.go` and `qa_door_opener_test.go`, through the
+`door_opener_test.go`, `qa_door_opener_test.go`,
+`ruleset_named_internal_test.go` and `qa_ruleset_named_test.go`, through the
 harness in `viewer_test.go`, by
 `internal/campaign/character_log_oracle_test.go`, `every_log_told_test.go`,
 `whisper_test.go`, `qa_whisper_test.go`, `qa_append_watch_test.go`,
@@ -307,9 +308,11 @@ board. `squareKey` builds the key `sight.VisibleFrom` builds, column then row.
 
 **How each payload is ruled.** `classify` runs before `transitions`, so the
 board, roster and `sighted` it reads are the viewer's before the event, and
-the look is the one after it. It forwards `SessionStarted`, `SessionEnded` and
-`NarrationAdded` whatever the eyes see, so every active character log is
-written them (VTT-362, VTT-363); narration is addressed to the table, and
+the look is the one after it. It forwards `SessionStarted`, `SessionEnded`,
+`RulesetNamed` and `NarrationAdded` whatever the eyes see, so every active
+character log is written them (VTT-362, VTT-363, VTT-980); which ruleset
+the log names is told to the table, by the owner's ruling of 2026-11-23
+(SPEC-026); narration is addressed to the table, and
 `add_narration` is open to the player, the DM and the agent (SPEC-013). A line
 out of character names its sender in `as`, by display name and never by
 participant id, so every active character log is sent who said it, by the
@@ -384,7 +387,7 @@ comes into sight. Its one production caller is the fan-out's `opening` (`grep
 `fanout.go`), which perches a fresh projection through no eyes onto an empty
 fold at sequence 0 and so introduces exactly the party, each party member as
 `unseenAs` gives it, with its controllers behind it and no condition
-(VTT-658, VTT-663; SPEC-021). So a log that opens for an actor already a
+(VTT-658, VTT-981; SPEC-021). So a log that opens for an actor already a
 party member before its event holds its own character, until that event's
 frames, as it holds a party member its eyes do not see, and those frames,
 through the log's own eyes, bring it whole: by a withdrawal and an
@@ -579,4 +582,4 @@ VTT-364, VTT-365, VTT-462, VTT-465, VTT-466, VTT-467, VTT-468, VTT-469,
 VTT-478, VTT-481, VTT-486, VTT-488, VTT-582, VTT-583, VTT-584, VTT-658,
 VTT-660, VTT-664, VTT-698, VTT-724, VTT-738, VTT-741, VTT-742, VTT-743,
 VTT-744, VTT-755, VTT-779, VTT-780, VTT-781, VTT-782, VTT-783, VTT-784,
-VTT-793, VTT-796, VTT-869, VTT-870.
+VTT-793, VTT-796, VTT-869, VTT-870, VTT-980.

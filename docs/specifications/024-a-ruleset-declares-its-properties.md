@@ -3,12 +3,13 @@
 ## Status
 
 Accepted. Implemented by `internal/rules/format.go` (`Property`,
-`PropertyNumber`, `PropertyResource`, `ResourceDef`, `Ruleset.Properties`,
+`PropertyNumber`, `PropertyResource`, `ResourceDef`, `Ruleset.Version`,
+`Ruleset.Properties`,
 `Ruleset.Property`, `Ruleset.Sheet`, `SheetPage`, `SheetSection`,
 `ShownUsage`, `Ruleset.FreeUsageName`, `CompiledPower.Description`),
 `internal/rules/load.go` (`formatVersion`,
 `formatVersionWant`, `checkFormatVersion`, `loadManifest`, `decodeStrict`,
-`checkPropertyKey`, `loadProperty`, `loadResourceDef`,
+`checkPropertyKey`, `loadProperty`, `loadResourceDef`, `maxNameBytes`,
 `checkManifestBounds`, `propertyTypes`, `checkPropertyRef`,
 `checkExprRefs`, `crossValidateResources`, `loadAtoms`,
 `validParamKinds`, `checkSheet`, `ShownUsage.UnmarshalJSON`,
@@ -21,6 +22,8 @@ and the schemas `internal/rules/schema/ruleset.schema.json`,
 `internal/rules/qa_property_format_test.go`, `internal/rules/load_test.go`,
 `internal/rules/schema_test.go`, `internal/rules/declared_sheet_test.go`,
 `internal/rules/qa_declared_sheet_test.go`,
+`internal/rules/ruleset_version_test.go`,
+`internal/rules/qa_ruleset_version_test.go`,
 `internal/rules/ability_description_test.go`,
 `internal/rules/qa_ability_description_test.go`,
 `internal/rules/conformance/conformance_test.go` and
@@ -31,7 +34,7 @@ against the properties is SPEC-025.
 
 ## Principles served
 
-Principles 13, 23, 24, 25, 27 and 35 of `docs/blueprint.md`:
+Principles 13, 23, 24, 25, 27, 28 and 35 of `docs/blueprint.md`:
 
 - **13.** Every property has a display name and an explanation, so whoever is
   shown it can be told it in the table's words.
@@ -44,9 +47,11 @@ Principles 13, 23, 24, 25, 27 and 35 of `docs/blueprint.md`:
 - **25.** A key a ruleset reads that no property declares, or reads as the
   other type, is refused when the ruleset loads, with the file, the field
   and the key named, and so is a declared `sheet` that does not fit the
-  ruleset.
+  ruleset, and a manifest whose id, version or name the log could not carry.
 - **27.** A declared `sheet`'s sections name property keys and usages, never
   an ability, so an ability the ruleset adds stands in its usage's section.
+- **28.** Every ruleset declares its own version, which the log names before
+  the outcomes the ruleset decides (SPEC-026).
 - **35.** Each property carries its own explanation, which is served to
   every participant, and an ability may carry the ruleset's description of
   it, which is served with the ability (SPEC-012).
@@ -54,20 +59,21 @@ Principles 13, 23, 24, 25, 27 and 35 of `docs/blueprint.md`:
 ## How it works
 
 **The manifest.** A ruleset's `ruleset.json` holds `id`, `name`,
-`format_version`, `properties` and, optionally, `sheet` and
+`format_version`, `version`, `properties` and, optionally, `sheet` and
 `free_usage_name`. `loadManifest`
 decodes it with `decodeStrict`, which refuses a field the format does not
 know, in the manifest, in a property or in the sheet, as `rules: <path>:
 json: unknown field "<field>"`, in a usage after `invalid shown usage
 object: `; `encoding/json` matches a field's name
 without regard to case, so a case variant of a defined field is read as it
-(VTT-861).
+(VTT-973).
 Every other refusal of a ruleset below has the form `rules: <path>: field
 "<field>": <message>`, which `fieldErr` writes. `<path>` is the file's path
 as it was loaded, except that `crossValidateResources`' refusals name
 `ruleset.json` alone.
 
-**The version, read first.** Before the strict decode, `loadManifest` reads
+**The format version, read first.** Before the strict decode,
+`loadManifest` reads
 `format_version` alone, when the whole file parses as one JSON object or as
 `null`, through `checkFormatVersion`; a file that is `null` reads as one with
 no `format_version`, and any other file is left to `decodeStrict`.
@@ -78,6 +84,23 @@ with `is absent: ` and `formatVersionWant`, any other value with
 `formatVersionWant` says that this loader reads format `"3"`, which declares
 every property under `properties` with its key, type, name and description,
 and names `docs/adr/012-the-rules-contract.md` (VTT-616).
+
+**The ruleset's id, name and version.** `id` and `name` are the ruleset's
+id and display name, and `version` is the ruleset's own version, not the
+format's: free text its author declares and keeps true. After the strict
+decode `loadManifest` refuses each of the three absent, `null` or empty, in
+that order, as `field "<field>": must not be empty`, and `rules.Load` keeps
+them as written as `Ruleset.ID`, `Ruleset.Name` and `Ruleset.Version`
+(VTT-970, VTT-971). `checkManifestBounds` then refuses an `id` or a
+`version` longer than `maxIDBytes` and a `name` longer than `maxNameBytes`,
+in that order, each as `field "<field>": must be at most <bound> bytes, got
+<length>`, before it reads a property key (VTT-972); the bounds are the
+ones the log's entry naming the ruleset has (SPEC-018, SPEC-026).
+`ruleset.schema.json` lists `version` as required, a string of at least one
+character whose description states its bound (VTT-986), and the
+descriptions of `id` and `name` state theirs (VTT-625 for the id).
+`rulesets/dnd45e-minimal` and `rulesets/tavern-brawl` each declare
+`"version": "1"`. What the log makes of the version is SPEC-026's.
 
 **A property.** Each entry of `properties` holds `key`, `type`, `name` and
 `description`. `rules.Ruleset.Properties` keeps them in the order the file
@@ -210,6 +233,9 @@ them.
   refused on its `format_version` before any other field is read, so its
   author is told which format this loader reads rather than which field is
   unknown.
+- A `ruleset.json` without a `version` is refused, so every ruleset an
+  operator serves names one; a correction its author makes without
+  changing it is served as the same version (SPEC-026).
 - A new type of property needs a change to `loadProperty` and the schema,
   and a new field on a property, a visibility among them, a change to the
   loader and the schema, since the strict decode refuses a field it does not
@@ -234,4 +260,4 @@ them.
 VTT-610, VTT-611, VTT-612, VTT-613, VTT-614, VTT-615, VTT-616, VTT-626,
 VTT-628, VTT-629, VTT-630, VTT-824, VTT-825, VTT-826, VTT-827, VTT-828,
 VTT-829, VTT-847, VTT-848, VTT-849, VTT-850, VTT-856, VTT-857, VTT-858,
-VTT-861.
+VTT-970, VTT-971, VTT-972, VTT-973, VTT-986.
