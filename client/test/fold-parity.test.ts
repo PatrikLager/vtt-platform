@@ -30,7 +30,7 @@ test("the corpus is not empty", () => {
   expect(scenarios.length).toBeGreaterThan(0);
 });
 
-// VTT-727
+// VTT-727 VTT-983
 for (const name of scenarios) {
   test(`fold parity: ${name}`, () => {
     const streamRaw = readFileSync(join(goldensDir, name, "stream.json"), "utf8");

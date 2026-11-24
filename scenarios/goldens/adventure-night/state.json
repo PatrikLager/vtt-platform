@@ -95,6 +95,9 @@
       "Visibility": 1
     }
   },
+  "RulesetID": "dnd45e-minimal",
+  "RulesetName": "D\u0026D 4.5e (Minimal)",
+  "RulesetVersion": "1",
   "Scenes": {
     "ravine": {
       "ID": "ravine",
@@ -5256,5 +5259,5 @@
       "Y": 0
     }
   },
-  "headSequence": 13
+  "headSequence": 14
 }

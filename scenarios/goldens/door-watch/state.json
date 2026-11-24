@@ -92,11 +92,14 @@
       {
         "ID": "dazed-by-ale",
         "Source": "threshold:drink",
-        "AppliedSeq": 11
+        "AppliedSeq": 12
       }
     ]
   },
   "Notes": {},
+  "RulesetID": "tavern-brawl",
+  "RulesetName": "Tavern Brawl",
+  "RulesetVersion": "1",
   "Scenes": {
     "door-hall": {
       "ID": "door-hall",
@@ -151,7 +154,7 @@
       "ID": "sess-1",
       "Name": "Door Watch",
       "StartSeq": 1,
-      "EndSeq": 18
+      "EndSeq": 19
     }
   ],
   "Tokens": {
@@ -177,5 +180,5 @@
       "Y": 0
     }
   },
-  "headSequence": 18
+  "headSequence": 19
 }

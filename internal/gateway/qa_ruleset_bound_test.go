@@ -448,10 +448,14 @@ func TestQARuleAUseWhoseIDsAreAtTheBoundIsRecordedWhole(t *testing.T) {
 			dm := qaRuleDial(t, tb, tb.dmToken)
 			qaRuleBoard(t, dm, nil, c.id)
 			res := qaRuleOK(t, dm, qaRuleUse("use", c.id), 4)
-			if got := dm.event(res.GetSequence()).GetAbilityUsed().GetAbilityId(); got != c.id {
+			seq := res.GetSequence()
+			for dm.event(seq).GetAbilityUsed() == nil {
+				seq++
+			}
+			if got := dm.event(seq).GetAbilityUsed().GetAbilityId(); got != c.id {
 				t.Fatalf("recorded ability id is %d bytes, sent %d", len(got), len(c.id))
 			}
-			if got := dm.event(res.GetSequence() + 1).GetConditionApplied().GetConditionId(); got != c.id {
+			if got := dm.event(seq + 1).GetConditionApplied().GetConditionId(); got != c.id {
 				t.Fatalf("recorded condition id is %d bytes, want %d", len(got), len(c.id))
 			}
 		})

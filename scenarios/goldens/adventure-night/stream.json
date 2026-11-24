@@ -4306,6 +4306,17 @@
     "sequence": "12",
     "actorRole": "dm",
     "participantId": "p-dm",
+    "rulesetNamed": {
+      "rulesetId": "dnd45e-minimal",
+      "version": "1",
+      "name": "D\u0026D 4.5e (Minimal)"
+    }
+  },
+  {
+    "eventId": "evt-13",
+    "sequence": "13",
+    "actorRole": "dm",
+    "participantId": "p-dm",
     "abilityUsed": {
       "actorId": "act-fighter",
       "abilityId": "rally",
@@ -4316,23 +4327,23 @@
         {
           "expression": "(1d6 + @target.con)",
           "results": [
-            4
+            3
           ],
-          "total": 7
+          "total": 6
         }
       ],
       "outcomeSummary": "Rally on act-fighter"
     }
   },
   {
-    "eventId": "evt-13",
-    "sequence": "13",
+    "eventId": "evt-14",
+    "sequence": "14",
     "actorRole": "dm",
     "participantId": "p-dm",
     "resourceChanged": {
       "actorId": "act-fighter",
       "resource": "hp",
-      "delta": 7,
+      "delta": 6,
       "newValue": 28,
       "reason": "ability:rally:effect"
     }

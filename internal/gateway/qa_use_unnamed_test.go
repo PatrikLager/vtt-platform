@@ -302,9 +302,14 @@ func qaUseResolved(t *testing.T, tb *qaUseTable, q *qaUseConn, actor, ability st
 		t.Errorf("use %s %s: ok, but nothing appended", actor, ability)
 		return
 	}
-	used := evs[0].GetAbilityUsed()
+	var used *vttv1.AbilityUsed
+	for _, e := range evs {
+		if used = e.GetAbilityUsed(); used != nil {
+			break
+		}
+	}
 	if used.GetActorId() != actor || used.GetAbilityId() != ability {
-		t.Errorf("use %s %s: first appended event %v, want its AbilityUsed", actor, ability, evs[0])
+		t.Errorf("use %s %s: appended %v, want its AbilityUsed", actor, ability, evs)
 	}
 }
 

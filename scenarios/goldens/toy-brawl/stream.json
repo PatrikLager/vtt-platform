@@ -249,6 +249,18 @@
     "sessionId": "sess-1",
     "actorRole": "player",
     "participantId": "p-brawler",
+    "rulesetNamed": {
+      "rulesetId": "tavern-brawl",
+      "version": "1",
+      "name": "Tavern Brawl"
+    }
+  },
+  {
+    "eventId": "evt-10",
+    "sequence": "10",
+    "sessionId": "sess-1",
+    "actorRole": "player",
+    "participantId": "p-brawler",
     "abilityUsed": {
       "actorId": "act-brawler",
       "abilityId": "fists",
@@ -259,24 +271,24 @@
         {
           "expression": "1d20 + @caster.brawn",
           "results": [
-            12
+            11
           ],
-          "total": 15
+          "total": 14
         }
       ],
-      "outcomeSummary": "Fists on act-patron: hit (15 vs 0)",
+      "outcomeSummary": "Fists on act-patron: hit (14 vs 0)",
       "outcomes": [
         {
           "targetId": "act-patron",
           "result": "hit",
-          "total": 15
+          "total": 14
         }
       ]
     }
   },
   {
-    "eventId": "evt-10",
-    "sequence": "10",
+    "eventId": "evt-11",
+    "sequence": "11",
     "sessionId": "sess-1",
     "actorRole": "player",
     "participantId": "p-brawler",
@@ -289,8 +301,8 @@
     }
   },
   {
-    "eventId": "evt-11",
-    "sequence": "11",
+    "eventId": "evt-12",
+    "sequence": "12",
     "sessionId": "sess-1",
     "actorRole": "player",
     "participantId": "p-brawler",
@@ -301,8 +313,8 @@
     }
   },
   {
-    "eventId": "evt-12",
-    "sequence": "12",
+    "eventId": "evt-13",
+    "sequence": "13",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -313,23 +325,12 @@
     }
   },
   {
-    "eventId": "evt-13",
-    "sequence": "13",
-    "sessionId": "sess-1",
-    "actorRole": "dm",
-    "participantId": "p-dm",
-    "abilityTaken": {
-      "actorId": "act-patron",
-      "abilityId": "sober-up"
-    }
-  },
-  {
     "eventId": "evt-14",
     "sequence": "14",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
-    "abilityGiven": {
+    "abilityTaken": {
       "actorId": "act-patron",
       "abilityId": "sober-up"
     }
@@ -340,14 +341,25 @@
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
+    "abilityGiven": {
+      "actorId": "act-patron",
+      "abilityId": "sober-up"
+    }
+  },
+  {
+    "eventId": "evt-16",
+    "sequence": "16",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
     "abilityTaken": {
       "actorId": "act-patron",
       "abilityId": "chair-swing"
     }
   },
   {
-    "eventId": "evt-16",
-    "sequence": "16",
+    "eventId": "evt-17",
+    "sequence": "17",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -357,8 +369,8 @@
     }
   },
   {
-    "eventId": "evt-17",
-    "sequence": "17",
+    "eventId": "evt-18",
+    "sequence": "18",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -368,8 +380,8 @@
     }
   },
   {
-    "eventId": "evt-18",
-    "sequence": "18",
+    "eventId": "evt-19",
+    "sequence": "19",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -383,8 +395,8 @@
     }
   },
   {
-    "eventId": "evt-19",
-    "sequence": "19",
+    "eventId": "evt-20",
+    "sequence": "20",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",

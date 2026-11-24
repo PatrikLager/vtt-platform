@@ -85,6 +85,29 @@ func TestACampaignWhoseSheetsFitTheRulesetIsServed(t *testing.T) {
 	}
 }
 
+// VTT-977
+func TestACampaignWhoseLogNamesAnotherRulesetIsServed(t *testing.T) {
+	dir := writeFitCampaign(t, &vttv1.Actor{ActorId: "fit", Attributes: map[string]int32{"brawn": 2}})
+	c, err := campaign.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Append(&vttv1.Envelope{EventId: "named", Payload: &vttv1.Envelope_RulesetNamed{
+		RulesetNamed: &vttv1.RulesetNamed{RulesetId: "other-rules", Version: "1", Name: "Other Rules"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, closeFn, err := composeServer(dir, "127.0.0.1:0", fitRulesetDir, "")
+	if err != nil {
+		t.Fatalf("a campaign whose log names another ruleset id was refused: %v", err)
+	}
+	if err := closeFn(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // VTT-676
 func TestACampaignIsServedWithNoRulesetWhateverKeysItsActorsHold(t *testing.T) {
 	_, closeFn, err := composeServer(misfitCampaign(t), "127.0.0.1:0", "", "")

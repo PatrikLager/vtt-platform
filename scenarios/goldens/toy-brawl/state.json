@@ -63,6 +63,9 @@
     "act-patron": []
   },
   "Notes": {},
+  "RulesetID": "tavern-brawl",
+  "RulesetName": "Tavern Brawl",
+  "RulesetVersion": "1",
   "Scenes": {
     "scn-tavern": {
       "ID": "scn-tavern",
@@ -205,7 +208,7 @@
       "ID": "sess-1",
       "Name": "Toy Brawl",
       "StartSeq": 1,
-      "EndSeq": 19
+      "EndSeq": 20
     }
   ],
   "Tokens": {
@@ -224,5 +227,5 @@
       "Y": 0
     }
   },
-  "headSequence": 19
+  "headSequence": 20
 }

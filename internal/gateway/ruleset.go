@@ -28,9 +28,12 @@ func (s *Server) handleUseAbility(requestID string, cmd *vttv1.UseAbility, st *e
 	if err != nil {
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
+	if entry := s.rulesetNamed(st); entry != nil {
+		envs = append([]*vttv1.Envelope{entry}, envs...)
+	}
 
-	// Stamp the four fields Resolve leaves zero: store.AppendBatch requires an
-	// EventId (SPEC-012).
+	// Stamp what Resolve and rulesetNamed leave zero: the store needs an EventId
+	// (SPEC-012), and the entry names its issuer (VTT-976).
 	now := timestamppb.Now()
 	for _, env := range envs {
 		id, err := newEventID()
@@ -48,4 +51,14 @@ func (s *Server) handleUseAbility(requestID string, cmd *vttv1.UseAbility, st *e
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq}
+}
+
+// Prepend its entry to each rules.Resolve batch; needs s.ruleset (SPEC-026).
+func (s *Server) rulesetNamed(st *engine.State) *vttv1.Envelope {
+	rs := s.ruleset
+	if st.RulesetID == rs.ID && st.RulesetVersion == rs.Version {
+		return nil
+	}
+	return &vttv1.Envelope{Payload: &vttv1.Envelope_RulesetNamed{RulesetNamed: &vttv1.RulesetNamed{
+		RulesetId: rs.ID, Version: rs.Version, Name: rs.Name}}}
 }

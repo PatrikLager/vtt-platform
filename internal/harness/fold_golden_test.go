@@ -32,7 +32,7 @@ import (
 // So this test is not a tautology: it checks a machine-captured input
 // against a human-derived expectation. If the recording were wrong, folding
 // it would not reproduce a state derived without looking at it.
-// VTT-727
+// VTT-727 VTT-983
 func TestFoldGoldenCorpus(t *testing.T) {
 	dirs := goldenDirs(t)
 

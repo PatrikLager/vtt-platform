@@ -245,15 +245,8 @@ func TestUseAbilityNoRulesetLoadedCleanError(t *testing.T) {
 	}
 }
 
-// TestUseAbilityHitProducesBatchFirstSequence is the wiring payoff: fists
-// against patron (footing=0, guaranteed hit regardless of the crypto
-// Roller's actual d20 draw — see newRulesetFixture's doc comment) produces
-// an ok=true CommandResult carrying the FIRST sequence of the batch
-// (AbilityUsed, then the hit's ResourceChanged on patron's drink, then the
-// drink threshold's ConditionApplied — tavern-brawl's own ruleset.json/
-// fists.json, read verbatim, not re-derived here), and every one of those
-// events reaches a second, uninvolved connection (the DM's) as broadcasts.
-// VTT-137
+// Keep patron's footing at 0 (newRulesetFixture): a miss changes the batch.
+// VTT-137 VTT-975
 func TestUseAbilityHitProducesBatchFirstSequence(t *testing.T) {
 	f := newRulesetFixture(t, true)
 	brawlerConn := f.dial(f.brawlerToken, 0)
@@ -272,12 +265,7 @@ func TestUseAbilityHitProducesBatchFirstSequence(t *testing.T) {
 			firstSeq, want, rfSeedHead)
 	}
 
-	// Collect the whole batch off the DM's connection (an uninvolved
-	// broadcast recipient) by sequence, in order: AbilityUsed(7),
-	// ResourceChanged(8), ConditionApplied(9) — tavern-brawl's fists.json
-	// hit list is exactly one resource_change, and its drink threshold
-	// (ruleset.json) fires unconditionally once drink becomes non-zero.
-	wantKinds := []string{"abilityUsed", "resourceChanged", "conditionApplied"}
+	wantKinds := []string{"rulesetNamed", "abilityUsed", "resourceChanged", "conditionApplied"}
 	for i, want := range wantKinds {
 		env := readEvent(t, dmConn)
 		if env.Sequence != firstSeq+int64(i) {
@@ -295,6 +283,8 @@ func TestUseAbilityHitProducesBatchFirstSequence(t *testing.T) {
 // assertions without importing reflection machinery.
 func payloadKind(env *vttv1.Envelope) string {
 	switch env.Payload.(type) {
+	case *vttv1.Envelope_RulesetNamed:
+		return "rulesetNamed"
 	case *vttv1.Envelope_AbilityUsed:
 		return "abilityUsed"
 	case *vttv1.Envelope_ResourceChanged:

@@ -177,6 +177,18 @@
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
+    "rulesetNamed": {
+      "rulesetId": "tavern-brawl",
+      "version": "1",
+      "name": "Tavern Brawl"
+    }
+  },
+  {
+    "eventId": "evt-10",
+    "sequence": "10",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
     "abilityUsed": {
       "actorId": "act-hidden",
       "abilityId": "fists",
@@ -187,24 +199,24 @@
         {
           "expression": "1d20 + @caster.brawn",
           "results": [
-            12
+            15
           ],
-          "total": 13
+          "total": 16
         }
       ],
-      "outcomeSummary": "Fists on act-hidden: hit (13 vs 0)",
+      "outcomeSummary": "Fists on act-hidden: hit (16 vs 0)",
       "outcomes": [
         {
           "targetId": "act-hidden",
           "result": "hit",
-          "total": 13
+          "total": 16
         }
       ]
     }
   },
   {
-    "eventId": "evt-10",
-    "sequence": "10",
+    "eventId": "evt-11",
+    "sequence": "11",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -217,8 +229,8 @@
     }
   },
   {
-    "eventId": "evt-11",
-    "sequence": "11",
+    "eventId": "evt-12",
+    "sequence": "12",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -226,19 +238,6 @@
       "actorId": "act-hidden",
       "conditionId": "dazed-by-ale",
       "source": "threshold:drink"
-    }
-  },
-  {
-    "eventId": "evt-12",
-    "sequence": "12",
-    "sessionId": "sess-1",
-    "actorRole": "dm",
-    "participantId": "p-dm",
-    "doorOpened": {
-      "sceneId": "door-hall",
-      "at": {
-        "x": 5
-      }
     }
   },
   {
@@ -250,13 +249,26 @@
     "doorOpened": {
       "sceneId": "door-hall",
       "at": {
-        "x": 3
+        "x": 5
       }
     }
   },
   {
     "eventId": "evt-14",
     "sequence": "14",
+    "sessionId": "sess-1",
+    "actorRole": "dm",
+    "participantId": "p-dm",
+    "doorOpened": {
+      "sceneId": "door-hall",
+      "at": {
+        "x": 3
+      }
+    }
+  },
+  {
+    "eventId": "evt-15",
+    "sequence": "15",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -268,8 +280,8 @@
     }
   },
   {
-    "eventId": "evt-15",
-    "sequence": "15",
+    "eventId": "evt-16",
+    "sequence": "16",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -301,8 +313,8 @@
     }
   },
   {
-    "eventId": "evt-16",
-    "sequence": "16",
+    "eventId": "evt-17",
+    "sequence": "17",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -313,8 +325,8 @@
     }
   },
   {
-    "eventId": "evt-17",
-    "sequence": "17",
+    "eventId": "evt-18",
+    "sequence": "18",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
@@ -328,8 +340,8 @@
     }
   },
   {
-    "eventId": "evt-18",
-    "sequence": "18",
+    "eventId": "evt-19",
+    "sequence": "19",
     "sessionId": "sess-1",
     "actorRole": "dm",
     "participantId": "p-dm",
