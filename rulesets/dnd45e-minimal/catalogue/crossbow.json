@@ -1,0 +1,12 @@
+{
+  "id": "crossbow",
+  "name": "Crossbow",
+  "description": "A bow set across a stock, loaded and shot at a creature at range.",
+  "form": "weapon",
+  "values": {
+    "proficiency": 2,
+    "damage_dice": 1,
+    "damage_die": 8,
+    "range": 15
+  }
+}

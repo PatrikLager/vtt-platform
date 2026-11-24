@@ -1,0 +1,9 @@
+{
+  "id": "chainmail",
+  "name": "Chainmail",
+  "description": "Heavy armor of interlocking metal rings, worn over padding.",
+  "form": "armor",
+  "values": {
+    "armor_bonus": 6
+  }
+}

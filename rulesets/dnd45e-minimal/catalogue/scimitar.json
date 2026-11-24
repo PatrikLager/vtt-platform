@@ -1,0 +1,11 @@
+{
+  "id": "scimitar",
+  "name": "Scimitar",
+  "description": "A curved, single-edged blade swung at a creature within reach.",
+  "form": "weapon",
+  "values": {
+    "proficiency": 2,
+    "damage_dice": 1,
+    "damage_die": 6
+  }
+}

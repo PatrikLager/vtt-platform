@@ -6,8 +6,9 @@ a full 4.5e character-building system. `1d20 + attack stat + proficiency`
 vs a named defense; NO half-level bonus anywhere (it's stripped from both
 attacks and defenses in this house system, since they cancel out); bloodied
 at half hp. Proficiency and any enhancement bonus are already baked into
-each ability's roll expression — there is no separate equipment layer in
-this slice (future work).
+each ability's roll expression. The catalogue lists the weapons and armor
+with their numbers, but no sheet refers to an entry yet and no ability reads
+one: each ability still rolls the numbers it names.
 
 Every ability below is built from this ruleset's OWN atomic statements under
 `atoms/` — no borrowed vocabulary, no shared atom with any other ruleset.
@@ -22,7 +23,8 @@ type, what the table calls it and what it means. Read them with
 descriptions there are this ruleset's own account of each property, and this
 guide does not repeat them. In `add_actor` and in a statblock, a number
 property goes in `attributes` and a resource property in `resources`, with
-its current value and maximum.
+its current value and maximum. A property a form lists is a weapon's or an
+armor's, held by its catalogue entry: never set it on a creature.
 
 ### The max_hp duplication rule
 
@@ -95,7 +97,7 @@ own words.
 - **weapon-damage** (`damage_expr`: expr) — on a `weapon-attack-roll` hit,
   subtracts `damage_expr` points from the target's `hp`. Composed by all
   six attacking abilities, each supplying its own dice-plus-stat damage
-  expression (a flat `1d6 + 2` for a goblin's baked-in proficiency, a
+  expression (a flat `1d6 + 2` for a goblin's baked-in damage bonus, a
   caster-scoped `1d8 + @caster.str` for a PC's weapon swing, and so on).
 - **graze-damage** (`damage_expr`: expr) — on a `weapon-attack-roll` MISS,
   subtracts `half(damage_expr)` points from the target's `hp`. Composed
@@ -135,8 +137,9 @@ single-actor position (the resource's own owner).
 
 - **Goblin Scimitar** — `melee-delivery(1)` + `weapon-attack-roll(dex, 2,
   ac)` + `weapon-damage(1d6 + 2)`: a goblin's melee basic attack. On a hit,
-  `1d6 + 2` damage (the `+2` is the goblin's own baked-in proficiency, not
-  a stat — goblins don't carry a damage-relevant `str`/`dex` bonus here).
+  `1d6 + 2` damage (the `+2` is the goblin's own baked-in damage bonus, not
+  a stat and not its scimitar's — goblins don't carry a damage-relevant
+  `str`/`dex` bonus here).
 - **Goblin Shortbow** — `ranged-delivery(10, 1)` + `weapon-attack-roll(dex,
   2, ac)` + `weapon-damage(1d8)`: a goblin's ranged basic attack (range
   10). On a hit, flat `1d8` damage.

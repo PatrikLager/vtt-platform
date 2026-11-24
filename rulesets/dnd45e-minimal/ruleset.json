@@ -54,6 +54,36 @@
       "description": "A defense declared for later powers; nothing attacks it yet."
     },
     {
+      "key": "proficiency",
+      "type": "number",
+      "name": "Proficiency bonus",
+      "description": "What a weapon adds to the attack rolls made with it. It is the weapon's, not a creature's, and no power reads it yet: each attack still rolls the bonus it names itself."
+    },
+    {
+      "key": "damage_dice",
+      "type": "number",
+      "name": "Damage dice",
+      "description": "How many damage dice a weapon rolls on a hit. It is the weapon's, not a creature's, and no power reads it yet: each attack still rolls the damage it names itself."
+    },
+    {
+      "key": "damage_die",
+      "type": "number",
+      "name": "Damage die",
+      "description": "How many sides each of a weapon's damage dice has. It is the weapon's, not a creature's, and no power reads it yet: each attack still rolls the damage it names itself."
+    },
+    {
+      "key": "range",
+      "type": "number",
+      "name": "Range",
+      "description": "How many squares away a ranged weapon can strike a creature. It is the weapon's, not a creature's, and no power reads it yet: each still names its own range."
+    },
+    {
+      "key": "armor_bonus",
+      "type": "number",
+      "name": "Armor bonus",
+      "description": "What a suit of armor adds to its wearer's Armor Class. It is the armor's, not a creature's, and nothing adds it yet: a creature's Armor Class is still the number its statblock sets."
+    },
+    {
       "key": "hp",
       "type": "resource",
       "name": "Hit points",
@@ -77,6 +107,27 @@
       "name": "Flurry uses",
       "description": "What the hunter's flurry, the one encounter power here, spends. Only a creature with that power needs it, one use a fresh encounter, and nothing here refills it.",
       "thresholds": []
+    }
+  ],
+  "forms": [
+    {
+      "key": "weapon",
+      "name": "Weapon",
+      "description": "Something a creature attacks with: the bonus it is meant to add to the attack roll, the damage dice it rolls on a hit and, for a ranged weapon, how far it reaches.",
+      "properties": [
+        "proficiency",
+        "damage_dice",
+        "damage_die",
+        "range"
+      ]
+    },
+    {
+      "key": "armor",
+      "name": "Armor",
+      "description": "Something a creature wears for protection, and the bonus it is meant to add to the wearer's Armor Class.",
+      "properties": [
+        "armor_bonus"
+      ]
     }
   ],
   "sheet": [

@@ -1,0 +1,11 @@
+{
+  "id": "longsword",
+  "name": "Longsword",
+  "description": "A long, straight blade swung at a creature within reach.",
+  "form": "weapon",
+  "values": {
+    "proficiency": 3,
+    "damage_dice": 1,
+    "damage_die": 8
+  }
+}

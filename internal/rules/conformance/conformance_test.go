@@ -330,29 +330,39 @@ func TestConformanceOverRulesetsGlob(t *testing.T) {
 
 // VTT-850
 func TestEveryShippedAbilityCarriesADescriptionWithNoDigit(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join("..", "..", "..", "rulesets", "*", "abilities", "*.json"))
+	checkShippedDescriptions(t, "abilities", "ability")
+}
+
+// VTT-1007
+func TestEveryShippedCatalogueEntryCarriesADescriptionWithNoDigit(t *testing.T) {
+	checkShippedDescriptions(t, "catalogue", "catalogue entry")
+}
+
+func checkShippedDescriptions(t *testing.T, dir, kind string) {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join("..", "..", "..", "rulesets", "*", dir, "*.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(files) == 0 {
-		t.Fatal("no ability under rulesets/ to hold to a description")
+		t.Fatalf("no %s under rulesets/ to hold to a description", kind)
 	}
 	for _, f := range files {
 		raw, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
-		var ability struct {
+		var declared struct {
 			Description *string `json:"description"`
 		}
-		if err := json.Unmarshal(raw, &ability); err != nil {
+		if err := json.Unmarshal(raw, &declared); err != nil {
 			t.Fatalf("%s: %v", f, err)
 		}
 		switch {
-		case ability.Description == nil || *ability.Description == "":
+		case declared.Description == nil || *declared.Description == "":
 			t.Errorf("%s declares no description", f)
-		case strings.ContainsAny(*ability.Description, "0123456789"):
-			t.Errorf("%s's description holds a digit: %q", f, *ability.Description)
+		case strings.ContainsAny(*declared.Description, "0123456789"):
+			t.Errorf("%s's description holds a digit: %q", f, *declared.Description)
 		}
 	}
 }

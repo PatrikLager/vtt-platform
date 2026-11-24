@@ -1,0 +1,9 @@
+{
+  "id": "leather-armor",
+  "name": "Leather Armor",
+  "description": "Light armor of hardened leather.",
+  "form": "armor",
+  "values": {
+    "armor_bonus": 2
+  }
+}
