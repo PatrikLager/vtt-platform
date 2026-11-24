@@ -14,7 +14,7 @@ func TestTheIDBoundMirrorsEngine(t *testing.T) {
 	}
 }
 
-// VTT-625 VTT-1009
+// VTT-1009
 func TestTheSchemasStateTheIDBound(t *testing.T) {
 	want := fmt.Sprintf("At most %d bytes", maxIDBytes)
 	for _, c := range []struct {
@@ -23,6 +23,7 @@ func TestTheSchemasStateTheIDBound(t *testing.T) {
 	}{
 		{"ability", []string{"properties", "id"}},
 		{"condition", []string{"properties", "id"}},
+		{"entry", []string{"properties", "id"}},
 		{"ruleset", []string{"properties", "properties", "items", "properties", "key"}},
 		{"ruleset", []string{"properties", "forms", "items", "properties", "key"}},
 		{"atom", []string{"$defs", "resolutionContribution", "properties", "branches"}},

@@ -1,0 +1,7 @@
+{
+  "id": "sturdy-crate",
+  "name": "Sturdy Crate",
+  "description": "The fixture's sturdy crate, which extends its plain crate.",
+  "form": "crate",
+  "extends": "plain-crate"
+}

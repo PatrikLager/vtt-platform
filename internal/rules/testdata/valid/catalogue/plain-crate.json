@@ -1,0 +1,9 @@
+{
+  "id": "plain-crate",
+  "name": "Plain Crate",
+  "description": "The fixture's plain crate.",
+  "form": "crate",
+  "values": {
+    "heft": 2
+  }
+}

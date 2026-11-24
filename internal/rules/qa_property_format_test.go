@@ -772,6 +772,16 @@ func qaPFFormKeyed(t *testing.T, size int) map[string]string {
 	return qaPFRender(t, s)
 }
 
+func qaPFEntryKeyed(t *testing.T, size int) map[string]string {
+	t.Helper()
+	s := qaPFBase()
+	s.manifest()["forms"] = []any{qaPFDoc{"key": "qa-form", "name": "Plain Form", "description": "A plain form.",
+		"properties": []any{"grit"}}}
+	s.docs["catalogue/qa-entry.json"] = qaPFDoc{"id": qaPFPad("qa-entry", "-", size), "name": "Plain Entry",
+		"description": "An entry the probe pads.", "form": "qa-form", "values": qaPFDoc{"grit": 1}}
+	return qaPFRender(t, s)
+}
+
 func qaPFBound(t *testing.T, p qaPFProbe, start int) int {
 	t.Helper()
 	loads := func(size int) bool {
@@ -819,12 +829,13 @@ func qaPFSchemaText(t *testing.T, file string, path []string) string {
 	return d
 }
 
-// VTT-625 VTT-1009
+// VTT-1009
 func TestQAPFSchemasStateTheBoundsLoadEnforces(t *testing.T) {
 	probes := []qaPFProbe{
 		{"property key", qaPFNamed(func(n *qaPFNames, v string) { n.grit = v }, "grit", "_"),
 			"ruleset.schema.json", []string{"properties", "properties", "items", "properties", "key"}, true},
 		{"form key", qaPFFormKeyed, "ruleset.schema.json", []string{"properties", "forms", "items", "properties", "key"}, true},
+		{"entry id", qaPFEntryKeyed, "entry.schema.json", []string{"properties", "id"}, true},
 		{"ability id", qaPFNamed(func(n *qaPFNames, v string) { n.steady = v }, "steady", "-"),
 			"ability.schema.json", []string{"properties", "id"}, true},
 		{"condition id", qaPFNamed(func(n *qaPFNames, v string) { n.braced = v }, "braced", "_"),

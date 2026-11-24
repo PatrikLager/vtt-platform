@@ -344,6 +344,7 @@ func TestLoadRejectsThresholdMissingRemoveWhenFalse(t *testing.T) {
 func TestLoadAcceptsThresholdExplicitFalse(t *testing.T) {
 	dir := t.TempDir()
 	copyDir(t, fixture(t, "valid"), dir)
+	dropCatalogue(t, dir)
 	writeFile(t, filepath.Join(dir, "ruleset.json"), `{
   "id": "test-ruleset",
   "name": "Test Ruleset",

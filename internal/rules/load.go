@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 )
 
@@ -52,7 +55,7 @@ func Load(dir string) (*Ruleset, error) {
 // loadCompositions and consumed only by compile.go), never a standalone
 // ability shape.
 func loadV2(dir string, manifest *loadedManifest) (*Ruleset, error) {
-	conditions, err := loadConditions(filepath.Join(dir, "conditions"))
+	conditions, conditionFiles, err := loadConditions(filepath.Join(dir, "conditions"))
 	if err != nil {
 		return nil, err
 	}
@@ -100,6 +103,21 @@ func loadV2(dir string, manifest *loadedManifest) (*Ruleset, error) {
 	}
 	rs.Sheet = sheet
 	rs.FreeUsageName = manifest.freeUsageName
+
+	// Keep these last: a ruleset with no catalogue meets every other
+	// refusal first, in its order.
+	catalogue, entryFiles, err := loadCatalogue(filepath.Join(dir, "catalogue"), rs.Forms)
+	if err != nil {
+		return nil, err
+	}
+	abilityFiles := make(map[string]string, len(compositions))
+	for id, c := range compositions {
+		abilityFiles[id] = c.sourcePath
+	}
+	if err := checkOneNamespace(entryFiles, abilityFiles, conditionFiles); err != nil {
+		return nil, err
+	}
+	rs.Catalogue = catalogue
 	return rs, nil
 }
 
@@ -403,35 +421,138 @@ type conditionJSON struct {
 	Description string `json:"description"`
 }
 
-func loadConditions(dir string) (map[string]*Condition, error) {
+func loadConditions(dir string) (map[string]*Condition, map[string]string, error) {
 	out := map[string]*Condition{}
+	files := map[string]string{}
 	paths, err := jsonFilesIn(dir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, path := range paths {
 		var raw conditionJSON
 		if err := decodeStrict(path, &raw); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if raw.ID == "" {
-			return nil, fieldErr(path, "id", "must not be empty")
+			return nil, nil, fieldErr(path, "id", "must not be empty")
 		}
 		if len(raw.ID) > maxIDBytes {
-			return nil, fieldErr(path, "id", fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(raw.ID)))
+			return nil, nil, fieldErr(path, "id", fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(raw.ID)))
 		}
 		if raw.Name == "" {
-			return nil, fieldErr(path, "name", "must not be empty")
+			return nil, nil, fieldErr(path, "name", "must not be empty")
 		}
 		if reservedScopeWords[raw.ID] {
-			return nil, fieldErr(path, "id", fmt.Sprintf("condition id %q is a reserved actor scope word (caster/target): reserved against condition ids too so a condition-kind param binding cannot occupy a ref scope position (finding F2)", raw.ID))
+			return nil, nil, fieldErr(path, "id", fmt.Sprintf("condition id %q is a reserved actor scope word (caster/target): reserved against condition ids too so a condition-kind param binding cannot occupy a ref scope position (finding F2)", raw.ID))
 		}
 		if _, dup := out[raw.ID]; dup {
-			return nil, fieldErr(path, "id", fmt.Sprintf("duplicate condition id %q", raw.ID))
+			return nil, nil, fieldErr(path, "id", fmt.Sprintf("duplicate condition id %q", raw.ID))
 		}
 		out[raw.ID] = &Condition{ID: raw.ID, Name: raw.Name, Description: raw.Description}
+		files[raw.ID] = path
 	}
-	return out, nil
+	return out, files, nil
+}
+
+// --- catalogue/*.json ---
+
+type entryJSON struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Form        string `json:"form"`
+	// A pointer, so that "" is told apart from no extends (VTT-1003).
+	Extends *string `json:"extends"`
+	// Keep values raw: null decodes into an integer as 0 without error (VTT-999).
+	Values map[string]json.RawMessage `json:"values"`
+}
+
+// loadCatalogue checks each entry under dir against the forms and returns the
+// entries and their files, each keyed by id (VTT-997, VTT-998, VTT-999).
+func loadCatalogue(dir string, forms []Form) (map[string]*Entry, map[string]string, error) {
+	listed := make(map[string]map[string]bool, len(forms))
+	for _, f := range forms {
+		listed[f.Key] = toSet(f.Properties)
+	}
+	out := map[string]*Entry{}
+	files := map[string]string{}
+	paths, err := jsonFilesIn(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, path := range paths {
+		var raw entryJSON
+		if err := decodeStrict(path, &raw); err != nil {
+			return nil, nil, err
+		}
+		for _, f := range []struct{ field, value string }{
+			{"id", raw.ID}, {"name", raw.Name}, {"description", raw.Description}, {"form", raw.Form},
+		} {
+			if f.value == "" {
+				return nil, nil, fieldErr(path, f.field, "must not be empty")
+			}
+		}
+		if len(raw.ID) > maxIDBytes {
+			return nil, nil, fieldErr(path, "id", fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(raw.ID)))
+		}
+		if earlier, dup := files[raw.ID]; dup {
+			return nil, nil, fieldErr(path, "id", fmt.Sprintf("duplicate entry id %q, declared by %s", raw.ID, earlier))
+		}
+		keys, declared := listed[raw.Form]
+		if !declared {
+			return nil, nil, fieldErr(path, "form", fmt.Sprintf("names %q, which no form declares", raw.Form))
+		}
+		values, err := entryValues(path, raw, keys)
+		if err != nil {
+			return nil, nil, err
+		}
+		files[raw.ID] = path
+		out[raw.ID] = &Entry{ID: raw.ID, Name: raw.Name, Description: raw.Description, Form: raw.Form, Values: values}
+	}
+	return out, files, nil
+}
+
+// entryValues checks an entry's values, in key order, against the keys its
+// form lists (VTT-999).
+func entryValues(path string, raw entryJSON, listed map[string]bool) (map[string]int, error) {
+	values := make(map[string]int, len(raw.Values))
+	// Keep the keys sorted: every load of one entry names the same key (VTT-999).
+	for _, key := range slices.Sorted(maps.Keys(raw.Values)) {
+		field := "values." + key
+		if !listed[key] {
+			return nil, fieldErr(path, field, fmt.Sprintf("form %q does not list %q", raw.Form, key))
+		}
+		written := raw.Values[key]
+		if string(written) == "null" {
+			return nil, fieldErr(path, field, "must not be null")
+		}
+		var v int32
+		if json.Unmarshal(written, &v) != nil {
+			var shown bytes.Buffer
+			_ = json.Compact(&shown, written)
+			return nil, fieldErr(path, field, fmt.Sprintf("must be an integer from %d to %d, got %s", math.MinInt32, math.MaxInt32, shown.String()))
+		}
+		values[key] = int(v)
+	}
+	return values, nil
+}
+
+// checkOneNamespace refuses an id two of the entries, abilities and
+// conditions declare, each set mapping an id to its file (VTT-1001).
+func checkOneNamespace(sets ...map[string]string) error {
+	files := map[string][]string{}
+	for _, set := range sets {
+		for id, path := range set {
+			files[id] = append(files[id], path)
+		}
+	}
+	for _, id := range slices.Sorted(maps.Keys(files)) {
+		if paths := files[id]; len(paths) > 1 {
+			slices.Sort(paths)
+			return fieldErr(paths[1], "id", fmt.Sprintf("%q is declared by %s too; an entry, an ability and a condition never share an id", id, paths[0]))
+		}
+	}
+	return nil
 }
 
 // --- outcome/effect JSON shapes ---

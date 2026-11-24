@@ -326,7 +326,7 @@ func qaRuleLoaded(t *testing.T, n qaRuleNames, dir string) *rules.Ruleset {
 	return rs
 }
 
-// VTT-624 VTT-284 VTT-625
+// VTT-624 VTT-284
 func TestQARuleARulesetWhoseNamesAreAllAtTheBoundLoads(t *testing.T) {
 	n := qaRuleAtBound()
 	for _, s := range []string{n.ability, n.cond, n.attr, n.def, n.res, n.ge, n.lt} {
@@ -469,7 +469,7 @@ func qaRuleAtBytes(field string, n int) string {
 	return strings.Repeat("é", n/2) + strings.Repeat("a", n%2)
 }
 
-// VTT-625
+// VTT-1009
 func TestQARuleTheSchemasStateTheBoundLoadEnforces(t *testing.T) {
 	cases := []struct {
 		field, schema string

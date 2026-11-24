@@ -35,6 +35,9 @@ type Ruleset struct {
 	// Forms is every form the ruleset declares, in its order, or nil (VTT-993).
 	Forms []Form
 
+	// Catalogue is every entry of catalogue/, keyed by its id (VTT-997).
+	Catalogue map[string]*Entry
+
 	// Conditions is keyed by its declared id. Load rejects duplicate ids
 	// (within and across files) before the map is populated, so every
 	// entry here is unique by construction.
@@ -309,6 +312,13 @@ type SheetSection struct {
 type Form struct {
 	Key, Name, Description string
 	Properties             []string
+}
+
+// Entry is one thing a ruleset's catalogue holds, of the form Form (VTT-997).
+type Entry struct {
+	ID, Name, Description, Form string
+	// Values holds no key for a property the entry carries no value for (VTT-1000).
+	Values map[string]int
 }
 
 // ShownUsage picks the abilities a section shows: those used at will, or

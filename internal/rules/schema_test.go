@@ -129,6 +129,7 @@ func TestSchemaPropertiesCoverFixtureFields(t *testing.T) {
 		{"ruleset.schema.json", "testdata/valid/ruleset.json"},
 		{"ability.schema.json", "testdata/valid/abilities/strike.json"},
 		{"condition.schema.json", "testdata/valid/conditions/guarded.json"},
+		{"entry.schema.json", "testdata/valid/catalogue/plain-crate.json"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.schemaFile, func(t *testing.T) {
@@ -376,6 +377,7 @@ func TestSchemaRequiredFieldsMatchLoaderEnforcement(t *testing.T) {
 		{"ruleset.schema.json", []string{"ruleset.json"}},
 		{"ability.schema.json", []string{"abilities/strike.json", "abilities/guard-stance.json", "abilities/stand-down.json"}},
 		{"condition.schema.json", []string{"conditions/guarded.json"}},
+		{"entry.schema.json", []string{"catalogue/plain-crate.json", "catalogue/sturdy-crate.json"}},
 	}
 
 	for _, tc := range cases {

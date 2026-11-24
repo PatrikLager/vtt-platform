@@ -17,6 +17,7 @@ func formsManifest(t *testing.T, edit func(m map[string]any)) string {
 	t.Helper()
 	dir := t.TempDir()
 	copyDir(t, "testdata/valid", dir)
+	dropCatalogue(t, dir)
 	path := filepath.Join(dir, "ruleset.json")
 	m := readJSONFile(t, path)
 	edit(m)

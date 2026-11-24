@@ -113,7 +113,7 @@
     },
     "forms": {
       "type": "array",
-      "description": "Optional. The forms a catalogue entry takes, in the order the ruleset declares them, each with the number properties an entry of that form carries. A ruleset may declare none. A key is declared by one form.",
+      "description": "Optional. The forms a catalogue entry takes, in the order the ruleset declares them, each with the number properties an entry of that form carries. A ruleset may declare none. A key is declared by one form. Each entry, one file under catalogue/, is described by entry.schema.json.",
       "items": {
         "type": "object",
         "required": [

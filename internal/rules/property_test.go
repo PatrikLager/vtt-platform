@@ -44,6 +44,7 @@ func propertyRuleset(t *testing.T, edit func(props []map[string]any)) string {
 	t.Helper()
 	dir := t.TempDir()
 	copyDir(t, fixture(t, "valid"), dir)
+	dropCatalogue(t, dir)
 	writeProperties(t, dir, edit)
 	return dir
 }
