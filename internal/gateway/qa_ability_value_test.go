@@ -137,6 +137,10 @@ func qaAVOpen(t *testing.T, rs *rules.Ruleset, actors ...*vttv1.Actor) *qaAVTabl
 			}})
 		}
 	}
+	if rs != nil {
+		seed = append(seed, &vttv1.Envelope{Payload: &vttv1.Envelope_RulesetNamed{RulesetNamed: &vttv1.RulesetNamed{
+			RulesetId: rs.ID, Version: rs.Version, Name: rs.Name}}}) // VTT-988
+	}
 	for i, e := range seed {
 		e.EventId = fmt.Sprintf("evt-qa-av-seed-%d", i)
 		e.SessionId = qaAVSession
@@ -668,7 +672,7 @@ func TestQAAVGiveAppendsTheAbilityAlone(t *testing.T) {
 	}
 }
 
-// VTT-767 VTT-799: a take with a ruleset served.
+// VTT-991 VTT-799: a take with a ruleset served.
 func TestQAAVTakeRemovesTheResourceNoOtherAbilitySpends(t *testing.T) {
 	rs := qaAVLoad(t, qaAVBrawl)
 	cases := []struct {
@@ -712,7 +716,7 @@ func TestQAAVTakeRemovesTheResourceNoOtherAbilitySpends(t *testing.T) {
 	}
 }
 
-// VTT-767: a resource two abilities spend stays while one is on the sheet.
+// VTT-991: a resource two abilities spend stays while one is on the sheet.
 func TestQAAVTakeKeepsASharedResource(t *testing.T) {
 	dir := qaAVBrawlWith(t, map[string]string{
 		"abilities/haymaker.json": qaAVLimited("haymaker", "stamina"),

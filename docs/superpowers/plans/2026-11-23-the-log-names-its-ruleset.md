@@ -28,6 +28,10 @@
     the version is the author's to keep true, as in MapTool; (3) every
     participant — the DM, the agent, each player, each spectator, and every
     character log — is sent the entry.
+  - 2026-11-24, asked by Task 4's reading review: a `take_ability` after a
+    ruleset change also opens its batch with the entry, since the resource
+    it removes is chosen by the ruleset's `Spends`; a `give_ability` does
+    not, since what it writes is the DM's. Task 4b carries it.
   - Out of scope, by the ticket: a ruleset's options; the version in
     `/api/ruleset` or `get_ruleset`; the ruleset an adventure declares;
     `vtt mcp --ruleset`.
@@ -74,6 +78,12 @@
     added) and VTT-985 (the Story and the Events panel word it by the
     ruleset's name and its version). Its exact words are not a row; the
     tests pin them, as the precedents' sorts ruled.
+  - Task 4b, allocated after the owner's ruling of 2026-11-24: VTT-988 (a
+    take after a change opens its batch with the entry), VTT-989 (a take
+    under the ruleset the log names, or with none served, writes none),
+    VTT-990 (a give writes none); Task 4b's review added VTT-991, which
+    succeeds VTT-767 (a take's events after any entry), and VTT-992 (a take's
+    result carries its batch's first sequence).
   - Refused besides, each held elsewhere: R7 (VTT-975); the shipped
     rulesets' versions (VTT-971 and the conformance suite); the DM's and the
     agent's streams (VTT-377); a campaign served with no ruleset (VTT-132);
@@ -570,9 +580,11 @@ Proposed for Task 0's sort, to be allocated after sign-off. Each row reads
   which loads every shipped ruleset.
 - The DM's and the agent's streams carry the entry: they are sent the world
   (VTT-377), which R6 writes it to.
-- A campaign served with no ruleset gains no entry: under OD-1 A the one
-  writer is `handleUseAbility`, which refuses before anything is resolved or
-  written when no ruleset is served (VTT-132). Under OD-1 C it is a row.
+- A campaign served with no ruleset gains no entry: under OD-1 A the
+  writers are `handleUseAbility`, which refuses before anything is resolved
+  or written when no ruleset is served (VTT-132), and, after Task 4b,
+  `handleTakeAbility`, which writes none with no ruleset served (VTT-989).
+  Under OD-1 C it is a row.
 - Not refused after all: the schema states `version` required. Task 0's
   review found that `TestSchemaRequiredFieldsMatchLoaderEnforcement` builds
   its cases from the schema's own `required`, so it stays green when
@@ -581,6 +593,7 @@ Proposed for Task 0's sort, to be allocated after sign-off. Each row reads
 **Rows a task withdraws or rewords**, each in the task that makes it false:
 VTT-861 by R4 (Task 1); VTT-822 under OD-2 A (Task 2); VTT-663 by R12 and
 VTT-318 by R13 (Task 3). VTT-137 stays; its test is re-pointed (Task 4).
+VTT-767 by VTT-991 (Task 4b).
 VTT-625 stays true through Task 1's schema edit: once `checkManifestBounds`
 bounds the ruleset's `id`, `TestQAPFSchemasStateTheBoundsLoadEnforces`'s
 "ruleset id" probe requires the schema's `id` description to state 128
@@ -723,6 +736,27 @@ By search; each task reruns its own packages first and names what turned red.
   `composeServer` refuses a campaign whose log names another ruleset id
   (VTT-977's `cmd/vtt` test).
 
+### Task 4b: a take after a change opens with the entry too (VTT-988, VTT-989, VTT-990; the owner's ruling of 2026-11-24)
+
+- **Files:** `internal/gateway/ability_change.go` (`handleTakeAbility`: with
+  a ruleset served, D9's entry first in the batch, before `appendChange`
+  stamps it); `internal/gateway/ruleset_named_test.go`: a take after each
+  change (none named, another version, another id) opens its batch with the
+  entry and then the `AbilityTaken` and the `ResourceRemoved` the ruleset
+  chooses, and the result answers the entry's sequence; a take under the
+  ruleset the log names, and one with no ruleset served, write none; a give
+  writes none, and the use after it still writes the entry; tests that read
+  a take's batch by position, re-pointed.
+- **True when:** VTT-988's tests fail on `b53fa12`; VTT-989's and VTT-990's
+  pass on it and bite by the breaks below; `go test ./internal/gateway/
+  ./cmd/vtt/` passes, the goldens unchanged (`git grep -l takeAbility --
+  scenarios/` prints `scenarios/toy-brawl.json` alone, which takes after its
+  first use); VTT-767 withdrawn for VTT-991, its evidence and the code's
+  citations moved.
+- **Deliberate breaks:** drop the take's entry (VTT-988's test); write it
+  always (VTT-989's); write it with no ruleset served (VTT-989's, or a
+  panic); put it in a give's batch too (VTT-990's).
+
 ### Task 5: the goldens (R14; item 7)
 
 - **Files:** `scenarios/goldens/toy-brawl`, `door-watch` and
@@ -764,12 +798,16 @@ By search; each task reruns its own packages first and names what turned red.
     heading "The version, read first" says `format_version`.
   - **SPEC-018:** the event's rows in the first table; the manifest sentence
     rewritten for the id and the version (and the name under OD-3 A) (G4).
-  - **SPEC-007:** the event and its arm; a use's result under OD-1 A.
+  - **SPEC-007:** the event and its arm; a use's result under OD-1 A; a
+    take's batch opening with the entry ("the ability event first").
   - **SPEC-016:** `classify`'s arm.
   - **SPEC-021:** the opening and the resume.
   - **SPEC-022:** the client fold, the Events row's words, the Story under
     OD-2.
   - **SPEC-012 (G3):** `handleUseAbility`'s batch.
+  - **SPEC-013 and SPEC-025 (Task 4b):** a take's batch, whose first
+    envelope after a change is the entry, not the `AbilityTaken`
+    (VTT-988, VTT-991).
 - **True when:** each changed sentence has been run against the code by
   someone other than its writer. Commit the report, then the
   specifications; push and merge on the owner's word.

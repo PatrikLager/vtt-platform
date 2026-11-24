@@ -73,7 +73,7 @@ func TestMCPGiveAbilityThenAUseResolves(t *testing.T) {
 	}
 }
 
-// VTT-767
+// VTT-991
 func TestMCPTakeAbilityThenAUseIsAToolError(t *testing.T) {
 	s := mcpAbilityFixture(t)
 	s.mustSucceed("take_ability", map[string]any{"actorId": "brawler", "abilityId": "fists"})
@@ -102,7 +102,7 @@ func TestMCPGiveAbilityWithItsResourcesValueThenAUseResolves(t *testing.T) {
 	}
 }
 
-// VTT-767
+// VTT-991
 func TestMCPTakeAbilityTakesTheResourceItSpendsWithIt(t *testing.T) {
 	s := mcpAbilityFixture(t)
 	s.mustSucceed("give_ability", map[string]any{"actorId": "rookie", "abilityId": "chair-swing",

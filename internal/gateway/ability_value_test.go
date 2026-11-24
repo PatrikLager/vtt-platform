@@ -195,11 +195,11 @@ func TestWithNoRulesetAGiveCarryingResourcesIsRefused(t *testing.T) {
 		`gateway: give_ability: actor "rookie": resources: `, `"stamina"`)
 }
 
-// VTT-767 VTT-799
+// VTT-991 VTT-799
 func TestATakeRemovesTheResourceTheTakenAbilityAloneSpends(t *testing.T) {
 	f := newRulesetFixture(t, true)
 	addTank(t, f, "chair-swing", "fists")
-	seq := acceptedAppending(t, f, takeAbilityCmd("tank", "fists"), 1)
+	seq := acceptedTake(t, f, f.dmToken, takeAbilityCmd("tank", "fists"), 1)
 	if tk := f.abilityEventAt(t, seq).GetAbilityTaken(); tk.GetAbilityId() != "fists" {
 		t.Fatalf("the take of fists appended %v", tk)
 	}
@@ -212,22 +212,22 @@ func TestATakeRemovesTheResourceTheTakenAbilityAloneSpends(t *testing.T) {
 	}
 }
 
-// VTT-767
+// VTT-991
 func TestATakeKeepsAResourceAnotherAbilityOnTheSheetSpends(t *testing.T) {
 	f := newRulesetFixtureServing(t, poolRuleset(t))
 	addTank(t, f, "chair-swing", "haymaker")
-	acceptedAppending(t, f, takeAbilityCmd("tank", "chair-swing"), 1)
+	acceptedTake(t, f, f.dmToken, takeAbilityCmd("tank", "chair-swing"), 1)
 	seq := acceptedAppending(t, f, takeAbilityCmd("tank", "haymaker"), 2)
 	if rr := f.abilityEventAt(t, seq+1).GetResourceRemoved(); rr.GetResource() != "stamina" {
 		t.Fatalf("the take of the last ability spending stamina appended %v second, want stamina removed", rr)
 	}
 }
 
-// VTT-767: drink is spent by no ability of the ruleset.
+// VTT-991: drink is spent by no ability of the ruleset.
 func TestATakeRemovesNoResourceNoAbilitySpends(t *testing.T) {
 	f := newRulesetFixture(t, true)
 	acceptedAppending(t, f, giveAbilityCmd("patron", "fists"), 1)
-	acceptedAppending(t, f, takeAbilityCmd("patron", "fists"), 1)
+	acceptedTake(t, f, f.dmToken, takeAbilityCmd("patron", "fists"), 1)
 }
 
 // VTT-768

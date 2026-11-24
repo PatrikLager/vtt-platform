@@ -58,9 +58,9 @@ func giveSheetFault(g *vttv1.GiveAbility, st *engine.State, rs *rules.Ruleset) e
 	return nil
 }
 
-// handleTakeAbility appends the AbilityTaken and, with a ruleset served, the
-// ResourceRemoved of the resource the taken ability spends when no ability left
-// on the sheet spends it, as one batch, or nothing (SPEC-025, VTT-767, VTT-768).
+// handleTakeAbility appends, with a ruleset served, any RulesetNamed first, the
+// AbilityTaken and the ResourceRemoved no ability left spends, as one batch, or
+// nothing (SPEC-025, VTT-988, VTT-991, VTT-768).
 func (s *Server) handleTakeAbility(requestID string, cmd *vttv1.ClientCommand, tk *vttv1.TakeAbility,
 	st *engine.State, p *identity.Participant) *vttv1.CommandResult {
 	env, err := ToEvent(cmd, p)
@@ -68,6 +68,11 @@ func (s *Server) handleTakeAbility(requestID string, cmd *vttv1.ClientCommand, t
 		return &vttv1.CommandResult{RequestId: requestID, Ok: false, Error: err.Error()}
 	}
 	envs := []*vttv1.Envelope{env}
+	if s.ruleset != nil {
+		if named := s.rulesetNamed(st); named != nil {
+			envs = []*vttv1.Envelope{named, env} // VTT-988
+		}
+	}
 	if name, ok := orphanedBy(tk, st, s.ruleset); ok {
 		envs = append(envs, &vttv1.Envelope{Payload: &vttv1.Envelope_ResourceRemoved{ResourceRemoved: &vttv1.ResourceRemoved{
 			ActorId: tk.GetActorId(), Resource: name}}})
@@ -75,7 +80,7 @@ func (s *Server) handleTakeAbility(requestID string, cmd *vttv1.ClientCommand, t
 	return s.appendChange(requestID, envs, env, p)
 }
 
-// Keep a resource another id on the sheet spends: that id needs it (VTT-767).
+// Keep a resource another id on the sheet spends: that id needs it (VTT-991).
 func orphanedBy(tk *vttv1.TakeAbility, st *engine.State, rs *rules.Ruleset) (string, bool) {
 	a, held := st.Actors[tk.GetActorId()]
 	if rs == nil || !held || !rules.Offers(a, tk.GetAbilityId()) {

@@ -7,7 +7,7 @@ import (
 	"github.com/PatrikLager/vtt-platform/internal/rules"
 )
 
-// Spends is the reading VTT-761 and VTT-767 rest on.
+// Spends is the reading VTT-761 and VTT-991 rest on.
 func TestSpendsAnswersTheResourceAHeldLimitedAbilitySpends(t *testing.T) {
 	for dir, cases := range map[string]map[string]string{
 		"tavern-brawl":   {"chair-swing": "stamina", "fists": "", "sober-up": "", "no-such-ability": ""},

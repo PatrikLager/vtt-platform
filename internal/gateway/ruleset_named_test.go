@@ -369,3 +369,125 @@ func TestAUseWithNoRulesetServedIsRefusedAndTheLogIsUnchanged(t *testing.T) {
 		t.Fatalf("the connection did not take the next command: %q", r.GetError())
 	}
 }
+
+// newRNTakeCampaign adds an actor per step holding chair-swing and the stamina it
+// spends, so a take of it removes the resource the ruleset chooses.
+func newRNTakeCampaign(t *testing.T) *rnCampaign {
+	t.Helper()
+	rc := newRNCampaign(t)
+	c, err := campaign.Open(rc.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"s1", "s2", "s3"} {
+		mustAppend(t, c, "rn-take-"+id, &vttv1.Envelope_ActorAdded{ActorAdded: &vttv1.ActorAdded{Actor: &vttv1.Actor{
+			ActorId: id, Name: "Swinger " + id, Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
+			AbilityIds: []string{"chair-swing"}, Resources: map[string]*vttv1.Resource{"stamina": {Current: 2, Max: 2}},
+		}}})
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return rc
+}
+
+// command sends cmd as the holder of token and returns its result and what
+// it appended; a refusal fails the test.
+func (s *rnServed) command(token string, cmd *vttv1.ClientCommand) (*vttv1.CommandResult, []*vttv1.Envelope) {
+	s.t.Helper()
+	before := s.head()
+	conn := s.dial(token, before)
+	sendCommand(s.t, conn, cmd)
+	res := readResult(s.t, conn)
+	if !res.GetOk() {
+		s.t.Fatalf("%v refused: %q", cmd.GetCommand(), res.GetError())
+	}
+	return res, s.logAfter(before)
+}
+
+func rnTake(actorID, abilityID string) *vttv1.ClientCommand {
+	return &vttv1.ClientCommand{Command: &vttv1.ClientCommand_TakeAbility{
+		TakeAbility: &vttv1.TakeAbility{ActorId: actorID, AbilityId: abilityID}}}
+}
+
+// VTT-988 VTT-799 VTT-992
+func TestATakeNamesTheServedRulesetFirstWhenTheLogNamesNoneOrAnother(t *testing.T) {
+	rc := newRNTakeCampaign(t)
+	for _, step := range []struct {
+		label  string
+		served rnRuleset
+		actor  string
+	}{
+		{"the log names none", rnR, "s1"},
+		{"another version", rnRNext, "s2"},
+		{"another id at the version the log names", rnQ, "s3"},
+	} {
+		s := rc.serve(t, step.served.load(t))
+		res, batch := s.command(rc.dmToken, rnTake(step.actor, "chair-swing"))
+		if len(batch) != 3 {
+			t.Fatalf("%s: the take appended %v, want the entry, the AbilityTaken and the ResourceRemoved", step.label, batch)
+		}
+		if got := batch[0].GetRulesetNamed(); !proto.Equal(got, step.served.entry()) {
+			t.Fatalf("%s: the batch begins with %v, want RulesetNamed %v", step.label, batch[0].GetPayload(), step.served.entry())
+		}
+		if res.GetSequence() != batch[0].GetSequence() {
+			t.Fatalf("%s: the result answers %d, want the entry's %d", step.label, res.GetSequence(), batch[0].GetSequence())
+		}
+		if tk := batch[1].GetAbilityTaken(); tk.GetActorId() != step.actor || tk.GetAbilityId() != "chair-swing" {
+			t.Fatalf("%s: the entry is followed by %v, want the AbilityTaken", step.label, batch[1].GetPayload())
+		}
+		if rr := batch[2].GetResourceRemoved(); rr.GetActorId() != step.actor || rr.GetResource() != "stamina" {
+			t.Fatalf("%s: then %v, want the ResourceRemoved of stamina", step.label, batch[2].GetPayload())
+		}
+		if batch[0].GetParticipantId() != rc.dmID || batch[0].GetActorRole() != "dm" {
+			t.Fatalf("%s: the entry names %q %q, want the issuer", step.label, batch[0].GetParticipantId(), batch[0].GetActorRole())
+		}
+		s.close()
+	}
+}
+
+// VTT-989 VTT-992
+func TestATakeUnderTheRulesetTheLogNamesOrWithNoneServedAppendsNoEntry(t *testing.T) {
+	rc := newRNTakeCampaign(t)
+	s := rc.serve(t, rnR.load(t))
+	_, batch := s.use(rc.dmToken)
+	if batch[0].GetRulesetNamed() == nil {
+		t.Fatalf("the first use wrote no entry: %v", batch)
+	}
+	for _, step := range []struct {
+		label  string
+		served func() *rules.Ruleset
+		actor  string
+	}{
+		{"under the ruleset the log names", func() *rules.Ruleset { return rnR.load(t) }, "s1"},
+		{"with no ruleset served", func() *rules.Ruleset { return nil }, "s2"},
+	} {
+		s.close()
+		s = rc.serve(t, step.served())
+		res, batch := s.command(rc.dmToken, rnTake(step.actor, "chair-swing"))
+		if len(batch) == 0 || batch[0].GetAbilityTaken() == nil || res.GetSequence() != batch[0].GetSequence() {
+			t.Fatalf("%s: the take appended %v answering %d, want it to begin with the AbilityTaken", step.label, batch, res.GetSequence())
+		}
+		for _, env := range batch {
+			if env.GetRulesetNamed() != nil {
+				t.Fatalf("%s: a RulesetNamed %v at %d", step.label, env.GetRulesetNamed(), env.GetSequence())
+			}
+		}
+	}
+	s.close()
+}
+
+// VTT-990
+func TestAGiveOnALogNamingNoneAppendsNoEntryAndTheNextUseDoes(t *testing.T) {
+	rc := newRNCampaign(t)
+	s := rc.serve(t, rnR.load(t))
+	give := &vttv1.ClientCommand{Command: &vttv1.ClientCommand_GiveAbility{
+		GiveAbility: &vttv1.GiveAbility{ActorId: "brawler", AbilityId: "splash-of-water"}}}
+	_, batch := s.command(rc.dmToken, give)
+	if len(batch) != 1 || batch[0].GetAbilityGiven() == nil {
+		t.Fatalf("the give appended %v, want its AbilityGiven alone", batch)
+	}
+	res, batch := s.use(rc.dmToken)
+	rnWantEntry(t, "the use after the give", res, batch, rnR.entry())
+	s.close()
+}

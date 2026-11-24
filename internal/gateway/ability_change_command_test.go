@@ -35,6 +35,25 @@ func (f *rulesetFixture) abilityEventAt(t *testing.T, seq int64) *vttv1.Envelope
 	return env
 }
 
+func acceptedTake(t *testing.T, f *rulesetFixture, token string, take *vttv1.ClientCommand, n int64) int64 {
+	t.Helper()
+	head := f.abilityHead(t)
+	conn := f.dial(token, 0)
+	sendCommand(t, conn, take)
+	res := readResult(t, conn)
+	if !res.GetOk() || res.GetSequence() != head+1 {
+		t.Fatalf("%v answered %+v, want ok at %d", take.GetCommand(), res, head+1)
+	}
+	seq := res.GetSequence()
+	if f.abilityEventAt(t, seq).GetRulesetNamed() != nil {
+		seq++ // VTT-988
+	}
+	if got := f.abilityHead(t); got != seq-1+n {
+		t.Errorf("%v moved the log's head from %d to %d, want %d events of its own", take.GetCommand(), seq-1, got, n)
+	}
+	return seq
+}
+
 func (f *rulesetFixture) tokenFor(role string) string {
 	return map[string]string{"dm": f.dmToken, "agent": f.agentToken, "player": f.patronToken,
 		"brawler": f.brawlerToken, "spectator": f.spectatorToken}[role]
@@ -69,18 +88,13 @@ func TestAGiveThenAUseResolvesForTheDMTheAgentAndThePlayer(t *testing.T) {
 	}
 }
 
-// VTT-767
+// VTT-991
 func TestATakeThenAUseIsRefusedForTheDMTheAgentAndThePlayer(t *testing.T) {
 	for _, taker := range []string{"dm", "agent"} {
 		t.Run(taker, func(t *testing.T) {
 			f := newRulesetFixture(t, true)
-			conn := f.dial(f.tokenFor(taker), 0)
-			sendCommand(t, conn, takeAbilityCmd("brawler", "fists"))
-			res := readResult(t, conn)
-			if !res.GetOk() || res.GetSequence() != rfSeedHead+1 {
-				t.Fatalf("the %s's take answered %+v, want ok at sequence %d", taker, res, rfSeedHead+1)
-			}
-			taken := f.abilityEventAt(t, res.GetSequence()).GetAbilityTaken()
+			seq := acceptedTake(t, f, f.tokenFor(taker), takeAbilityCmd("brawler", "fists"), 1)
+			taken := f.abilityEventAt(t, seq).GetAbilityTaken()
 			if taken.GetActorId() != "brawler" || taken.GetAbilityId() != "fists" {
 				t.Fatalf("the take appended %+v, want an AbilityTaken of fists from brawler", taken)
 			}
@@ -92,8 +106,8 @@ func TestATakeThenAUseIsRefusedForTheDMTheAgentAndThePlayer(t *testing.T) {
 					t.Errorf("the %s's use of the taken ability answered %+v, want the refusal %q", user, r, want)
 				}
 			}
-			if head := f.abilityHead(t); head != rfSeedHead+1 {
-				t.Errorf("log head %d after the refused uses, want %d", head, rfSeedHead+1)
+			if head := f.abilityHead(t); head != seq {
+				t.Errorf("log head %d after the refused uses, want %d", head, seq)
 			}
 		})
 	}

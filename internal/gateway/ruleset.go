@@ -53,7 +53,7 @@ func (s *Server) handleUseAbility(requestID string, cmd *vttv1.UseAbility, st *e
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: firstSeq}
 }
 
-// Prepend its entry to each rules.Resolve batch; needs s.ruleset (SPEC-026).
+// Prepend its entry to each use's and take's batch; needs s.ruleset (SPEC-026).
 func (s *Server) rulesetNamed(st *engine.State) *vttv1.Envelope {
 	rs := s.ruleset
 	if st.RulesetID == rs.ID && st.RulesetVersion == rs.Version {

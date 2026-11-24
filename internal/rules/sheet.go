@@ -72,7 +72,7 @@ func (rs *Ruleset) anySpends(resource string) bool {
 	return false
 }
 
-// Spends answers the resource rs's limited ability abilityID spends (VTT-767).
+// Spends answers the resource rs's limited ability abilityID spends (VTT-991).
 func (rs *Ruleset) Spends(abilityID string) (string, bool) {
 	c, held := rs.Compiled[abilityID]
 	if !held || c.Usage.Limited == nil {

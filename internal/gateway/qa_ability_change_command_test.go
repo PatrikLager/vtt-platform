@@ -86,6 +86,10 @@ func qaabNewTable(t *testing.T, rs *rules.Ruleset, withAdventure bool) *qaabTabl
 	srv := gateway.New(c, ids)
 	if rs != nil {
 		srv = srv.WithRuleset(rs)
+		named := &vttv1.RulesetNamed{RulesetId: rs.ID, Version: rs.Version, Name: rs.Name} // VTT-988
+		if _, err := c.Append(&vttv1.Envelope{EventId: "qaab-ruleset", Payload: &vttv1.Envelope_RulesetNamed{RulesetNamed: named}}); err != nil {
+			t.Fatalf("seed RulesetNamed: %v", err)
+		}
 	}
 	if withAdventure {
 		adv, err := adventure.Load(qaabAdventureDir, rs)
@@ -455,7 +459,7 @@ func TestQAGiveAbilityFromTheDMAndTheAgentAppendsOneAbilityGivenAndEndsTheList(t
 	}
 }
 
-// VTT-767 VTT-768
+// VTT-991 VTT-768
 func TestQATakeAbilityFromTheDMAndTheAgentRemovesEveryOccurrenceAndKeepsTheOrder(t *testing.T) {
 	for _, served := range []bool{true, false} {
 		t.Run(fmt.Sprintf("ruleset served %v", served), func(t *testing.T) {
@@ -488,7 +492,7 @@ func TestQATakeAbilityFromTheDMAndTheAgentRemovesEveryOccurrenceAndKeepsTheOrder
 	}
 }
 
-// VTT-764, VTT-767: nothing else of the actor or of the world changes.
+// VTT-764, VTT-991: nothing else of the actor or of the world changes.
 func TestQAGiveAndTakeChangeNothingButTheActorsAbilityList(t *testing.T) {
 	rs := qaabRuleset(t)
 	tb := qaabNewTable(t, rs, true)
@@ -711,7 +715,7 @@ func TestQAAGiveRefusalReachesTheIssuerAndTheConnectionGoesOn(t *testing.T) {
 	}
 }
 
-// VTT-764 VTT-767
+// VTT-764 VTT-991
 func TestQAAUseFollowsTheSheetAfterAGiveAndATake(t *testing.T) {
 	rs := qaabRuleset(t)
 	tb := qaabNewTable(t, rs, true)

@@ -93,7 +93,7 @@ func TestAGiveAppendsOneAbilityGivenAndChangesOnlyTheActorsList(t *testing.T) {
 	sameStateBut(t, before, camp.State(), "fit", []string{"rally", "fists", "rally", "chair-swing"})
 }
 
-// VTT-767
+// VTT-991
 func TestATakeAppendsOneAbilityTakenAndLeavesNoOccurrenceTheOthersInOrder(t *testing.T) {
 	s, camp, dm := abilityChangeServer(t)
 	if r := s.handleCommand(dm, sheetGive("fit", "chair-swing"), nil); !r.GetOk() {
