@@ -1265,3 +1265,28 @@ missing`. Closing it needs a guest name that differs per repetition, for
 instance from `test.info().repeatEachIndex`, in every place the file names
 the guest. Recorded 2026-10-31 by Task 4 of
 `docs/superpowers/plans/2026-10-31-a-name-belongs-to-one-participant.md`.
+
+**Nothing checks the time a give's or a take's batch carries.**
+`appendChange` in `internal/gateway/ability_change.go` stamps every event of a
+give's or a take's batch, the `RulesetNamed` a take opens with included, with
+the `occurred_at` of the command's own event; no test reads it, and no row
+names it (VTT-799 names the participant id and the role, VTT-976 a use's
+entry's issuer). Recipe: on `7f2281f`, stamp `env.OccurredAt` with `nil`
+instead of `first.GetOccurredAt()` in `appendChange`; `go test
+./internal/gateway/` stays green. Labels: `spec silent`. Closing it needs a
+row that a batch's events carry the time its command was appended, and a
+test that reads it on a give, a take and a take's entry. Recorded 2026-11-24
+by the reading review of Task 4b of
+`docs/superpowers/plans/2026-11-23-the-log-names-its-ruleset.md`.
+
+**Nothing checks the bound `ruleset.schema.json` states for a ruleset's
+`name`.** The schema's `name` description states the bound `loadManifest`
+enforces (`maxNameBytes`, VTT-972), but VTT-625 binds the schemas to the
+bounds on ids, property keys and branch labels alone, and
+`TestQAPFSchemasStateTheBoundsLoadEnforces` holds its "ruleset name" probe out
+of scope. Recipe: on `7f2281f`, change the `name` description's "At most 256
+bytes" to "At most 999 bytes" in `internal/rules/schema/ruleset.schema.json`;
+`go test ./internal/rules/...` stays green. Labels: `spec silent`. Closing it
+needs a row that the schema states the name's bound, and the probe brought in
+scope. Recorded 2026-11-24 by the implementation report of
+`docs/superpowers/specs/2026-11-23-the-log-names-its-ruleset-design.md`.
