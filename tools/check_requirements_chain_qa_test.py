@@ -510,8 +510,10 @@ class RealTreeInjected(unittest.TestCase):
 
     # TICKET item 3: "a test file under internal/ ... cites <TAG>-999 and no
     # row defines it", with the project's own tag, on the real test tree.
+    # Cite the copy's first free id: a fixed one is defined once the register
+    # reaches it.
     def test_a_test_file_citing_the_projects_undefined_id_is_refused(self):
-        cited = self.id_(999)
+        cited = self.id_(self.free)
         rel = self.add(
             "internal/gateway/qa_injected_test.go",
             GO_TEST.format(comment="// %s\n" % cited, name="TestInjected"),
@@ -524,7 +526,7 @@ class RealTreeInjected(unittest.TestCase):
     # TICKET item 3: "a file under docs/specifications/ names <TAG>-999 and no
     # row defines it".
     def test_a_specification_naming_the_projects_undefined_id_is_refused(self):
-        cited = self.id_(999)
+        cited = self.id_(self.free)
         rel = self.add(
             "docs/specifications/999-qa-injected.md",
             "# SPEC-999: injected\n\n## Requirements\n\n%s\n" % cited,
