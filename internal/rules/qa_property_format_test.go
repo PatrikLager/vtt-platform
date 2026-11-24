@@ -608,7 +608,7 @@ func TestQAPFFormatVersionIsReadBeforeTheRestOfTheFile(t *testing.T) {
 	}
 }
 
-// VTT-973
+// VTT-996
 func TestQAPFUnknownManifestFieldIsRefused(t *testing.T) {
 	s := qaPFBase()
 	s.manifest()["attributes"] = []any{"brawn"}
@@ -764,6 +764,14 @@ func qaPFReplaced(token, fill string) func(t *testing.T, size int) map[string]st
 	}
 }
 
+func qaPFFormKeyed(t *testing.T, size int) map[string]string {
+	t.Helper()
+	s := qaPFBase()
+	s.manifest()["forms"] = []any{qaPFDoc{"key": qaPFPad("qa-form", "-", size), "name": "Plain Form",
+		"description": "A form the probe pads.", "properties": []any{"grit"}}}
+	return qaPFRender(t, s)
+}
+
 func qaPFBound(t *testing.T, p qaPFProbe, start int) int {
 	t.Helper()
 	loads := func(size int) bool {
@@ -811,11 +819,12 @@ func qaPFSchemaText(t *testing.T, file string, path []string) string {
 	return d
 }
 
-// VTT-625
+// VTT-625 VTT-1009
 func TestQAPFSchemasStateTheBoundsLoadEnforces(t *testing.T) {
 	probes := []qaPFProbe{
 		{"property key", qaPFNamed(func(n *qaPFNames, v string) { n.grit = v }, "grit", "_"),
 			"ruleset.schema.json", []string{"properties", "properties", "items", "properties", "key"}, true},
+		{"form key", qaPFFormKeyed, "ruleset.schema.json", []string{"properties", "forms", "items", "properties", "key"}, true},
 		{"ability id", qaPFNamed(func(n *qaPFNames, v string) { n.steady = v }, "steady", "-"),
 			"ability.schema.json", []string{"properties", "id"}, true},
 		{"condition id", qaPFNamed(func(n *qaPFNames, v string) { n.braced = v }, "braced", "_"),

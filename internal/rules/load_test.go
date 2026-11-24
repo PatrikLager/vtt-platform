@@ -48,11 +48,11 @@ func TestLoadValidFixture(t *testing.T) {
 		keys = append(keys, p.Key)
 		types = append(types, p.Type)
 	}
-	if !equalStrings(keys, []string{"pool_a", "brawn", "grit", "guard"}) {
-		t.Errorf("property keys = %v, want [pool_a brawn grit guard]", keys)
+	if !equalStrings(keys, []string{"pool_a", "brawn", "grit", "guard", "heft"}) {
+		t.Errorf("property keys = %v, want [pool_a brawn grit guard heft]", keys)
 	}
-	if !equalStrings(types, []string{"resource", "number", "number", "number"}) {
-		t.Errorf("property types = %v, want [resource number number number]", types)
+	if !equalStrings(types, []string{"resource", "number", "number", "number", "number"}) {
+		t.Errorf("property types = %v, want [resource number number number number]", types)
 	}
 
 	pool := rs.Property("pool_a")
@@ -578,8 +578,11 @@ type rulesetBound struct {
 // properties.
 func numberAt(t *testing.T, dir, key string) {
 	t.Helper()
-	rulesetEdit(t, dir, "ruleset.json", `"properties": [`, `"properties": [
-    { "key": "`+key+`", "type": "number", "name": "At the bound", "description": "A key at the bound." },`)
+	path := filepath.Join(dir, "ruleset.json")
+	m := readJSONFile(t, path)
+	at := map[string]any{"key": key, "type": "number", "name": "At the bound", "description": "A key at the bound."}
+	m["properties"] = append([]any{at}, m["properties"].([]any)...)
+	writeJSONFile(t, path, m)
 }
 
 func rulesetEdit(t *testing.T, dir, file, old, replacement string) {

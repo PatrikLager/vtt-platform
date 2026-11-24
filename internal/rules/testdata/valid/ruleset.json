@@ -36,6 +36,22 @@
       "type": "number",
       "name": "Guard",
       "description": "The fixture's guard."
+    },
+    {
+      "key": "heft",
+      "type": "number",
+      "name": "Heft",
+      "description": "The fixture's heft, which only its crate form lists."
+    }
+  ],
+  "forms": [
+    {
+      "key": "crate",
+      "name": "Crate",
+      "description": "The fixture's crate.",
+      "properties": [
+        "heft"
+      ]
     }
   ],
   "sheet": [

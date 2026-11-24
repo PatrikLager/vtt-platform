@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PatrikLager/vtt-platform/internal/rules/schema/ruleset.schema.json",
   "title": "Ruleset manifest (ruleset.json)",
-  "description": "The top-level manifest of a rulesets/<id>/ directory: identity, format version, the ruleset's own version, every property the ruleset's actors carry, each named in the table's words, and, optionally, how a character's sheet is laid out and the name for an ability that spends no resource. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
+  "description": "The top-level manifest of a rulesets/<id>/ directory: identity, format version, the ruleset's own version, every property the ruleset's actors carry, each named in the table's words, and, optionally, how a character's sheet is laid out, the name for an ability that spends no resource and the forms a catalogue entry takes. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
   "type": "object",
   "required": [
     "id",
@@ -110,6 +110,45 @@
       "type": "string",
       "minLength": 1,
       "description": "Optional. What the table calls an ability that spends no resource. When present, it must not be empty."
+    },
+    "forms": {
+      "type": "array",
+      "description": "Optional. The forms a catalogue entry takes, in the order the ruleset declares them, each with the number properties an entry of that form carries. A ruleset may declare none. A key is declared by one form.",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "description"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The form's key; no two forms share one. At most 128 bytes of UTF-8."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The form's display name: what the table calls an entry of it."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What an entry of the form is at the table, for a player and for the agent."
+          },
+          "properties": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Optional. Keys of declared number properties, each listed once: the properties an entry of this form carries. A form may list none."
+          }
+        }
+      }
     },
     "sheet": {
       "type": "array",

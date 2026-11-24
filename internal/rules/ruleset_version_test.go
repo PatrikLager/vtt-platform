@@ -31,7 +31,7 @@ func TestARulesetKeepsTheVersionItDeclares(t *testing.T) {
 	}
 }
 
-// VTT-970 VTT-973: a case variant of version is read as version.
+// VTT-970 VTT-996: a case variant of version is read as version.
 func TestACaseVariantOfVersionIsReadAsTheVersion(t *testing.T) {
 	rs, err := rules.Load(versionedRuleset(t, map[string]any{"version": nil, "VERSION": "7"}))
 	if err != nil {
@@ -123,7 +123,7 @@ func TestARulesetWhoseIDVersionAndNameAreAtTheirBoundsLoads(t *testing.T) {
 	}
 }
 
-// VTT-973
+// VTT-996
 func TestAnUndefinedFieldBesideTheVersionIsRefused(t *testing.T) {
 	dir := versionedRuleset(t, map[string]any{"version": "1", "versions": "2"})
 	_, err := rules.Load(dir)

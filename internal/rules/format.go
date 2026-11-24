@@ -32,6 +32,9 @@ type Ruleset struct {
 	// FreeUsageName is the ruleset's name for free usage, or none (VTT-856).
 	FreeUsageName string
 
+	// Forms is every form the ruleset declares, in its order, or nil (VTT-993).
+	Forms []Form
+
 	// Conditions is keyed by its declared id. Load rejects duplicate ids
 	// (within and across files) before the map is populated, so every
 	// entry here is unique by construction.
@@ -299,6 +302,13 @@ type SheetSection struct {
 	Values     []string
 	Conditions bool
 	Abilities  []ShownUsage
+}
+
+// Form is a kind of catalogue entry, with the number properties its entries
+// carry as keys, in the order it lists them (VTT-993).
+type Form struct {
+	Key, Name, Description string
+	Properties             []string
 }
 
 // ShownUsage picks the abilities a section shows: those used at will, or

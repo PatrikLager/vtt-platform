@@ -78,6 +78,7 @@ func loadV2(dir string, manifest *loadedManifest) (*Ruleset, error) {
 		FormatVersion: manifest.FormatVersion,
 		Version:       manifest.Version,
 		Properties:    manifest.properties,
+		Forms:         manifest.forms,
 		Conditions:    conditions,
 		Atoms:         atoms,
 		Guide:         string(guide),
@@ -113,7 +114,15 @@ type manifestJSON struct {
 	// A pointer, so that "sheet": [] is told apart from no sheet (VTT-825).
 	Sheet *[]sheetPageJSON `json:"sheet"`
 	// A pointer, so that "" is told apart from no name (VTT-857).
-	FreeUsageName *string `json:"free_usage_name"`
+	FreeUsageName *string    `json:"free_usage_name"`
+	Forms         []formJSON `json:"forms"`
+}
+
+type formJSON struct {
+	Key         string   `json:"key"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Properties  []string `json:"properties"`
 }
 
 type sheetPageJSON struct {
@@ -162,6 +171,7 @@ type loadedManifest struct {
 	path          string
 	sheet         *[]sheetPageJSON
 	freeUsageName string
+	forms         []Form
 }
 
 // checkFormatVersion refuses any format_version but "3" (VTT-616). It reads
@@ -230,11 +240,58 @@ func loadManifest(path string) (*loadedManifest, error) {
 		}
 		props = append(props, prop)
 	}
+	forms, err := loadForms(path, raw.Forms, props)
+	if err != nil {
+		return nil, err
+	}
 
 	return &loadedManifest{
 		ID: raw.ID, Name: raw.Name, FormatVersion: raw.FormatVersion, Version: raw.Version, properties: props,
-		path: path, sheet: raw.Sheet, freeUsageName: freeUsageName,
+		path: path, sheet: raw.Sheet, freeUsageName: freeUsageName, forms: forms,
 	}, nil
+}
+
+// loadForms checks each form against the properties declared beside it and
+// returns them in order, or nil when there are none (VTT-993, VTT-994, VTT-995).
+func loadForms(path string, raw []formJSON, props []Property) ([]Form, error) {
+	types := map[string]string{}
+	for _, p := range props {
+		types[p.Key] = p.Type
+	}
+	var forms []Form
+	keys := map[string]bool{}
+	for i, f := range raw {
+		field := fmt.Sprintf("forms[%d]", i)
+		if f.Key == "" {
+			return nil, fieldErr(path, field+".key", "must not be empty")
+		}
+		if f.Name == "" {
+			return nil, fieldErr(path, field+".name", fmt.Sprintf("form %q: must not be empty", f.Key))
+		}
+		if f.Description == "" {
+			return nil, fieldErr(path, field+".description", fmt.Sprintf("form %q: must not be empty", f.Key))
+		}
+		if keys[f.Key] {
+			return nil, fieldErr(path, field+".key", fmt.Sprintf("duplicate form key %q", f.Key))
+		}
+		keys[f.Key] = true
+		listed := map[string]bool{}
+		for j, key := range f.Properties {
+			pfield := fmt.Sprintf("%s.properties[%d]", field, j)
+			if types[key] == "" {
+				return nil, fieldErr(path, pfield, fmt.Sprintf("names %q, which no property declares", key))
+			}
+			if listed[key] {
+				return nil, fieldErr(path, pfield, fmt.Sprintf("names %q, which the form lists already", key))
+			}
+			if types[key] != PropertyNumber {
+				return nil, fieldErr(path, pfield, fmt.Sprintf("names %s property %q; a form lists %s properties only", types[key], key, PropertyNumber))
+			}
+			listed[key] = true
+		}
+		forms = append(forms, Form(f))
+	}
+	return forms, nil
 }
 
 // checkPropertyKey refuses a key an expression could not read as one
@@ -453,7 +510,7 @@ func (u *Usage) UnmarshalJSON(data []byte) error {
 }
 
 // UnmarshalJSON decodes a ShownUsage from the bare string "at_will" or an
-// object {"spends": "<resource key>"}, refusing any other field (VTT-973).
+// object {"spends": "<resource key>"}, refusing any other field (VTT-996).
 func (u *ShownUsage) UnmarshalJSON(data []byte) error {
 	var asString string
 	if err := json.Unmarshal(data, &asString); err == nil {
@@ -1260,6 +1317,11 @@ func checkManifestBounds(path string, raw *manifestJSON) error {
 	for i, p := range raw.Properties {
 		if len(p.Key) > maxIDBytes {
 			return fieldErr(path, fmt.Sprintf("properties[%d].key", i), fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(p.Key)))
+		}
+	}
+	for i, f := range raw.Forms {
+		if len(f.Key) > maxIDBytes {
+			return fieldErr(path, fmt.Sprintf("forms[%d].key", i), fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(f.Key)))
 		}
 	}
 	return nil
