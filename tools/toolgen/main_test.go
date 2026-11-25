@@ -911,3 +911,36 @@ func TestAddActorSaysAKeyACatalogueFormListsIsRefusedOnASheet(t *testing.T) {
 		}
 	}
 }
+
+func TestAddActorSaysWhatASheetsReferencesAre(t *testing.T) {
+	actor := findTool(t, "add_actor")["inputSchema"].(map[string]any)["properties"].(map[string]any)["actor"].(map[string]any)
+	refs, ok := actor["properties"].(map[string]any)["references"].(map[string]any)
+	if !ok {
+		t.Fatal("add_actor's actor has no references property")
+	}
+	desc, _ := refs["description"].(string)
+	for _, want := range []string{"Optional", "references to catalogue entries", "a reference id you give it",
+		"two sheets may use one id", "its entry", "the place on the sheet", "its state", "get_ruleset"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("add_actor's references description = %q, want it to say %q", desc, want)
+		}
+	}
+}
+
+func TestAReferenceRequiresItsEntryAndItsPlaceAndNotItsState(t *testing.T) {
+	actor := findTool(t, "add_actor")["inputSchema"].(map[string]any)["properties"].(map[string]any)["actor"].(map[string]any)
+	refs, _ := actor["properties"].(map[string]any)["references"].(map[string]any)
+	ref, ok := refs["additionalProperties"].(map[string]any)
+	if !ok {
+		t.Fatal("add_actor's references hold no schema for a reference")
+	}
+	if got, want := ref["required"], []any{"entryId", "place"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("a reference's required = %v, want %v", got, want)
+	}
+	props := ref["properties"].(map[string]any)
+	for field, want := range map[string]string{"entryId": "REQUIRED", "place": "REQUIRED", "state": "Optional"} {
+		if desc, _ := props[field].(map[string]any)["description"].(string); !strings.HasPrefix(desc, want) {
+			t.Errorf("a reference's %s description = %q, want it to begin %q", field, desc, want)
+		}
+	}
+}

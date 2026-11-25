@@ -124,7 +124,7 @@ function toldSequences(log: Envelope[]): bigint[] {
 }
 
 // The kinds the Story draws no line for, in a run or out of one
-// (VTT-809, VTT-810, VTT-818, VTT-823).
+// (VTT-1029, VTT-810, VTT-818, VTT-823).
 const MECHANICAL = new Set([
   "resourceChanged", "abilityGiven", "abilityTaken", "resourceAdded", "resourceRemoved",
   "actorControlGranted", "actorControlRevoked", "tokenPlaced", "tokenMoved", "tokenHidden",

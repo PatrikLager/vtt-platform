@@ -1,0 +1,11 @@
+{
+  "actorId": "act-ada",
+  "name": "Ada",
+  "moduleId": "qa-rules",
+  "kind": "ACTOR_KIND_PARTY_MEMBER",
+  "abilityIds": ["rally"],
+  "references": {
+    "ref-echo": { "entryId": "echo", "place": "mike", "state": "lima" },
+    "ref-delta": { "entryId": "delta", "place": "kilo" }
+  }
+}

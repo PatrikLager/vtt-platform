@@ -122,6 +122,26 @@ func TestResourceRemovedEnvelopeRoundTrip(t *testing.T) {
 func TestRulesetNamedEnvelopeRoundTrip(t *testing.T) {
 	roundTrip(t, "ruleset_named_envelope.json", &vttv1.Envelope{})
 }
+
+// VTT-1027
+func TestActorWithReferencesRoundTrip(t *testing.T) {
+	roundTrip(t, "actor_references.json", &vttv1.Actor{})
+}
+
+// VTT-1027
+func TestReferenceAddedEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "reference_added_envelope.json", &vttv1.Envelope{})
+}
+
+// VTT-1027
+func TestReferenceRemovedEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "reference_removed_envelope.json", &vttv1.Envelope{})
+}
+
+// VTT-1027
+func TestReferenceChangedEnvelopeRoundTrip(t *testing.T) {
+	roundTrip(t, "reference_changed_envelope.json", &vttv1.Envelope{})
+}
 func TestUpsertNoteCommandRoundTrip(t *testing.T) {
 	roundTrip(t, "upsert_note_command.json", &vttv1.ClientCommand{})
 }

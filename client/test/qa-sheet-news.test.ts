@@ -589,7 +589,7 @@ describe("qa sheet news: a player's window", () => {
     await settle();
     expect(toast(root)).toBe("Alda can now use Parry."); // VTT-733
     expect(offersAbility(root, "Parry")).toBe(true); // VTT-695
-    expect(storyText(root)).not.toContain("can now use"); // VTT-809
+    expect(storyText(root)).not.toContain("can now use"); // VTT-1029
 
     // A take: the answer no longer lists the taken ability; the window still
     // names it by what an earlier answer called it (VTT-734).
@@ -608,7 +608,7 @@ describe("qa sheet news: a player's window", () => {
     expect(toast(root)).toBe("Alda can no longer use Slash."); // VTT-733, VTT-734
     expect(offersAbility(root, "Slash")).toBe(false); // VTT-695
     expect(offersAbility(root, "Parry")).toBe(true);
-    expect(storyText(root)).not.toContain("can no longer use"); // VTT-809
+    expect(storyText(root)).not.toContain("can no longer use"); // VTT-1029
 
     // A give of an id no answer ever named, whose read fails: shown after the
     // failure, by its id.
@@ -621,7 +621,7 @@ describe("qa sheet news: a player's window", () => {
     server.fail(server.held.length - 1);
     await settle();
     expect(toast(root)).toBe("Alda can now use mystery."); // VTT-733, VTT-734
-    expect(storyText(root)).not.toContain("mystery"); // VTT-809
+    expect(storyText(root)).not.toContain("mystery"); // VTT-1029
 
     // Two actors at once, one with a give and a take: per actor in the set's
     // order, the newest display name any answer gave.
@@ -645,7 +645,7 @@ describe("qa sheet news: a player's window", () => {
     expect(toast(root)).toBe(
       "Alda can now use Fang and Hook. Alda can no longer use Dodge Roll. Bram can now use Mend.",
     );
-    expect(storyText(root)).not.toContain("Dodge Roll"); // VTT-809
+    expect(storyText(root)).not.toContain("Dodge Roll"); // VTT-1029
     expect(offersAbility(root, "Fang")).toBe(true);
     expect(offersAbility(root, "Dodge Roll")).toBe(false);
   });

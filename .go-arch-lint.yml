@@ -22,6 +22,8 @@ excludeFiles:
   # (contract/gen/go/**) does not cover, so any *_test.go sitting beside it
   # is unattached the same way.
   - contract/contract_test\.go$
+  # Same reason again, for Phase 4a's round trip of the reference events.
+  - contract/qa_reference_roundtrip_test\.go$
   # identity is self-only in production code (mayDependOn: [identity]), but
   # its test file legitimately proves coexistence with store.Store on the
   # same campaign file (task-3-brief.md Step 1) — that one behavioral case

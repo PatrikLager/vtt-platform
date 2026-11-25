@@ -38,7 +38,10 @@ func abilityTable(t *testing.T) *engine.State {
 		Attributes: map[string]int32{"brawn": 2},
 		Resources:  map[string]*vttv1.Resource{"stamina": {Current: 3, Max: 5}},
 		ModuleData: lore,
-		AbilityIds: []string{"rally", "fists", "rally", "lunge"}}})))
+		AbilityIds: []string{"rally", "fists", "rally", "lunge"},
+		References: map[string]*vttv1.Reference{
+			"r1": {EntryId: "echo", Place: "mike", State: "lima"},
+			"r2": {EntryId: "delta", Place: "kilo"}}}})))
 	must(t, engine.Apply(st, env(4, &vttv1.ActorAdded{Actor: &vttv1.Actor{
 		ActorId: "a2", Name: "Bo", Kind: vttv1.ActorKind_ACTOR_KIND_NON_PARTY,
 		AbilityIds: []string{"rally"}}})))

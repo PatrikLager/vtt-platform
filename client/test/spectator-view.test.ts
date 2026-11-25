@@ -11,7 +11,7 @@ import {
   TokenRemovedSchema, ActorRemovedSchema, TokenHiddenSchema, TokenDescribedSchema,
   ActorControlGrantedSchema, ActorControlRevokedSchema, DoorOpenedSchema, DoorClosedSchema,
   WhisperAddedSchema, AbilityGivenSchema, AbilityTakenSchema, ResourceAddedSchema, ResourceRemovedSchema,
-  RulesetNamedSchema, type Envelope,
+  RulesetNamedSchema, ReferenceAddedSchema, ReferenceRemovedSchema, ReferenceChangedSchema, type Envelope,
 } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { renderSpectator, describe as describeEvent, CELL, boardCamera, paneSize,
   DEFAULT_PANE_W, DEFAULT_PANE_H, type ViewExtras } from "../src/view/spectator";
@@ -285,6 +285,14 @@ test("describe renders a real label for every event kind, not the fallback", () 
       "Ama no longer has vigor"],
     [env(36, { case: "rulesetNamed", value: create(RulesetNamedSchema, { rulesetId: "qa-rules", version: "2", name: "Plain Rules" }) }),
       "rules: Plain Rules, version 2"],
+    [env(37, { case: "referenceAdded", value: create(ReferenceAddedSchema, {
+      actorId: "act-ama", referenceId: "r-echo", reference: { entryId: "echo", place: "mike", state: "lima" } }) }),
+      "Ama now holds r-echo"],
+    [env(38, { case: "referenceRemoved", value: create(ReferenceRemovedSchema, { actorId: "act-gob", referenceId: "r-delta" }) }),
+      "a hunched goblin no longer holds r-delta"],
+    [env(39, { case: "referenceChanged", value: create(ReferenceChangedSchema, {
+      actorId: "act-ama", referenceId: "r-echo", place: "kilo" }) }),
+      "Ama's r-echo changed"],
   ];
 
   for (const [e, want] of cases) {
@@ -1587,7 +1595,7 @@ test("at a companion's first sight the Story draws no line for its run, its cont
   expect(root.querySelector('[data-token-id="t2"]')).not.toBeNull();
 });
 
-// VTT-809 VTT-810 VTT-984
+// VTT-1029 VTT-810 VTT-984
 test("a party member corrected at its first sight draws no line of its sheet or its control, and the Events panel draws each", () => {
   // The log's own entries carry no event id; what it forwards from the world does.
   const own = (seq: number, payload: Envelope["payload"]): Envelope =>

@@ -89,6 +89,31 @@
               "description": "Optional display label for the actor. At most 256 bytes of UTF-8; a longer name refuses the whole command.",
               "type": "string"
             },
+            "references": {
+              "additionalProperties": {
+                "properties": {
+                  "entryId": {
+                    "description": "REQUIRED; the id of the catalogue entry the reference names (get_ruleset's catalogue).",
+                    "type": "string"
+                  },
+                  "place": {
+                    "description": "REQUIRED; the key of the place on the sheet that holds the entry (get_ruleset's places).",
+                    "type": "string"
+                  },
+                  "state": {
+                    "description": "Optional; the reference's state in its place, one of the states that place names (get_ruleset's places). Leave it out where the place names none.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "entryId",
+                  "place"
+                ],
+                "type": "object"
+              },
+              "description": "Optional. The sheet's references to catalogue entries, each under a reference id you give it, which is the sheet's own: two sheets may use one id. Each names its entry by the entry's id in the served ruleset's catalogue, the place on the sheet that holds it, and its state there (get_ruleset lists the catalogue and the places). A reference whose id is empty refuses the whole command, with a ruleset served or none.",
+              "type": "object"
+            },
             "resources": {
               "additionalProperties": {
                 "properties": {

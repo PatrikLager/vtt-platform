@@ -160,6 +160,17 @@ message Actor {
   ActorKind kind = 9;
   // The ruleset's abilities this actor has, by id; SPEC-025.
   repeated string ability_ids = 10;
+  // The sheet's references to catalogue entries, keyed by the reference's id;
+  // SPEC-028.
+  map<string, Reference> references = 11;
+}
+
+// Reference names a catalogue entry, the place on the sheet that holds it and
+// its state there (SPEC-028).
+message Reference {
+  string entry_id = 1;
+  string place = 2;
+  string state = 3;
 }
 
 // ActorControlGranted adds a participant to an actor's controller set, and
@@ -582,6 +593,28 @@ message ResourceRemoved {
   string resource = 2;
 }
 
+// ReferenceAdded adds one reference to an actor's sheet (SPEC-028).
+message ReferenceAdded {
+  string actor_id = 1;
+  string reference_id = 2;
+  Reference reference = 3;
+}
+
+// ReferenceRemoved takes a reference off an actor's sheet (SPEC-028).
+message ReferenceRemoved {
+  string actor_id = 1;
+  string reference_id = 2;
+}
+
+// ReferenceChanged sets a reference's place and state, keeping its entry
+// (SPEC-028).
+message ReferenceChanged {
+  string actor_id = 1;
+  string reference_id = 2;
+  string place = 3;
+  string state = 4;
+}
+
 // RulesetNamed names the ruleset, and its version, the outcomes after it are
 // decided under (SPEC-026).
 message RulesetNamed {
@@ -674,5 +707,9 @@ message Envelope {
     ResourceRemoved resource_removed = 39;
     // The ruleset the outcomes after it are decided under (SPEC-007).
     RulesetNamed ruleset_named = 40;
+    // A sheet's references change in play (SPEC-007).
+    ReferenceAdded reference_added = 41;
+    ReferenceRemoved reference_removed = 42;
+    ReferenceChanged reference_changed = 43;
   }
 }

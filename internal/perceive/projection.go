@@ -600,7 +600,9 @@ func (pr *Projection) classify(env *vttv1.Envelope, now sightView) verdict {
 
 	// Forward only a party member's: a log is written no creature's sheet (SPEC-016).
 	case *vttv1.Envelope_ResourceChanged, *vttv1.Envelope_AbilityGiven, *vttv1.Envelope_AbilityTaken,
-		*vttv1.Envelope_ResourceAdded, *vttv1.Envelope_ResourceRemoved:
+		*vttv1.Envelope_ResourceAdded, *vttv1.Envelope_ResourceRemoved,
+		*vttv1.Envelope_ReferenceAdded, *vttv1.Envelope_ReferenceRemoved,
+		*vttv1.Envelope_ReferenceChanged:
 		id := sheetActor(env)
 		return passIf(now.party[id] && saw(id))
 
@@ -632,6 +634,15 @@ func sheetActor(env *vttv1.Envelope) string {
 	}
 	if rr := env.GetResourceRemoved(); rr != nil {
 		return rr.GetActorId()
+	}
+	if ra := env.GetReferenceAdded(); ra != nil {
+		return ra.GetActorId()
+	}
+	if rr := env.GetReferenceRemoved(); rr != nil {
+		return rr.GetActorId()
+	}
+	if rc := env.GetReferenceChanged(); rc != nil {
+		return rc.GetActorId()
 	}
 	return env.GetResourceChanged().GetActorId()
 }

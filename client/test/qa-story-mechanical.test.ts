@@ -37,7 +37,7 @@ const KEPT = new Set<Kind>([
   "conditionRemoved", "abilityUsed", "attackRolled", "narrationAdded", "whisperAdded", "rulesetNamed",
 ]);
 const LEFT_OUT: { kind: Kind; id: string }[] = [
-  ...SHEET.map((kind) => ({ kind, id: "VTT-809" })),
+  ...SHEET.map((kind) => ({ kind, id: "VTT-1029" })),
   ...CONTROL.map((kind) => ({ kind, id: "VTT-810" })),
   ...BOARD.map((kind) => ({ kind, id: "VTT-818" })),
   ...HIDDEN.map((kind) => ({ kind, id: "VTT-823" })),
@@ -168,7 +168,7 @@ for (const role of ROLES) {
       expect(d.story.length).toBeGreaterThan(5);
     });
 
-    // VTT-809 VTT-810 VTT-818 VTT-823
+    // VTT-1029 VTT-810 VTT-818 VTT-823
     test(`${role.name}, ${v}: no Story line carries a fragment of a sheet, control, board, scene, note or adventure entry`, () => {
       const d = draw(log, role);
       const hits = d.story.flatMap((line) => MECHANICAL_FRAGMENTS.filter((f) => line.includes(f)).map((f) => `${line} ⊃ ${f}`));
@@ -177,7 +177,7 @@ for (const role of ROLES) {
 
     for (const { kind, id } of LEFT_OUT) {
       const entries = log.filter((e) => e.payload.case === kind);
-      // VTT-809 VTT-810 VTT-818 VTT-823 (the row this kind belongs to)
+      // VTT-1029 VTT-810 VTT-818 VTT-823 (the row this kind belongs to)
       test(`${id}: ${role.name}, ${v}: the Story draws no line for a ${kind}`, () => {
         const d = draw(log, role);
         const kept = expectedStory(log, d.names);
@@ -374,7 +374,7 @@ function runLog(between: [boolean, Payload][]): Envelope[] {
 }
 
 for (const role of ROLES) {
-  // VTT-809 VTT-810 VTT-818 VTT-984
+  // VTT-1029 VTT-810 VTT-818 VTT-984
   test(`${role.name}: a party member corrected at its first sight draws no "now has", "can now use" or "is at" line`, () => {
     const d = draw(firstSightLog(), role);
     expect(d.story).toEqual(["session started — Night one", "Tobbe is in the party", "Mira is in the party"]);
@@ -382,7 +382,7 @@ for (const role of ROLES) {
     if (role.dm) expect(d.ticker).toContain("Mira can now use hunters-flurry");
   });
 
-  // VTT-984 VTT-809
+  // VTT-984 VTT-1029
   test(`${role.name}: a bare condition behind a run with a correction's sheet frame between is drawn`, () => {
     const d = draw(runLog([
       [false, { case: "actorControlGranted", value: { actorId: "a3", participantId: "p2", kind: ActorKind.PARTY_MEMBER } }],
@@ -411,7 +411,7 @@ for (const role of ROLES) {
 // ---- buildFeed directly ----
 
 for (const v of Object.keys(VARIANTS) as Variant[]) {
-  // VTT-809 VTT-810 VTT-818 VTT-820 VTT-984 VTT-823
+  // VTT-1029 VTT-810 VTT-818 VTT-820 VTT-984 VTT-823
   test(`buildFeed, ${v}: its entries hold every kept event once and no left-out one`, () => {
     const log = worldLog(v);
     const feed = buildFeed(log);
@@ -443,7 +443,7 @@ for (const eid of [true, false]) {
   });
 }
 
-// VTT-809 VTT-818
+// VTT-1029 VTT-818
 test("buildFeed: a party member corrected at its first sight leaves no sheet or board entry", () => {
   const kinds = buildFeed(firstSightLog()).flatMap((f) => f.events.map((e) => e.payload.case));
   expect(kinds).toEqual(["sessionStarted", "actorAdded", "actorAdded"]);

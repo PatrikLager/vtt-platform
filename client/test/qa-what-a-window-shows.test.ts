@@ -647,6 +647,12 @@ function everyCase(): Record<PayloadCase, Envelope> {
       actorId: "act-c1", resource: "vigor" } } }),
     rulesetNamed: env({ payload: { case: "rulesetNamed", value: {
       rulesetId: "rules-plain", version: "3", name: "Plain Rules" } } }),
+    referenceAdded: env({ payload: { case: "referenceAdded", value: {
+      actorId: "act-p1", referenceId: "ref-echo", reference: { entryId: "echo", place: "mike" } } } }),
+    referenceRemoved: env({ payload: { case: "referenceRemoved", value: {
+      actorId: "act-c1", referenceId: "ref-delta" } } }),
+    referenceChanged: env({ payload: { case: "referenceChanged", value: {
+      actorId: "act-p1", referenceId: "ref-echo", place: "kilo" } } }),
   };
 }
 

@@ -3996,6 +3996,10 @@ const EVERY_KIND: [Frame, string, string | null][] = [
   [{ abilityTaken: { actorId: "a1", abilityId: "slash" } }, "Lera can no longer use slash", null],
   [{ resourceAdded: { actorId: "a1", resource: "vigor", value: { current: 1, max: 2 } } }, "Lera now has vigor at 1", null],
   [{ resourceRemoved: { actorId: "a1", resource: "vigor" } }, "Lera no longer has vigor", null],
+  [{ referenceAdded: { actorId: "a1", referenceId: "r1", reference: { entryId: "echo", place: "mike", state: "lima" } } },
+    "Lera now holds r1", null],
+  [{ referenceChanged: { actorId: "a1", referenceId: "r1", place: "kilo" } }, "Lera's r1 changed", null],
+  [{ referenceRemoved: { actorId: "a1", referenceId: "r1" } }, "Lera no longer holds r1", null],
   [{ actorAdded: { actor: { actorId: "a2", name: "Bram", kind: "ACTOR_KIND_PARTY_MEMBER" } } }, "Bram is in the party", "Bram is in the party"],
   [{ actorControlGranted: { actorId: "a2", participantId: "q", kind: "ACTOR_KIND_PARTY_MEMBER" } }, "control of Bram given", null],
   [{ tokenPlaced: { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 4, y: 4 }, name: "Bram", gmName: "Bram" } },
@@ -4018,6 +4022,10 @@ const EVERY_KIND_BARE: [Frame, string][] = [
   [{ abilityTaken: { actorId: "a1", abilityId: "slash" } }, "Lera can no longer use slash"],
   [{ resourceAdded: { actorId: "a1", resource: "vigor", value: { current: 2, max: 2 } } }, "Lera now has vigor at 2"],
   [{ resourceRemoved: { actorId: "a1", resource: "vigor" } }, "Lera no longer has vigor"],
+  [{ referenceAdded: { actorId: "a1", referenceId: "r2", reference: { entryId: "delta", place: "kilo" } } },
+    "Lera now holds r2"],
+  [{ referenceChanged: { actorId: "a1", referenceId: "r2", place: "mike", state: "oscar" } }, "Lera's r2 changed"],
+  [{ referenceRemoved: { actorId: "a1", referenceId: "r2" } }, "Lera no longer holds r2"],
   [{ actorControlGranted: { actorId: "a2", participantId: "q", kind: "ACTOR_KIND_PARTY_MEMBER" } }, "control of Bram given"],
   [{ actorControlRevoked: { actorId: "a2", participantId: "q" } }, "control of Bram taken back"],
   [{ sceneCreated: { sceneId: "s2", name: "Crypt", gridWidth: 8, gridHeight: 8 } }, 'scene "Crypt"'],
@@ -4037,7 +4045,7 @@ const EVERY_KIND_BARE: [Frame, string][] = [
 
 const storyLines = (r: HTMLElement) => Array.from(r.querySelectorAll(".feed .beat p"), (n) => n.textContent);
 
-// VTT-809 VTT-810 VTT-818 VTT-871 VTT-820 VTT-984 VTT-823 VTT-446 VTT-447 VTT-985
+// VTT-1029 VTT-810 VTT-818 VTT-871 VTT-820 VTT-984 VTT-823 VTT-446 VTT-447 VTT-985
 test("every role's Story draws what happens in the game and no mechanical entry, and the DM's and the agent's Events panel draws each", async () => {
   for (const role of ["dm", "agent", "player", "spectator"]) {
     const { r, s, sock } = await dialAs(role);
@@ -4409,7 +4417,7 @@ test("after a removal the share link opens the join form, and a page under the d
   again?.close();
 });
 
-// VTT-815 VTT-809
+// VTT-815 VTT-1029
 test("the ruleset's properties reach the chip and the cost, and the Story draws no resource change", async () => {
   localStorage.setItem("vtt.token", "tok");
   stubMetadata({

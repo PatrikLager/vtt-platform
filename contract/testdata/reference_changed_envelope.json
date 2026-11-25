@@ -1,0 +1,14 @@
+{
+  "eventId": "evt-reference-changed-1",
+  "sequence": "63",
+  "occurredAt": "2026-11-25T10:00:00Z",
+  "sessionId": "sess-1",
+  "actorRole": "agent",
+  "participantId": "p-agent",
+  "referenceChanged": {
+    "actorId": "act-ada",
+    "referenceId": "ref-echo",
+    "place": "mike",
+    "state": "lima"
+  }
+}

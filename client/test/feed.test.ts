@@ -302,10 +302,11 @@ test("buildFeed tells a bare removal and an actorAdded with no actor after it", 
   expect(told).toEqual(["actorRemoved 1", "actorAdded 2"]);
 });
 
-// VTT-809 VTT-810 VTT-818 VTT-820 VTT-984 VTT-823
+// VTT-1029 VTT-810 VTT-818 VTT-820 VTT-984 VTT-823
 test("buildFeed keeps each kind the Story draws and leaves out the rest, an entry with an event id and one with none", () => {
   const leftOut = new Set([
     "resourceChanged", "abilityGiven", "abilityTaken", "resourceAdded", "resourceRemoved",
+    "referenceAdded", "referenceRemoved", "referenceChanged",
     "actorControlGranted", "actorControlRevoked",
     "tokenPlaced", "tokenMoved", "tokenHidden", "tokenRemoved", "tokenDescribed", "sceneCreated", "sceneSeen",
     "noteUpserted", "noteDeleted", "adventureLoaded",

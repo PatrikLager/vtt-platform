@@ -147,6 +147,12 @@ export function describe(e: Envelope, names: Namer): string {
       return `${names.actor(p.value.actorId)} now has ${names.resource(p.value.resource)} at ${p.value.value?.current ?? 0}`;
     case "resourceRemoved":
       return `${names.actor(p.value.actorId)} no longer has ${names.resource(p.value.resource)}`;
+    case "referenceAdded":
+      return `${names.actor(p.value.actorId)} now holds ${p.value.referenceId}`;
+    case "referenceRemoved":
+      return `${names.actor(p.value.actorId)} no longer holds ${p.value.referenceId}`;
+    case "referenceChanged":
+      return `${names.actor(p.value.actorId)}'s ${p.value.referenceId} changed`;
     case "actorControlGranted":
       return `control of ${names.actor(p.value.actorId)} given`;
     case "actorControlRevoked":

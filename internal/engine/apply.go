@@ -162,6 +162,9 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		if n, ok := keyLength(a.GetAttributes()); ok && (n == 0 || n > maxIDBytes) {
 			return fmt.Errorf("engine: attribute name must be 1-%d bytes, got %d", maxIDBytes, n)
 		}
+		if _, empty := a.GetReferences()[""]; empty {
+			return fmt.Errorf("engine: actor_added: actor %q holds a reference with an empty id", a.ActorId)
+		}
 		stored := proto.Clone(a).(*vttv1.Actor)
 		st.Actors[a.ActorId] = stored
 		return nil
@@ -306,6 +309,63 @@ func Apply(st *State, env *vttv1.Envelope) error {
 		res := maps.Clone(actor.GetResources())
 		delete(res, rr.GetResource())
 		actor.Resources = res
+		return nil
+
+	case *vttv1.Envelope_ReferenceAdded:
+		ra := p.ReferenceAdded
+		if ra.GetReferenceId() == "" {
+			return fmt.Errorf("engine: reference_added requires a reference id")
+		}
+		if ra.GetReference() == nil {
+			return fmt.Errorf("engine: reference_added requires a reference")
+		}
+		actor, ok := st.Actors[ra.GetActorId()]
+		if !ok {
+			return fmt.Errorf("engine: reference_added names unknown actor %q", ra.GetActorId())
+		}
+		if _, held := actor.GetReferences()[ra.GetReferenceId()]; held {
+			return fmt.Errorf("engine: actor %q already holds reference %q", ra.GetActorId(), ra.GetReferenceId())
+		}
+		// Write a fresh map, as the resource arms do: a caller may hold the old one.
+		refs := maps.Clone(actor.GetReferences())
+		if refs == nil {
+			refs = map[string]*vttv1.Reference{}
+		}
+		r := ra.GetReference()
+		// Copy every field of Reference here: one the contract gains is dropped otherwise.
+		refs[ra.GetReferenceId()] = &vttv1.Reference{EntryId: r.GetEntryId(), Place: r.GetPlace(), State: r.GetState()}
+		actor.References = refs
+		return nil
+
+	case *vttv1.Envelope_ReferenceRemoved:
+		rr := p.ReferenceRemoved
+		actor, ok := st.Actors[rr.GetActorId()]
+		if !ok {
+			return fmt.Errorf("engine: reference_removed names unknown actor %q", rr.GetActorId())
+		}
+		if _, held := actor.GetReferences()[rr.GetReferenceId()]; !held {
+			return fmt.Errorf("engine: actor %q does not hold reference %q", rr.GetActorId(), rr.GetReferenceId())
+		}
+		refs := maps.Clone(actor.GetReferences())
+		delete(refs, rr.GetReferenceId())
+		actor.References = refs
+		return nil
+
+	case *vttv1.Envelope_ReferenceChanged:
+		rc := p.ReferenceChanged
+		actor, ok := st.Actors[rc.GetActorId()]
+		if !ok {
+			return fmt.Errorf("engine: reference_changed names unknown actor %q", rc.GetActorId())
+		}
+		was, held := actor.GetReferences()[rc.GetReferenceId()]
+		if !held {
+			return fmt.Errorf("engine: actor %q does not hold reference %q", rc.GetActorId(), rc.GetReferenceId())
+		}
+		// Write a fresh map and a fresh reference: a caller may hold either.
+		refs := maps.Clone(actor.GetReferences())
+		// Copy every field of Reference here: one the contract gains is dropped otherwise.
+		refs[rc.GetReferenceId()] = &vttv1.Reference{EntryId: was.GetEntryId(), Place: rc.GetPlace(), State: rc.GetState()}
+		actor.References = refs
 		return nil
 
 	case *vttv1.Envelope_TokenPlaced:

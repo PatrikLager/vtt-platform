@@ -8,7 +8,7 @@ import type { Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
 type Kind = NonNullable<Envelope["payload"]["case"]>;
 
 // Decide here whether the Story draws each kind the contract adds
-// (VTT-809, VTT-810, VTT-818, VTT-984, VTT-823).
+// (VTT-1029, VTT-810, VTT-818, VTT-984, VTT-823).
 const STORY: Record<Kind, boolean> = {
   sessionStarted: true,
   sessionEnded: true,
@@ -28,6 +28,9 @@ const STORY: Record<Kind, boolean> = {
   abilityTaken: false,
   resourceAdded: false,
   resourceRemoved: false,
+  referenceAdded: false,
+  referenceRemoved: false,
+  referenceChanged: false,
   actorControlGranted: false,
   actorControlRevoked: false,
   tokenPlaced: false,

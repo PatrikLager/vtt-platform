@@ -143,7 +143,7 @@ function qaPNStoryOf(e: Envelope, properties: Property[] | undefined): string {
   return fromDescribe;
 }
 
-// The Story draws no resource change (VTT-809): its line is the Events panel's.
+// The Story draws no resource change (VTT-1029): its line is the Events panel's.
 function qaPNEventsRowOf(e: Envelope, properties: Property[] | undefined): string {
   const st = qaPNState();
   const fromDescribe = qaPNLine(e, namer(st, [e], true, QA_PN_ABILITIES, properties));
@@ -247,19 +247,19 @@ test("chips are ordered by key, not by display name or insertion", () => {
   expect(disc?.resources.map((r) => r.name)).toEqual(["focus", "hp", "mana"]);
 });
 
-// VTT-815 VTT-809
+// VTT-815 VTT-1029
 test("the Events panel's line of a declared resource's change has its whole form", () => {
   const line = qaPNEventsRowOf(qaPNChange(ARIA, "mana", 7), QA_PN_PROPS);
   expect(line).toMatch(/^Aria\s+Arcana\s+→\s+7$/);
 });
 
-// VTT-816 VTT-809
+// VTT-816 VTT-1029
 test("the Events panel's line of an undeclared resource's change names its key", () => {
   const line = qaPNEventsRowOf(qaPNChange(ARIA, "focus", 6), QA_PN_PROPS);
   expect(line).toMatch(/^Aria\s+focus\s+→\s+6$/);
 });
 
-// VTT-816 VTT-809
+// VTT-816 VTT-1029
 test("with no properties the Events panel's line names a resource by its key", () => {
   expect(qaPNEventsRowOf(qaPNChange(ARIA, "mana", 7), undefined))
     .toMatch(/^Aria\s+mana\s+→\s+7$/);
@@ -323,7 +323,7 @@ test("a number property does not name a resource chip of the same key", () => {
   expect(qaPNChipTitles(root, "tok-grub-02")).toEqual(["hp"]);
 });
 
-// VTT-816 VTT-809
+// VTT-816 VTT-1029
 test("a number property does not name an Events panel line of the same key", () => {
   const line = qaPNEventsRowOf(qaPNChange(ARIA, "hp", 8), QA_PN_NUMBER_PROPS);
   expect(line).toMatch(/^Aria\s+hp\s+→\s+8$/);
