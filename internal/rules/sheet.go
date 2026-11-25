@@ -82,11 +82,8 @@ func (rs *Ruleset) SheetSpendFault(abilityIDs, resources []string) *SheetFault {
 	return nil
 }
 
-// ReferenceFault answers the first way r, the reference under id, does not fit
-// rs: an entry its catalogue does not hold, a place it does not declare, an
-// entry of a form the place does not hold, then no state where the place names
-// some, a state where it names none, or a state it does not name; or nil
-// (VTT-1037).
+// ReferenceFault answers the first way r, the reference under id, does not
+// fit rs, its entry, place and form read before its state, or nil (VTT-1037).
 func (rs *Ruleset) ReferenceFault(id string, r *vttv1.Reference) *SheetFault {
 	entry, held := rs.Catalogue[r.GetEntryId()]
 	if !held {

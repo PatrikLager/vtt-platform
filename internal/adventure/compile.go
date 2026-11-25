@@ -159,6 +159,7 @@ func buildActor(a AdventureActor) *vttv1.Actor {
 		Attributes: attrs,
 		Resources:  res,
 		AbilityIds: slices.Clone(a.AbilityIDs),
+		References: wireReferences(a.References),
 	}
 }
 

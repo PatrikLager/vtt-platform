@@ -181,6 +181,8 @@ type actorJSON struct {
 	Attributes map[string]*int32           `json:"attributes"`
 	Resources  map[string]*resourceValJSON `json:"resources"`
 	AbilityIDs []string                    `json:"ability_ids"`
+	// Keep this a pointer: a reference written as null must be seen (VTT-1073).
+	References map[string]*referenceJSON `json:"references"`
 }
 
 // actorKinds is the authored vocabulary for an actor's kind, and the whole of
@@ -212,12 +214,18 @@ type resourceValJSON struct {
 	Max     *int32 `json:"max"`
 }
 
+type referenceJSON struct {
+	EntryID string `json:"entry_id"`
+	Place   string `json:"place"`
+	State   string `json:"state"`
+}
+
 // loadActors decodes every actors/*.json file in file-name order, which
 // Compile keeps, checking each actor's required KIND (no default; the check
 // says why), its keys against rs (rules.Ruleset.SheetKeyFault), its values
-// (actorValues), its ability ids (SheetAbilityFault) and the spend rule
-// (VTT-776). It also returns the set of actor ids, so loadScenes checks a
-// placement's actor without a second directory read.
+// (actorValues), its ability ids (SheetAbilityFault), the spend rule
+// (VTT-776) and its references (VTT-1043). It returns the actor ids too, so
+// loadScenes checks a placement's actor without a second directory read.
 func loadActors(dir string, rs *rules.Ruleset) ([]AdventureActor, map[string]bool, error) {
 	paths, err := jsonFilesIn(dir)
 	if err != nil {
@@ -302,6 +310,13 @@ func loadActors(dir string, rs *rules.Ruleset) ([]AdventureActor, map[string]boo
 		if f := rs.SheetSpendFault(raw.AbilityIDs, slices.Collect(maps.Keys(raw.Resources))); f != nil {
 			return nil, nil, fieldErr(path, f.Field, f.Reason)
 		}
+		references, err := actorReferences(path, raw.References)
+		if err != nil {
+			return nil, nil, err
+		}
+		if f := rs.SheetReferenceFault(wireReferences(references)); f != nil {
+			return nil, nil, fieldErr(path, f.Field, f.Reason)
+		}
 
 		actorIDs[raw.ActorID] = true
 		out = append(out, AdventureActor{
@@ -309,9 +324,37 @@ func loadActors(dir string, rs *rules.Ruleset) ([]AdventureActor, map[string]boo
 			Attributes: attributes,
 			Resources:  resources,
 			AbilityIDs: raw.AbilityIDs,
+			References: references,
 		})
 	}
 	return out, actorIDs, nil
+}
+
+// Refuse an empty id, then a reference written null, before rs reads them
+// (VTT-1043, VTT-1073).
+func actorReferences(path string, raw map[string]*referenceJSON) (map[string]Reference, error) {
+	if _, empty := raw[""]; empty {
+		return nil, fieldErr(path, "references", "must not hold an empty id")
+	}
+	references := make(map[string]Reference, len(raw))
+	for _, id := range slices.Sorted(maps.Keys(raw)) {
+		r := raw[id]
+		if r == nil {
+			return nil, fieldErr(path, "references", fmt.Sprintf("reference %q must be an object giving its entry_id and place, not null", id))
+		}
+		references[id] = Reference(*r)
+	}
+	return references, nil
+}
+
+// Build fresh messages on every call: a compiled Actor must not share one with
+// its Adventure.
+func wireReferences(references map[string]Reference) map[string]*vttv1.Reference {
+	out := make(map[string]*vttv1.Reference, len(references))
+	for id, r := range references {
+		out[id] = &vttv1.Reference{EntryId: r.EntryID, Place: r.Place, State: r.State}
+	}
+	return out
 }
 
 // actorValues refuses a value written as null and a resource whose current is

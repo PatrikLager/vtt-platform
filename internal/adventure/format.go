@@ -125,12 +125,19 @@ type AdventureActor struct {
 	Attributes map[string]int32
 	Resources  map[string]ResourceVal
 	AbilityIDs []string
+	References map[string]Reference
 }
 
 // ResourceVal is one named resource pool's starting current/max, before
 // Compile turns it into a *vttv1.Resource on the compiled Actor.
 type ResourceVal struct {
 	Current, Max int32
+}
+
+// Reference is one reference an actor holds, under its id, before Compile turns
+// it into a *vttv1.Reference on the compiled Actor (VTT-1042).
+type Reference struct {
+	EntryID, Place, State string
 }
 
 // AdventureNote is one initially-REVEALED world note (spec §2.3 — the

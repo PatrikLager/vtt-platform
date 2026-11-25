@@ -33,7 +33,8 @@
 //	    "rotation_degrees": 0, "blocks_sight": false, "blocks_move": false, "art": "..."}]}}
 //	{"type": "actor_added", "actor_added": {"actor_id": "...", "name": "...",
 //	  "kind": "ACTOR_KIND_PARTY_MEMBER|ACTOR_KIND_NON_PARTY", "ability_ids": ["..."],
-//	  "attributes": {"...": 0}, "resources": {"...": {"current": 0, "max": 0}}}}
+//	  "attributes": {"...": 0}, "resources": {"...": {"current": 0, "max": 0}},
+//	  "references": {"...": {"entry_id": "...", "place": "...", "state": "..."}}}}
 //	{"type": "token_placed", "token_placed": {"token_id": "...", "scene_id": "...", "actor_id": "...", "x": 0, "y": 0}}
 //	{"type": "note_upserted", "note_upserted": {"key": "...", "title": "...",
 //	  "text": "...", "visibility": "NOTE_VISIBILITY_PUBLIC"}}
@@ -304,17 +305,24 @@ type gridPointDump struct {
 // authored files — which also means the golden pins the load-time mapping
 // between the two vocabularies instead of echoing one of them back.
 type actorAddedDump struct {
-	ActorID    string                  `json:"actor_id"`
-	Name       string                  `json:"name"`
-	Kind       string                  `json:"kind"`
-	Attributes map[string]int32        `json:"attributes,omitempty"`
-	Resources  map[string]resourceDump `json:"resources,omitempty"`
-	AbilityIDs []string                `json:"ability_ids,omitempty"`
+	ActorID    string                   `json:"actor_id"`
+	Name       string                   `json:"name"`
+	Kind       string                   `json:"kind"`
+	Attributes map[string]int32         `json:"attributes,omitempty"`
+	Resources  map[string]resourceDump  `json:"resources,omitempty"`
+	AbilityIDs []string                 `json:"ability_ids,omitempty"`
+	References map[string]referenceDump `json:"references,omitempty"`
 }
 
 type resourceDump struct {
 	Current int32 `json:"current"`
 	Max     int32 `json:"max"`
+}
+
+type referenceDump struct {
+	EntryID string `json:"entry_id"`
+	Place   string `json:"place"`
+	State   string `json:"state,omitempty"`
 }
 
 type tokenPlacedDump struct {
@@ -432,6 +440,14 @@ func toActorAddedDump(a *vttv1.Actor) *actorAddedDump {
 		d.Resources = make(map[string]resourceDump, len(a.Resources))
 		for k, v := range a.Resources {
 			d.Resources[k] = resourceDump{Current: v.Current, Max: v.Max}
+		}
+	}
+	// Write no field for an actor holding none: every golden without one
+	// stays as it is (VTT-1045).
+	if len(a.GetReferences()) > 0 {
+		d.References = make(map[string]referenceDump, len(a.GetReferences()))
+		for id, r := range a.GetReferences() {
+			d.References[id] = referenceDump{EntryID: r.GetEntryId(), Place: r.GetPlace(), State: r.GetState()}
 		}
 	}
 	return d
