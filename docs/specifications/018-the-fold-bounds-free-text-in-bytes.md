@@ -18,9 +18,9 @@ same arms, the control arms through `requireControlTarget`, and the
 opening narration, names and ids by `internal/adventure/load.go`'s constants and for a map's name
 and ids by `internal/mapdef/load.go`'s `maxNameBytes` and `maxIDBytes`, for a
 map's and an adventure's scene objects' ids by `internal/mapdef`'s
-`CheckObjectIDs`, which both loaders call, and for a ruleset's ability and
-condition ids, property keys and branch labels by
-`internal/rules/load.go`'s `maxIDBytes`, which the ruleset schemas in
+`CheckObjectIDs`, which both loaders call, and for a ruleset's ability,
+condition and catalogue entry ids, property keys, form keys and branch
+labels by `internal/rules/load.go`'s `maxIDBytes`, which the ruleset schemas in
 `internal/rules/schema/` state, and for a ruleset's manifest id, version
 and name by its `checkManifestBounds`, with `maxIDBytes` and
 `maxNameBytes`; stated to an agent by
@@ -52,7 +52,8 @@ Pinned by
 `qa_id_bound_test.go`, `internal/mapdef/load_test.go`, `installed_test.go`,
 `qa_name_bound_test.go`, `qa_id_bound_test.go`, `internal/rules/load_test.go`,
 `resolve_test.go`, `id_bound_internal_test.go`, `qa_ruleset_bound_test.go`,
-`qa_property_format_test.go`,
+`qa_property_format_test.go`, `forms_test.go`, `qa_forms_test.go`,
+`catalogue_test.go`, `qa_catalogue_test.go`,
 `internal/engine/qa_ruleset_bound_test.go`,
 `internal/engine/door_opener_test.go`, `internal/engine/qa_door_opener_test.go`,
 `client/test/qa-door-opener-fold.test.ts`,
@@ -237,28 +238,26 @@ character log (SPEC-016), and `internal/eventgen`'s draws for property
 tests.
 
 A string a map, an adventure or a ruleset file carries and its loader does not
-bound is under the same decision: a ruleset's display names, descriptions,
-an ability's among them, expressions, atom ids, param names and graph keys,
-its manifest's `free_usage_name`,
-its sheet's page and section names, and its guide; a map's or an adventure's
-`overrides` values and objects'
-`kind` and `art`; a map's or an adventure's placement `name`, `notes`,
-`gm_name` and `gm_notes`; and a map's placement `actor_id`. Where one reaches
-the log, it is only as a field of the tables above. A ruleset's manifest
-id, version and name are not among them: each reaches the log as a field of
-`RulesetNamed` in the first table (SPEC-026), and `checkManifestBounds`
-refuses a manifest whose id or version is longer than `maxIDBytes` or whose
-name is longer than `maxNameBytes` (SPEC-024). Through
-`/api/ruleset` (SPEC-012), a ruleset's manifest
-`free_usage_name` and its conditions' and properties' display names and
-descriptions and its sheet's page and section names reach every
-participant, and an ability's display name and description reach the DM,
-the agent and a player who controls an actor whose sheet names it; its
-guide reaches the DM
-and the agent through `/api/ruleset/guide`. A
-refusal that quotes such a value, or an id a command gave that names nothing,
-goes to the issuer of the command that met it (SPEC-013), or, when a file is
-refused at boot, to whoever starts the server.
+bound is under the same decision: a ruleset's display names, descriptions, an
+ability's, a form's and a catalogue entry's among them, expressions, atom ids,
+param names and graph keys, its manifest's `free_usage_name`, its sheet's page
+and section names, and its guide; a map's or an adventure's `overrides` values
+and objects' `kind` and `art`; a map's or an adventure's placement `name`,
+`notes`, `gm_name` and `gm_notes`; and a map's placement `actor_id`. Where one
+reaches the log, it is only as a field of the tables above. A ruleset's
+manifest id, version and name are not among them: each reaches the log as a
+field of `RulesetNamed` in the first table (SPEC-026), and
+`checkManifestBounds` refuses a manifest whose id or version is longer than
+`maxIDBytes` or whose name is longer than `maxNameBytes` (SPEC-024). Through
+`/api/ruleset` (SPEC-012), a ruleset's manifest `free_usage_name`, its
+conditions', properties', forms' and catalogue entries' display names and
+descriptions and its sheet's page and section names reach every participant,
+and an ability's display name and description reach the DM, the agent and a
+player who controls an actor whose sheet names it; its guide reaches the DM
+and the agent through `/api/ruleset/guide`. A refusal that quotes such a
+value, or an id a command gave that names nothing, goes to the issuer of the
+command that met it (SPEC-013), or, when a file is refused at boot, to whoever
+starts the server.
 
 **The refusal reaches the issuer.** `campaign.Append` folds the envelope
 before it persists anything and returns the fold's error, so a command whose
@@ -287,10 +286,13 @@ second for a map's id and its placements' token ids, held by
 and through `CheckObjectIDs` a map's and an adventure's scene objects' ids,
 held by the `object-id-too-long` rows, `TestAnObjectIDOfExactlyTheBoundLoads`
 and `TestLoadAcceptsValuesExactlyOnEveryLimit`; `internal/rules/load.go` holds
-its own `maxIDBytes`, for a ruleset's ability and condition ids, its
-property keys and its resolutions' branch labels,
+its own `maxIDBytes`, for a ruleset's ability, condition and catalogue
+entry ids, its property keys, its form keys and its resolutions' branch
+labels,
 which `TestTheIDBoundMirrorsEngine` pins to 128, and the ruleset schemas state
-it, which `TestTheSchemasStateTheIDBound` requires; with it and its own
+it, which `TestTheSchemasStateTheIDBound` requires; a form key and an entry
+id past it are refused, and one exactly at it loads (VTT-994, VTT-998);
+with it and its own
 `maxNameBytes`, `checkManifestBounds` holds a manifest's id and version to
 128 bytes and its name to 256, which
 `TestARulesetWhoseIDVersionOrNameIsPastItsBoundIsRefused` and
@@ -351,4 +353,4 @@ requires them to state it too. The `add_whisper` tool describes its `text` as
 VTT-264, VTT-265, VTT-266, VTT-274, VTT-275, VTT-276, VTT-277, VTT-278,
 VTT-279, VTT-281, VTT-282, VTT-284, VTT-285, VTT-286, VTT-289, VTT-290,
 VTT-291, VTT-292, VTT-293, VTT-294, VTT-296, VTT-297, VTT-585, VTT-586,
-VTT-624, VTT-625, VTT-770, VTT-866, VTT-972, VTT-974.
+VTT-624, VTT-770, VTT-866, VTT-972, VTT-974, VTT-1009.

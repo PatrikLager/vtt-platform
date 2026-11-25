@@ -26,11 +26,16 @@ and the schemas `internal/rules/schema/ruleset.schema.json`,
 `internal/rules/qa_ruleset_version_test.go`,
 `internal/rules/ability_description_test.go`,
 `internal/rules/qa_ability_description_test.go`,
-`internal/rules/conformance/conformance_test.go` and
-`internal/rules/conformance/qa_shipped_descriptions_test.go`.
+`internal/rules/forms_test.go` and `internal/rules/qa_forms_test.go` for a
+form's fields,
+`internal/rules/conformance/conformance_test.go`,
+`internal/rules/conformance/qa_shipped_descriptions_test.go` and
+`internal/rules/conformance/qa_shipped_catalogue_test.go`'s
+`TestQASCShippedAbilityDescriptionsHoldNoDigit`.
 Every ruleset under
 `rulesets/` is written in this format. How a character's sheet is read
-against the properties is SPEC-025.
+against the properties is SPEC-025, and a ruleset's forms and its
+catalogue of entries are SPEC-027's.
 
 ## Principles served
 
@@ -59,14 +64,15 @@ Principles 13, 23, 24, 25, 27, 28 and 35 of `docs/blueprint.md`:
 ## How it works
 
 **The manifest.** A ruleset's `ruleset.json` holds `id`, `name`,
-`format_version`, `version`, `properties` and, optionally, `sheet` and
-`free_usage_name`. `loadManifest`
+`format_version`, `version`, `properties` and, optionally, `sheet`,
+`free_usage_name` and `forms`; the forms, and the entries `rules.Load`
+reads from the ruleset's `catalogue/`, are SPEC-027's. `loadManifest`
 decodes it with `decodeStrict`, which refuses a field the format does not
-know, in the manifest, in a property or in the sheet, as `rules: <path>:
-json: unknown field "<field>"`, in a usage after `invalid shown usage
-object: `; `encoding/json` matches a field's name
+know, in the manifest, in a property, in the sheet or in a form, as
+`rules: <path>: json: unknown field "<field>"`, in a usage after `invalid
+shown usage object: `; `encoding/json` matches a field's name
 without regard to case, so a case variant of a defined field is read as it
-(VTT-973).
+(VTT-996).
 Every other refusal of a ruleset below has the form `rules: <path>: field
 "<field>": <message>`, which `fieldErr` writes. `<path>` is the file's path
 as it was loaded, except that `crossValidateResources`' refusals name
@@ -98,7 +104,7 @@ in that order, each as `field "<field>": must be at most <bound> bytes, got
 ones the log's entry naming the ruleset has (SPEC-018, SPEC-026).
 `ruleset.schema.json` lists `version` as required, a string of at least one
 character whose description states its bound (VTT-986), and the
-descriptions of `id` and `name` state theirs (VTT-625 for the id).
+descriptions of `id` and `name` state theirs (VTT-1009 for the id).
 `rulesets/dnd45e-minimal` and `rulesets/tavern-brawl` each declare
 `"version": "1"`. What the log makes of the version is SPEC-026's.
 
@@ -130,7 +136,10 @@ holds dice, and neither holds a scoped reference (VTT-630). A
 
 **Where a value lives.** A number property's value is an entry of an actor's
 `attributes`, a resource property's current value and maximum an entry of its
-`resources`, each under the property's key. An expression reads a number
+`resources`, each under the property's key. A `number` property a form lists
+is also what a catalogue entry of that form holds under its key in `values`
+(SPEC-027); it is declared in `properties` as any other, so an expression
+may read it and a sheet may hold it (SPEC-025). An expression reads a number
 property as `@key` and a resource property's current value as `#key`: bare in
 a single-actor position, a resource's `default_max_expr` and a threshold's
 `when`, and scoped as `@caster.key`, `@target.key`, `#caster.key` or
@@ -216,8 +225,16 @@ keeps it as `Ruleset.FreeUsageName`, none when it is absent or `null`
 (VTT-856); `ruleset.schema.json` describes it as an optional string of at
 least one character (VTT-858). Every ability under `rulesets/` declares a
 description with no digit, so its words stay true whatever figures its
-composition binds (VTT-850). `rulesets/dnd45e-minimal` names an ability that
-spends no resource "At will"; `rulesets/tavern-brawl` names none. `GET
+composition binds (VTT-850). A digit is a rune `unicode.IsDigit` reports, a
+decimal digit of any script: `checkShippedDescriptions`, which
+`TestEveryShippedAbilityCarriesADescriptionWithNoDigit` runs over the files
+under `rulesets/*/abilities/`, refuses the ASCII digits, and
+`TestQASCShippedAbilityDescriptionsHoldNoDigit`, in the loaded
+descriptions, and `TestQAShippedAbilityDescriptionsNonEmptyNoDigit`, in
+each ability file's, refuse any; a number spelled out, and a numeral that
+is no decimal digit, such as `²`, passes every one of them, and each fails
+when it finds nothing to read. `rulesets/dnd45e-minimal` names an ability
+that spends no resource "At will"; `rulesets/tavern-brawl` names none. `GET
 /api/ruleset` and `get_ruleset` serve both (SPEC-012), and the browser
 client's panel titles an ability's button by them (SPEC-022).
 
@@ -260,4 +277,4 @@ them.
 VTT-610, VTT-611, VTT-612, VTT-613, VTT-614, VTT-615, VTT-616, VTT-626,
 VTT-628, VTT-629, VTT-630, VTT-824, VTT-825, VTT-826, VTT-827, VTT-828,
 VTT-829, VTT-847, VTT-848, VTT-849, VTT-850, VTT-856, VTT-857, VTT-858,
-VTT-970, VTT-971, VTT-972, VTT-973, VTT-986.
+VTT-970, VTT-971, VTT-972, VTT-986, VTT-996, VTT-1009.

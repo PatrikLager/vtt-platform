@@ -389,6 +389,12 @@ left out is a `0`.
   nor name any ability; but for the spend rule, what it holds is the DM's.
   A character whose sheet names no ability can use none (SPEC-013) until it
   is given one.
+- A `number` property a form lists (SPEC-027) is declared in `properties`
+  as any other, so `SheetKeyFault` reads it as any number property's key:
+  a sheet may hold a value under it, and no reader under **Where a sheet is
+  read** refuses it. `rulesets/dnd45e-minimal/guide.md` tells the agent
+  never to set one on a creature; neither `get_ruleset`'s description nor
+  `add_actor`'s says so.
 - A take never removes a resource no ability of the ruleset spends, nor,
   save two writers at once (below), one another ability on the sheet
   spends.
