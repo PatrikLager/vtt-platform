@@ -891,3 +891,23 @@ func TestTheDoorToolsSayWhomTheirActorMayName(t *testing.T) {
 		}
 	}
 }
+
+// VTT-1014
+func TestAddActorSaysAKeyACatalogueFormListsIsRefusedOnASheet(t *testing.T) {
+	actor := findTool(t, "add_actor")["inputSchema"].(map[string]any)["properties"].(map[string]any)["actor"].(map[string]any)
+	desc, _ := actor["properties"].(map[string]any)["attributes"].(map[string]any)["description"].(string)
+	var sentence string
+	for _, s := range strings.Split(desc, ". ") {
+		if strings.Contains(s, "a key a catalogue form lists") {
+			sentence = s
+		}
+	}
+	if sentence == "" {
+		t.Fatalf("add_actor's attributes description = %q, want a sentence naming a key a catalogue form lists", desc)
+	}
+	for _, want := range []string{"With a ruleset served", "refuses the whole command", "never a sheet's"} {
+		if !strings.Contains(sentence, want) {
+			t.Errorf("add_actor's sentence on a key a form lists = %q, want it to say %q", sentence, want)
+		}
+	}
+}

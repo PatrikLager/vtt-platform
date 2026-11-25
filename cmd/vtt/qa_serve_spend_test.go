@@ -182,7 +182,7 @@ func qaSFCampaign(t *testing.T, sheets []qaSFSheet) string {
 }
 
 // qaSFFirstFault answers a sheet's first fault: keys, ability ids, then the
-// spend rule (VTT-678, VTT-688, VTT-777).
+// spend rule (VTT-1065, VTT-688, VTT-777).
 func qaSFFirstFault(rs *rules.Ruleset, s qaSFSheet) *rules.SheetFault {
 	if f := rs.SheetKeyFault([]string{"brawn"}, s.resources); f != nil {
 		return f
@@ -243,7 +243,7 @@ func qaSFServeStarts(t *testing.T, args ...string) {
 // with a ruleset refuses a campaign any of whose actors names a limited
 // ability without its resource or holds a resource some ability spends
 // that no named ability spends, naming each such actor and its first fault
-// (in byte order of ids); VTT-678 and VTT-688 held: a key fault and an
+// (in byte order of ids); VTT-1065 and VTT-688 held: a key fault and an
 // unheld ability id stay an actor's first fault.
 func TestQASFServeRefusesACampaignBreakingTheSpendRule(t *testing.T) {
 	rsDir := qaSFAbs(t, "../../rulesets/tavern-brawl")

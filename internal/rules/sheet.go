@@ -8,22 +8,40 @@ import (
 )
 
 // SheetFault names a sheet's first entry that does not fit its ruleset, and why
-// (SPEC-025).
+// (SPEC-025, VTT-1010).
 type SheetFault struct {
 	// Field holds Key: "attributes", "resources" or "ability_ids".
 	Field  string
 	Key    string
 	Reason string
+	// Form is the form that lists Key, for a key a form lists (VTT-1010).
+	Form string
 }
 
 // SheetKeyFault answers the first key of attributes, then of resources, each
 // in byte order, that rs does not declare as a number or a resource
-// respectively, or nil (VTT-617, VTT-618, VTT-677, VTT-678).
+// respectively, then the first of attributes, in byte order, that a form
+// lists, or nil (VTT-617, VTT-618, VTT-677, VTT-1010, VTT-1062 to VTT-1065).
 func (rs *Ruleset) SheetKeyFault(attributes, resources []string) *SheetFault {
 	if f := rs.keyFault("attributes", attributes, PropertyNumber); f != nil {
 		return f
 	}
-	return rs.keyFault("resources", resources, PropertyResource)
+	if f := rs.keyFault("resources", resources, PropertyResource); f != nil {
+		return f
+	}
+	return rs.formKeyFault(attributes)
+}
+
+func (rs *Ruleset) formKeyFault(attributes []string) *SheetFault {
+	for _, key := range slices.Sorted(slices.Values(attributes)) {
+		for _, form := range rs.Forms {
+			if slices.Contains(form.Properties, key) {
+				return &SheetFault{Field: "attributes", Key: key, Form: form.Key,
+					Reason: fmt.Sprintf("holds property %q, which form %q lists for its entries", key, form.Key)}
+			}
+		}
+	}
+	return nil
 }
 
 // SheetAbilityFault answers the first of ids, in byte order, that rs does not

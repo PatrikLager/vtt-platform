@@ -163,3 +163,22 @@ func TestGetRulesetSaysItAnswersEveryRoleTheFormsAndTheCatalogue(t *testing.T) {
 		}
 	}
 }
+
+// VTT-1014
+func TestGetRulesetSaysAKeyACatalogueFormListsIsRefusedOnASheet(t *testing.T) {
+	description := getRulesetToolDescription(t)
+	var sentence string
+	for _, s := range strings.Split(description, ". ") {
+		if strings.Contains(s, "A key a catalogue form lists") {
+			sentence = s
+		}
+	}
+	if sentence == "" {
+		t.Fatalf("get_ruleset's description = %q, want a sentence naming a key a catalogue form lists", description)
+	}
+	for _, want := range []string{"refused on a sheet", "add_actor", "`attributes`"} {
+		if !strings.Contains(sentence, want) {
+			t.Errorf("get_ruleset's sentence on a key a form lists = %q, want it to say %q", sentence, want)
+		}
+	}
+}

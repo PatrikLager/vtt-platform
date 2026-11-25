@@ -13,8 +13,9 @@ const getRulesetDescription = "Read the table's ruleset as your role may: its id
 	"name the table calls it and what it means), and its abilities (range, targets, usage, and " +
 	"`description`, the ruleset's own words for what the ability does, absent when it gives none): " +
 	"every ability for the DM and the agent, and for a player only the abilities named by the " +
-	"sheets of the actors they control. A number property's value is under an actor's " +
-	"`attributes`, a resource property's under its `resources`, and the abilities an actor may use " +
+	"sheets of the actors they control. A number property's value, but for one a catalogue form " +
+	"lists (below), is under an actor's `attributes`, a resource property's under its " +
+	"`resources`, and the abilities an actor may use " +
 	"are the ids its sheet names (`abilityIds` in add_actor, `ability_ids` in get_state); " +
 	"use_ability refuses any other. It also answers, as `sheet`, how the ruleset lays out a " +
 	"character's sheet, to every role: its pages in order, each with its name and its named " +
@@ -29,7 +30,9 @@ const getRulesetDescription = "Read the table's ruleset as your role may: its id
 	"name, description, `form` (its form's key) and `values`, its numbers keyed by property after " +
 	"what it extends: its own, then those of the entry it extends that it does not set, and no key " +
 	"for a property neither gives; `forms` and `catalogue` are each [] when the ruleset declares " +
-	"none. With no ruleset loaded, id and name are empty and every list is []. Takes no arguments. " +
+	"none. A key a catalogue form lists names a value the form's entries hold, and is refused on a sheet: " +
+	"add_actor refuses an actor holding one under `attributes`. With no ruleset loaded, id and name " +
+	"are empty and every list is []. Takes no arguments. " +
 	"For how to run this ruleset at the table, read get_ruleset_guide."
 
 func (s *Server) registerRulesetTool() {

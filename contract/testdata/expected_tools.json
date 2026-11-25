@@ -55,7 +55,7 @@
               "additionalProperties": {
                 "type": "integer"
               },
-              "description": "The actor's numbers, each under a key the served ruleset declares as a number property (get_ruleset lists them); a sheet holds only the properties this actor has. With a ruleset served, a key it does not declare, or one it declares as a resource, refuses the whole command. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
+              "description": "The actor's numbers, each under a key the served ruleset declares as a number property (get_ruleset lists them); a sheet holds only the properties this actor has. With a ruleset served, a key it does not declare, or one it declares as a resource, refuses the whole command, and so does a key a catalogue form lists (get_ruleset's forms), whose value is its entries' and never a sheet's. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
               "type": "object"
             },
             "controllerId": {

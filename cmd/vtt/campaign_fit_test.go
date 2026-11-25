@@ -41,7 +41,7 @@ func misfitCampaign(t *testing.T) string {
 	)
 }
 
-// VTT-678 VTT-681
+// VTT-1065 VTT-681
 func TestACampaignWhoseSheetsDoNotFitTheRulesetIsNotServed(t *testing.T) {
 	dir := misfitCampaign(t)
 	_, closeFn, err := composeServer(dir, "127.0.0.1:0", fitRulesetDir, "")
@@ -69,7 +69,7 @@ func TestACampaignWhoseSheetsDoNotFitTheRulesetIsNotServed(t *testing.T) {
 	}
 }
 
-// VTT-678
+// VTT-1065
 func TestACampaignWhoseSheetsFitTheRulesetIsServed(t *testing.T) {
 	dir := writeFitCampaign(t,
 		&vttv1.Actor{ActorId: "fit", Attributes: map[string]int32{"brawn": 2},

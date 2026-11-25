@@ -118,7 +118,7 @@ func qaFitNamesNot(t *testing.T, msg string, unwanted ...string) {
 	}
 }
 
-// VTT-678
+// VTT-1065
 func TestQAFitAnUndeclaredAttributeKeyIsRefusedNamingActorAndKey(t *testing.T) {
 	dir := qaFitActors(t, qaFitSheet("qa-lone",
 		map[string]int32{"brawn": 2, "qaUndeclaredAttr": 1}, nil))
@@ -127,7 +127,7 @@ func TestQAFitAnUndeclaredAttributeKeyIsRefusedNamingActorAndKey(t *testing.T) {
 	qaFitNamesNot(t, msg, "brawn")
 }
 
-// VTT-678
+// VTT-1065
 func TestQAFitAnUndeclaredResourceKeyIsRefusedNamingActorAndKey(t *testing.T) {
 	dir := qaFitActors(t, qaFitSheet("qa-lone", nil,
 		map[string]*vttv1.Resource{"stamina": qaFitRes(2, 2), "qaUndeclaredRes": qaFitRes(1, 1)}))
@@ -136,7 +136,7 @@ func TestQAFitAnUndeclaredResourceKeyIsRefusedNamingActorAndKey(t *testing.T) {
 	qaFitNamesNot(t, msg, "stamina")
 }
 
-// VTT-678
+// VTT-1065
 func TestQAFitAResourceKeyUnderAttributesIsRefused(t *testing.T) {
 	dir := qaFitActors(t, qaFitSheet("qa-lone",
 		map[string]int32{"brawn": 1, "drink": 1}, nil))
@@ -145,7 +145,7 @@ func TestQAFitAResourceKeyUnderAttributesIsRefused(t *testing.T) {
 	qaFitNamesNot(t, msg, "brawn")
 }
 
-// VTT-678
+// VTT-1065
 func TestQAFitANumberKeyUnderResourcesIsRefused(t *testing.T) {
 	dir := qaFitActors(t, qaFitSheet("qa-lone", nil,
 		map[string]*vttv1.Resource{"stamina": qaFitRes(1, 2), "grit": qaFitRes(1, 1)}))
@@ -154,7 +154,7 @@ func TestQAFitANumberKeyUnderResourcesIsRefused(t *testing.T) {
 	qaFitNamesNot(t, msg, "stamina")
 }
 
-// VTT-678
+// VTT-1065
 func TestQAFitTheFirstMisfitAttributeInByteOrderIsNamed(t *testing.T) {
 	dir := qaFitActors(t, qaFitSheet("qa-lone",
 		map[string]int32{"brawn": 1, "qaable": 1, "qaZed": 1, "qamid": 1, "grit": 1}, nil))
@@ -163,7 +163,7 @@ func TestQAFitTheFirstMisfitAttributeInByteOrderIsNamed(t *testing.T) {
 	qaFitNamesNot(t, msg, "qaable", "qamid", "brawn", "grit")
 }
 
-// VTT-678
+// VTT-1065
 func TestQAFitTheFirstMisfitResourceInByteOrderIsNamed(t *testing.T) {
 	dir := qaFitActors(t, qaFitSheet("qa-lone", nil, map[string]*vttv1.Resource{
 		"drink":   qaFitRes(0, 3),
@@ -176,7 +176,7 @@ func TestQAFitTheFirstMisfitResourceInByteOrderIsNamed(t *testing.T) {
 	qaFitNamesNot(t, msg, "qaapple", "drink", "stamina")
 }
 
-// VTT-678
+// VTT-1065
 func TestQAFitBothKindsOfMisfitShareOneByteOrder(t *testing.T) {
 	undeclaredFirst := qaFitActors(t, qaFitSheet("qa-lone",
 		map[string]int32{"stamina": 1, "qaundeclared": 1}, nil))
@@ -191,7 +191,7 @@ func TestQAFitBothKindsOfMisfitShareOneByteOrder(t *testing.T) {
 	qaFitNamesNot(t, msg, "qaundeclared")
 }
 
-// VTT-678
+// VTT-1065
 func TestQAFitAttributesAreReadBeforeResources(t *testing.T) {
 	dir := qaFitActors(t, qaFitSheet("qa-lone",
 		map[string]int32{"brawn": 1, "qazAttr": 1},
@@ -214,7 +214,7 @@ func qaFitSeveralMisfits(t *testing.T) string {
 	)
 }
 
-// VTT-678
+// VTT-1065
 func TestQAFitEveryMisfitActorIsNamedWithItsFirstKey(t *testing.T) {
 	msg := qaFitRefused(t, qaFitSeveralMisfits(t))
 	qaFitNames(t, msg, "qa-mira", "qaMiraFirst", "qa-Bram", "qaBramRes", "qa-anna", "brawn")
@@ -238,7 +238,7 @@ func TestQAFitMisfitActorsAreNamedInByteOrderOfTheirIds(t *testing.T) {
 	}
 }
 
-// VTT-678
+// VTT-1065
 func TestQAFitACampaignWhoseSheetsFitIsServed(t *testing.T) {
 	dir := qaFitActors(t,
 		qaFitNaming(qaFitSheet("qa-whole", map[string]int32{"brawn": 3, "grit": 1, "footing": 2},
@@ -254,7 +254,7 @@ func TestQAFitACampaignWhoseSheetsFitIsServed(t *testing.T) {
 	}
 }
 
-// VTT-678
+// VTT-1065
 func TestQAFitACampaignWithNoActorsIsServed(t *testing.T) {
 	dir := qaFitCampaign(t)
 	if err := qaFitCompose(t, dir, qaFitRulesetDir); err != nil {
@@ -262,7 +262,7 @@ func TestQAFitACampaignWithNoActorsIsServed(t *testing.T) {
 	}
 }
 
-// VTT-678
+// VTT-1065
 func TestQAFitARefusedCampaignCanBeOpenedAgain(t *testing.T) {
 	dir := qaFitSeveralMisfits(t)
 	_ = qaFitRefused(t, dir)
@@ -310,7 +310,7 @@ func TestQAFitWithNoRulesetTheSeveralMisfitCampaignIsServed(t *testing.T) {
 	}
 }
 
-// VTT-678
+// VTT-1065
 func TestQAFitARemovedMisfitActorDoesNotRefuseTheCampaign(t *testing.T) {
 	dir := qaFitCampaign(t,
 		qaFitAdded(0, qaFitSheet("qa-gone", map[string]int32{"qaUndeclaredAttr": 1}, nil)),

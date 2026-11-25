@@ -367,7 +367,7 @@ func composeServer(campaignPath, addr, rulesetDir, adventuresDir string) (*http.
 }
 
 // sheetsFit names, by id, every actor whose sheet does not fit rs, each with its
-// first fault: keys, then ability ids, then the spend rule (VTT-678, VTT-681,
+// first fault: keys, then ability ids, then the spend rule (VTT-1065, VTT-681,
 // VTT-688, VTT-777).
 func sheetsFit(actors map[string]*vttv1.Actor, rs *rules.Ruleset) error {
 	var misfits []string

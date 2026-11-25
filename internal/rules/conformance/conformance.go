@@ -130,7 +130,7 @@ func (smokeRoller) Roll(n, sides int) ([]int, int) {
 }
 
 func smokeTest(rs *rules.Ruleset) error {
-	st := buildFixtureState(rs)
+	st, unheld := buildFixtureState(rs)
 
 	// Iterates rs.Compiled, not rs.Abilities (Task 3, spec 5c pillar:
 	// "Resolve executes CompiledPower through ONE code path"): Compiled is
@@ -148,6 +148,9 @@ func smokeTest(rs *rules.Ruleset) error {
 	sort.Strings(ids) // deterministic order; map iteration never leaks out
 
 	for _, id := range ids {
+		if err := unheldRead(rs.Compiled[id], st, unheld); err != nil {
+			return fmt.Errorf("ability %q failed to resolve against the generated fixture actor: %w", id, err)
+		}
 		cmd := &vttv1.UseAbility{ActorId: fixtureCasterID, AbilityId: id, TargetIds: []string{fixtureTargetID}}
 		if _, err := rules.Resolve(rs, st, cmd, smokeRoller{}); err != nil {
 			return fmt.Errorf("ability %q failed to resolve against the generated fixture actor: %w", id, err)
@@ -156,20 +159,67 @@ func smokeTest(rs *rules.Ruleset) error {
 	return nil
 }
 
-// buildFixtureState builds a two-actor, one-scene engine.State from rs alone:
-// every number property is fixturePlaceholder on both actors, and every
-// resource property starts full at its default_max_expr when that is
-// positive, else at fixtureResourceFallbackMax (minimal-v2-zero-default-max).
-// Both tokens share one square.
-func buildFixtureState(rs *rules.Ruleset) *engine.State {
+// Walk every branch: the smoke pass's roll takes one (VTT-1066).
+func unheldRead(cp *rules.CompiledPower, st *engine.State, unheld map[string]*rules.SheetFault) error {
+	type read struct {
+		where string
+		expr  *rules.Expr
+	}
+	var reads []read
+	outcomeReads := func(where string, outcomes []rules.Outcome) {
+		for _, o := range outcomes {
+			if o.ResourceChange != nil {
+				reads = append(reads, read{where, o.ResourceChange.DeltaExpr})
+			}
+		}
+	}
+	if r := cp.Resolution; r != nil {
+		reads = append(reads, read{"resolution roll", r.Roll}, read{"resolution vs", r.Vs})
+		for i, outcomes := range cp.BranchOutcomes {
+			outcomeReads(r.Branches[i]+" outcome", outcomes)
+		}
+	}
+	outcomeReads("effect", cp.Effects)
+	for _, rd := range reads {
+		for _, ref := range rd.expr.ScopedRefs() {
+			if ref.Sigil != '@' {
+				continue
+			}
+			role, holder := "caster", st.Actors[fixtureCasterID]
+			if ref.Scope == rules.ScopeTarget {
+				role, holder = "target", st.Actors[fixtureTargetID]
+			}
+			if _, held := holder.GetAttributes()[ref.Name]; held {
+				continue
+			}
+			return fmt.Errorf("the %s reads attribute %q from the %s, which form %q lists: no sheet holds it",
+				rd.where, ref.Name, role, unheld[ref.Name].Form)
+		}
+	}
+	return nil
+}
+
+// buildFixtureState builds a two-actor, one-scene engine.State from rs alone,
+// and answers SheetKeyFault's fault for each number property it leaves out:
+// every number property a sheet may hold is fixturePlaceholder on both actors
+// (VTT-1066), and every resource property starts full at its default_max_expr
+// when that is positive, else at fixtureResourceFallbackMax
+// (minimal-v2-zero-default-max). Both tokens share one square.
+func buildFixtureState(rs *rules.Ruleset) (*engine.State, map[string]*rules.SheetFault) {
 	st := engine.NewState()
 	st.Scenes[fixtureSceneID] = engine.Scene{ID: fixtureSceneID, Name: fixtureSceneID, GridWidth: 1, GridHeight: 1}
 
 	attrs := map[string]int32{}
+	unheld := map[string]*rules.SheetFault{}
 	for _, p := range rs.Properties {
-		if p.Type == rules.PropertyNumber {
-			attrs[p.Key] = fixturePlaceholder
+		if p.Type != rules.PropertyNumber {
+			continue
 		}
+		if f := rs.SheetKeyFault([]string{p.Key}, nil); f != nil {
+			unheld[p.Key] = f
+			continue
+		}
+		attrs[p.Key] = fixturePlaceholder
 	}
 	attrsInt := make(map[string]int, len(attrs))
 	for k, v := range attrs {
@@ -217,7 +267,7 @@ func buildFixtureState(rs *rules.Ruleset) *engine.State {
 	st.Actors[fixtureTargetID] = &vttv1.Actor{ActorId: fixtureTargetID, Name: fixtureTargetID, Attributes: cloneAttrs(), Resources: buildResources()}
 	st.Tokens["conformance-caster-token"] = engine.Token{ID: "conformance-caster-token", SceneID: fixtureSceneID, ActorID: fixtureCasterID, X: 0, Y: 0}
 	st.Tokens["conformance-target-token"] = engine.Token{ID: "conformance-target-token", SceneID: fixtureSceneID, ActorID: fixtureTargetID, X: 0, Y: 0}
-	return st
+	return st, unheld
 }
 
 // --- golden pass ---

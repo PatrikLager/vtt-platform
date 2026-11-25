@@ -24,7 +24,9 @@ descriptions there are this ruleset's own account of each property, and this
 guide does not repeat them. In `add_actor` and in a statblock, a number
 property goes in `attributes` and a resource property in `resources`, with
 its current value and maximum. A property a form lists is a weapon's or an
-armor's, held by its catalogue entry: never set it on a creature.
+armor's, held by its catalogue entry: `add_actor` refuses a creature whose
+`attributes` hold one, and an adventure whose statblock holds one does not
+load.
 
 ### The max_hp duplication rule
 
