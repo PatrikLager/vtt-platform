@@ -60,6 +60,16 @@ export interface CatalogueEntry {
   values: Record<string, number>;
 }
 
+/** PlaceDef is one place a ruleset declares on a sheet, in its words (VTT-1052). */
+export interface PlaceDef {
+  key: string;
+  name: string;
+  description: string;
+  forms: string[];
+  copies: boolean;
+  states: string[];
+}
+
 export interface RulesetMeta {
   id: string;
   name: string;
@@ -70,6 +80,7 @@ export interface RulesetMeta {
   sheet: SheetPage[];
   forms: FormDef[];
   catalogue: CatalogueEntry[];
+  places: PlaceDef[];
   freeUsageName?: string;
 }
 

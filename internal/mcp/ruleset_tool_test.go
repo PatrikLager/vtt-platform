@@ -182,3 +182,28 @@ func TestGetRulesetSaysAKeyACatalogueFormListsIsRefusedOnASheet(t *testing.T) {
 		}
 	}
 }
+
+// VTT-1054
+func TestGetRulesetSaysItAnswersThePlacesAndWhatASectionOfPlacesShows(t *testing.T) {
+	description := getRulesetToolDescription(t)
+	var sentence string
+	for _, s := range strings.Split(description, ". ") {
+		if strings.Contains(s, "as `places`") {
+			sentence = s
+		}
+	}
+	if sentence == "" {
+		t.Fatalf("get_ruleset's description = %q, want a sentence answering `places`", description)
+	}
+	for _, want := range []string{"to every role", "in the ruleset's order", "key, name, description",
+		"`forms`", "`copies`", "`states`", "[] when it names none", "`places` is [] when the ruleset declares none"} {
+		if !strings.Contains(sentence, want) {
+			t.Errorf("get_ruleset's sentence on the places = %q, want it to say %q", sentence, want)
+		}
+	}
+	for _, want := range []string{"(`places`", "the places whose references it shows"} {
+		if !strings.Contains(description, want) {
+			t.Errorf("get_ruleset's description = %q, want it to say of a section %q", description, want)
+		}
+	}
+}

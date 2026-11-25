@@ -40,6 +40,8 @@ func declaredSheetAsRoute(t *testing.T, dir string) []any {
 				r["kind"], r["values"] = "values", sec["values"]
 			case sec["conditions"] != nil:
 				r["kind"] = "conditions"
+			case sec["places"] != nil:
+				r["kind"], r["places"] = "places", sec["places"]
 			default:
 				usages := []any{}
 				for _, u := range sec["abilities"].([]any) {

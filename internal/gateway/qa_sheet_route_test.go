@@ -135,6 +135,9 @@ func qaSheetExpect(declared []any) []any {
 				out["values"] = sec["values"]
 			case sec["conditions"] != nil:
 				out["kind"] = "conditions"
+			case sec["places"] != nil:
+				out["kind"] = "places"
+				out["places"] = sec["places"]
 			default:
 				out["kind"] = "abilities"
 				var us []any

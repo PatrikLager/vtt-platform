@@ -325,6 +325,31 @@ func qaRRCheckCatalogue(t *testing.T, rs *rules.Ruleset, raw json.RawMessage) {
 	}
 }
 
+type qaRRServedPlace struct {
+	Key, Name, Description string
+	Forms                  []string
+	Copies                 bool
+	States                 []string
+}
+
+func qaRRCheckPlaces(t *testing.T, rs *rules.Ruleset, raw json.RawMessage) {
+	t.Helper()
+	var got []qaRRServedPlace
+	if err := json.Unmarshal(raw, &got); err != nil || got == nil {
+		t.Fatalf("places not a list (%v): %s", err, raw)
+	}
+	if len(got) != len(rs.Places) {
+		t.Fatalf("places: %d entries, ruleset declares %d", len(got), len(rs.Places))
+	}
+	for i, p := range rs.Places {
+		g := got[i]
+		if g.Key != p.Key || g.Name != p.Name || g.Description != p.Description || g.Copies != p.Copies ||
+			!slices.Equal(g.Forms, p.Forms) || g.States == nil || !slices.Equal(g.States, append([]string{}, p.States...)) {
+			t.Errorf("places[%d] = %+v, want %+v", i, g, p)
+		}
+	}
+}
+
 func qaRRCheckBody(t *testing.T, rs *rules.Ruleset, body []byte) {
 	t.Helper()
 	obj := qaRRObject(t, body)
@@ -340,9 +365,10 @@ func qaRRCheckBody(t *testing.T, rs *rules.Ruleset, body []byte) {
 	qaRRCheckProperties(t, rs, obj["properties"])
 	qaRRCheckForms(t, rs, obj["forms"])
 	qaRRCheckCatalogue(t, rs, obj["catalogue"])
+	qaRRCheckPlaces(t, rs, obj["places"])
 }
 
-// VTT-632 VTT-710 VTT-1004 VTT-1005
+// VTT-632 VTT-710 VTT-1004 VTT-1005 VTT-1052
 func TestQARRRulesetRouteAnswersEveryRole(t *testing.T) {
 	for name, rs := range qaRRFixtures(t) {
 		tbl := qaRRStart(t, rs, nil)
@@ -365,6 +391,7 @@ func TestQARRRulesetRouteAnswersEveryRole(t *testing.T) {
 			qaRRCheckProperties(t, rs, obj["properties"])
 			qaRRCheckForms(t, rs, obj["forms"])
 			qaRRCheckCatalogue(t, rs, obj["catalogue"])
+			qaRRCheckPlaces(t, rs, obj["places"])
 		}
 	}
 }
@@ -416,7 +443,7 @@ func TestQARRResourcesAreResourceKeysInDeclaredOrder(t *testing.T) {
 	}
 }
 
-// VTT-114 VTT-620 VTT-1004 VTT-1005
+// VTT-114 VTT-620 VTT-1004 VTT-1005 VTT-1052
 func TestQARRNothingLoadedAnswersEmptyLists(t *testing.T) {
 	tbl := qaRRStart(t, nil, nil)
 	code, body := qaRRGet(t, tbl.url+"/api/ruleset", tbl.tokens[identity.RolePlayer])
@@ -424,7 +451,7 @@ func TestQARRNothingLoadedAnswersEmptyLists(t *testing.T) {
 		t.Fatalf("/api/ruleset: status %d: %s", code, body)
 	}
 	obj := qaRRObject(t, body)
-	for _, f := range []string{"abilities", "conditions", "resources", "properties", "forms", "catalogue"} {
+	for _, f := range []string{"abilities", "conditions", "resources", "properties", "forms", "catalogue", "places"} {
 		qaRREmptyList(t, obj, f)
 	}
 	for route, field := range map[string]string{"/api/adventures": "adventures", "/api/maps": "maps"} {

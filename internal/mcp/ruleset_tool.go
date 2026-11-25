@@ -20,8 +20,9 @@ const getRulesetDescription = "Read the table's ruleset as your role may: its id
 	"use_ability refuses any other. It also answers, as `sheet`, how the ruleset lays out a " +
 	"character's sheet, to every role: its pages in order, each with its name and its named " +
 	"sections, each section saying by its `kind` what it shows: a list of property keys " +
-	"(`values`), the character's conditions (`conditions`), or the usages whose abilities it shows " +
-	"(`abilities`, each an ability's usage without its cost); `sheet` is [] when the ruleset " +
+	"(`values`), the character's conditions (`conditions`), the usages whose abilities it shows " +
+	"(`abilities`, each an ability's usage without its cost), or the places whose references it " +
+	"shows (`places`, each a place's key); `sheet` is [] when the ruleset " +
 	"declares none. It answers, as `freeUsageName`, the ruleset's name for an ability that spends " +
 	"no resource, to every role; it is absent when the ruleset gives none or none is loaded. It " +
 	"answers, to every role, as `forms`, the kinds of entry the ruleset declares, in the " +
@@ -30,7 +31,13 @@ const getRulesetDescription = "Read the table's ruleset as your role may: its id
 	"name, description, `form` (its form's key) and `values`, its numbers keyed by property after " +
 	"what it extends: its own, then those of the entry it extends that it does not set, and no key " +
 	"for a property neither gives; `forms` and `catalogue` are each [] when the ruleset declares " +
-	"none. A key a catalogue form lists names a value the form's entries hold, and is refused on a sheet: " +
+	"none. It answers, to every role, as `places`, the places on a character's sheet where it holds " +
+	"references to catalogue entries, in the ruleset's order, each with its key, name, description, " +
+	"`forms` (the keys of the forms whose entries it may hold), `copies` (true when it may hold one " +
+	"entry more than once, false when it holds each entry once) and `states` (the states a " +
+	"reference held there may be in, one at a time, [] when it names none); " +
+	"`places` is [] when the ruleset declares none. " +
+	"A key a catalogue form lists names a value the form's entries hold, and is refused on a sheet: " +
 	"add_actor refuses an actor holding one under `attributes`. With no ruleset loaded, id and name " +
 	"are empty and every list is []. Takes no arguments. " +
 	"For how to run this ruleset at the table, read get_ruleset_guide."

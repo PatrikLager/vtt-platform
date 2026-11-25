@@ -127,7 +127,18 @@ type rulesetJSON struct {
 	Sheet         []sheetPageJSON `json:"sheet"`
 	Forms         []formJSON      `json:"forms"`
 	Catalogue     []entryJSON     `json:"catalogue"`
+	Places        []placeJSON     `json:"places"`
 	FreeUsageName string          `json:"freeUsageName,omitempty"`
+}
+
+// VTT-1052
+type placeJSON struct {
+	Key         string   `json:"key"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Forms       []string `json:"forms"`
+	Copies      bool     `json:"copies"`
+	States      []string `json:"states"`
 }
 
 // VTT-1004
@@ -153,13 +164,14 @@ type sheetPageJSON struct {
 	Sections []sheetSectionJSON `json:"sections"`
 }
 
-// Keep omitempty on both lists: a section carries only the list its kind
-// names (VTT-831).
+// Keep omitempty on every list: a section carries only the list its kind
+// names (VTT-831, VTT-1053).
 type sheetSectionJSON struct {
 	Name      string      `json:"name"`
 	Kind      string      `json:"kind"`
 	Values    []string    `json:"values,omitempty"`
 	Abilities []usageJSON `json:"abilities,omitempty"`
+	Places    []string    `json:"places,omitempty"`
 }
 
 // VTT-619
@@ -185,6 +197,7 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 		Sheet:      []sheetPageJSON{},
 		Forms:      []formJSON{},
 		Catalogue:  []entryJSON{},
+		Places:     []placeJSON{},
 	}
 	if s.ruleset != nil {
 		rs := s.ruleset
@@ -238,12 +251,14 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 			sections := make([]sheetSectionJSON, 0, len(page.Sections))
 			for _, sec := range page.Sections {
 				js := sheetSectionJSON{Name: sec.Name}
-				switch {
-				case sec.Values != nil:
+				// Keep these ifs, never a switch (tools/mutation-scope.md).
+				if sec.Values != nil {
 					js.Kind, js.Values = "values", sec.Values
-				case sec.Conditions:
+				} else if sec.Conditions {
 					js.Kind = "conditions"
-				default:
+				} else if sec.Places != nil {
+					js.Kind, js.Places = "places", sec.Places
+				} else {
 					js.Kind = "abilities"
 					for _, u := range sec.Abilities {
 						if u.AtWill {
@@ -271,6 +286,13 @@ func (s *Server) handleRuleset(w http.ResponseWriter, r *http.Request) {
 		}
 		// Keep the sort: Catalogue is a map (VTT-1005).
 		slices.SortFunc(out.Catalogue, func(a, b entryJSON) int { return strings.Compare(a.ID, b.ID) })
+
+		for _, p := range rs.Places {
+			out.Places = append(out.Places, placeJSON{
+				Key: p.Key, Name: p.Name, Description: p.Description, Forms: p.Forms,
+				Copies: p.Copies, States: append([]string{}, p.States...),
+			})
+		}
 	}
 	writeJSON(w, out)
 }
