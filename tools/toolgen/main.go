@@ -50,8 +50,8 @@ var resourceOverride = fieldOverride{
 var referenceOverride = fieldOverride{
 	requiredOverride: []string{"entryId", "place"},
 	fieldDocs: map[string]string{
-		"entryId": "REQUIRED; the id of the catalogue entry the reference names (get_ruleset's catalogue).",
-		"place":   "REQUIRED; the key of the place on the sheet that holds the entry (get_ruleset's places).",
+		"entryId": "REQUIRED; the id of the catalogue entry the reference names (get_ruleset's catalogue). With no ruleset served it is not read.",
+		"place":   "REQUIRED; the key of the place on the sheet that holds the entry (get_ruleset's places). With no ruleset served it is not read.",
 		"state":   "Optional; the reference's state in its place, one of the states that place names (get_ruleset's places). Leave it out where the place names none.",
 	},
 }
@@ -114,7 +114,7 @@ var manifest = []toolSpec{
 					"resources":     "The actor's resources, each under a key the served ruleset declares as a resource property (get_ruleset lists them), each giving its current, 0 included, and its max if it has one; a sheet holds only the properties this actor has. A resource whose current is null or left out refuses the whole command, and with a ruleset served so does a key it does not declare, or one it declares as a number; with a ruleset served, so does a resource some ability of the ruleset spends that no ability the actor names spends. At most 128 bytes of UTF-8 per name, and no empty name; either refuses the whole command.",
 					"moduleData":    "Optional; omit unless a rule module instructs otherwise — moduleData is opaque.",
 					"abilityIds":    "Optional. The abilities this actor has, each by its id in the served ruleset (get_ruleset lists them). use_ability refuses this actor any ability its sheet does not name, so an actor that names none can use none until give_ability gives it one; give_ability and take_ability change the list in play. With a ruleset served, an id the ruleset does not hold refuses the whole command, and an empty id refuses it with or without one. With a ruleset served, an ability that spends a resource the actor does not hold refuses the whole command: give the actor that resource too.",
-					"references":    "Optional. The sheet's references to catalogue entries, each under a reference id you give it, which is the sheet's own: two sheets may use one id. Each names its entry by the entry's id in the served ruleset's catalogue, the place on the sheet that holds it, and its state there (get_ruleset lists the catalogue and the places). A reference whose id is empty refuses the whole command, with a ruleset served or none.",
+					"references":    "Optional. The sheet's references to catalogue entries, each under a reference id you give it, which is the sheet's own: two sheets may use one id. Each names its entry by the entry's id in the served ruleset's catalogue, the place on the sheet that holds it, and its state there (get_ruleset lists the catalogue and the places). With a ruleset served, a reference refuses the whole command when it names an entry the catalogue does not hold, a place the ruleset does not declare, or an entry of a form its place does not hold; when it gives no state in a place that names its states, a state its place does not name, or any state in a place that names none; or when it names an entry another reference names in the same place, unless that place holds copies. A reference whose id is empty refuses the whole command, with a ruleset served or none.",
 				},
 			},
 			"vtt.v1.Resource":  resourceOverride,

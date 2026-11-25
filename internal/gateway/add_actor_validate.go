@@ -38,7 +38,7 @@ func validateAddActor(cmd *vttv1.AddActor) error {
 }
 
 // validateAddActorWith answers validateAddActor's refusals, then the sheet's
-// (VTT-675, VTT-677, VTT-746, VTT-747, VTT-750, VTT-775).
+// (VTT-675, VTT-677, VTT-746, VTT-747, VTT-750, VTT-775, VTT-1039 to VTT-1041).
 func validateAddActorWith(cmd *vttv1.AddActor, rs *rules.Ruleset) error {
 	if err := validateAddActor(cmd); err != nil {
 		return err
@@ -58,7 +58,8 @@ func validateAddActorSheet(cmd *vttv1.AddActor, rs *rules.Ruleset) error {
 	return fmt.Errorf("gateway: add_actor: actor %q: %s: %s", a.GetActorId(), f.Field, f.Reason)
 }
 
-// Refuse an empty ability id with or without rs (VTT-747).
+// Refuse an empty ability id and an empty reference id with or without rs
+// (VTT-747, VTT-1040).
 func sheetFault(a *vttv1.Actor, rs *rules.Ruleset) *rules.SheetFault {
 	if rs != nil {
 		if f := rs.SheetKeyFault(slices.Collect(maps.Keys(a.GetAttributes())), slices.Collect(maps.Keys(a.GetResources()))); f != nil {
@@ -68,11 +69,19 @@ func sheetFault(a *vttv1.Actor, rs *rules.Ruleset) *rules.SheetFault {
 	if slices.Contains(a.GetAbilityIds(), "") {
 		return &rules.SheetFault{Field: "ability_ids", Reason: "must not hold an empty id"}
 	}
+	if rs != nil {
+		if f := rs.SheetAbilityFault(a.GetAbilityIds()); f != nil {
+			return f
+		}
+		if f := rs.SheetSpendFault(a.GetAbilityIds(), slices.Collect(maps.Keys(a.GetResources()))); f != nil {
+			return f
+		}
+	}
+	if _, empty := a.GetReferences()[""]; empty {
+		return &rules.SheetFault{Field: "references", Reason: "must not hold an empty id"}
+	}
 	if rs == nil {
 		return nil
 	}
-	if f := rs.SheetAbilityFault(a.GetAbilityIds()); f != nil {
-		return f
-	}
-	return rs.SheetSpendFault(a.GetAbilityIds(), slices.Collect(maps.Keys(a.GetResources())))
+	return rs.SheetReferenceFault(a.GetReferences())
 }

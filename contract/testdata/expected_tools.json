@@ -93,11 +93,11 @@
               "additionalProperties": {
                 "properties": {
                   "entryId": {
-                    "description": "REQUIRED; the id of the catalogue entry the reference names (get_ruleset's catalogue).",
+                    "description": "REQUIRED; the id of the catalogue entry the reference names (get_ruleset's catalogue). With no ruleset served it is not read.",
                     "type": "string"
                   },
                   "place": {
-                    "description": "REQUIRED; the key of the place on the sheet that holds the entry (get_ruleset's places).",
+                    "description": "REQUIRED; the key of the place on the sheet that holds the entry (get_ruleset's places). With no ruleset served it is not read.",
                     "type": "string"
                   },
                   "state": {
@@ -111,7 +111,7 @@
                 ],
                 "type": "object"
               },
-              "description": "Optional. The sheet's references to catalogue entries, each under a reference id you give it, which is the sheet's own: two sheets may use one id. Each names its entry by the entry's id in the served ruleset's catalogue, the place on the sheet that holds it, and its state there (get_ruleset lists the catalogue and the places). A reference whose id is empty refuses the whole command, with a ruleset served or none.",
+              "description": "Optional. The sheet's references to catalogue entries, each under a reference id you give it, which is the sheet's own: two sheets may use one id. Each names its entry by the entry's id in the served ruleset's catalogue, the place on the sheet that holds it, and its state there (get_ruleset lists the catalogue and the places). With a ruleset served, a reference refuses the whole command when it names an entry the catalogue does not hold, a place the ruleset does not declare, or an entry of a form its place does not hold; when it gives no state in a place that names its states, a state its place does not name, or any state in a place that names none; or when it names an entry another reference names in the same place, unless that place holds copies. A reference whose id is empty refuses the whole command, with a ruleset served or none.",
               "type": "object"
             },
             "resources": {

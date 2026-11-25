@@ -944,3 +944,21 @@ func TestAReferenceRequiresItsEntryAndItsPlaceAndNotItsState(t *testing.T) {
 		}
 	}
 }
+
+// VTT-1051
+func TestAddActorSaysWhatAReferenceRefuses(t *testing.T) {
+	actor := findTool(t, "add_actor")["inputSchema"].(map[string]any)["properties"].(map[string]any)["actor"].(map[string]any)
+	desc, _ := actor["properties"].(map[string]any)["references"].(map[string]any)["description"].(string)
+	for _, want := range []string{
+		"With a ruleset served, a reference refuses the whole command when it names",
+		"an entry the catalogue does not hold", "a place the ruleset does not declare",
+		"an entry of a form its place does not hold", "no state in a place that names its states",
+		"a state its place does not name", "any state in a place that names none",
+		"an entry another reference names in the same place, unless that place holds copies",
+		"A reference whose id is empty refuses the whole command, with a ruleset served or none",
+	} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("add_actor's references description = %q, want it to say %q", desc, want)
+		}
+	}
+}
