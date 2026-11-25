@@ -1290,3 +1290,19 @@ bytes" to "At most 999 bytes" in `internal/rules/schema/ruleset.schema.json`;
 needs a row that the schema states the name's bound, and the probe brought in
 scope. Recorded 2026-11-24 by the implementation report of
 `docs/superpowers/specs/2026-11-23-the-log-names-its-ruleset-design.md`.
+
+**The vocabulary gate misses a game term written with a space or a
+hyphen.** semgrep's `no-game-system-vocabulary-in-engine`
+(`.semgrep/vocabulary.yml`) writes each multi-word term with an optional
+underscore, `hit_?points` and `saving_?throw` among them, so the term with
+a space or a hyphen between its words, in a Go comment or string under
+`internal/` or `cmd/`, passes rule 5's gate. Recipe: on `214a950`, append
+the comment `// hit points` to any Go file under `internal/`; `task
+check:invariants` stays green, where `// hit_points` turns it red, and
+`// hit-points` and `// saving throw` pass as the first does. Labels:
+`outside the tool`. Closing it needs each term's pattern to match its words
+joined by a space or a hyphen as well as by an underscore (for instance
+`hit[ _-]?points`), and changing the pattern is gate work, paused since
+2026-08-27. Recorded 2026-11-25 by the implementation report of
+`docs/superpowers/specs/2026-11-24-a-ruleset-declares-forms-and-a-catalogue-design.md`;
+Task 5's Phase 4a QA saw it.
