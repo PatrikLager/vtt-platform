@@ -96,7 +96,7 @@ func TestAnEmptyAbilityDescriptionIsRefused(t *testing.T) {
 	expectFieldRefusal(t, dir, filepath.Join("abilities", "strike.json"), "description")
 }
 
-// VTT-856 VTT-996
+// VTT-856 VTT-1018
 func TestARulesetKeepsTheNameItGivesAnAbilityThatSpendsNoResource(t *testing.T) {
 	cases := []struct {
 		name  string

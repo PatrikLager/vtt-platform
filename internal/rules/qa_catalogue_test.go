@@ -645,7 +645,7 @@ func TestQACTTheEntrySchemaDescribesEveryFieldARequiredFieldAndValues(t *testing
 	}
 }
 
-// VTT-1008, VTT-1009
+// VTT-1008, VTT-1022
 func TestQACTTheEntrySchemaStatesTheIDBoundLoadEnforces(t *testing.T) {
 	s := qactEntrySchema(t)
 	props, _ := s["properties"].(map[string]any)

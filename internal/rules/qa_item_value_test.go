@@ -69,6 +69,7 @@ func qaivRuleset(t *testing.T, withForms bool) *rules.Ruleset {
 		}
 	} else {
 		delete(m, "forms")
+		dropPlaces(m)
 		if err := os.RemoveAll(filepath.Join(dir, "catalogue")); err != nil {
 			t.Fatalf("remove catalogue: %v", err)
 		}

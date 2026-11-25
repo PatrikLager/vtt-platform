@@ -469,7 +469,7 @@ func qaRuleAtBytes(field string, n int) string {
 	return strings.Repeat("é", n/2) + strings.Repeat("a", n%2)
 }
 
-// VTT-1009
+// VTT-1022
 func TestQARuleTheSchemasStateTheBoundLoadEnforces(t *testing.T) {
 	cases := []struct {
 		field, schema string

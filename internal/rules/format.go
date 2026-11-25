@@ -35,6 +35,9 @@ type Ruleset struct {
 	// Forms is every form the ruleset declares, in its order, or nil (VTT-993).
 	Forms []Form
 
+	// Places is every place the ruleset declares, in its order, or nil (VTT-1015).
+	Places []Place
+
 	// Catalogue is every entry of catalogue/, keyed by its id (VTT-997).
 	Catalogue map[string]*Entry
 
@@ -298,13 +301,15 @@ type SheetPage struct {
 }
 
 // SheetSection is one named section of a sheet's page, showing exactly one
-// of Values, Conditions and Abilities (VTT-825).
+// of Values, Conditions, Abilities and Places (VTT-1019).
 type SheetSection struct {
 	Name string
 	// Values is property keys, in the order the section shows them.
 	Values     []string
 	Conditions bool
 	Abilities  []ShownUsage
+	// Places is place keys, in the order the section shows them.
+	Places []string
 }
 
 // Form is a kind of catalogue entry, with the number properties its entries
@@ -312,6 +317,25 @@ type SheetSection struct {
 type Form struct {
 	Key, Name, Description string
 	Properties             []string
+}
+
+// Place is where a sheet holds references to entries of the forms it lists,
+// each entry once unless Copies, in one of States when it names any (VTT-1015).
+type Place struct {
+	Key, Name, Description string
+	Forms                  []string
+	Copies                 bool
+	States                 []string
+}
+
+// Place returns the place rs declares under key, or nil.
+func (rs *Ruleset) Place(key string) *Place {
+	for i := range rs.Places {
+		if rs.Places[i].Key == key {
+			return &rs.Places[i]
+		}
+	}
+	return nil
 }
 
 // Entry is one thing a ruleset's catalogue holds, of the form Form (VTT-997).

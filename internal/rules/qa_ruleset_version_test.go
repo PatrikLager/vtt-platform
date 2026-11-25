@@ -211,7 +211,7 @@ func TestQARVEachOfIDVersionAndNameOverTheBoundIsRefused(t *testing.T) {
 	}
 }
 
-// VTT-996
+// VTT-1018
 func TestQARVAnUndefinedTopLevelFieldIsRefusedNamingFileAndField(t *testing.T) {
 	for _, field := range []string{"author", "versions", "vers", "ruleset_version", "version "} {
 		t.Run(field, func(t *testing.T) {
@@ -221,7 +221,7 @@ func TestQARVAnUndefinedTopLevelFieldIsRefusedNamingFileAndField(t *testing.T) {
 	}
 }
 
-// VTT-996: a case variant matches a defined field, so it is not undefined.
+// VTT-1018: a case variant matches a defined field, so it is not undefined.
 func TestQARVACaseVariantOfEachDefinedTopLevelFieldIsNotRefused(t *testing.T) {
 	for _, tc := range []struct{ field, variant, value string }{
 		{"id", "ID", ""},
@@ -239,12 +239,12 @@ func TestQARVACaseVariantOfEachDefinedTopLevelFieldIsNotRefused(t *testing.T) {
 				}
 				m[tc.variant] = m[tc.field]
 			})
-			qarvRequireLoads(t, err) // VTT-996
+			qarvRequireLoads(t, err) // VTT-1018
 		})
 	}
 }
 
-// VTT-996 and VTT-970: "Version" is the field version, compared without
+// VTT-1018 and VTT-970: "Version" is the field version, compared without
 // regard to case, so its value is the ruleset's version.
 func TestQARVACaseVariantVersionAloneIsTheVersion(t *testing.T) {
 	_, rs, err := qarvLoad(t, func(m qarvManifest) {
@@ -276,7 +276,7 @@ func qarvSheet(e qarvSheetEdit) string {
 		`]}]`
 }
 
-// VTT-996: the control the sheet cases below vary.
+// VTT-1018: the control the sheet cases below vary.
 func TestQARVTheBaseSheetLoads(t *testing.T) {
 	_, _, err := qarvLoad(t, func(m qarvManifest) {
 		m["sheet"] = json.RawMessage(qarvSheet(qarvSheetEdit{}))
@@ -284,7 +284,7 @@ func TestQARVTheBaseSheetLoads(t *testing.T) {
 	qarvRequireLoads(t, err)
 }
 
-// VTT-996
+// VTT-1018
 func TestQARVAnUndefinedFieldWithinTheSheetIsRefusedNamingFileAndField(t *testing.T) {
 	for _, tc := range []struct {
 		name, field string
@@ -303,7 +303,7 @@ func TestQARVAnUndefinedFieldWithinTheSheetIsRefusedNamingFileAndField(t *testin
 	}
 }
 
-// VTT-996: within the sheet too, a field is compared without regard to case.
+// VTT-1018: within the sheet too, a field is compared without regard to case.
 func TestQARVACaseVariantOfASheetFieldIsNotRefused(t *testing.T) {
 	for _, tc := range []struct {
 		name string

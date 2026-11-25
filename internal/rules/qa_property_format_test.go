@@ -608,7 +608,7 @@ func TestQAPFFormatVersionIsReadBeforeTheRestOfTheFile(t *testing.T) {
 	}
 }
 
-// VTT-996
+// VTT-1018
 func TestQAPFUnknownManifestFieldIsRefused(t *testing.T) {
 	s := qaPFBase()
 	s.manifest()["attributes"] = []any{"brawn"}
@@ -772,6 +772,23 @@ func qaPFFormKeyed(t *testing.T, size int) map[string]string {
 	return qaPFRender(t, s)
 }
 
+func qaPFPlaceKeyed(padded string) func(t *testing.T, size int) map[string]string {
+	return func(t *testing.T, size int) map[string]string {
+		t.Helper()
+		s := qaPFBase()
+		place := qaPFDoc{"key": "qa-place", "name": "Plain Place", "description": "A place the probe pads.",
+			"forms": []any{"qa-form"}, "states": []any{"qa-state"}}
+		if padded == "key" {
+			place["key"] = qaPFPad("qa-place", "-", size)
+		} else {
+			place["states"] = []any{qaPFPad("qa-state", "-", size)}
+		}
+		s.manifest()["forms"] = []any{qaPFDoc{"key": "qa-form", "name": "Plain Form", "description": "A plain form."}}
+		s.manifest()["places"] = []any{place}
+		return qaPFRender(t, s)
+	}
+}
+
 func qaPFEntryKeyed(t *testing.T, size int) map[string]string {
 	t.Helper()
 	s := qaPFBase()
@@ -829,12 +846,14 @@ func qaPFSchemaText(t *testing.T, file string, path []string) string {
 	return d
 }
 
-// VTT-1009
+// VTT-1022
 func TestQAPFSchemasStateTheBoundsLoadEnforces(t *testing.T) {
 	probes := []qaPFProbe{
 		{"property key", qaPFNamed(func(n *qaPFNames, v string) { n.grit = v }, "grit", "_"),
 			"ruleset.schema.json", []string{"properties", "properties", "items", "properties", "key"}, true},
 		{"form key", qaPFFormKeyed, "ruleset.schema.json", []string{"properties", "forms", "items", "properties", "key"}, true},
+		{"place key", qaPFPlaceKeyed("key"), "ruleset.schema.json", []string{"properties", "places", "items", "properties", "key"}, true},
+		{"place state", qaPFPlaceKeyed("state"), "ruleset.schema.json", []string{"properties", "places", "items", "properties", "states"}, true},
 		{"entry id", qaPFEntryKeyed, "entry.schema.json", []string{"properties", "id"}, true},
 		{"ability id", qaPFNamed(func(n *qaPFNames, v string) { n.steady = v }, "steady", "-"),
 			"ability.schema.json", []string{"properties", "id"}, true},

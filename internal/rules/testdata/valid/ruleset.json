@@ -54,6 +54,29 @@
       ]
     }
   ],
+  "places": [
+    {
+      "key": "shelf",
+      "name": "Shelf",
+      "description": "The fixture's shelf, which holds a crate more than once.",
+      "forms": [
+        "crate"
+      ],
+      "copies": true,
+      "states": [
+        "stacked",
+        "loose"
+      ]
+    },
+    {
+      "key": "hook",
+      "name": "Hook",
+      "description": "The fixture's hook, which holds a crate once.",
+      "forms": [
+        "crate"
+      ]
+    }
+  ],
   "sheet": [
     {
       "name": "Front",
@@ -88,6 +111,13 @@
             "brawn",
             "grit",
             "guard"
+          ]
+        },
+        {
+          "name": "Stores",
+          "places": [
+            "shelf",
+            "hook"
           ]
         }
       ]

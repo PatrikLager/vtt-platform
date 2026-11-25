@@ -14,7 +14,7 @@ func TestTheIDBoundMirrorsEngine(t *testing.T) {
 	}
 }
 
-// VTT-1009
+// VTT-1022
 func TestTheSchemasStateTheIDBound(t *testing.T) {
 	want := fmt.Sprintf("At most %d bytes", maxIDBytes)
 	for _, c := range []struct {
@@ -26,6 +26,8 @@ func TestTheSchemasStateTheIDBound(t *testing.T) {
 		{"entry", []string{"properties", "id"}},
 		{"ruleset", []string{"properties", "properties", "items", "properties", "key"}},
 		{"ruleset", []string{"properties", "forms", "items", "properties", "key"}},
+		{"ruleset", []string{"properties", "places", "items", "properties", "key"}},
+		{"ruleset", []string{"properties", "places", "items", "properties", "states"}},
 		{"atom", []string{"$defs", "resolutionContribution", "properties", "branches"}},
 	} {
 		raw, err := Schemas.ReadFile("schema/" + c.file + ".schema.json")

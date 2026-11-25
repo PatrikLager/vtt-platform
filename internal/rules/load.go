@@ -82,6 +82,7 @@ func loadV2(dir string, manifest *loadedManifest) (*Ruleset, error) {
 		Version:       manifest.Version,
 		Properties:    manifest.properties,
 		Forms:         manifest.forms,
+		Places:        manifest.places,
 		Conditions:    conditions,
 		Atoms:         atoms,
 		Guide:         string(guide),
@@ -129,11 +130,12 @@ type manifestJSON struct {
 	FormatVersion string         `json:"format_version"`
 	Version       string         `json:"version"`
 	Properties    []propertyJSON `json:"properties"`
-	// A pointer, so that "sheet": [] is told apart from no sheet (VTT-825).
+	// A pointer, so that "sheet": [] is told apart from no sheet (VTT-1019).
 	Sheet *[]sheetPageJSON `json:"sheet"`
 	// A pointer, so that "" is told apart from no name (VTT-857).
-	FreeUsageName *string    `json:"free_usage_name"`
-	Forms         []formJSON `json:"forms"`
+	FreeUsageName *string     `json:"free_usage_name"`
+	Forms         []formJSON  `json:"forms"`
+	Places        []placeJSON `json:"places"`
 }
 
 type formJSON struct {
@@ -143,18 +145,28 @@ type formJSON struct {
 	Properties  []string `json:"properties"`
 }
 
+type placeJSON struct {
+	Key         string   `json:"key"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Forms       []string `json:"forms"`
+	Copies      bool     `json:"copies"`
+	States      []string `json:"states"`
+}
+
 type sheetPageJSON struct {
 	Name     string             `json:"name"`
 	Sections []sheetSectionJSON `json:"sections"`
 }
 
 // sheetSectionJSON's pointers tell a kind the section names apart from one
-// it leaves out (VTT-825).
+// it leaves out (VTT-1019).
 type sheetSectionJSON struct {
 	Name       string        `json:"name"`
 	Values     *[]string     `json:"values"`
 	Conditions *bool         `json:"conditions"`
 	Abilities  *[]ShownUsage `json:"abilities"`
+	Places     *[]string     `json:"places"`
 }
 
 type propertyJSON struct {
@@ -190,6 +202,7 @@ type loadedManifest struct {
 	sheet         *[]sheetPageJSON
 	freeUsageName string
 	forms         []Form
+	places        []Place
 }
 
 // checkFormatVersion refuses any format_version but "3" (VTT-616). It reads
@@ -262,10 +275,14 @@ func loadManifest(path string) (*loadedManifest, error) {
 	if err != nil {
 		return nil, err
 	}
+	places, err := loadPlaces(path, raw.Places, forms)
+	if err != nil {
+		return nil, err
+	}
 
 	return &loadedManifest{
 		ID: raw.ID, Name: raw.Name, FormatVersion: raw.FormatVersion, Version: raw.Version, properties: props,
-		path: path, sheet: raw.Sheet, freeUsageName: freeUsageName, forms: forms,
+		path: path, sheet: raw.Sheet, freeUsageName: freeUsageName, forms: forms, places: places,
 	}, nil
 }
 
@@ -310,6 +327,63 @@ func loadForms(path string, raw []formJSON, props []Property) ([]Form, error) {
 		forms = append(forms, Form(f))
 	}
 	return forms, nil
+}
+
+// loadPlaces checks each place against the forms declared beside it and
+// returns them in order, or nil when there are none (VTT-1015 to VTT-1017).
+func loadPlaces(path string, raw []placeJSON, forms []Form) ([]Place, error) {
+	declared := map[string]bool{}
+	for _, f := range forms {
+		declared[f.Key] = true
+	}
+	var places []Place
+	keys := map[string]bool{}
+	for i, p := range raw {
+		field := fmt.Sprintf("places[%d]", i)
+		if p.Key == "" {
+			return nil, fieldErr(path, field+".key", "must not be empty")
+		}
+		if p.Name == "" {
+			return nil, fieldErr(path, field+".name", fmt.Sprintf("place %q: must not be empty", p.Key))
+		}
+		if p.Description == "" {
+			return nil, fieldErr(path, field+".description", fmt.Sprintf("place %q: must not be empty", p.Key))
+		}
+		if keys[p.Key] {
+			return nil, fieldErr(path, field+".key", fmt.Sprintf("duplicate place key %q", p.Key))
+		}
+		keys[p.Key] = true
+		if len(p.Forms) == 0 {
+			return nil, fieldErr(path, field+".forms", fmt.Sprintf("place %q: must name a form", p.Key))
+		}
+		listed := map[string]bool{}
+		for j, key := range p.Forms {
+			ffield := fmt.Sprintf("%s.forms[%d]", field, j)
+			if !declared[key] {
+				return nil, fieldErr(path, ffield, fmt.Sprintf("names %q, which no form declares", key))
+			}
+			if listed[key] {
+				return nil, fieldErr(path, ffield, fmt.Sprintf("names %q, which the place lists already", key))
+			}
+			listed[key] = true
+		}
+		named := map[string]bool{}
+		for j, state := range p.States {
+			sfield := fmt.Sprintf("%s.states[%d]", field, j)
+			if state == "" {
+				return nil, fieldErr(path, sfield, "must not be empty")
+			}
+			if named[state] {
+				return nil, fieldErr(path, sfield, fmt.Sprintf("names %q, which the place lists already", state))
+			}
+			named[state] = true
+		}
+		// Keep the copy: a place that names no state holds nil, written [] or not.
+		states := append([]string(nil), p.States...)
+		places = append(places, Place{Key: p.Key, Name: p.Name, Description: p.Description,
+			Forms: p.Forms, Copies: p.Copies, States: states})
+	}
+	return places, nil
 }
 
 // checkPropertyKey refuses a key an expression could not read as one
@@ -699,7 +773,7 @@ func (u *Usage) UnmarshalJSON(data []byte) error {
 }
 
 // UnmarshalJSON decodes a ShownUsage from the bare string "at_will" or an
-// object {"spends": "<resource key>"}, refusing any other field (VTT-996).
+// object {"spends": "<resource key>"}, refusing any other field (VTT-1018).
 func (u *ShownUsage) UnmarshalJSON(data []byte) error {
 	var asString string
 	if err := json.Unmarshal(data, &asString); err == nil {
@@ -725,7 +799,8 @@ func (u *ShownUsage) UnmarshalJSON(data []byte) error {
 }
 
 // checkSheet checks the sheet a manifest declares against the loaded ruleset
-// and returns it, or nil when none is declared (VTT-825 to VTT-828).
+// and returns it, or nil when none is declared (VTT-826 to VTT-828, VTT-1019,
+// VTT-1020, VTT-1060).
 func checkSheet(path string, raw *[]sheetPageJSON, rs *Ruleset) ([]SheetPage, error) {
 	if raw == nil {
 		return nil, nil
@@ -738,9 +813,7 @@ func checkSheet(path string, raw *[]sheetPageJSON, rs *Ruleset) ([]SheetPage, er
 		types[p.Key] = p.Type
 	}
 	pageNames := map[string]bool{}
-	shownKeys := map[string]bool{}
-	shownUsages := map[ShownUsage]bool{}
-	conditionsShown := false
+	shown := &sheetShown{keys: map[string]bool{}, usages: map[ShownUsage]bool{}, places: map[string]bool{}}
 	pages := make([]SheetPage, 0, len(*raw))
 	for i, rp := range *raw {
 		field := fmt.Sprintf("sheet[%d]", i)
@@ -756,60 +829,9 @@ func checkSheet(path string, raw *[]sheetPageJSON, rs *Ruleset) ([]SheetPage, er
 		}
 		page := SheetPage{Name: rp.Name, Sections: make([]SheetSection, 0, len(rp.Sections))}
 		for j, rsec := range rp.Sections {
-			sfield := fmt.Sprintf("%s.sections[%d]", field, j)
-			if rsec.Name == "" {
-				return nil, fieldErr(path, sfield+".name", "must not be empty")
-			}
-			kinds := 0
-			for _, set := range []bool{rsec.Values != nil, rsec.Conditions != nil, rsec.Abilities != nil} {
-				if set {
-					kinds++
-				}
-			}
-			if kinds != 1 {
-				return nil, fieldErr(path, sfield, fmt.Sprintf("section %q must show exactly one of values, conditions and abilities", rsec.Name))
-			}
-			section := SheetSection{Name: rsec.Name}
-			switch {
-			case rsec.Values != nil:
-				if len(*rsec.Values) == 0 {
-					return nil, fieldErr(path, sfield+".values", "must not be empty")
-				}
-				for k, key := range *rsec.Values {
-					vfield := fmt.Sprintf("%s.values[%d]", sfield, k)
-					if types[key] == "" {
-						return nil, fieldErr(path, vfield, fmt.Sprintf("names %q, which no property declares", key))
-					}
-					if shownKeys[key] {
-						return nil, fieldErr(path, vfield, fmt.Sprintf("names %q, which the sheet shows already", key))
-					}
-					shownKeys[key] = true
-				}
-				section.Values = append([]string{}, *rsec.Values...)
-			case rsec.Conditions != nil:
-				if !*rsec.Conditions {
-					return nil, fieldErr(path, sfield+".conditions", "must be true")
-				}
-				if conditionsShown {
-					return nil, fieldErr(path, sfield+".conditions", "the sheet shows the conditions already")
-				}
-				conditionsShown = true
-				section.Conditions = true
-			default:
-				if len(*rsec.Abilities) == 0 {
-					return nil, fieldErr(path, sfield+".abilities", "must not be empty")
-				}
-				for k, u := range *rsec.Abilities {
-					afield := fmt.Sprintf("%s.abilities[%d]", sfield, k)
-					if !u.AtWill && types[u.Resource] != PropertyResource {
-						return nil, fieldErr(path, afield, fmt.Sprintf("spends %q, which no resource property declares", u.Resource))
-					}
-					if shownUsages[u] {
-						return nil, fieldErr(path, afield, fmt.Sprintf("names the usage %s, which the sheet shows already", usageWords(u)))
-					}
-					shownUsages[u] = true
-				}
-				section.Abilities = append([]ShownUsage{}, *rsec.Abilities...)
+			section, err := checkSection(path, fmt.Sprintf("%s.sections[%d]", field, j), rsec, rs, types, shown)
+			if err != nil {
+				return nil, err
 			}
 			page.Sections = append(page.Sections, section)
 		}
@@ -822,15 +844,107 @@ func checkSheet(path string, raw *[]sheetPageJSON, rs *Ruleset) ([]SheetPage, er
 	sort.Strings(ids)
 	for _, id := range ids {
 		usage := rs.Compiled[id].Usage
-		shown := ShownUsage{AtWill: usage.AtWill}
+		usageShown := ShownUsage{AtWill: usage.AtWill}
 		if usage.Limited != nil {
-			shown = ShownUsage{Resource: usage.Limited.Resource}
+			usageShown = ShownUsage{Resource: usage.Limited.Resource}
 		}
-		if !shownUsages[shown] {
-			return nil, fieldErr(path, "sheet", fmt.Sprintf("no section shows ability %q, whose usage is %s", id, usageWords(shown)))
+		if !shown.usages[usageShown] {
+			return nil, fieldErr(path, "sheet", fmt.Sprintf("no section shows ability %q, whose usage is %s", id, usageWords(usageShown)))
+		}
+	}
+	for _, p := range rs.Places {
+		if !shown.places[p.Key] {
+			return nil, fieldErr(path, "sheet", fmt.Sprintf("no section shows place %q", p.Key))
 		}
 	}
 	return pages, nil
+}
+
+// sheetShown is what a sheet's sections show so far, which no later section
+// may show again (VTT-827, VTT-1060).
+type sheetShown struct {
+	keys       map[string]bool
+	usages     map[ShownUsage]bool
+	places     map[string]bool
+	conditions bool
+}
+
+// checkSection checks one section of a sheet against rs and against what the
+// sections before it show, and returns it (VTT-826, VTT-827, VTT-1019, VTT-1060).
+func checkSection(path, field string, raw sheetSectionJSON, rs *Ruleset, types map[string]string, shown *sheetShown) (SheetSection, error) {
+	if raw.Name == "" {
+		return SheetSection{}, fieldErr(path, field+".name", "must not be empty")
+	}
+	kinds := 0
+	for _, set := range []bool{raw.Values != nil, raw.Conditions != nil, raw.Abilities != nil, raw.Places != nil} {
+		if set {
+			kinds++
+		}
+	}
+	if kinds != 1 {
+		return SheetSection{}, fieldErr(path, field, fmt.Sprintf("section %q must show exactly one of values, conditions, abilities and places", raw.Name))
+	}
+	section := SheetSection{Name: raw.Name}
+	// Keep these ifs, never a switch (tools/mutation-scope.md); exactly one holds.
+	if raw.Values != nil {
+		if len(*raw.Values) == 0 {
+			return SheetSection{}, fieldErr(path, field+".values", "must not be empty")
+		}
+		for k, key := range *raw.Values {
+			vfield := fmt.Sprintf("%s.values[%d]", field, k)
+			if types[key] == "" {
+				return SheetSection{}, fieldErr(path, vfield, fmt.Sprintf("names %q, which no property declares", key))
+			}
+			if shown.keys[key] {
+				return SheetSection{}, fieldErr(path, vfield, fmt.Sprintf("names %q, which the sheet shows already", key))
+			}
+			shown.keys[key] = true
+		}
+		section.Values = append([]string{}, *raw.Values...)
+	}
+	if raw.Conditions != nil {
+		if !*raw.Conditions {
+			return SheetSection{}, fieldErr(path, field+".conditions", "must be true")
+		}
+		if shown.conditions {
+			return SheetSection{}, fieldErr(path, field+".conditions", "the sheet shows the conditions already")
+		}
+		shown.conditions = true
+		section.Conditions = true
+	}
+	if raw.Abilities != nil {
+		if len(*raw.Abilities) == 0 {
+			return SheetSection{}, fieldErr(path, field+".abilities", "must not be empty")
+		}
+		for k, u := range *raw.Abilities {
+			afield := fmt.Sprintf("%s.abilities[%d]", field, k)
+			if !u.AtWill && types[u.Resource] != PropertyResource {
+				return SheetSection{}, fieldErr(path, afield, fmt.Sprintf("spends %q, which no resource property declares", u.Resource))
+			}
+			if shown.usages[u] {
+				return SheetSection{}, fieldErr(path, afield, fmt.Sprintf("names the usage %s, which the sheet shows already", usageWords(u)))
+			}
+			shown.usages[u] = true
+		}
+		section.Abilities = append([]ShownUsage{}, *raw.Abilities...)
+	}
+	if raw.Places != nil {
+		if len(*raw.Places) == 0 {
+			return SheetSection{}, fieldErr(path, field+".places", "must not be empty")
+		}
+		for k, key := range *raw.Places {
+			pfield := fmt.Sprintf("%s.places[%d]", field, k)
+			if rs.Place(key) == nil {
+				return SheetSection{}, fieldErr(path, pfield, fmt.Sprintf("names %q, which no place declares", key))
+			}
+			if shown.places[key] {
+				return SheetSection{}, fieldErr(path, pfield, fmt.Sprintf("names %q, which the sheet shows already", key))
+			}
+			shown.places[key] = true
+		}
+		section.Places = append([]string{}, *raw.Places...)
+	}
+	return section, nil
 }
 
 func usageWords(u ShownUsage) string {
@@ -1511,6 +1625,16 @@ func checkManifestBounds(path string, raw *manifestJSON) error {
 	for i, f := range raw.Forms {
 		if len(f.Key) > maxIDBytes {
 			return fieldErr(path, fmt.Sprintf("forms[%d].key", i), fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(f.Key)))
+		}
+	}
+	for i, p := range raw.Places {
+		if len(p.Key) > maxIDBytes {
+			return fieldErr(path, fmt.Sprintf("places[%d].key", i), fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(p.Key)))
+		}
+		for j, state := range p.States {
+			if len(state) > maxIDBytes {
+				return fieldErr(path, fmt.Sprintf("places[%d].states[%d]", i, j), fmt.Sprintf("must be at most %d bytes, got %d", maxIDBytes, len(state)))
+			}
 		}
 	}
 	return nil

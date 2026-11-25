@@ -37,13 +37,14 @@ func addSheetSection(sheet []any, i int, s sheetDoc) {
 }
 
 // sheetRuleset writes testdata/valid to a scratch directory with sheet as its
-// manifest's sheet, or with none when sheet is nil.
+// manifest's sheet, or with none when sheet is nil, and no places.
 func sheetRuleset(t *testing.T, sheet []any) string {
 	t.Helper()
 	dir := t.TempDir()
 	copyDir(t, "testdata/valid", dir)
 	path := filepath.Join(dir, "ruleset.json")
 	m := readJSONFile(t, path)
+	dropPlaces(m)
 	delete(m, "sheet")
 	if sheet != nil {
 		m["sheet"] = sheet
@@ -89,6 +90,12 @@ func sheetAsJSON(pages []rules.SheetPage) []any {
 				doc["values"] = values
 			case s.Conditions:
 				doc["conditions"] = true
+			case s.Places != nil:
+				places := []any{}
+				for _, p := range s.Places {
+					places = append(places, p)
+				}
+				doc["places"] = places
 			default:
 				usages := []any{}
 				for _, u := range s.Abilities {
@@ -162,7 +169,7 @@ func TestTheShippedRulesetsLoadTheSheetTheyDeclare(t *testing.T) {
 	}
 }
 
-// VTT-825
+// VTT-1019
 func TestASheetOfTheWrongShapeIsRefused(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -236,7 +243,7 @@ func TestAnAbilityWhoseUsageNoSectionShowsIsRefused(t *testing.T) {
 	expectSheetRefusal(t, s, "sheet", `"stand-down"`)
 }
 
-// VTT-996
+// VTT-1018
 func TestAFieldTheSheetDoesNotDefineIsRefused(t *testing.T) {
 	cases := []struct {
 		name, word string
@@ -259,7 +266,7 @@ func TestAFieldTheSheetDoesNotDefineIsRefused(t *testing.T) {
 	}
 }
 
-// VTT-829
+// VTT-829 VTT-1021
 func TestTheSchemaDescribesEverySheetField(t *testing.T) {
 	schema := readSchema(t, "ruleset.schema.json")
 	node := func(n map[string]any, path ...string) map[string]any {
@@ -309,7 +316,7 @@ func TestTheSchemaDescribesEverySheetField(t *testing.T) {
 			}
 		}
 	}
-	for _, f := range []string{"page.name", "page.sections", "section.name", "section.values", "section.conditions", "section.abilities", "usage.spends"} {
+	for _, f := range []string{"page.name", "page.sections", "section.name", "section.values", "section.conditions", "section.abilities", "section.places", "usage.spends"} {
 		if !seen[f] {
 			t.Errorf("testdata/valid/ruleset.json's sheet never uses %s, so this test cannot hold the schema to it", f)
 		}

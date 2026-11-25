@@ -274,7 +274,7 @@ func TestQAFMAnUndefinedTopLevelFieldIsRefused(t *testing.T) {
 				m["forms"] = []any{qaFMForm("first", "First", "A sound one.")}
 				m[field] = []any{}
 			})
-			qaFMRefused(t, dir, `unknown field "`+field+`"`) // VTT-996
+			qaFMRefused(t, dir, `unknown field "`+field+`"`) // VTT-1018
 		})
 	}
 }
@@ -288,7 +288,7 @@ func TestQAFMAnUndefinedFieldInAFormIsRefused(t *testing.T) {
 				qaFMForm("first", "First", "A sound one.", "brawn"),
 				bad,
 			})
-			qaFMRefused(t, dir, field) // VTT-996
+			qaFMRefused(t, dir, field) // VTT-1018
 		})
 	}
 }
@@ -301,7 +301,7 @@ func TestQAFMAnUndefinedFieldInTheSheetIsRefused(t *testing.T) {
 			"stray":    true,
 		}}
 	})
-	qaFMRefused(t, dir, "stray") // VTT-996
+	qaFMRefused(t, dir, "stray") // VTT-1018
 }
 
 func TestQAFMCaseVariantsOfFormsAndItsFieldsAreReadAsThem(t *testing.T) {
@@ -327,14 +327,14 @@ func TestQAFMCaseVariantsOfFormsAndItsFieldsAreReadAsThem(t *testing.T) {
 				{Key: "two", Name: "Two", Description: "Second.",
 					Properties: []string{"brawn"}},
 			}
-			if len(rs.Forms) != len(want) { // VTT-996
+			if len(rs.Forms) != len(want) { // VTT-1018
 				t.Fatalf("Forms = %+v, want %+v", rs.Forms, want)
 			}
 			for i := range want {
 				got := rs.Forms[i]
 				if got.Key != want[i].Key || got.Name != want[i].Name ||
 					got.Description != want[i].Description ||
-					!slices.Equal(got.Properties, want[i].Properties) { // VTT-996
+					!slices.Equal(got.Properties, want[i].Properties) { // VTT-1018
 					t.Fatalf("Forms[%d] = %+v, want %+v", i, got, want[i])
 				}
 			}
@@ -386,7 +386,7 @@ func TestQAFMTheSchemaDescribesFormsAndTheKeyBound(t *testing.T) {
 		}
 	}
 	keyDoc := forms.Items.Properties["key"].Description
-	if !strings.Contains(keyDoc, "128 bytes") { // VTT-1008, VTT-1009
+	if !strings.Contains(keyDoc, "128 bytes") { // VTT-1008, VTT-1022
 		t.Errorf("a form key's description %q does not state 128 bytes", keyDoc)
 	}
 }

@@ -20,6 +20,7 @@ func formsManifest(t *testing.T, edit func(m map[string]any)) string {
 	dropCatalogue(t, dir)
 	path := filepath.Join(dir, "ruleset.json")
 	m := readJSONFile(t, path)
+	dropPlaces(m)
 	edit(m)
 	writeJSONFile(t, path, m)
 	return dir
@@ -193,7 +194,7 @@ func TestAFormListingAPropertyItMayNotCarryIsRefused(t *testing.T) {
 	}
 }
 
-// VTT-996
+// VTT-1018
 func TestACaseVariantOfFormsIsReadAsForms(t *testing.T) {
 	rs, err := rules.Load(formsManifest(t, func(m map[string]any) {
 		delete(m, "forms")
@@ -205,7 +206,7 @@ func TestACaseVariantOfFormsIsReadAsForms(t *testing.T) {
 	expectForms(t, rs.Forms, []rules.Form{{Key: "qa-form", Name: "Plain Form", Description: "A plain form.", Properties: []string{"heft"}}})
 }
 
-// VTT-996
+// VTT-1018
 func TestAFieldAFormDoesNotDefineIsRefused(t *testing.T) {
 	for _, field := range []string{"colour", "extends"} {
 		t.Run(field, func(t *testing.T) {

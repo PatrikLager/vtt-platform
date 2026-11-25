@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/PatrikLager/vtt-platform/internal/rules/schema/ruleset.schema.json",
   "title": "Ruleset manifest (ruleset.json)",
-  "description": "The top-level manifest of a rulesets/<id>/ directory: identity, format version, the ruleset's own version, every property the ruleset's actors carry, each named in the table's words, and, optionally, how a character's sheet is laid out, the name for an ability that spends no resource and the forms a catalogue entry takes. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
+  "description": "The top-level manifest of a rulesets/<id>/ directory: identity, format version, the ruleset's own version, every property the ruleset's actors carry, each named in the table's words, and, optionally, how a character's sheet is laid out, the name for an ability that spends no resource, the forms a catalogue entry takes and the places on a sheet that hold references to entries. See internal/rules/load.go for the authoritative loader; this document is the external contract for ruleset authors and is cross-checked against loader behavior by internal/rules/schema_test.go.",
   "type": "object",
   "required": [
     "id",
@@ -150,10 +150,64 @@
         }
       }
     },
+    "places": {
+      "type": "array",
+      "description": "Optional. The places on a character's sheet that hold references to catalogue entries, in the order the ruleset declares them, each with the forms of the entries it holds. A ruleset may declare none. A key is declared by one place. A place holds any number of references.",
+      "items": {
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "description",
+          "forms"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The place's key; no two places share one. At most 128 bytes of UTF-8."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The place's display name: what the table calls it."
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What the place is at the table, for a player and for the agent."
+          },
+          "forms": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Keys of declared forms, each listed once: the forms of the entries the place holds. A place names at least one."
+          },
+          "copies": {
+            "type": "boolean",
+            "description": "Optional. Whether the place holds one entry more than once. Absent, it holds each entry once."
+          },
+          "states": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Optional. The states a reference in the place may be in, one at a time, each listed once. A place may name none, and a reference in it then has no state. At most 128 bytes of UTF-8 per state."
+          }
+        }
+      }
+    },
     "sheet": {
       "type": "array",
       "minItems": 1,
-      "description": "Optional. How a character's sheet is laid out: its pages, in order, each of named sections, each showing one of the character's values, its conditions or its abilities. A ruleset may declare none. A property key stands at most once among the sections' values, a usage at most once among their abilities, and the conditions in at most one section; a property need not stand at all, and a key may stand both as a value and in the usage that spends it. When a sheet is declared, every ability's usage stands in a section.",
+      "description": "Optional. How a character's sheet is laid out: its pages, in order, each of named sections, each showing one of the character's values, its conditions, its abilities or the references in its places. A ruleset may declare none. A property key stands at most once among the sections' values, a usage at most once among their abilities, a place at most once among their places, and the conditions in at most one section; a property need not stand at all, and a key may stand both as a value and in the usage that spends it. When a sheet is declared, every ability's usage and every place stands in a section.",
       "items": {
         "type": "object",
         "required": [
@@ -189,6 +243,11 @@
                 {
                   "required": [
                     "abilities"
+                  ]
+                },
+                {
+                  "required": [
+                    "places"
                   ]
                 }
               ],
@@ -237,6 +296,15 @@
                     ]
                   },
                   "description": "The usages whose abilities the section shows: \"at_will\", or an object naming the resource the abilities spend."
+                },
+                "places": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "Keys of declared places, shown in this order: the section shows the references in each."
                 }
               }
             }

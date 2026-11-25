@@ -114,6 +114,7 @@ type qaSheetJSONSection struct {
 	Values     []string          `json:"values"`
 	Conditions bool              `json:"conditions"`
 	Abilities  []json.RawMessage `json:"abilities"`
+	Places     []string          `json:"places"`
 }
 
 type qaSheetJSONPage struct {
@@ -131,7 +132,7 @@ func qaSheetExpect(t *testing.T, raw json.RawMessage) []rules.SheetPage {
 	for _, p := range pages {
 		sp := rules.SheetPage{Name: p.Name}
 		for _, s := range p.Sections {
-			ss := rules.SheetSection{Name: s.Name, Values: s.Values, Conditions: s.Conditions}
+			ss := rules.SheetSection{Name: s.Name, Values: s.Values, Conditions: s.Conditions, Places: s.Places}
 			for _, a := range s.Abilities {
 				var str string
 				if json.Unmarshal(a, &str) == nil {
@@ -225,7 +226,7 @@ func TestQASheetKeyMayBeValueAndSpentAndOthersMayBeAbsent(t *testing.T) {
 	}
 }
 
-// VTT-825.
+// VTT-1019.
 func TestQASheetRefusesAMalformedShape(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -255,7 +256,7 @@ func TestQASheetRefusesAMalformedShape(t *testing.T) {
 	}
 }
 
-// VTT-825: conditions set to false shows nothing, which is a section
+// VTT-1019: conditions set to false shows nothing, which is a section
 // showing none.
 func TestQASheetRefusesConditionsFalse(t *testing.T) {
 	qaSheetMustRefuse(t, qaSheetSheet(`{"name":"P","sections":[{"name":"S","conditions":false}]}`, qaSheetMoves), []string{"sheet"})
@@ -330,7 +331,7 @@ func TestQASheetUnnamedAtWillRefusalNamesAnAtWillAbility(t *testing.T) {
 	}
 }
 
-// VTT-996.
+// VTT-1018.
 func TestQASheetRefusesAnUnknownField(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -355,7 +356,7 @@ func TestQASheetRefusesAnUnknownField(t *testing.T) {
 	}
 }
 
-// VTT-996: a field whose name matches a defined one without regard to case
+// VTT-1018: a field whose name matches a defined one without regard to case
 // is not an undefined field.
 func TestQASheetCaseVariantOfADefinedFieldIsNotUndefined(t *testing.T) {
 	rs := qaSheetMustLoad(t, map[string]string{"SHEET": qaSheetSheet(`{"NAME":"P","Sections":[{"name":"S","VALUES":["brawn"]}]}`, qaSheetMoves)["sheet"]})
@@ -364,7 +365,7 @@ func TestQASheetCaseVariantOfADefinedFieldIsNotUndefined(t *testing.T) {
 	}
 }
 
-// VTT-829 VTT-858: the schema describes sheet and every field it holds.
+// VTT-829 VTT-858 VTT-1021: the schema describes sheet and every field it holds.
 func TestQASheetSchemaDescribesTheSheet(t *testing.T) {
 	b, err := os.ReadFile("schema/ruleset.schema.json")
 	if err != nil {
@@ -383,7 +384,7 @@ func TestQASheetSchemaDescribesTheSheet(t *testing.T) {
 		return m
 	}
 	props := obj(root["properties"], "top properties")
-	fields := []string{"id", "name", "format_version", "version", "properties", "sheet", "free_usage_name", "forms"}
+	fields := []string{"id", "name", "format_version", "version", "properties", "sheet", "free_usage_name", "forms", "places"}
 	for _, k := range fields {
 		if _, ok := props[k]; !ok {
 			t.Errorf("schema top level lacks %q", k)
@@ -430,8 +431,8 @@ func TestQASheetSchemaDescribesTheSheet(t *testing.T) {
 		t.Error("section admits undefined fields")
 	}
 	sprops := obj(sec["properties"], "section properties")
-	if len(sprops) != 4 {
-		t.Errorf("section holds %d fields, want name, values, conditions, abilities", len(sprops))
+	if len(sprops) != 5 {
+		t.Errorf("section holds %d fields, want name, values, conditions, abilities, places", len(sprops))
 	}
 	sname := obj(sprops["name"], "section name")
 	if sname["type"] != "string" || sname["minLength"] != float64(1) {
@@ -470,8 +471,8 @@ func TestQASheetSchemaDescribesTheSheet(t *testing.T) {
 	if !seenAtWill || !seenSpends {
 		t.Errorf("usage forms at_will=%v spends=%v", seenAtWill, seenSpends)
 	}
-	if one, _ := sec["oneOf"].([]any); len(one) != 3 {
-		t.Errorf("section oneOf = %v, want values, conditions, abilities", sec["oneOf"])
+	if one, _ := sec["oneOf"].([]any); len(one) != 4 {
+		t.Errorf("section oneOf = %v, want values, conditions, abilities, places", sec["oneOf"])
 	}
 	if req, _ := sec["required"].([]any); len(req) != 1 || req[0] != "name" {
 		t.Errorf("section required = %v", sec["required"])
