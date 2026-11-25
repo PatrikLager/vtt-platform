@@ -18,7 +18,7 @@ const qaWinList: Ability[] = [
 function qaWinActor(actorId: string, name: string, controllerIds: string[], abilityIds: string[], kind = ActorKind.PARTY_MEMBER): Actor {
   return {
     actorId, name, moduleId: "qa", attributes: {}, resources: { hp: { current: 9, max: 9 } },
-    controllerId: "", controllerIds, kind, abilityIds,
+    controllerId: "", controllerIds, kind, abilityIds, references: {},
   };
 }
 

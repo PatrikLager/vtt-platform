@@ -268,7 +268,7 @@ function panelState(): State {
     st.Actors[id] = {
       actorId: id, name, moduleId: "", attributes: {}, resources: {},
       controllerId: PLAYER.participantId, controllerIds: [PLAYER.participantId],
-      kind: ActorKind.PARTY_MEMBER, abilityIds: [],
+      kind: ActorKind.PARTY_MEMBER, abilityIds: [], references: {},
     };
   }
   st.Tokens["tok-lera"] = { ID: "tok-lera", SceneID: SCENE, ActorID: "act-lera", X: 1, Y: 2 };

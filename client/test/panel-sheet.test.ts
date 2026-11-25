@@ -17,7 +17,7 @@ function table(): State {
     st.Actors[id] = {
       actorId: id, name, moduleId: "", attributes: { wit: 4, grit: 2 },
       resources: { vigor: { current: 3, max: 10 }, sparks: { current: 1, max: 2 } },
-      controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.PARTY_MEMBER, abilityIds: ["jab", "flare", "rally"],
+      controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.PARTY_MEMBER, abilityIds: ["jab", "flare", "rally"], references: {},
     };
     st.Tokens[`t-${id}`] = { ID: `t-${id}`, SceneID: "s1", ActorID: id, X: x, Y: 1 };
   }

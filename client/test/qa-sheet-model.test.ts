@@ -11,7 +11,7 @@ const actor = (h: Held = {}): Actor => {
   for (const [k, [c, m]] of Object.entries(h.res ?? {})) resources[k] = { current: c, max: m };
   return {
     actorId: "a1", name: "Ayla", moduleId: "", attributes: { ...(h.attrs ?? {}) }, resources,
-    controllerId: "", controllerIds: [], kind: ActorKind.PARTY_MEMBER, abilityIds: h.abilityIds ?? [],
+    controllerId: "", controllerIds: [], kind: ActorKind.PARTY_MEMBER, abilityIds: h.abilityIds ?? [], references: {},
   };
 };
 const ab = (id: string, usage: Ability["usage"]): Ability =>

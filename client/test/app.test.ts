@@ -3997,9 +3997,9 @@ const EVERY_KIND: [Frame, string, string | null][] = [
   [{ resourceAdded: { actorId: "a1", resource: "vigor", value: { current: 1, max: 2 } } }, "Lera now has vigor at 1", null],
   [{ resourceRemoved: { actorId: "a1", resource: "vigor" } }, "Lera no longer has vigor", null],
   [{ referenceAdded: { actorId: "a1", referenceId: "r1", reference: { entryId: "echo", place: "mike", state: "lima" } } },
-    "Lera now holds r1", null],
-  [{ referenceChanged: { actorId: "a1", referenceId: "r1", place: "kilo" } }, "Lera's r1 changed", null],
-  [{ referenceRemoved: { actorId: "a1", referenceId: "r1" } }, "Lera no longer holds r1", null],
+    "Lera now holds echo in mike (lima)", null],
+  [{ referenceChanged: { actorId: "a1", referenceId: "r1", place: "kilo" } }, "Lera's echo is now in kilo", null],
+  [{ referenceRemoved: { actorId: "a1", referenceId: "r1" } }, "Lera no longer holds echo in kilo", null],
   [{ actorAdded: { actor: { actorId: "a2", name: "Bram", kind: "ACTOR_KIND_PARTY_MEMBER" } } }, "Bram is in the party", "Bram is in the party"],
   [{ actorControlGranted: { actorId: "a2", participantId: "q", kind: "ACTOR_KIND_PARTY_MEMBER" } }, "control of Bram given", null],
   [{ tokenPlaced: { tokenId: "t2", sceneId: "s1", actorId: "a2", position: { x: 4, y: 4 }, name: "Bram", gmName: "Bram" } },
@@ -4023,9 +4023,9 @@ const EVERY_KIND_BARE: [Frame, string][] = [
   [{ resourceAdded: { actorId: "a1", resource: "vigor", value: { current: 2, max: 2 } } }, "Lera now has vigor at 2"],
   [{ resourceRemoved: { actorId: "a1", resource: "vigor" } }, "Lera no longer has vigor"],
   [{ referenceAdded: { actorId: "a1", referenceId: "r2", reference: { entryId: "delta", place: "kilo" } } },
-    "Lera now holds r2"],
-  [{ referenceChanged: { actorId: "a1", referenceId: "r2", place: "mike", state: "oscar" } }, "Lera's r2 changed"],
-  [{ referenceRemoved: { actorId: "a1", referenceId: "r2" } }, "Lera no longer holds r2"],
+    "Lera now holds delta in kilo"],
+  [{ referenceChanged: { actorId: "a1", referenceId: "r2", place: "mike", state: "oscar" } }, "Lera's delta is now in mike (oscar)"],
+  [{ referenceRemoved: { actorId: "a1", referenceId: "r2" } }, "Lera no longer holds delta in mike"],
   [{ actorControlGranted: { actorId: "a2", participantId: "q", kind: "ACTOR_KIND_PARTY_MEMBER" } }, "control of Bram given"],
   [{ actorControlRevoked: { actorId: "a2", participantId: "q" } }, "control of Bram taken back"],
   [{ sceneCreated: { sceneId: "s2", name: "Crypt", gridWidth: 8, gridHeight: 8 } }, 'scene "Crypt"'],
@@ -4046,6 +4046,7 @@ const EVERY_KIND_BARE: [Frame, string][] = [
 const storyLines = (r: HTMLElement) => Array.from(r.querySelectorAll(".feed .beat p"), (n) => n.textContent);
 
 // VTT-1029 VTT-810 VTT-818 VTT-871 VTT-820 VTT-984 VTT-823 VTT-446 VTT-447 VTT-985
+// VTT-1030
 test("every role's Story draws what happens in the game and no mechanical entry, and the DM's and the agent's Events panel draws each", async () => {
   for (const role of ["dm", "agent", "player", "spectator"]) {
     const { r, s, sock } = await dialAs(role);
@@ -4065,6 +4066,40 @@ test("every role's Story draws what happens in the game and no mechanical entry,
     if (panel) {
       expect(ticks().slice(0, EVERY_KIND_BARE.length)).toEqual(EVERY_KIND_BARE.map(([, row]) => row).reverse());
     }
+    s?.close();
+  }
+});
+
+// VTT-1030
+test("the DM's and the agent's Events panel names a reference's entry and place as the ruleset's answer names them", async () => {
+  for (const role of ["dm", "agent"]) {
+    localStorage.setItem("vtt.token", "tok");
+    stubMetadata({
+      "/api/me": { participantId: "p", name: "Watcher", role },
+      "/api/ruleset": {
+        id: "r", name: "R", abilities: [], conditions: [], resources: [],
+        catalogue: [{ id: "echo", name: "Echo Blade", description: "", form: "zulu", values: {} }],
+        places: [{ key: "mike", name: "Mike Rack", description: "", forms: ["zulu"], copies: true, states: ["lima"] }],
+      },
+      "/api/adventures": { adventures: [] },
+    });
+    useFakeSocket();
+    const r = root();
+    const s = boot(r);
+    const sock = FakeSocket.instances[0]!;
+    sock.open();
+    await settle();
+    sock.deliver(envelope(1, { actorAdded: { actor: { actorId: "a1", name: "Lera", kind: "ACTOR_KIND_PARTY_MEMBER",
+      references: { "r-echo": { entryId: "echo", place: "mike", state: "lima" } } } } }));
+    sock.deliver(envelope(2, { referenceAdded: { actorId: "a1", referenceId: "r-2", reference: { entryId: "delta", place: "mike" } } }));
+    sock.deliver(envelope(3, { referenceChanged: { actorId: "a1", referenceId: "r-echo", place: "kilo" } }));
+    sock.deliver(envelope(4, { referenceRemoved: { actorId: "a1", referenceId: "r-echo" } }));
+    await settle();
+    expect([role, Array.from(r.querySelectorAll(".ticker .tick"), (n) => n.textContent).slice(0, 3)]).toEqual([role, [
+      "Lera no longer holds Echo Blade in kilo",
+      "Lera's Echo Blade is now in kilo",
+      "Lera now holds delta in Mike Rack",
+    ]]);
     s?.close();
   }
 });

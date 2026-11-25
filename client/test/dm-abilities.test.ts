@@ -22,7 +22,7 @@ function stateWith(actors: Record<string, { name: string; abilityIds: string[]; 
   for (const [actorId, a] of Object.entries(actors)) {
     st.Actors[actorId] = {
       actorId, name: a.name, moduleId: "", attributes: {}, resources: a.resources ?? {},
-      controllerId: "", controllerIds: [], kind: ActorKind.PARTY_MEMBER, abilityIds: a.abilityIds,
+      controllerId: "", controllerIds: [], kind: ActorKind.PARTY_MEMBER, abilityIds: a.abilityIds, references: {},
     };
   }
   return st;

@@ -127,6 +127,7 @@ function toldSequences(log: Envelope[]): bigint[] {
 // (VTT-1029, VTT-810, VTT-818, VTT-823).
 const MECHANICAL = new Set([
   "resourceChanged", "abilityGiven", "abilityTaken", "resourceAdded", "resourceRemoved",
+  "referenceAdded", "referenceRemoved", "referenceChanged",
   "actorControlGranted", "actorControlRevoked", "tokenPlaced", "tokenMoved", "tokenHidden",
   "tokenRemoved", "tokenDescribed", "sceneCreated", "sceneSeen", "noteUpserted", "noteDeleted",
   "adventureLoaded",

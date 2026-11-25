@@ -153,6 +153,13 @@ export interface Resource {
   max: number;
 }
 
+/** Reference names a catalogue entry, the place on the sheet holding it and its state there; SPEC-028. */
+export interface Reference {
+  entryId: string;
+  place: string;
+  state: string;
+}
+
 /** Mirrors vttv1.Actor as Go's encoding/json emits it (snake_case, omitempty). */
 export interface Actor {
   actorId: string;
@@ -193,6 +200,8 @@ export interface Actor {
   kind: ActorKind;
   /** The ruleset's abilities this actor has, by id; SPEC-025. */
   abilityIds: string[];
+  /** The catalogue entries this actor's sheet refers to, by reference id; SPEC-028. */
+  references: Record<string, Reference>;
 }
 
 export interface State {

@@ -15,7 +15,7 @@ function actor(id: string, name: string): Actor {
   return {
     actorId: id, name, moduleId: "", attributes: {}, resources: {},
     controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED,
-    abilityIds: [],
+    abilityIds: [], references: {},
   };
 }
 

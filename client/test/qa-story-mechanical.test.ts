@@ -24,7 +24,10 @@ function env(seq: number, eid: boolean, payload: Payload): Envelope {
   });
 }
 
-const SHEET: Kind[] = ["resourceChanged", "abilityGiven", "abilityTaken", "resourceAdded", "resourceRemoved"];
+const SHEET: Kind[] = [
+  "resourceChanged", "abilityGiven", "abilityTaken", "resourceAdded", "resourceRemoved",
+  "referenceAdded", "referenceChanged", "referenceRemoved",
+];
 const CONTROL: Kind[] = ["actorControlGranted", "actorControlRevoked"];
 const BOARD: Kind[] = [
   "tokenPlaced", "tokenMoved", "tokenRemoved", "tokenDescribed", "sceneCreated",
@@ -87,6 +90,9 @@ const SCRIPT: Payload[] = [
   { case: "actorControlRevoked", value: { actorId: "a1", participantId: "p1" } },
   { case: "actorRemoved", value: { actorId: "a2" } },
   { case: "narrationAdded", value: { text: "The cellar falls quiet", anchorFromSeq: 27n, anchorToSeq: 28n } },
+  { case: "referenceAdded", value: { actorId: "a1", referenceId: "r-delta", reference: { entryId: "delta", place: "mike", state: "lima" } } },
+  { case: "referenceChanged", value: { actorId: "a1", referenceId: "r-delta", place: "kilo" } },
+  { case: "referenceRemoved", value: { actorId: "a1", referenceId: "r-delta" } },
   { case: "rulesetNamed", value: { rulesetId: "qa-rules", version: "1", name: "Plain Rules" } },
   { case: "sessionEnded", value: {} },
 ];
@@ -153,6 +159,7 @@ const MECHANICAL_FRAGMENTS = [
   "flurry_uses", "Shield Bash", "shield-bash", "Stamina", "stamina", "control of", " is at ",
   "moved to", "sneaks along", "went out of sight", "taken off the board", "described",
   "the view changed", "scene \"", "rumour", "two-rooms", "loaded", "4,5", "7,2",
+  "now holds", "no longer holds", "is now in", "delta",
 ];
 
 // ---- every left-out kind, every role, with and without an event id ----

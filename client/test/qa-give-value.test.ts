@@ -45,7 +45,7 @@ function actor(
   return {
     actorId: id, name: id.toUpperCase(), moduleId: "",
     attributes: emptyMap<number>(), resources: res, controllerId: "",
-    controllerIds: [], kind: ActorKind.PARTY_MEMBER, abilityIds,
+    controllerIds: [], kind: ActorKind.PARTY_MEMBER, abilityIds, references: {},
   };
 }
 

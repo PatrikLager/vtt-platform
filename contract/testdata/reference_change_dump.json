@@ -1,0 +1,81 @@
+{
+  "Actors": {
+    "act-gob": {
+      "actor_id": "act-gob",
+      "name": "Goblin",
+      "kind": 2,
+      "references": {
+        "r-blank": {
+          "place": "kilo"
+        },
+        "r-delta": {
+          "entry_id": "delta",
+          "place": "kilo"
+        }
+      }
+    },
+    "act-lera": {
+      "actor_id": "act-lera",
+      "name": "Lera",
+      "attributes": {
+        "sierra": 3
+      },
+      "kind": 1,
+      "ability_ids": [
+        "rally"
+      ],
+      "references": {
+        "10": {
+          "entry_id": "echo",
+          "place": "mike",
+          "state": "lima"
+        },
+        "2": {
+          "entry_id": "delta",
+          "place": "kilo"
+        },
+        "r-a": {
+          "entry_id": "delta",
+          "place": "kilo"
+        },
+        "r-a2": {
+          "entry_id": "echo",
+          "place": "mike",
+          "state": "lima"
+        },
+        "r-delta": {
+          "entry_id": "delta",
+          "place": "mike",
+          "state": "lima"
+        },
+        "r-echo": {
+          "entry_id": "echo",
+          "place": "mike",
+          "state": "oscar"
+        },
+        "～": {
+          "entry_id": "echo",
+          "place": "mike",
+          "state": "oscar"
+        },
+        "😀": {
+          "entry_id": "delta",
+          "place": "kilo"
+        }
+      }
+    }
+  },
+  "Conditions": {},
+  "Notes": {},
+  "Scenes": {},
+  "Sessions": [
+    {
+      "ID": "sess-1",
+      "Name": "Night",
+      "StartSeq": 1,
+      "EndSeq": 0
+    }
+  ],
+  "Tokens": {},
+  "headSequence": 17
+}

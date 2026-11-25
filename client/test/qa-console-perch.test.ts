@@ -49,7 +49,7 @@ function actor(id: string, name: string, controllers: string[]): Actor {
   return {
     actorId: id, name, moduleId: "", attributes: {}, resources: {},
     controllerId: controllers[0] ?? "", controllerIds: controllers,
-    kind: ActorKind.PARTY_MEMBER, abilityIds: [],
+    kind: ActorKind.PARTY_MEMBER, abilityIds: [], references: {},
   };
 }
 

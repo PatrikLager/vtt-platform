@@ -18,7 +18,8 @@ import { doorCommandFor } from "./view/doors";
 import {
   fetchMe, fetchRuleset, fetchAdventures, fetchAdventureGuide, fetchMaps,
   fetchJoinLink, fetchParticipants,
-  type Ability, type AdventureMeta, type Me, type JoinLink, type Roster, type MapMeta, type Property,
+  type Ability, type AdventureMeta, type CatalogueEntry, type Me, type JoinLink, type Roster, type MapMeta,
+  type PlaceDef, type Property,
 } from "./metadata";
 import { renderDMConsole } from "./view/dm";
 import { sheetNews } from "./view/naming";
@@ -165,6 +166,8 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
   // the sheet's toast name what an earlier answer named (VTT-734).
   const everRead = new Map<string, Ability>();
   let properties: Property[] | undefined;
+  let catalogue: CatalogueEntry[] | undefined;
+  let places: PlaceDef[] | undefined;
   // VTT-845
   let layout: PanelLayout = {};
   let adventures: AdventureMeta[] = [];
@@ -418,6 +421,8 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
       abilities: [...everRead.values()],
       properties,
       conditions: layout.conditions,
+      catalogue,
+      places,
       pinnedCard,
       onCardPin: (id) => {
         pinnedCard = pinnedCard === id ? undefined : id;
@@ -507,6 +512,8 @@ function startSession(root: HTMLElement, token: string, auth: Auth): Session {
       if (ticket === newestRuleset) {
         abilities = rs.abilities;
         properties = rs.properties;
+        catalogue = rs.catalogue;
+        places = rs.places;
         layout = { sheet: rs.sheet, conditions: rs.conditions, freeUsageName: rs.freeUsageName };
       }
       tell();

@@ -16,6 +16,16 @@ export interface Namer {
   resource(key: string): string;
   condition(id: string): string;
   conditionTitle(id: string): string;
+  entry(id: string): string;
+  place(key: string): string;
+  /** held answers only an envelope of the log this namer walked (by identity). */
+  held(e: Envelope): Held | undefined;
+}
+
+/** Held is the entry and place an event's reference held just before it in the log (VTT-1030). */
+export interface Held {
+  entryId: string;
+  place: string;
 }
 
 interface Known {
@@ -36,10 +46,15 @@ export function namer(
   abilities: readonly { id: string; name: string }[] | undefined,
   properties?: readonly { key: string; type: string; name: string }[],
   conditions?: readonly { id: string; name: string; description: string }[] | undefined,
+  catalogue?: Named,
+  places?: readonly { key: string; name: string }[] | undefined,
 ): Namer {
-  // Keep the newest entry: what the fold has lost is named as the log last named it.
+  // Name what the fold lost as the log last named it, a reference as of each event.
   const pastTokens = new Map<string, Known>();
   const pastActors = new Map<string, { name: string; party: boolean }>();
+  const holding = new Map<string, Held>();
+  const before = new Map<Envelope, Held | undefined>();
+  const refKey = (actorId: string, referenceId: string) => JSON.stringify([actorId, referenceId]);
   for (const e of log) {
     const p = e.payload;
     if (p.case === "tokenPlaced") {
@@ -49,6 +64,19 @@ export function namer(
     } else if (p.case === "actorAdded" && p.value.actor) {
       const a = p.value.actor;
       pastActors.set(a.actorId, { name: a.name, party: a.kind === ActorKind.PARTY_MEMBER });
+      for (const [id, r] of Object.entries(a.references)) holding.set(refKey(a.actorId, id), { entryId: r.entryId, place: r.place });
+    } else if (p.case === "referenceAdded" && p.value.reference) {
+      const r = p.value.reference;
+      holding.set(refKey(p.value.actorId, p.value.referenceId), { entryId: r.entryId, place: r.place });
+    } else if (p.case === "referenceRemoved") {
+      before.set(e, holding.get(refKey(p.value.actorId, p.value.referenceId)));
+    } else if (p.case === "referenceChanged") {
+      const key = refKey(p.value.actorId, p.value.referenceId);
+      const was = holding.get(key);
+      if (was) {
+        before.set(e, was);
+        holding.set(key, { entryId: was.entryId, place: p.value.place });
+      }
     }
   }
   const tokenOf = (id: string): Known | undefined => {
@@ -84,6 +112,9 @@ export function namer(
       const description = conditions?.find((c) => c.id === id)?.description ?? "";
       return description === "" ? conditionName(id) : `${conditionName(id)}\n${description}`;
     },
+    entry: (id) => nameIn(catalogue, id),
+    place: (key) => places?.find((p) => p.key === key)?.name || key,
+    held: (e) => before.get(e),
   };
 }
 

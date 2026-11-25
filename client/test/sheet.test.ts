@@ -8,7 +8,7 @@ const actor = (over: Partial<Actor> = {}): Actor => ({
   actorId: "a1", name: "Lera", moduleId: "", controllerId: "", controllerIds: [], kind: ActorKind.PARTY_MEMBER,
   attributes: { wit: 4, grit: 2 },
   resources: { vigor: { current: 3, max: 10 }, sparks: { current: 1, max: 2 } },
-  abilityIds: ["jab", "flare", "rally"],
+  abilityIds: ["jab", "flare", "rally"], references: {},
   ...over,
 });
 

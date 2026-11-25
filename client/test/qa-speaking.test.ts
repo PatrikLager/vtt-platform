@@ -28,11 +28,11 @@ function world(): State {
   const base = { moduleId: "m", attributes: {}, resources: {} };
   st.Actors["a1"] = {
     ...base, actorId: "a1", name: "Bran", controllerId: "p1",
-    controllerIds: ["p1"], kind: ActorKind.PARTY_MEMBER, abilityIds: [],
+    controllerIds: ["p1"], kind: ActorKind.PARTY_MEMBER, abilityIds: [], references: {},
   };
   st.Actors["a2"] = {
     ...base, actorId: "a2", name: "Cora", controllerId: "p1",
-    controllerIds: ["p1"], kind: ActorKind.PARTY_MEMBER, abilityIds: [],
+    controllerIds: ["p1"], kind: ActorKind.PARTY_MEMBER, abilityIds: [], references: {},
   };
   return st;
 }

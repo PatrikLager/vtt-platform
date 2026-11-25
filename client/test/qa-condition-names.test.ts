@@ -12,7 +12,7 @@ function world(ids: string[]): State {
   st.Scenes["s"] = { ID: "s", Name: "S", GridWidth: 4, GridHeight: 4 };
   st.Actors["a"] = {
     actorId: "a", name: "Ann", moduleId: "", attributes: {}, resources: {},
-    controllerId: "", controllerIds: [], kind: 1, abilityIds: [],
+    controllerId: "", controllerIds: [], kind: 1, abilityIds: [], references: {},
   };
   st.Tokens["t"] = { ID: "t", SceneID: "s", ActorID: "a", X: 1, Y: 1 };
   st.Conditions["a"] = ids.map((id, i) => ({ ID: id, Source: "", AppliedSeq: i + 1 }));

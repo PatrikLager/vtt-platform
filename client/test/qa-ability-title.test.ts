@@ -12,7 +12,7 @@ function stateWith(abilityIds: string[], resources: Record<string, { current: nu
   const st = newState();
   st.Actors["a1"] = {
     actorId: "a1", name: "Lera", moduleId: "", attributes: {}, resources,
-    controllerId: "p", controllerIds: ["p"], kind: "ACTOR_KIND_PARTY_MEMBER" as never, abilityIds,
+    controllerId: "p", controllerIds: ["p"], kind: "ACTOR_KIND_PARTY_MEMBER" as never, abilityIds, references: {},
   };
   return st;
 }

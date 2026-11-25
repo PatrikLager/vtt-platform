@@ -45,7 +45,7 @@ function world(): State {
   st.Scenes["s1"] = { ID: "s1", Name: "The Hall", GridWidth: 6, GridHeight: 4 };
   st.Actors["a1"] = {
     actorId: "a1", name: "Lera", moduleId: "", attributes: {},
-    resources: { vigor: { current: 3, max: 10 } }, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.PARTY_MEMBER, abilityIds: ["jab", "poke", "m", "swing", "surge"],
+    resources: { vigor: { current: 3, max: 10 } }, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.PARTY_MEMBER, abilityIds: ["jab", "poke", "m", "swing", "surge"], references: {},
   };
   st.Tokens["t1"] = { ID: "t1", SceneID: "s1", ActorID: "a1", X: 2, Y: 1 };
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 4 }];
@@ -190,11 +190,11 @@ function storyWorld(): State {
   const st = newState();
   st.Actors["act-ama"] = {
     actorId: "act-ama", name: "Ama", moduleId: "", attributes: {}, resources: {},
-    controllerId: "", controllerIds: [], kind: ActorKind.PARTY_MEMBER, abilityIds: [],
+    controllerId: "", controllerIds: [], kind: ActorKind.PARTY_MEMBER, abilityIds: [], references: {},
   };
   st.Actors["act-gob"] = {
     actorId: "act-gob", name: "Goblin Cutter", moduleId: "", attributes: {}, resources: {},
-    controllerId: "", controllerIds: [], kind: ActorKind.NON_PARTY, abilityIds: [],
+    controllerId: "", controllerIds: [], kind: ActorKind.NON_PARTY, abilityIds: [], references: {},
   };
   st.Tokens["tok-ama"] = { ID: "tok-ama", SceneID: "s", ActorID: "act-ama", X: 0, Y: 0 };
   st.Tokens["tok-gob"] = { ID: "tok-gob", SceneID: "s", ActorID: "act-gob", X: 1, Y: 0, Name: "a hunched goblin" };
@@ -287,12 +287,12 @@ test("describe renders a real label for every event kind, not the fallback", () 
       "rules: Plain Rules, version 2"],
     [env(37, { case: "referenceAdded", value: create(ReferenceAddedSchema, {
       actorId: "act-ama", referenceId: "r-echo", reference: { entryId: "echo", place: "mike", state: "lima" } }) }),
-      "Ama now holds r-echo"],
+      "Ama now holds echo in mike (lima)"],
     [env(38, { case: "referenceRemoved", value: create(ReferenceRemovedSchema, { actorId: "act-gob", referenceId: "r-delta" }) }),
       "a hunched goblin no longer holds r-delta"],
     [env(39, { case: "referenceChanged", value: create(ReferenceChangedSchema, {
       actorId: "act-ama", referenceId: "r-echo", place: "kilo" }) }),
-      "Ama's r-echo changed"],
+      "Ama's r-echo is now in kilo"],
   ];
 
   for (const [e, want] of cases) {
@@ -960,7 +960,7 @@ test("a token's screen position and size scale with the camera, not just its gri
   const st = bigSceneState(32, 32);
   st.Actors["a1"] = {
     actorId: "a1", name: "Scout", moduleId: "", attributes: {},
-    resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
+    resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [], references: {},
   };
   st.Tokens["t1"] = { ID: "t1", SceneID: "big", ActorID: "a1", X: 5, Y: 3 };
 
@@ -1000,7 +1000,7 @@ test("a token's INNER content shrinks with the camera too, not just its outer bo
   const st = bigSceneState(32, 32);
   st.Actors["a1"] = {
     actorId: "a1", name: "Scout", moduleId: "", attributes: { vigor: 1 },
-    resources: { vigor: { current: 3, max: 10 } }, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
+    resources: { vigor: { current: 3, max: 10 } }, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [], references: {},
   };
   st.Tokens["t1"] = { ID: "t1", SceneID: "big", ActorID: "a1", X: 5, Y: 3 };
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 1 }];
@@ -1734,7 +1734,7 @@ test("omitted extras leave no trace, not the word 'undefined'", () => {
 test("the selected actor's chip is marked, and the others are not", () => {
   const st = world();
   st.Actors["a2"] = {
-    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED, abilityIds: ["jab", "poke", "m", "swing", "surge"],
+    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED, abilityIds: ["jab", "poke", "m", "swing", "surge"], references: {},
   };
   const p = panel(st, [atWill], { selectedActorId: "a2", selectedAbilityId: "" });
   expect(p.button("Bran").className).toBe("chip sel");
@@ -1744,7 +1744,7 @@ test("the selected actor's chip is marked, and the others are not", () => {
 test("clicking an actor selects it, drops any armed ability, and repaints", () => {
   const st = world();
   st.Actors["a2"] = {
-    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED, abilityIds: ["jab", "poke", "m", "swing", "surge"],
+    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.UNSPECIFIED, abilityIds: ["jab", "poke", "m", "swing", "surge"], references: {},
   };
   const p = panel(st, [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
   p.button("Bran").click();
@@ -1855,7 +1855,7 @@ test("with no token there is no move hint either", () => {
 test("a target button sends the ability at that token's actor, then disarms", () => {
   const st = world();
   st.Actors["a2"] = {
-    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-them", controllerIds: ["p-them"], kind: ActorKind.UNSPECIFIED, abilityIds: [],
+    actorId: "a2", name: "Bran", moduleId: "", attributes: {}, resources: {}, controllerId: "p-them", controllerIds: ["p-them"], kind: ActorKind.UNSPECIFIED, abilityIds: [], references: {},
   };
   st.Tokens["t2"] = { ID: "t2", SceneID: "s1", ActorID: "a2", X: 3, Y: 1, Name: "a tall stranger" };
   const p = panel(st, [atWill], { selectedActorId: "a1", selectedAbilityId: "swing" });
@@ -2151,11 +2151,11 @@ function party(): State {
   st.Actors["a1"]!.kind = ActorKind.PARTY_MEMBER;
   st.Actors["a2"] = {
     actorId: "a2", name: "Armak", moduleId: "", attributes: {}, resources: {},
-    controllerId: "", controllerIds: [], kind: ActorKind.PARTY_MEMBER, abilityIds: [],
+    controllerId: "", controllerIds: [], kind: ActorKind.PARTY_MEMBER, abilityIds: [], references: {},
   };
   st.Actors["g1"] = {
     actorId: "g1", name: "Goblin Archer", moduleId: "", attributes: {}, resources: {},
-    controllerId: "p-dm", controllerIds: ["p-dm"], kind: ActorKind.NON_PARTY, abilityIds: [],
+    controllerId: "p-dm", controllerIds: ["p-dm"], kind: ActorKind.NON_PARTY, abilityIds: [], references: {},
   };
   return st;
 }

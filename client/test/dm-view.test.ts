@@ -185,7 +185,7 @@ test("no control in the DM console retracts anything", () => {
 test("a condition on an actor gets a removal button that sends removeCondition", async () => {
   const st = newState();
   st.Actors["a1"] = {
-    actorId: "a1", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
+    actorId: "a1", name: "A", moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [], references: {},
   };
   st.Conditions["a1"] = [{ ID: "dazed", Source: "dm", AppliedSeq: 3 }];
   const h = harness(st);
@@ -207,7 +207,7 @@ function conditionsOn(names: Record<string, string | undefined>): State {
   for (const [id, name] of Object.entries(names)) {
     if (name !== undefined) {
       st.Actors[id] = {
-        actorId: id, name, moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.NON_PARTY, abilityIds: [],
+        actorId: id, name, moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.NON_PARTY, abilityIds: [], references: {},
       };
     }
     st.Conditions[id] = [{ ID: "dazed", Source: "dm", AppliedSeq: 3 }, { ID: "prone", Source: "dm", AppliedSeq: 4 }];
@@ -583,7 +583,7 @@ test("a remembered kind selects THAT option, and only that one", () => {
   const st = newState();
   st.Actors["act-boar"] = {
     actorId: "act-boar", name: "Boar", moduleId: "",
-    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [], references: {},
   };
   const parts = [{ participantId: "p-bo", displayName: "Bo" }];
   const first = harness(st, { participants: parts });
@@ -1419,7 +1419,7 @@ function tableWithActor(): State {
   st.Actors["act-warden"] = {
     actorId: "act-warden", name: "Warden", moduleId: "",
     attributes: {}, resources: {},
-    controllerId: "p-ana", controllerIds: ["p-ana"], kind: ActorKind.UNSPECIFIED, abilityIds: [],
+    controllerId: "p-ana", controllerIds: ["p-ana"], kind: ActorKind.UNSPECIFIED, abilityIds: [], references: {},
   };
   return st;
 }
@@ -1626,7 +1626,7 @@ test("each actor remembers its OWN grant choice", () => {
   const st = tableWithActor();
   st.Actors["act-adder"] = {
     actorId: "act-adder", name: "Adder", moduleId: "",
-    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [], references: {},
   };
   const parts = [{ participantId: "p-bo", displayName: "Bo" }];
   const first = harness(st, { participants: parts });
@@ -1655,7 +1655,7 @@ test("each actor remembers its OWN answer about what it is", () => {
   const st = tableWithActor();
   st.Actors["act-adder"] = {
     actorId: "act-adder", name: "Adder", moduleId: "",
-    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [], references: {},
   };
   const parts = [{ participantId: "p-bo", displayName: "Bo" }];
   const first = harness(st, { participants: parts });
@@ -1680,7 +1680,7 @@ test("the control panel's order does not depend on insertion order", () => {
   const mk = (id: string) => ({
     actorId: id, name: id, moduleId: "",
     attributes: {}, resources: {}, controllerId: "", controllerIds: [] as string[], kind: ActorKind.UNSPECIFIED,
-    abilityIds: [] as string[],
+    abilityIds: [] as string[], references: {},
   });
   st.Actors["act-adder"] = mk("act-adder");
   st.Actors["act-warden"] = mk("act-warden");
@@ -1695,7 +1695,7 @@ test("the control panel lists actors in a stable order", () => {
   const st = tableWithActor();
   st.Actors["act-adder"] = {
     actorId: "act-adder", name: "Adder", moduleId: "",
-    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
+    attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [], references: {},
   };
   const h = harness(st, { participants: [] });
   expect(Array.from(h.node.querySelectorAll(".control-actor")).map((r) => (r as HTMLElement).dataset["actor"]))
@@ -2368,7 +2368,7 @@ function tableForEveryForm(): State {
   for (const id of ["act-r1", "act-r2"]) {
     st.Actors[id] = {
       actorId: id, name: id, moduleId: "", attributes: {}, resources: {},
-      controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [],
+      controllerId: "", controllerIds: [], kind: ActorKind.UNSPECIFIED, abilityIds: [], references: {},
     };
     st.Conditions[id] = [{ ID: "dazed", Source: "dm", AppliedSeq: 1 }];
   }
@@ -2696,7 +2696,7 @@ function tableWithHeldActors(): State {
   const st = tableWithActor();
   st.Actors["act-dm"] = {
     actorId: "act-dm", name: "Grimble", moduleId: "", attributes: {}, resources: {},
-    controllerId: "p-dm", controllerIds: ["p-dm"], kind: ActorKind.NON_PARTY, abilityIds: [],
+    controllerId: "p-dm", controllerIds: ["p-dm"], kind: ActorKind.NON_PARTY, abilityIds: [], references: {},
   };
   return st;
 }
@@ -2942,7 +2942,7 @@ function leraTable(): State {
   const actor = (id: string, name: string, who: string) => {
     st.Actors[id] = {
       actorId: id, name, moduleId: "", attributes: {}, resources: {},
-      controllerId: who, controllerIds: [who], kind: ActorKind.PARTY_MEMBER, abilityIds: [],
+      controllerId: who, controllerIds: [who], kind: ActorKind.PARTY_MEMBER, abilityIds: [], references: {},
     };
   };
   actor("a1", "Gobo", "p-play");
@@ -3117,7 +3117,7 @@ function whisperTable(): State {
   const pm = (id: string, name: string, who: string[]) => {
     st.Actors[id] = {
       actorId: id, name, moduleId: "", attributes: {}, resources: {},
-      controllerId: who[0] ?? "", controllerIds: who, kind: ActorKind.PARTY_MEMBER, abilityIds: [],
+      controllerId: who[0] ?? "", controllerIds: who, kind: ActorKind.PARTY_MEMBER, abilityIds: [], references: {},
     };
   };
   pm("t2", "Tobbe", ["p-kim"]);

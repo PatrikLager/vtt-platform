@@ -9,7 +9,7 @@ import { ok } from "./support/answers";
 function actor(actorId: string, name: string): Actor {
   return {
     actorId, name, moduleId: "", attributes: {}, resources: {},
-    controllerId: "", controllerIds: [], kind: 0 as Actor["kind"], abilityIds: [],
+    controllerId: "", controllerIds: [], kind: 0 as Actor["kind"], abilityIds: [], references: {},
   };
 }
 

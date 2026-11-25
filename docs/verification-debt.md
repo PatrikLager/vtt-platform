@@ -721,6 +721,37 @@ data missing`.
 
 **Closed by** the two arms in `isBatchCommand`, held by `toy-brawl`'s golden.
 
+## 2026-11-25 — the browser's dump ordered some keys otherwise than Go's
+
+**`foldToDumpJSON` in `client/src/fold.ts` wrote a map's keys in another order
+than `writeDump` in `cmd/vtt/state_dump.go` for some keys.** `sortedMap` built
+its result as a JavaScript object, which puts integer-like keys first in
+numeric order ("2" before "10"), and sorted the rest by UTF-16 code units
+("😀" before "～"), while `encoding/json` writes a map's keys in the byte
+order of their UTF-8 ("10" before "2", "～" before "😀"). Any dump holding such
+an actor id, attribute key, resource key or reference id differed. It never
+reached the table: only the dump-parity tests compare the two. Phase 4a's QA
+of Task 5 of `docs/superpowers/plans/2026-11-25-a-sheet-refers-to-the-catalogue.md`
+found it, with reference ids "2", "9", "10", "～" and "😀".
+
+Recipe: in `sortedMap`, replace `.sort(byUTF8)` with `.sort()` for the UTF-16
+half; for the integer-like half, build the result as an object again, as
+`sortedMap` did before that task.
+
+The gate that should have caught it is `client/test/fold-parity.test.ts` over
+`scenarios/goldens/`. No golden holds an integer-like key, or an astral key
+beside one in U+E000 to U+FFFF, so the keystone compared only keys that sort
+alike either way. Labels: `test data missing`.
+
+**Closed by** the dump test "the dump writes actor ids, attribute keys and
+reference ids in the byte order of their UTF-8" in
+`client/test/fold-references.test.ts` and QA's "a sheet's reference ids dump in
+the server's byte order, digits and astral ids included" in
+`client/test/qa-reference-fold.test.ts`, both red under the recipe, and by
+`contract/testdata/reference_change_log.json`, which holds such reference ids,
+through "the dump after reference changes matches the committed dump, as Go's
+writeDump does" and `TestTheDumpAfterReferenceChangesIsTheCommittedOne`.
+
 ## Open debt
 
 **`remove_actor` and `remove_participant` append a batch that `isBatchCommand`

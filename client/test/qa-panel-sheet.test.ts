@@ -20,7 +20,7 @@ function actor(id: string, name: string, o: Partial<Actor> = {}): Actor {
     controllerId: "p1",
     controllerIds: ["p1"],
     kind: ActorKind.PARTY_MEMBER,
-    abilityIds: [],
+    abilityIds: [], references: {},
     ...o,
   };
 }

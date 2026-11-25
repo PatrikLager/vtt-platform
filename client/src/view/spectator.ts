@@ -7,7 +7,7 @@
 import type { State } from "../state";
 import type { Participant } from "../session";
 import { ActorKind, NoteVisibility, type AbilityUsed, type Envelope } from "../../../contract/gen/ts/vtt/v1/events_pb";
-import type { Ability, ConditionDef, Property } from "../metadata";
+import type { Ability, CatalogueEntry, ConditionDef, PlaceDef, Property } from "../metadata";
 import { buildFeed, type FeedEntry } from "./feed";
 import { cellFromPoint, tokensOnScene, type Geometry, type TokenDisc } from "./grid";
 import { namer, type Namer } from "./naming";
@@ -147,12 +147,21 @@ export function describe(e: Envelope, names: Namer): string {
       return `${names.actor(p.value.actorId)} now has ${names.resource(p.value.resource)} at ${p.value.value?.current ?? 0}`;
     case "resourceRemoved":
       return `${names.actor(p.value.actorId)} no longer has ${names.resource(p.value.resource)}`;
-    case "referenceAdded":
-      return `${names.actor(p.value.actorId)} now holds ${p.value.referenceId}`;
-    case "referenceRemoved":
-      return `${names.actor(p.value.actorId)} no longer holds ${p.value.referenceId}`;
-    case "referenceChanged":
-      return `${names.actor(p.value.actorId)}'s ${p.value.referenceId} changed`;
+    case "referenceAdded": {
+      const r = p.value.reference;
+      const what = r ? `${names.entry(r.entryId)} in ${names.place(r.place)}${stateOf(r.state)}` : p.value.referenceId;
+      return `${names.actor(p.value.actorId)} now holds ${what}`;
+    }
+    case "referenceRemoved": {
+      const h = names.held(e);
+      const what = h ? `${names.entry(h.entryId)} in ${names.place(h.place)}` : p.value.referenceId;
+      return `${names.actor(p.value.actorId)} no longer holds ${what}`;
+    }
+    case "referenceChanged": {
+      const h = names.held(e);
+      const what = h ? names.entry(h.entryId) : p.value.referenceId;
+      return `${names.actor(p.value.actorId)}'s ${what} is now in ${names.place(p.value.place)}${stateOf(p.value.state)}`;
+    }
     case "actorControlGranted":
       return `control of ${names.actor(p.value.actorId)} given`;
     case "actorControlRevoked":
@@ -198,6 +207,10 @@ function tell(e: Envelope, names: Namer): string {
     default:
       return describe(e, names);
   }
+}
+
+function stateOf(state: string): string {
+  return state === "" ? "" : ` (${state})`;
 }
 
 function door(actorId: string, verb: "opened" | "closed", names: Namer): string {
@@ -666,6 +679,9 @@ export interface ViewExtras {
   abilities?: Ability[] | undefined;
   properties?: Property[] | undefined;
   conditions?: ConditionDef[] | undefined;
+  /** The ruleset's catalogue and places, which name a reference in the Events panel (VTT-1030). */
+  catalogue?: CatalogueEntry[] | undefined;
+  places?: PlaceDef[] | undefined;
   /** The token whose card a right-click pinned (VTT-474). */
   pinnedCard?: string | undefined;
   /** Pin or unpin a token's card, on a right-click on its disc (VTT-474). */
@@ -694,7 +710,8 @@ export function renderSpectator(
   // element to the NEW size — the measurement is current, and the first frame of
   // all falls back to the documented default.
   const pane = paneSize(root.querySelector<HTMLElement>(".grid"));
-  const names = namer(st, log, extras.dm ?? false, extras.abilities, extras.properties, extras.conditions);
+  const names = namer(st, log, extras.dm ?? false, extras.abilities, extras.properties, extras.conditions,
+    extras.catalogue, extras.places);
 
   const nodes: HTMLElement[] = [
     renderStatus(st, status, extras),

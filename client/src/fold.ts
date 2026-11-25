@@ -30,6 +30,7 @@ import {
   emptyMap,
   newState,
   type Actor,
+  type Reference,
   type Resource,
   type Scene,
   type SceneObject,
@@ -175,6 +176,9 @@ function apply(st: State, env: Envelope): void {
       checkLen("module id", a.moduleId, 0, 128);
       checkKeys("resource name", a.resources);
       checkKeys("attribute name", a.attributes);
+      if (Object.hasOwn(a.references, "")) {
+        throw new FoldError(`actor_added: actor "${a.actorId}" holds a reference with an empty id`);
+      }
       st.Actors[a.actorId] = copyActor(a);
       return;
     }
@@ -245,6 +249,42 @@ function apply(st: State, env: Envelope): void {
         throw new FoldError(`resource "${v.resource}" not held by actor "${v.actorId}"`);
       }
       a.resources = withResources(a.resources, v.resource, undefined);
+      return;
+    }
+    // Refuse in engine.Apply's order and words, less their "engine: " prefix;
+    // an id is quoted as written where Go's %q escapes (VTT-1024 to VTT-1026).
+    case "referenceAdded": {
+      const v = p.value;
+      if (v.referenceId === "") throw new FoldError("reference_added requires a reference id");
+      const r = v.reference;
+      if (!r) throw new FoldError("reference_added requires a reference");
+      const a = st.Actors[v.actorId];
+      if (!a) throw new FoldError(`reference_added names unknown actor "${v.actorId}"`);
+      if (a.references[v.referenceId] !== undefined) {
+        throw new FoldError(`actor "${v.actorId}" already holds reference "${v.referenceId}"`);
+      }
+      a.references = withReferences(a.references, v.referenceId, { entryId: r.entryId, place: r.place, state: r.state });
+      return;
+    }
+    case "referenceRemoved": {
+      const v = p.value;
+      const a = st.Actors[v.actorId];
+      if (!a) throw new FoldError(`reference_removed names unknown actor "${v.actorId}"`);
+      if (a.references[v.referenceId] === undefined) {
+        throw new FoldError(`actor "${v.actorId}" does not hold reference "${v.referenceId}"`);
+      }
+      a.references = withReferences(a.references, v.referenceId, undefined);
+      return;
+    }
+    case "referenceChanged": {
+      const v = p.value;
+      const a = st.Actors[v.actorId];
+      if (!a) throw new FoldError(`reference_changed names unknown actor "${v.actorId}"`);
+      const was = a.references[v.referenceId];
+      if (was === undefined) {
+        throw new FoldError(`actor "${v.actorId}" does not hold reference "${v.referenceId}"`);
+      }
+      a.references = withReferences(a.references, v.referenceId, { entryId: was.entryId, place: v.place, state: v.state });
       return;
     }
     case "tokenPlaced": {
@@ -583,6 +623,18 @@ function withResources(
   return out;
 }
 
+// Return a fresh map, never write the held one, as withResources does.
+function withReferences(
+  held: Record<string, Reference>, id: string, value: Reference | undefined,
+): Record<string, Reference> {
+  const out = emptyMap<Reference>();
+  for (const [k, r] of Object.entries(held)) {
+    if (k !== id) out[k] = r;
+  }
+  if (value !== undefined) out[id] = value;
+  return out;
+}
+
 function copyActor(a: {
   actorId: string;
   name: string;
@@ -593,10 +645,15 @@ function copyActor(a: {
   controllerIds: string[];
   kind: ActorKind;
   abilityIds: string[];
+  references: Record<string, Reference>;
 }): Actor {
   const resources = emptyMap<Resource>();
   for (const [k, v] of Object.entries(a.resources ?? {})) {
     resources[k] = { current: v.current, max: v.max };
+  }
+  const references = emptyMap<Reference>();
+  for (const [k, r] of Object.entries(a.references)) {
+    references[k] = { entryId: r.entryId, place: r.place, state: r.state };
   }
   return {
     actorId: a.actorId,
@@ -605,6 +662,7 @@ function copyActor(a: {
     attributes: Object.assign(emptyMap<number>(), a.attributes),
     resources,
     abilityIds: [...a.abilityIds],
+    references,
     // VERBATIM, and no migration here — the strict mirror of internal/engine's
     // Apply, which gets this for free from proto.Clone. "Absent + a controller
     // means a party member" (visibility spec §5.1) is a READER's rule: applying
@@ -658,8 +716,8 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
       if (n.Visibility !== NoteVisibility.UNSPECIFIED) note["Visibility"] = n.Visibility;
       return note;
     }),
-    // Keep these three optional in State: JSON.stringify drops an undefined
-    // key as engine.State's `json:",omitempty"` drops "" (VTT-987).
+    // Keep these three optional in State: encode drops an undefined key as
+    // engine.State's `json:",omitempty"` drops "" (VTT-987).
     RulesetID: st.RulesetID,
     RulesetName: st.RulesetName,
     RulesetVersion: st.RulesetVersion,
@@ -724,7 +782,7 @@ export function foldToDumpJSON(envelopes: Envelope[]): string {
     }),
     headSequence: head,
   };
-  return JSON.stringify(out, null, 2).replace(/[<>&\u2028\u2029]/g, goEscape) + "\n";
+  return encode(out, "").replace(/[<>&\u2028\u2029]/g, goEscape) + "\n";
 }
 
 // Match encoding/json: < > & by its HTML escaping, U+2028 and U+2029 always.
@@ -732,10 +790,41 @@ function goEscape(c: string): string {
   return "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0");
 }
 
-function sortedMap<T, U>(m: Record<string, T>, f: (v: T) => U): Record<string, U> {
-  const out = emptyMap<U>(); // NOT {}: a key of "__proto__" would re-parent this accumulator instead of landing in it, and Go emits it like any other key. See the header.
-  for (const k of Object.keys(m).sort()) out[k] = f(m[k]!);
-  return out;
+// Never build a map's dump as an object: an object writes integer-like keys
+// first, and Go writes every key in the byte order of its UTF-8 (VTT-1028).
+class Sorted {
+  constructor(readonly entries: readonly (readonly [string, unknown])[]) {}
+}
+
+function sortedMap<T, U>(m: Record<string, T>, f: (v: T) => U): Sorted {
+  return new Sorted(Object.keys(m).sort(byUTF8).map((k) => [k, f(m[k]!)] as const));
+}
+
+/** byUTF8 orders two strings by their code points, as Go orders their UTF-8 bytes. */
+function byUTF8(a: string, b: string): number {
+  for (let i = 0; i < a.length && i < b.length;) {
+    const x = a.codePointAt(i)!;
+    const y = b.codePointAt(i)!;
+    if (x !== y) return x < y ? -1 : 1;
+    i++;
+  }
+  return a.length - b.length;
+}
+
+/** encode writes a value the dump holds as JSON.stringify(v, null, 2) does, a Sorted in order. */
+function encode(v: unknown, pad: string): string {
+  const inner = pad + "  ";
+  const field = ([k, x]: readonly [string, unknown]) => `${JSON.stringify(k)}: ${encode(x, inner)}`;
+  if (v instanceof Sorted) return block("{", "}", v.entries.map(field), pad);
+  if (Array.isArray(v)) return block("[", "]", v.map((x) => encode(x, inner)), pad);
+  if (v !== null && typeof v === "object") {
+    return block("{", "}", Object.entries(v).filter(([, x]) => x !== undefined).map(field), pad);
+  }
+  return JSON.stringify(v);
+}
+
+function block(open: string, close: string, items: string[], pad: string): string {
+  return items.length === 0 ? open + close : `${open}\n${pad}  ${items.join(`,\n${pad}  `)}\n${pad}${close}`;
 }
 
 /** Actor as Go's encoding/json emits it: snake_case, omitempty, field order. */
@@ -761,5 +850,14 @@ function actorJSON(a: Actor): Record<string, unknown> {
   // as its integer. Each is omitted when zero or empty, as `omitempty` does.
   if (a.kind !== 0) out["kind"] = a.kind;
   if (a.abilityIds.length > 0) out["ability_ids"] = a.abilityIds;
+  if (Object.keys(a.references).length > 0) {
+    out["references"] = sortedMap(a.references, (r) => {
+      const o: Record<string, string> = {};
+      if (r.entryId !== "") o["entry_id"] = r.entryId;
+      if (r.place !== "") o["place"] = r.place;
+      if (r.state !== "") o["state"] = r.state;
+      return o;
+    });
+  }
   return out;
 }

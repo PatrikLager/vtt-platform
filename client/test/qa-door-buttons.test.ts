@@ -23,7 +23,7 @@ const wall = (): Tile => ({ Kind: "wall", Material: "stone", Art: "" });
 function actor(st: State, id: string, name: string, controllers: string[], kind: ActorKind): void {
   st.Actors[id] = {
     actorId: id, name, moduleId: "", attributes: {}, resources: {},
-    controllerId: controllers[0] ?? "", controllerIds: controllers, kind, abilityIds: [],
+    controllerId: controllers[0] ?? "", controllerIds: controllers, kind, abilityIds: [], references: {},
   };
 }
 

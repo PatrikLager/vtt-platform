@@ -15,7 +15,7 @@ const LIST = [FISTS, SOBER, SPLASH];
 function sheet(controller: string, abilityIds: string[]): Actor {
   return {
     actorId: "act-mara", name: "Mara", moduleId: "", attributes: {}, resources: {},
-    controllerId: controller, controllerIds: [controller], kind: ActorKind.PARTY_MEMBER, abilityIds,
+    controllerId: controller, controllerIds: [controller], kind: ActorKind.PARTY_MEMBER, abilityIds, references: {},
   };
 }
 

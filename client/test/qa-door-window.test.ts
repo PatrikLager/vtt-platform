@@ -33,7 +33,7 @@ function world(): State {
   for (const id of ["z-near", "a-far"]) {
     st.Actors[id] = {
       actorId: id, name: id, moduleId: "", attributes: {}, resources: {},
-      controllerId: "p1", controllerIds: ["p1"], kind: ActorKind.PARTY_MEMBER, abilityIds: [],
+      controllerId: "p1", controllerIds: ["p1"], kind: ActorKind.PARTY_MEMBER, abilityIds: [], references: {},
     };
   }
   st.Tokens["t-far"] = { ID: "t-far", SceneID: "s1", ActorID: "a-far", X: 0, Y: 1 };
