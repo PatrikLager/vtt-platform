@@ -80,6 +80,12 @@ func cenv(id string, payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_ResourceAdded{ResourceAdded: p}
 	case *vttv1.ResourceRemoved:
 		e.Payload = &vttv1.Envelope_ResourceRemoved{ResourceRemoved: p}
+	case *vttv1.ReferenceAdded:
+		e.Payload = &vttv1.Envelope_ReferenceAdded{ReferenceAdded: p}
+	case *vttv1.ReferenceRemoved:
+		e.Payload = &vttv1.Envelope_ReferenceRemoved{ReferenceRemoved: p}
+	case *vttv1.ReferenceChanged:
+		e.Payload = &vttv1.Envelope_ReferenceChanged{ReferenceChanged: p}
 	case *vttv1.RulesetNamed:
 		e.Payload = &vttv1.Envelope_RulesetNamed{RulesetNamed: p}
 	case *vttv1.AbilityUsed:

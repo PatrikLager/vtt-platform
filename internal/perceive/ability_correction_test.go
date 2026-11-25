@@ -429,7 +429,7 @@ func TestANamelessCreatureMadeAPartyMemberInSightIsForwardedATakeThatFolds(t *te
 	}
 }
 
-// VTT-755
+// VTT-1067
 func TestANamelessActorWithNoListChangingKindInSightIsForwardedTheGrantAlone(t *testing.T) {
 	for from, to := range map[vttv1.ActorKind]vttv1.ActorKind{
 		sheetParty: vttv1.ActorKind_ACTOR_KIND_NON_PARTY, vttv1.ActorKind_ACTOR_KIND_NON_PARTY: sheetParty,

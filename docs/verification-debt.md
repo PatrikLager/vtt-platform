@@ -754,6 +754,25 @@ writeDump does" and `TestTheDumpAfterReferenceChangesIsTheCommittedOne`.
 
 ## Open debt
 
+**No generated walk reaches a correction that takes a reference off.** The
+projection's property tests (`TestEveryCharacterLogFoldsAtEveryPrefix`,
+`TestACharacterLogIsWhatItsCharactersEyesAreGiven`, `TestRebuildEqualsLiveProperty`
+and Phase 4a's `TestQARCGeneratedWalksKeepEveryLogAtTheWorldsReferences`) draw
+their walks from `internal/eventgen`, and no seed they run puts a
+`ReferenceRemoved` in a log as a correction at first sight: no walk shows a log
+a party member holding a reference, hides it, removes or swaps that reference,
+and shows it again, and every drawn grant states a party member, so no walk
+turns one into a creature. The same shape leaves `AbilityTaken` and
+`ResourceRemoved` out of every walk's corrections. Recipe: in `referenceFrames`
+in `internal/perceive/projection.go`, guard the removal with `false &&`; every
+property test stays green, and only hand-written tests turn red, among them
+`TestAReferenceRemovedAndAddedBackAsAnotherEntryOutOfSightIsRemovedThenAddedAtSight`
+and QA's `TestQARCReferencesChangedUnseenAreCorrectedAtSight`. Labels:
+`test data missing`. Closing it needs eventgen walks that hide a seen party
+member and then take or swap what its sheet holds, and grants that make a
+party member a creature. Recorded 2026-11-25 by the Phase 4b review of Task 6
+of `docs/superpowers/plans/2026-11-25-a-sheet-refers-to-the-catalogue.md`.
+
 **`remove_actor` and `remove_participant` append a batch that `isBatchCommand`
 does not name.** `handleRemoveActor` in `internal/gateway/server.go` appends a
 `TokenRemoved` per token of the actor and the `ActorRemoved` as one batch, and

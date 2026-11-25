@@ -74,3 +74,20 @@ func TestATakeWhenNoActorNamesAnAbilityDrawsARefusedTakeFromAKnownActor(t *testi
 		t.Fatalf("drew %v MustFail %t Anchors %t, want a refused take of an absent id from a1 or a2", tk, a.MustFail, a.Anchors)
 	}
 }
+
+func TestAReferenceDrawAfterARemovalNamesNoRemovedActor(t *testing.T) {
+	m := New()
+	m.actors = []string{"a1"}
+	m.references = map[string][]string{"a1": {"prop-ref-0"}}
+	if a := m.removeActor(rand.New(rand.NewSource(1))); a.MustFail || a.Env.GetActorRemoved().GetActorId() != "a1" {
+		t.Fatalf("fixture: drew %v MustFail %t, want a1 removed", a.Env, a.MustFail)
+	}
+	m.actors = append(m.actors, "a2")
+	for seed := int64(1); seed <= 20; seed++ {
+		rr := m.removeReference(rand.New(rand.NewSource(seed)), 0).Env.GetReferenceRemoved()
+		rc := m.changeReference(rand.New(rand.NewSource(seed)), 0).Env.GetReferenceChanged()
+		if rr.GetActorId() != "a2" || rc.GetActorId() != "a2" {
+			t.Fatalf("seed %d drew a removal from %q and a change of %q, want a2 for both", seed, rr.GetActorId(), rc.GetActorId())
+		}
+	}
+}

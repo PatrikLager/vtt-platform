@@ -105,6 +105,12 @@ func envelope(seq int64, payload proto.Message) *vttv1.Envelope {
 		env.Payload = &vttv1.Envelope_ResourceAdded{ResourceAdded: p}
 	case *vttv1.ResourceRemoved:
 		env.Payload = &vttv1.Envelope_ResourceRemoved{ResourceRemoved: p}
+	case *vttv1.ReferenceAdded:
+		env.Payload = &vttv1.Envelope_ReferenceAdded{ReferenceAdded: p}
+	case *vttv1.ReferenceRemoved:
+		env.Payload = &vttv1.Envelope_ReferenceRemoved{ReferenceRemoved: p}
+	case *vttv1.ReferenceChanged:
+		env.Payload = &vttv1.Envelope_ReferenceChanged{ReferenceChanged: p}
 	default:
 		panic(fmt.Sprintf("envelope: no oneof arm wired for %T", payload))
 	}

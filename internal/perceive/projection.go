@@ -217,7 +217,8 @@ func sameIncarnation(a, b *vttv1.Actor) bool {
 func kindMovesList(a, w *vttv1.Actor) bool {
 	shown := shownAs(w)
 	return engine.IsPartyMember(a) != engine.IsPartyMember(w) &&
-		len(a.GetAbilityIds())+len(shown.GetAbilityIds())+len(a.GetResources())+len(shown.GetResources()) > 0
+		len(a.GetAbilityIds())+len(shown.GetAbilityIds())+len(a.GetResources())+len(shown.GetResources())+
+			len(a.GetReferences())+len(shown.GetReferences()) > 0
 }
 
 // shownAs is what a log may hold of a once seen: a party member whole,
@@ -863,20 +864,29 @@ func (pr *Projection) withdraw(id string, seq int64) *vttv1.Envelope {
 }
 
 // actorBelief is what the viewer's fold holds of an actor that an event can
-// change: its resources, its conditions, its ability ids, its controllers and
-// its kind (SPEC-016).
+// change: its resources, its conditions, its ability ids, its references, its
+// controllers and its kind (SPEC-016).
 type actorBelief struct {
 	resources   map[string]heldResource
 	conditions  []string
 	abilities   []string
+	references  map[string]heldReference
 	controllers []string
 	kind        vttv1.ActorKind
 }
 
 type heldResource struct{ current, max int32 }
 
+// Hold each field of Reference here and copy it in referenceFrames, or one the
+// contract gains is never sent.
+type heldReference struct{ entry, place, state string }
+
+func heldAs(r *vttv1.Reference) heldReference {
+	return heldReference{entry: r.GetEntryId(), place: r.GetPlace(), state: r.GetState()}
+}
+
 func beliefOf(a *vttv1.Actor, conditions []engine.ActorCondition) actorBelief {
-	b := actorBelief{resources: map[string]heldResource{}, kind: a.GetKind()}
+	b := actorBelief{resources: map[string]heldResource{}, references: map[string]heldReference{}, kind: a.GetKind()}
 	for name, r := range a.GetResources() {
 		b.resources[name] = heldResource{current: r.GetCurrent(), max: r.GetMax()}
 	}
@@ -884,6 +894,9 @@ func beliefOf(a *vttv1.Actor, conditions []engine.ActorCondition) actorBelief {
 		b.conditions = append(b.conditions, c.ID)
 	}
 	b.abilities = append(b.abilities, a.GetAbilityIds()...)
+	for id, r := range a.GetReferences() {
+		b.references[id] = heldAs(r)
+	}
 	b.controllers = append(b.controllers, a.GetControllerIds()...)
 	return b
 }
@@ -952,6 +965,10 @@ func statusFrames(id string, seq int64, b actorBelief, a *vttv1.Actor, condition
 				ActorId: id, AbilityId: ab}}})
 			listed[ab] = true
 		}
+	}
+
+	for _, f := range referenceFrames(id, b, a) {
+		frame(f)
 	}
 
 	controls := map[string]bool{}
@@ -1030,6 +1047,41 @@ func resourceFrames(id string, b actorBelief, a *vttv1.Actor) []*vttv1.Envelope 
 		}
 		out = append(out, &vttv1.Envelope{Payload: &vttv1.Envelope_ResourceChanged{ResourceChanged: &vttv1.ResourceChanged{
 			ActorId: id, Resource: name, Delta: cur - from, NewValue: cur}}})
+	}
+	return out
+}
+
+// referenceFrames are the frames, in byte order of the ids, that bring the
+// references of belief b to actor a's (VTT-1068).
+func referenceFrames(id string, b actorBelief, a *vttv1.Actor) []*vttv1.Envelope {
+	var out []*vttv1.Envelope
+	ids := map[string]bool{}
+	for rid := range a.GetReferences() {
+		ids[rid] = true
+	}
+	for rid := range b.references {
+		ids[rid] = true
+	}
+	for _, rid := range slices.Sorted(maps.Keys(ids)) {
+		was, believed := b.references[rid]
+		r, present := a.GetReferences()[rid]
+		now := heldAs(r)
+		// Remove and add one held as another entry: a change keeps its entry.
+		renewed := believed && present && was.entry != now.entry
+		if believed && (!present || renewed) {
+			out = append(out, &vttv1.Envelope{Payload: &vttv1.Envelope_ReferenceRemoved{ReferenceRemoved: &vttv1.ReferenceRemoved{
+				ActorId: id, ReferenceId: rid}}})
+		}
+		if present && (!believed || renewed) {
+			out = append(out, &vttv1.Envelope{Payload: &vttv1.Envelope_ReferenceAdded{ReferenceAdded: &vttv1.ReferenceAdded{
+				ActorId: id, ReferenceId: rid, Reference: &vttv1.Reference{EntryId: now.entry, Place: now.place, State: now.state}}}})
+			continue
+		}
+		if !present || now == was {
+			continue
+		}
+		out = append(out, &vttv1.Envelope{Payload: &vttv1.Envelope_ReferenceChanged{ReferenceChanged: &vttv1.ReferenceChanged{
+			ActorId: id, ReferenceId: rid, Place: now.place, State: now.state}}})
 	}
 	return out
 }

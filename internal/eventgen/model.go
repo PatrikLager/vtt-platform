@@ -64,6 +64,7 @@ type Model struct {
 	conditions map[string][]string
 	abilities  map[string][]string
 	resources  map[string][]string
+	references map[string][]string
 
 	// allSeqs is the pool narration anchors are drawn from, and it can only be
 	// filled by the caller: a sequence is assigned by whatever APPLIES an event,
@@ -94,6 +95,7 @@ func New() *Model {
 		conditions: map[string][]string{},
 		abilities:  map[string][]string{},
 		resources:  map[string][]string{},
+		references: map[string][]string{},
 	}
 }
 
@@ -161,6 +163,12 @@ func (m *Model) env(payload any) *vttv1.Envelope {
 		e.Payload = &vttv1.Envelope_ResourceAdded{ResourceAdded: p}
 	case *vttv1.ResourceRemoved:
 		e.Payload = &vttv1.Envelope_ResourceRemoved{ResourceRemoved: p}
+	case *vttv1.ReferenceAdded:
+		e.Payload = &vttv1.Envelope_ReferenceAdded{ReferenceAdded: p}
+	case *vttv1.ReferenceRemoved:
+		e.Payload = &vttv1.Envelope_ReferenceRemoved{ReferenceRemoved: p}
+	case *vttv1.ReferenceChanged:
+		e.Payload = &vttv1.Envelope_ReferenceChanged{ReferenceChanged: p}
 	case *vttv1.RulesetNamed:
 		e.Payload = &vttv1.Envelope_RulesetNamed{RulesetNamed: p}
 	default:
@@ -195,7 +203,7 @@ func (m *Model) Step(rng *rand.Rand, idx int) Action {
 		return m.addActor()
 	case r < 0.28 && m.canPlaceToken():
 		return m.placeToken(rng)
-	case r < 0.42 && m.canMoveToken():
+	case r < 0.37 && m.canMoveToken():
 		return m.moveToken(rng, idx)
 	case r < 0.48 && len(m.actors) > 0:
 		return m.changeSheet(rng, idx, r)
@@ -606,6 +614,7 @@ func (m *Model) removeActor(rng *rand.Rand) Action {
 		delete(m.conditions, id)
 		delete(m.abilities, id)
 		delete(m.resources, id)
+		delete(m.references, id)
 	}
 	return Action{Env: m.env(&vttv1.ActorRemoved{ActorId: id}),
 		Kind: "removeActor", MustFail: blocked, Anchors: !blocked}
@@ -662,6 +671,9 @@ func (m *Model) takeAbility(rng *rand.Rand, idx int) Action {
 }
 
 func (m *Model) changeSheet(rng *rand.Rand, idx int, r float64) Action {
+	if r >= 0.37 && r < 0.42 {
+		return m.drawReference(rng, idx, r)
+	}
 	switch {
 	case r < 0.46:
 		return m.changeAbility(rng, idx, r < 0.44)
@@ -714,4 +726,84 @@ func (m *Model) removeResource(rng *rand.Rand, idx int) Action {
 	}
 	return Action{Env: m.env(&vttv1.ResourceRemoved{ActorId: actor, Resource: name}),
 		Kind: "removeResource", MustFail: absent, Anchors: !absent}
+}
+
+// Draw the refusal each fold makes, an addition of an id the sheet holds and a
+// removal or a change of one it does not, beside the legal draw (engine.Apply).
+func (m *Model) drawReference(rng *rand.Rand, idx int, r float64) Action {
+	if r < 0.395 {
+		return m.addReference(rng)
+	}
+	if r < 0.41 {
+		return m.removeReference(rng, idx)
+	}
+	return m.changeReference(rng, idx)
+}
+
+var (
+	referenceEntries = []string{"echo", "delta"}
+	referencePlaces  = [][2]string{{"mike", "lima"}, {"mike", "oscar"}, {"kilo", ""}}
+)
+
+func (m *Model) addReference(rng *rand.Rand) Action {
+	actor := m.actors[rng.Intn(len(m.actors))]
+	held := m.references[actor]
+	duplicate := len(held) > 0 && rng.Float64() < 0.2
+	id := fmt.Sprintf("prop-ref-%d", rng.Intn(4))
+	if duplicate {
+		id = held[rng.Intn(len(held))]
+	} else if slices.Contains(held, id) {
+		duplicate = true
+	}
+	entry, place := referenceEntries[rng.Intn(len(referenceEntries))], referencePlaces[rng.Intn(len(referencePlaces))]
+	if !duplicate {
+		m.references[actor] = append(slices.Clone(held), id)
+	}
+	return Action{Env: m.env(&vttv1.ReferenceAdded{ActorId: actor, ReferenceId: id,
+		Reference: &vttv1.Reference{EntryId: entry, Place: place[0], State: place[1]}}),
+		Kind: "addReference", MustFail: duplicate, Anchors: !duplicate}
+}
+
+// Sort the pool: map order reshuffles a walk (TestTheSameSeedDrawsTheSameWalk).
+func (m *Model) heldReference(rng *rand.Rand) (actor string, pick int, absent bool) {
+	pool := make([]string, 0, len(m.references))
+	for a, held := range m.references {
+		if len(held) > 0 {
+			pool = append(pool, a)
+		}
+	}
+	slices.Sort(pool)
+	if len(pool) == 0 {
+		pool = m.actors
+	}
+	actor = pool[rng.Intn(len(pool))]
+	held := m.references[actor]
+	absent = len(held) == 0 || rng.Float64() < 0.25
+	if !absent {
+		pick = rng.Intn(len(held))
+	}
+	return actor, pick, absent
+}
+
+func (m *Model) removeReference(rng *rand.Rand, idx int) Action {
+	actor, pick, absent := m.heldReference(rng)
+	id := fmt.Sprintf("prop-ref-absent-%d", idx)
+	if !absent {
+		held := m.references[actor]
+		id = held[pick]
+		m.references[actor] = slices.Delete(slices.Clone(held), pick, pick+1)
+	}
+	return Action{Env: m.env(&vttv1.ReferenceRemoved{ActorId: actor, ReferenceId: id}),
+		Kind: "removeReference", MustFail: absent, Anchors: !absent}
+}
+
+func (m *Model) changeReference(rng *rand.Rand, idx int) Action {
+	actor, pick, absent := m.heldReference(rng)
+	id := fmt.Sprintf("prop-ref-absent-%d", idx)
+	if !absent {
+		id = m.references[actor][pick]
+	}
+	place := referencePlaces[rng.Intn(len(referencePlaces))]
+	return Action{Env: m.env(&vttv1.ReferenceChanged{ActorId: actor, ReferenceId: id, Place: place[0], State: place[1]}),
+		Kind: "changeReference", MustFail: absent, Anchors: !absent}
 }
