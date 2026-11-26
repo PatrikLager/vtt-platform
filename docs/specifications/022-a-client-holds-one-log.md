@@ -36,10 +36,12 @@ door only with an event id, but the runs that withdraw and introduce again one
 actor, both outside the reason it gives for a log it cannot fold, by
 `client/test/app.test.ts`, `client/test/spectator-view.test.ts`,
 `client/test/feed.test.ts`, `client/test/qa-events-panel.test.ts`,
-`client/test/qa-companion-first-sight.test.ts` and
-`client/test/qa-story-mechanical.test.ts` (VTT-445 to VTT-448, VTT-809,
-VTT-810, VTT-812, VTT-818, VTT-820, VTT-823, VTT-984), and that the Events
-panel labels a move with its reason, by `client/test/spectator-view.test.ts`,
+`client/test/qa-companion-first-sight.test.ts`,
+`client/test/qa-story-mechanical.test.ts` and
+`client/test/qa-reference-events-panel.test.ts` (VTT-445 to VTT-448,
+VTT-810, VTT-812, VTT-818, VTT-820, VTT-823, VTT-984, VTT-1029), and that
+the Events panel labels a move with its reason, by
+`client/test/spectator-view.test.ts`,
 `client/test/qa-move-reason.test.ts` and `client/test/qa-events-panel.test.ts`
 (VTT-821); that a player and a spectator are offered the party
 members a `WatchableChanged` names and switch between them, by
@@ -191,7 +193,15 @@ VTT-722, VTT-727); that the fold adds and removes a resource as
 `internal/engine/qa_resource_change_test.go`,
 `cmd/vtt/resource_change_dump_test.go` and
 `cmd/vtt/qa_resource_change_dump_test.go` (VTT-769 to VTT-774); that the
-fold names the ruleset a `rulesetNamed` names as `engine.Apply` does,
+fold keeps, adds, removes and changes a sheet's references as
+`engine.Apply` does, refusals included, and that a log of them dumps as
+`vtt state dump` prints it, every map in the byte order of its keys' UTF-8,
+by `client/test/fold-references.test.ts` and
+`client/test/qa-reference-fold.test.ts`, beside
+`internal/engine/reference_change_test.go`,
+`internal/engine/qa_reference_fold_test.go` and
+`cmd/vtt/reference_change_dump_test.go` (VTT-1023 to VTT-1026, VTT-1028);
+that the fold names the ruleset a `rulesetNamed` names as `engine.Apply` does,
 refusals included, and that a log of them dumps as `vtt state dump` prints
 it, by `client/test/fold-ruleset-named.test.ts`,
 `client/test/qa-ruleset-named.test.ts`,
@@ -212,7 +222,20 @@ offers and sends both, by `client/test/dm-abilities.test.ts`,
 `client/test/command-surface.test.ts` (VTT-730), and asks for and sends a
 give's value, by `client/test/dm-abilities.test.ts`,
 `client/test/qa-give-value.test.ts` and `client/test/commands.test.ts`
-(VTT-788, VTT-789, VTT-805 to VTT-808); and that a player's window
+(VTT-788, VTT-789, VTT-805 to VTT-808); that the Events panel words a
+reference added, removed and changed, naming its entry and its place as of
+its event, by `client/test/events-panel-references.test.ts`,
+`client/test/app.test.ts` and
+`client/test/qa-reference-events-panel.test.ts` (VTT-1030); that the DM
+console adds, changes and removes a sheet's references, asking before a
+removal, by `client/test/dm-references.test.ts`,
+`client/test/qa-reference-console.test.ts` and `client/test/app.test.ts`
+(VTT-1057, VTT-1058), and that an accepted command of the console clears
+no field of another of its forms, by `client/test/dm-view.test.ts`,
+`client/test/qa-remove-condition-asks-first.test.ts`,
+`client/test/dm-references.test.ts` and
+`client/test/qa-reference-console.test.ts` (VTT-1074); and that a player's
+window
 reads `/api/ruleset` again when a set changes a party member's ability ids
 and tells the player what changed, naming each ability by every list read
 since load, while no other window does either, by
@@ -262,8 +285,12 @@ its condition dots in every window is held by `client/test/grid.test.ts`,
 as the window's ruleset declares, by `client/test/panel-sheet.test.ts`,
 `client/test/spectator-view.test.ts`,
 `client/test/qa-panel-sheet.test.ts`, `client/test/sheet.test.ts`,
-`client/test/qa-sheet-model.test.ts`, `client/test/app.test.ts` and
-`client/e2e/table.spec.ts` (VTT-836 to VTT-846); that a condition is
+`client/test/qa-sheet-model.test.ts`,
+`client/test/sheet-place-names.test.ts`,
+`client/test/qa-reference-panel.test.ts`,
+`client/test/qa-reference-place-names.test.ts`, `client/test/app.test.ts` and
+`client/e2e/table.spec.ts` (VTT-836 to VTT-839, VTT-841 to VTT-846,
+VTT-1055, VTT-1056, VTT-1075); that a condition is
 named in its ruleset's words on a disc's dot, in the Story's and the Events
 panel's lines and on the DM console's removal buttons, by the newest read's
 list, by `client/test/naming.test.ts`, `client/test/grid.test.ts`,
@@ -313,9 +340,10 @@ Principles 7, 11, 12, 13, 14, 20, 22, 23, 27 and 35 of `docs/blueprint.md`:
 - **11.** A reader folds one log, from its first entry, and never splices two.
 - **12.** A player is told when a party member stops being theirs, and when
   an ability is given to or taken from a party member they control.
-- **13.** `namer` never shows a token or an actor by its id, names a resource
-  and a condition its ruleset declares by its display name, and `describe`
-  words every payload (VTT-474 to VTT-477, VTT-815, VTT-862, VTT-863).
+- **13.** `namer` never shows a token or an actor by its id, names a
+  resource, a condition, a catalogue entry and a place its ruleset declares
+  by its display name, and `describe` words every payload (VTT-474 to
+  VTT-477, VTT-815, VTT-862, VTT-863, VTT-1030).
 - **14.** A player's click on a cell holding the watched one's token and no
   other listed member's sends nothing.
 - **20.** A player's board click on a square the `Visible` their window
@@ -325,9 +353,12 @@ Principles 7, 11, 12, 13, 14, 20, 22, 23, 27 and 35 of `docs/blueprint.md`:
   window's ruleset lays it out, and invents no grouping of its own; with a
   sheet or without, it writes no word of its own for an ability that spends
   no resource.
-- **27.** The panel offers a character only the abilities its sheet names.
+- **27.** The panel offers a character only the abilities its sheet names,
+  and shows each catalogue entry its sheet refers to by the window's
+  catalogue, which the sheet names by id and never copies.
 - **35.** An ability's button is titled by the ruleset's description of
-  it, so a player can read what an ability does where they choose it.
+  it, so a player can read what an ability does where they choose it, and a
+  reference on the sheet by its entry's description.
 
 ## How it works
 
@@ -383,8 +414,9 @@ payload; a `rulesetNamed` with no event id is an opening's or a resume's
 (SPEC-021), and the Story draws it too, by the owner's ruling OD-2 of
 2026-11-23, so a player's window shows which ruleset its log names
 (SPEC-026). It draws no
-`resourceChanged`, `abilityGiven`, `abilityTaken`, `resourceAdded` or
-`resourceRemoved` (VTT-809), no `actorControlGranted` or
+`resourceChanged`, `abilityGiven`, `abilityTaken`, `resourceAdded`,
+`resourceRemoved`, `referenceAdded`, `referenceRemoved` or
+`referenceChanged` (VTT-1029), no `actorControlGranted` or
 `actorControlRevoked` (VTT-810), no `tokenPlaced`, `tokenMoved`,
 `tokenRemoved`, `tokenDescribed`, `sceneCreated`, `sceneSeen`,
 `noteUpserted`, `noteDeleted` or `adventureLoaded` (VTT-818), and no
@@ -574,6 +606,43 @@ the state included (VTT-769 to VTT-773), so the client's fold of a log of
 resources added and removed dumps as `vtt state dump` prints it, its
 refusals included (VTT-774).
 
+Its `actorAdded` arm refuses, after its other checks, an actor holding a
+reference whose id is empty, and otherwise keeps the actor's references
+whole, in a new map of new references, empty for an actor added with none
+(`copyActor`). Its `referenceAdded` arm refuses an empty reference id, then
+an event with no reference, then an actor the fold does not hold, then a
+reference id the actor's sheet holds already, and otherwise sets the
+actor's references to a new map holding the reference at the event's
+entry, place and state; its `referenceRemoved` arm refuses an actor the
+fold does not hold, then a reference id the sheet does not hold, and
+otherwise sets them to a new map without it; and its `referenceChanged` arm
+refuses the same two, in that order, and otherwise sets them to a new map
+holding the reference at the entry it held and the event's place and state
+(`withReferences`). Each of these refusals of a reference, unlike the
+ability and resource arms' refusals, is a `FoldError` in `engine.Apply`'s
+words less their `engine: ` prefix, an id quoted as written where Go's `%q`
+escapes it; the three arms, and the `actorAdded` arm in what it refuses and
+keeps of a reference, refuse and change what `engine.Apply`'s do
+(SPEC-028), nothing else of the actor or the state included (VTT-1023 to
+VTT-1026). `foldToDumpJSON` writes an actor's references as `references`,
+after `ability_ids`, each with its `entry_id`, `place` and `state`, each
+left out when empty, and no `references` for an actor holding none, as
+`vtt state dump` does, so the client's fold of a log of references added,
+removed and changed dumps as `vtt state dump` prints it, its refusals
+included (VTT-1028).
+
+`foldToDumpJSON` writes every map of the state, its actors,
+conditions, notes, scenes and tokens, a scene's tiles, open doors and
+explored and visible squares, and an actor's attributes, resources and
+references, in the byte order of its keys' UTF-8, as `encoding/json` writes
+a map (`git grep -n 'sortedMap(' -- client/src/fold.ts` finds each):
+`sortedMap` sorts a map's keys with `byUTF8`, which compares them by code
+point, and hands `encode` a `Sorted` of its entries in that order
+(VTT-1028). `encode` writes what `JSON.stringify(v, null, 2)` writes, a
+field whose value is undefined left out, but a `Sorted` in its entries'
+order; `goEscape` then escapes each `<`, `>`, `&`, U+2028 and U+2029 as
+`encoding/json` does.
+
 Its `rulesetNamed` arm refuses a ruleset id, then a version, then a name
 that is empty or longer than its bound, 128, 128 and 256 bytes (SPEC-018),
 and otherwise sets the state's `RulesetID`, `RulesetVersion` and
@@ -581,8 +650,8 @@ and otherwise sets the state's `RulesetID`, `RulesetVersion` and
 else, as `engine.Apply`'s does (SPEC-026, VTT-974, VTT-979). The three are
 optional fields of `State`, absent until a `rulesetNamed` folds.
 `foldToDumpJSON` writes them under `RulesetID`, `RulesetName` and
-`RulesetVersion`, between `Notes` and `Scenes`, and `JSON.stringify` leaves
-out each that is absent, as Go's `omitempty` leaves out an empty one, so a
+`RulesetVersion`, between `Notes` and `Scenes`, and `encode` leaves out
+each that is absent, as Go's `omitempty` leaves out an empty one, so a
 log with no `rulesetNamed` dumps nothing of a ruleset (VTT-987) and the
 client's fold of a log naming rulesets dumps as `vtt state dump` prints it,
 its refusals included (VTT-983).
@@ -835,10 +904,11 @@ out or written `null` is no maximum (VTT-679).
 alla formulär" and "Töm ändå", 2026-10-29). The console's controls that
 clear a field, Start session, Add actor, Remove actor, Add from JSON, Place
 token, Remove token, a row's Describe, Save note, a row's Grant, a row's
-Give, and the Say's Send and Enter in its `say-text`, each send through
-`sending` in `client/src/view/dm.ts`, and so do an ability's take chip,
-Delete note and a Remove condition button, which clear nothing. A player's
-panel's Send, and Enter in its `say-text`, send through `submit` in
+Give, a Catalogue row's Add and a reference's Change, and the Say's Send and
+Enter in its `say-text`, each send through `sending` in
+`client/src/view/dm.ts`, and so do an ability's take chip, Delete note, a
+Remove condition button and a reference's Remove, which clear nothing. A
+player's panel's Send, and Enter in its `say-text`, send through `submit` in
 `renderPlayerPanel`. Both are handed `act` from `client/src/app.ts` as `send`:
 it resolves to the command's `CommandResult`, shows a refusal as the toast of
 its error, with nothing before it (VTT-604), and paints at every answer before
@@ -851,9 +921,11 @@ answer, what was typed for the command stays in its field and in `draft` or
   fed it, and asks for a repaint through `DMDeps.rerender`, which `app.ts`
   sets to `paint`. It empties no box on the page itself: the repaint draws
   each of those fields anew, as with nothing typed: empty, the blank option,
-  or for a Describe box the token's present text (VTT-533). Remove actor is
-  fed by `actor-id` alone and Remove token by `token-id` alone, so the rest of
-  their forms stays as typed;
+  for a Describe box the token's present text, or for a reference's Change
+  its present place and state (VTT-533). Remove actor is fed by `actor-id`
+  alone and Remove token by `token-id` alone, so the rest of their forms
+  stays as typed, and an accepted command clears no field of another of the
+  console's forms (VTT-1074);
 - the panel empties `PlayerUIState.sayText` and the `say-text` box it read
   the line from, and asks for a repaint through its `rerender`, which
   `app.ts` sets to `paint` (VTT-520).
@@ -874,14 +946,17 @@ The console keeps its locks in `unanswered`, beside `draft`, so they last
 across paints, one per control: keyed by the control's action, by the action
 and the row's token or actor id for a Describe or a Grant, by the action, the
 row's actor id and the ability's id for a Give or a take, by the action, the
-actor's id and the condition's id for a Remove condition button, and by
+actor's id and the condition's id for a Remove condition button, by the
+action and the actor's id for a Catalogue row's Add, by the action, the
+actor's id and the reference's id for a reference's Change or Remove, and by
 `actor-json` for Add from JSON; the Say's Send and Enter share one, keyed
 `add-narration`. So a command one of them sent holds back no other, another
 row's Describe or Grant, Remove actor beside Add actor and Delete note beside
 Save note included, though Add and Remove actor share `actor-id`, and Save and
 Delete note `note-key`, and a give unanswered holds back only that actor's
-give of that ability and a removal only that actor's button for that
-condition; the Say's Send and Enter count as one (VTT-541). The panel's lock
+give of that ability, a removal only that actor's button for that
+condition, and an addition, a change or a removal of a reference only
+itself; the Say's Send and Enter count as one (VTT-541). The panel's lock
 is `PlayerUIState.saying`, one for Send and Enter. A press the console's own
 checks refuse, or a line in which `readLine` finds nothing to send, in the
 console's Say or a player's panel, sends nothing and takes no lock. A lock is
@@ -904,10 +979,11 @@ asks for no repaint, frees the control that sent it, and passes its error to
 character it shows, as its chip names it, else by the fold's name, else by its
 id, and draws no heading while it shows none (VTT-836). Below the chips it
 draws the sheet `sheetFor` (`client/src/player.ts`) computes for that
-character from the window's abilities and properties and the sheet and
-conditions the window's newest `/api/ruleset` answer gave (`layout` in
-`startSession`; an answer without either reads as none), and an answer to an
-older read arriving after it changes neither (VTT-845). It keeps that
+character from the window's abilities and properties and the sheet,
+conditions, catalogue and places the window's newest `/api/ruleset` answer
+gave (`layout` in `startSession`; an answer without one of them reads as
+none), and an answer to an older read arriving after it changes none of
+them (VTT-845). It keeps that
 answer's `freeUsageName` in `layout` beside them in the same way, an answer
 without it read as none (VTT-855).
 - **Pages.** With a sheet of more than one page it draws one `.tab` per
@@ -930,12 +1006,26 @@ without it read as none (VTT-855).
   with no title (VTT-842). An abilities section draws a `.row` of the
   buttons the panel offers whose usage one of its usages names, in the
   window's list order, each labelled by the ability's name, else its id
-  (VTT-843, VTT-846).
+  (VTT-843, VTT-846). A places section draws the references the
+  character's sheet holds in the places it lists, in the order it lists
+  them and then by reference id, compared with `<`, each a `.reference`
+  reading its entry's name in the window's catalogue, else its entry's id,
+  an empty name read as none, then, in parentheses and joined by ", ", its
+  place's name in the window's places, else its key, when the section lists
+  more than one place (VTT-1075, the owner's ruling of 2026-11-26), and its
+  state when it has one, as written: "<entry> (<place>, <state>)",
+  "<entry> (<place>)", "<entry> (<state>)" or "<entry>". It is titled by its
+  entry's description when that is not empty, and untitled otherwise
+  (VTT-1055).
 - **No sheet declared.** With no sheet, or an empty one, it draws no tab
   and one page of the sections "Values", "Conditions" and "Abilities", in
-  that order, each left out when empty, its values those of the window's
-  properties in their order, then every key no property declares as that
-  type, in key order, an attribute before a resource of one key (VTT-840).
+  that order, its values those of the window's properties in their order,
+  then every key no property declares as that type, in key order, an
+  attribute before a resource of one key, and after them a section for each
+  place that holds one of the character's references, the window's places
+  in their order and then each other place by key, named by the place's
+  name in the window's places, else its key, and drawn as a places section
+  listing that place alone; each section is left out when empty (VTT-1056).
 - **Outside the page.** The target buttons, or "Click the board to move.",
   the door buttons and the Say form are drawn below the page on every page,
   so an ability armed on one page keeps its targets on another.
@@ -945,12 +1035,14 @@ without it read as none (VTT-855).
 `namer` in `client/src/view/naming.ts` names each token and actor the window
 shows, except where the paragraph after the list below says, and a resource
 as below. `renderSpectator` builds one per paint, from the fold, the log,
-`ViewExtras.dm`, `ViewExtras.abilities`, `ViewExtras.properties` and
-`ViewExtras.conditions`, for a disc's initial, its native `title`, its
+`ViewExtras.dm`, `ViewExtras.abilities`, `ViewExtras.properties`,
+`ViewExtras.conditions`, `ViewExtras.catalogue` and `ViewExtras.places`,
+for a disc's initial, its native `title`, its
 resource chips and its condition dots, its card, and the Story and the
 Events panel; `paint` in `startSession` sets `dm` to `isDM`, `properties`
 to the list the newest `/api/ruleset` read answered, `conditions` to that
-answer's condition list (VTT-865), and `abilities` to every ability
+answer's condition list (VTT-865), `catalogue` and `places` to that
+answer's catalogue and places, and `abilities` to every ability
 `everRead` holds, those every answer since the page loaded gave (above),
 for every role. Every role's answer carries every condition the ruleset
 declares (SPEC-012) and a server keeps one ruleset for its life, so no
@@ -982,8 +1074,9 @@ last gave (VTT-475, VTT-484, by the owner's rulings A-6 and K-1 of
   key, and by its key while the window has no properties; a `number`
   property names no resource (VTT-815, VTT-816). The console's value fields
   of a give are named so, by a namer `renderDMConsole` builds from the
-  fold, the abilities, the properties and the conditions `DMDeps` hands it,
-  with no log (VTT-806). A disc's resource chip, which `tokensOnScene`
+  fold, the abilities, the properties, the conditions, the catalogue and
+  the places `DMDeps` hands it, with no log (VTT-806). A disc's resource
+  chip, which `tokensOnScene`
   gives a disc only in a DM's and an agent's window (VTT-834), shows
   `current/max` and is titled so (`ResourceChip.label`, which
   `tokensOnScene` sets), and a token's chips stay sorted by key. The Events
@@ -1008,15 +1101,27 @@ last gave (VTT-475, VTT-484, by the owner's rulings A-6 and K-1 of
   `tokensOnScene` sets from `Namer.conditionTitle`: the condition so named,
   then, when the list gives it a non-empty description, a line break and
   the description as written (VTT-862).
+- **A catalogue entry and a place.** `Namer.entry` names an entry with
+  `nameIn`, by the name the window's catalogue gives it, else by its id, and
+  `Namer.place` names a place by the name the window's places give it, else
+  by its key; for both an empty name is none (VTT-1030). `Namer.held`
+  answers, for a `referenceRemoved` or a `referenceChanged` of the log the
+  namer walked, the entry and the place its reference held just before it:
+  the namer walks the log from its first entry, taking each `actorAdded`'s
+  and `referenceAdded`'s references and each `referenceChanged`'s place, so
+  a line names what its reference held when its event was written, though
+  its id is added again later as another entry. It answers nothing for an
+  entry of another log, nor for one whose reference no earlier entry of the
+  log held (VTT-1030).
 
 A player's chips and the perch's buttons name a party member as the
 `WatchableChanged` set names it, and a DM's or an agent's chips an actor as
 the fold holds it, each by its id when that name is empty (VTT-404); the
 panel's heading names its character as its chip does, else by the fold's
 name, else by its id (VTT-836). The naming above does not reach them, nor
-the actor of the console's Abilities rows and removal buttons, which the
-fold names (below), nor a condition on the panel's sheet, which `sheetFor`
-names (VTT-842).
+the actor of the console's Abilities and Catalogue rows and removal buttons,
+which the fold names (below), nor a condition or a reference on the panel's
+sheet, which `sheetFor` names (VTT-842, VTT-1055).
 
 **The card.** Each disc carries a `.token-card`: the naming, then, in a DM's
 or an agent's window, "players see: " and what a player's window names the
@@ -1055,7 +1160,18 @@ panel alone, a give reads "<actor> can now use <ability>" and a take
 "<actor> can no longer use <ability>", the actor and the ability as the
 window names them (VTT-813), and a resource added reads "<actor> now has
 <resource> at <current>" and a resource removed "<actor> no longer has
-<resource>", the resource as `Namer.resource` names it (VTT-814): the Story
+<resource>", the resource as `Namer.resource` names it (VTT-814), and a
+reference added reads "<actor> now holds <entry> in <place>", a reference
+removed "<actor> no longer holds <entry> in <place>" and a reference changed
+"<actor>'s <entry> is now in <place>", the entry as `Namer.entry` names it
+and the place as `Namer.place` does, then, for an addition or a change
+whose state is not empty, " (<state>)", the state as written. An addition
+names the reference it carries, a removal the entry and the place
+`Namer.held` answers for it, and a change the entry `Namer.held` answers
+and the place the change sets; an addition carrying no reference and a
+removal `Namer.held` answers nothing for read the reference's id in place
+of "<entry> in <place>" and its state, and a change `Namer.held` answers
+nothing for reads it in place of "<entry>" (VTT-1030): the Story
 writes nothing from a sheet, by the owner's rulings of 2026-11-16. A whisper
 reads
 "The DM whispers to ", its `to_actor_ids` named as the window names actors
@@ -1078,6 +1194,44 @@ typed, empty ones included (VTT-464; "Ja, en kontroll i konsolen", the owner's
 ruling of 2026-10-24). Once the server accepts it, the console clears that
 row's drafts and no other row's, so the row's boxes are drawn as with no
 draft (VTT-533).
+
+**The console's catalogue.** `renderDMConsole` draws, after "Notes" and
+before "Remove condition", a "Catalogue" group of rows (`reference-actor`,
+`data-actor` the actor's id), by actor id compared with `<`: one for each
+actor of the world whose sheet holds a reference, and, while an addition is
+offered, which is while the window's catalogue holds an entry and its
+places a place, one for every actor of the world; with no row it draws no
+group. A row is headed by the actor's name in the fold, else its id, and
+holds, for each reference its sheet holds, by id compared with `<`, a line
+(`data-reference` the id) labelled "<id>: <entry> in <place>", then
+" (<state>)" when its state is not empty, the entry and the place as the
+console's namer names them (above), so two copies of one entry in one place
+and state are told apart by their ids. The line holds a select of the
+window's places, in their order, each labelled as the namer names it, and
+the reference's own place by its key after them when the window's places
+do not hold it, showing that place until another is chosen; a state box
+showing the reference's state until another is typed; Change (`data-action`
+`change-reference`), which sends `changeReference` of the place chosen and
+the state trimmed, whole; and Remove (`data-action` `remove-reference`).
+While an addition is offered, the row then holds a reference id box; a
+select of the window's entries, in the catalogue's order, each labelled as
+the namer names it, after a first option of no value labelled "choose an
+entry"; a select of the window's places after one labelled "choose a
+place"; a state box; and Add (`data-action` `add-reference`). Add with the
+trimmed id empty, or no entry or no place chosen, tells "a reference needs
+an id, an entry and a place" through `DMDeps.notify` and sends nothing, and
+otherwise sends `addReference` of the trimmed id, the entry, the place and
+the trimmed state, an empty one included (VTT-1057). What each of a row's
+boxes and selects holds is kept in `draft` under a key naming its field and
+the actor's id, and for a reference's line that reference's id too, and
+each box carries that key as its `data-field`. Remove asks first, through
+`DMDeps.confirm` and inside the press `sending` runs: "Remove <id>: <entry>
+in <place> from <actor>? Its id and state go with it.", named as the row
+names them; a no sends nothing, and a yes sends one `removeReference`
+naming the actor and the reference, and clears nothing (VTT-1058). `app.ts`
+hands `DMDeps.catalogue` and `DMDeps.places` the catalogue and the places
+of the newest `/api/ruleset` read's answer. Whether the server accepts any
+of these is SPEC-013's and SPEC-028's.
 
 **The console's conditions.** `renderDMConsole` draws a "Remove condition"
 group whenever an actor of the world holds a condition: one button per
@@ -1300,6 +1454,9 @@ each entry it is sent, and no switch.
   `sheetFor`'s switch until the client handles it.
 - A payload added to the contract needs a line in `describe`, and an answer
   in `STORY` whether the Story draws it, before the client typechecks.
+- A map added to the dump goes through `sortedMap`: built as an object, it
+  writes its integer-like keys first, while Go writes every key in the byte
+  order of its UTF-8.
 - An input or a textarea added to a view needs a `data-field` unique in the
   tree it is drawn in, or a repaint takes its focus, or hands the focus to the
   first box in tree order with the same field.
@@ -1331,13 +1488,15 @@ each entry it is sent, and no switch.
   with it, as when the world adds an id again as another, out of sight, as a
   party member with no attributes, resources or module data, which
   `add_actor`'s description tells the agent never to do (VTT-390). An
-  `abilityGiven`, an `abilityTaken`, a `resourceAdded` or a `resourceRemoved`
-  is no part of a run, so where such a correction sends some, they end it:
+  `abilityGiven`, an `abilityTaken`, a `resourceAdded`, a `resourceRemoved`,
+  a `referenceAdded`, a `referenceRemoved` or a `referenceChanged` is no
+  part of a run, so where such a correction sends some, they end it:
   the conditions behind them are drawn, and they and the grants are not.
 - A party member whose sheet holds no attributes or module data, corrected at
   its first sight in a log that held it unseen, or in its own log when that
   log opens for it already a party member (SPEC-021, SPEC-016), draws no line
-  of its resources, its abilities or its control; each condition it holds is
+  of its resources, its abilities, its references or its control; each
+  condition it holds is
   a bare `conditionApplied` and is drawn, unless the correction sits directly
   behind a run of the same actor (above). A run at a companion's first sight
   draws no line, and its token's arrival is a `tokenPlaced`: the board draws
@@ -1352,6 +1511,11 @@ each entry it is sent, and no switch.
 - A page opened after a give or a take is told nothing of it, since its first
   set hands over nothing (VTT-733), and a reload forgets the names earlier
   answers gave.
+- No player's or spectator's window is told of a change to what a sheet
+  refers to: no set changes for it (SPEC-028) and the Story draws no line
+  of it, so no toast or line tells it, and a player sees it on the panel's
+  sheet of the character they look through once its log is sent the
+  change. Only the DM's and the agent's Events panel words it (above).
 - A creature made a party member in a character log's sight is drawn no
   "<actor> is in the party" line, though the log held it as a creature until
   then: the run that introduces it whole is left out, and so is the
@@ -1434,9 +1598,9 @@ VTT-695, VTT-704, VTT-705, VTT-712, VTT-715, VTT-717, VTT-720,
 VTT-721, VTT-722, VTT-727, VTT-730, VTT-732, VTT-733, VTT-734,
 VTT-737, VTT-752, VTT-753, VTT-758, VTT-759, VTT-769, VTT-770,
 VTT-771, VTT-772, VTT-773, VTT-774, VTT-788, VTT-789, VTT-805,
-VTT-806, VTT-807, VTT-808, VTT-809, VTT-810, VTT-812, VTT-813, VTT-814,
+VTT-806, VTT-807, VTT-808, VTT-810, VTT-812, VTT-813, VTT-814,
 VTT-815, VTT-816, VTT-817, VTT-818, VTT-820, VTT-821,
-VTT-823, VTT-834, VTT-835, VTT-836, VTT-837, VTT-838, VTT-839, VTT-840,
+VTT-823, VTT-834, VTT-835, VTT-836, VTT-837, VTT-838, VTT-839,
 VTT-841, VTT-842, VTT-843, VTT-844, VTT-845, VTT-846, VTT-854, VTT-855,
 VTT-862, VTT-863, VTT-864, VTT-865, VTT-866, VTT-871, VTT-872, VTT-876,
 VTT-881, VTT-882, VTT-883, VTT-885, VTT-886, VTT-887, VTT-888,
@@ -1445,4 +1609,6 @@ VTT-920, VTT-932, VTT-933, VTT-934, VTT-935, VTT-936, VTT-937, VTT-938,
 VTT-939, VTT-940, VTT-947, VTT-948, VTT-950, VTT-951, VTT-952, VTT-953,
 VTT-954, VTT-955, VTT-956, VTT-957, VTT-958, VTT-959, VTT-960, VTT-961,
 VTT-962, VTT-963, VTT-964, VTT-965, VTT-966, VTT-967, VTT-968, VTT-969,
-VTT-974, VTT-979, VTT-983, VTT-984, VTT-985, VTT-987.
+VTT-974, VTT-979, VTT-983, VTT-984, VTT-985, VTT-987, VTT-1023, VTT-1024,
+VTT-1025, VTT-1026, VTT-1028, VTT-1029, VTT-1030, VTT-1055, VTT-1056,
+VTT-1057, VTT-1058, VTT-1074, VTT-1075.

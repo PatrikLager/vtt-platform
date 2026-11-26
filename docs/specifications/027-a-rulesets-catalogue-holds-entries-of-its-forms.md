@@ -46,8 +46,8 @@ Principles 13, 23, 24, 25, 27 and 35 of `docs/blueprint.md`:
   refused when the ruleset loads, with the file and the field named.
 - **27.** An entry is declared once, in the ruleset, and one that extends
   another names it, its values resolved at each load, so a correction to an
-  entry reaches every entry that extends it. No sheet refers to an entry
-  yet (Consequences).
+  entry reaches every entry that extends it, and every sheet that refers
+  to it by its id (SPEC-028).
 - **35.** Every form and every entry is served as data, with its
   description, to every role (SPEC-012).
 
@@ -70,7 +70,7 @@ any property is read, and after the property keys' bound,
 SPEC-018). `loadForms` and `checkManifestBounds` check nothing else of a
 key: its characters are free, and it may equal a property's key or an
 entry's id. The strict decode refuses a field a form does not define
-(VTT-996, SPEC-024).
+(VTT-1018, SPEC-024).
 
 **An entry.** Each `*.json` directly under a ruleset's `catalogue/` is one
 entry. `loadCatalogue` reads them through `jsonFilesIn`, in byte order of
@@ -149,25 +149,29 @@ what it holds, so neither admits the `null` the loader reads as absent for
 `forms`, a form's `properties`, `extends` and `values`.
 
 **The shipped rulesets.** `rulesets/dnd45e-minimal` declares the forms
-`weapon` and `armor`, each over `number` properties it declares for them,
-and a catalogue of its weapons and armor, no entry extending another (`git
-grep -n extends -- rulesets/` prints nothing); `rulesets/tavern-brawl`
-declares no form and has no `catalogue/`. `TestConformanceOverRulesetsGlob`
-loads every ruleset under `rulesets/`. A shipped entry's description holds
-no digit, in the sense SPEC-024 states for an ability's (VTT-1007):
-`checkShippedDescriptions`, which
-`TestEveryShippedCatalogueEntryCarriesADescriptionWithNoDigit` runs over
-the files under `rulesets/*/catalogue/`, refuses the ASCII digits, and
-`TestQASCShippedEntryDescriptionsHoldNoDigit`, in the loaded descriptions,
-any rune `unicode.IsDigit` reports. Each fails when it finds nothing to
-read.
+`weapon` and `armor`, each over `number` properties it declares for them, and
+a catalogue of its weapons and armor, no entry extending another (`git grep -n
+extends -- rulesets/` prints nothing); `rulesets/tavern-brawl` declares no
+form and has no `catalogue/`. The places `rulesets/dnd45e-minimal` declares
+for its weapons and armor, and the references the actors of
+`adventures/goblin-ambush` hold to its entries, are SPEC-028's.
+`TestConformanceOverRulesetsGlob` loads every ruleset under `rulesets/`. A
+shipped entry's description holds no digit, in the sense SPEC-024 states for
+an ability's (VTT-1007): `checkShippedDescriptions`, which
+`TestEveryShippedCatalogueEntryCarriesADescriptionWithNoDigit` runs over the
+files under `rulesets/*/catalogue/`, refuses the ASCII digits, and
+`TestQASCShippedEntryDescriptionsHoldNoDigit`, in the loaded descriptions, any
+rune `unicode.IsDigit` reports. Each fails when it finds nothing to read.
 
 ## Consequences
 
-- No sheet refers to an entry and no ability reads one: `vtt.v1.Actor` has
-  no field for an entry, and outside `internal/rules/load.go` only
-  `handleRuleset` reads `Ruleset.Forms` and `Ruleset.Catalogue` (`git grep
-  -n -E '\.(Catalogue|Forms)([^A-Za-z]|$)' -- '*.go' ':!*_test.go'`). So
+- No ability reads an entry: a sheet refers to one by its id alone, and no
+  ability reads a reference (SPEC-028); outside `internal/rules/load.go`,
+  `handleRuleset` reads `Ruleset.Forms` and `Ruleset.Catalogue`,
+  `formKeyFault` `Ruleset.Forms` and `ReferenceFault` `Ruleset.Catalogue`
+  (`git grep -n -E '\.(Catalogue|Forms)([^A-Za-z]|$)' -- '*.go'
+  ':!*_test.go'`, which also prints `ReferenceFault`'s and
+  `handleRuleset`'s reads of a place's `Forms`). So
   an entry's values decide no outcome: `rulesets/dnd45e-minimal`'s weapons'
   numbers stand both in their entries and in the bindings of the abilities
   that use them, a use rolls the binding, and no test holds the two equal:
@@ -178,7 +182,8 @@ read.
   `range` among them, only with the entry's own file, and
   `qaRRCheckCatalogue`, in `internal/gateway/qa_ruleset_route_test.go`, the
   values `/api/ruleset` serves only with the loaded ones.
-- A property a form lists is a key a sheet may hold (SPEC-025).
+- A property a form lists is a key no sheet holds: a sheet holding one
+  under `attributes` is refused where it enters (SPEC-025).
 - The format gives a form no visibility, so every participant is served
   every form and every entry (SPEC-012); ADR-012 gives a visibility per
   property or per form.
@@ -199,10 +204,13 @@ read.
   document a schema refuses may load, a `null` above or a case variant of a
   field's name, and one it admits may be refused, a value written `1.0` or
   `1e2`, which a JSON Schema `integer` admits, among them.
-- The browser client types both lists, and nothing in `client/src` reads
-  them (`git grep -n -w -E 'forms|catalogue' -- client/src` prints only
-  `RulesetMeta`'s `forms` and `catalogue` and a comment of
-  `client/src/view/dm.ts` on the console's forms).
+- The browser client types both lists and reads the catalogue alone: it
+  names an entry a sheet refers to by it on the panel's sheet, in the
+  Events panel and in the DM console, which offers its entries for an
+  addition, and the panel titles one by its entry's description
+  (SPEC-022); nothing in `client/src` reads a form (`git grep -n -w forms
+  -- client/src` prints only the `forms` of `RulesetMeta` and of `PlaceDef`
+  and a comment of `client/src/view/dm.ts` on the console's forms).
 
 ## Requirements
 

@@ -8,8 +8,10 @@ Accepted. Implemented by `contract/vtt/v1/events.proto`
 `contract/vtt/v1/commands.proto` (`GiveAbility`, `TakeAbility`),
 `internal/engine/apply.go` (`Apply`'s `AbilityGiven`, `AbilityTaken`,
 `ResourceAdded` and `ResourceRemoved` arms), `internal/rules/sheet.go`
-(`SheetFault`, `Ruleset.SheetKeyFault`, `Ruleset.SheetAbilityFault`,
-`Ruleset.SheetSpendFault`, `Ruleset.Spends`, `Offers`),
+(`SheetFault`, `Ruleset.SheetKeyFault`, `formKeyFault`,
+`Ruleset.SheetAbilityFault`, `Ruleset.SheetSpendFault`, `Ruleset.Spends`,
+`Offers`), `internal/rules/conformance/conformance.go`
+(`buildFixtureState`, `unheldRead`),
 `internal/adventure/load.go` (`actorJSON`, `resourceValJSON`, `loadActors`,
 `actorValues`), `internal/adventure/format.go` (`AdventureActor`),
 `internal/adventure/compile.go` (`buildActor`),
@@ -24,7 +26,8 @@ Accepted. Implemented by `contract/vtt/v1/events.proto`
 (`sheetsFit`), `internal/mcp/resource_current.go` (`refuseValuelessCurrent`),
 `client/src/commands.ts` (`valuelessCurrent`) and `tools/toolgen/main.go`
 (`add_actor`'s, `give_ability`'s and `take_ability`'s docs and
-`vtt.v1.Resource`'s override). Pinned by
+`vtt.v1.Resource`'s override), with `getRulesetDescription` in
+`internal/mcp/ruleset_tool.go` for a key a catalogue form lists. Pinned by
 `internal/rules/sheet_test.go`, `internal/rules/qa_sheet_key_test.go`,
 `internal/rules/qa_sheet_ability_test.go`, `internal/rules/offers_test.go`,
 `internal/rules/qa_offers_test.go`, `internal/rules/spends_test.go`,
@@ -70,14 +73,26 @@ Accepted. Implemented by `contract/vtt/v1/events.proto`
 `cmd/vtt/qa_campaign_abilities_fit_test.go`, `cmd/vtt/qa_use_unnamed_test.go`,
 `cmd/vtt/campaign_spend_fit_test.go`, `cmd/vtt/qa_serve_spend_test.go`,
 `tools/toolgen/main_test.go`, `tools/toolgen/qa_add_actor_schema_test.go`
-and `tools/toolgen/qa_add_actor_abilities_doc_test.go`.
+and `tools/toolgen/qa_add_actor_abilities_doc_test.go`, and, for a key a
+catalogue form lists, by `internal/rules/sheet_item_value_test.go`,
+`internal/rules/qa_item_value_test.go`,
+`internal/gateway/add_actor_item_value_internal_test.go`,
+`internal/gateway/qa_add_actor_item_value_test.go`,
+`internal/adventure/actor_item_value_test.go`,
+`internal/adventure/qa_item_value_test.go`,
+`cmd/vtt/campaign_item_value_fit_test.go`,
+`internal/rules/conformance/form_listed_property_test.go`,
+`internal/rules/conformance/qa_form_listed_property_test.go`,
+`internal/mcp/qa_item_value_description_test.go` and
+`internal/mcp/ruleset_tool_test.go`.
 
 ## Principles served
 
 Principles 26, 27 and 34 of `docs/blueprint.md`:
 
 - **26.** An actor that gives a key the ruleset does not declare, or under
-  the other type's map, that names an ability the ruleset does not hold,
+  the other type's map, that holds under `attributes` a key a catalogue
+  form lists, that names an ability the ruleset does not hold,
   that names a limited ability without the resource it spends, or that
   holds a resource some ability of the ruleset spends while no ability it
   names spends it, is refused when an adventure holding it is loaded and
@@ -88,7 +103,8 @@ Principles 26, 27 and 34 of `docs/blueprint.md`:
   bring that resource's value; each refusal names the key or the ability,
   and the actor or its file.
 - **27.** A sheet names the ruleset's abilities it has by their ids and
-  holds nothing else of them, and a character is offered only what its
+  holds nothing else of them, and it holds no value a catalogue form
+  lists, which is that form's entries'; a character is offered only what its
   sheet names: a use (SPEC-013) and a player's read of the ruleset
   (SPEC-012) ask `rules.Offers` of the sheet, and the panel asks
   `sheetNames` (SPEC-022).
@@ -102,7 +118,9 @@ Principles 26, 27 and 34 of `docs/blueprint.md`:
   `abilityIds` refuses the command with or without a ruleset served
   (VTT-749), and that with a ruleset served so does an ability that spends a
   resource the actor does not hold, or a resource some ability spends that no
-  ability the actor names spends (VTT-786); its schema requires a resource's
+  ability the actor names spends (VTT-786), and so does a key a catalogue
+  form lists, as `get_ruleset`'s description says too (VTT-1014); its
+  schema requires a resource's
   `current` and not its `max` (VTT-674). `give_ability`'s description says
   when its `resources` is required and when it is refused, and
   `take_ability`'s which resource leaves with the ability (VTT-785,
@@ -115,7 +133,8 @@ values: an actor's `attributes`, each a number under a property's key, and
 its `resources`, each a `current`, and a `max` if it has one, under a
 property's key; and the abilities the sheet names. Which keys and which
 abilities fit is below. The sheet SPEC-016 sends a character log also holds
-the actor's module data and conditions, which this record does not read.
+the actor's module data and conditions, which this record does not read,
+and its references to catalogue entries, which SPEC-028 reads.
 How an expression reads a value is SPEC-024's.
 
 **A sheet's abilities.** `Actor.ability_ids`, field 10 of `vtt.v1.Actor`
@@ -226,14 +245,24 @@ that leaves its caller's keys in their order, and answers the first that
 does not fit as a `SheetFault`: the map that holds it, the key, and the
 reason, `references undeclared property "<key>"` for a key no property
 declares (VTT-617) or `gives <type> property "<key>" a <type>'s value` for a
-key under the other type's map (VTT-618).
+key under the other type's map (VTT-618). When every key fits, it reads the
+`attributes` keys again, in byte order, from a sorted copy, and answers,
+through `formKeyFault`, the first that a catalogue form lists, a value that
+is the form's entries' and never a sheet's: the field `attributes`, the
+key, `SheetFault.Form`, the first form in declared order that lists it,
+and the reason `holds property "<key>", which form "<form>" lists for its
+entries` (VTT-1010). It reads no `resources` key for it: a form lists
+`number` properties alone (SPEC-027), so such a key under `resources` is
+already answered as a key under the other type's map.
 
 **Where a sheet is read.** `SheetKeyFault`, `SheetAbilityFault` and
 `SheetSpendFault` have the callers below, and `git grep -nE
 'Sheet(Key|Ability|Spend)Fault\(' -- '*.go' ':!*_test.go'` finds no other
-beside their definitions. Where a caller reads a whole sheet it asks for the
-keys first, for the ability ids only when every key fits, and for the spend
-rule only when every id is held, so a sheet is refused for its first fault.
+beside their definitions but `buildFixtureState`'s (Consequences). Where a
+caller reads a whole sheet it asks for the keys first, for the ability ids
+only when every key fits, for the spend rule only when every id is held,
+and for its references only when the spend rule holds (SPEC-028), so a
+sheet is refused for its first fault.
 Where a sheet enters the campaign, by `add_actor`, with a ruleset served or
 none, or by `adventure.Load`, which always reads against one, an empty ability
 id is refused in words of its own, before the ids are read against a ruleset,
@@ -241,12 +270,13 @@ while both folds keep their own refusal of an `AbilityGiven` whose id is
 empty:
 - `adventure.Load`, through `loadActors`, for each actor file, after its
   refusals of the actor's id, name and kind: its keys, as
-  `adventure: <path>: field "<map>": <reason>`; then its values (below);
+  `adventure: <path>: field "<map>": <reason>`, a key a catalogue form
+  lists among them (VTT-1063); then its values (below);
   then an `ability_ids` holding an empty id, as `adventure: <path>: field
   "ability_ids": must not hold an empty id` (VTT-748); then its ability
   ids, as `adventure: <path>: field "ability_ids": <reason>` (VTT-751);
   then the spend rule, as `adventure: <path>: field "<field>": <reason>`
-  (VTT-776).
+  (VTT-776); then its references (SPEC-028).
   `adventure.Load` always reads against a ruleset: it compares the
   adventure's declared ruleset with the one it is handed before it reads
   an actor.
@@ -254,10 +284,12 @@ empty:
   `validateAddActorWith`, `validateAddActorSheet` and `sheetFault`, after
   `validateAddActor`'s refusals (SPEC-013) and only for an actor with an
   id, as `gateway: add_actor: actor "<id>": <field>: <reason>`: with a
-  ruleset served, its keys, the field being the map (VTT-677); then, with a
+  ruleset served, its keys, the field being the map (VTT-677), a key a
+  catalogue form lists among them (VTT-1062); then, with a
   ruleset served or none, an `ability_ids` holding an empty id, with the
   reason `must not hold an empty id` (VTT-747); then, with a ruleset served,
-  its ability ids (VTT-750); then the spend rule (VTT-775). With none,
+  its ability ids (VTT-750); then the spend rule (VTT-775); then its
+  references (SPEC-028). With none,
   neither a key, nor a non-empty ability id, nor an ability against a
   resource is read against one (VTT-675, VTT-746, VTT-778).
 - `handleCommand`, for a `give_ability`, through `validateForm` and
@@ -272,19 +304,19 @@ empty:
   not. With none served it refuses a
   give carrying any `resources` and reads nothing else (SPEC-013).
 - `composeServer`, through `sheetsFit`, when it is handed a ruleset, as
-  `vtt serve --ruleset` hands it one: right after the ruleset loads and
-  before any adventure, it reads every actor `campaign.Campaign.Actors`
-  holds and, when any does not fit, closes the identity store and the
-  campaign and refuses the boot with
+  `vtt serve --ruleset` hands it one: right after the ruleset loads and before
+  any adventure, it reads every actor `campaign.Campaign.Actors` holds and,
+  when any does not fit, closes the identity store and the campaign and
+  refuses the boot with
   `vtt serve: ruleset <dir>: the campaign's actors do not fit it: ` and,
-  joined by `; `, `actor "<id>": <field>: <reason>` for every actor that
-  does not fit, each with its first fault, its keys, then its ability ids,
-  then the spend rule, in byte order of their ids (VTT-678, VTT-681,
+  joined by `; `, `actor "<id>": <field>: <reason>` for every actor that does
+  not fit, each with its first fault, its keys, a key a catalogue form lists
+  among them (VTT-1064), then its ability ids, then the spend rule, then its
+  references (SPEC-028), in byte order of their ids (VTT-1065, VTT-681,
   VTT-688, VTT-777). With no ruleset, nothing is read (VTT-676, VTT-689,
-  VTT-778). `composeServer` reads no ruleset id from the log, so a
-  campaign whose log names a ruleset of another id is served when its
-  sheets fit, and its next use or take records the switch (SPEC-026,
-  VTT-977).
+  VTT-778). `composeServer` reads no ruleset id from the log, so a campaign
+  whose log names a ruleset of another id is served when its sheets fit, and
+  its next use or take records the switch (SPEC-026, VTT-977).
 
 **A sheet's values in an adventure.** `actorJSON` and `resourceValJSON`
 decode an actor file's values through pointers, so `actorValues` sees what
@@ -343,7 +375,8 @@ left out is a `0`.
 ## Consequences
 
 - An actor gives only the keys its ruleset declares, each in its type's
-  map, and names only abilities its ruleset holds, whether it comes from an
+  map and none under `attributes` that a catalogue form lists, and names
+  only abilities its ruleset holds, whether it comes from an
   adventure or through `add_actor`, or is given one by `give_ability`, and
   a campaign served with a ruleset holds no other. With a ruleset served,
   it names a limited ability only beside the resource that ability spends,
@@ -390,11 +423,19 @@ left out is a `0`.
   A character whose sheet names no ability can use none (SPEC-013) until it
   is given one.
 - A `number` property a form lists (SPEC-027) is declared in `properties`
-  as any other, so `SheetKeyFault` reads it as any number property's key:
-  a sheet may hold a value under it, and no reader under **Where a sheet is
-  read** refuses it. `rulesets/dnd45e-minimal/guide.md` tells the agent
-  never to set one on a creature; neither `get_ruleset`'s description nor
-  `add_actor`'s says so.
+  as any other, so an expression may read it and a `values` section of a
+  sheet may name it (SPEC-024), but no sheet holds a value under it: every
+  reader under **Where a sheet is read** refuses one under `attributes`,
+  and `add_actor`'s description of `attributes` and `get_ruleset`'s say so
+  (VTT-1014). An expression that reads such a key from an actor reads a key
+  no sheet holds, so `Resolve` refuses a use that evaluates it, as it does
+  any key the actor's sheet does not hold. `conformance.Run`'s smoke pass,
+  whose `buildFixtureState` gives its fixture actors only the number
+  properties `SheetKeyFault` accepts alone, fails a ruleset an ability of
+  which reads one from its caster or its target, in its resolution's roll
+  or `vs` or a resource change of either branch or of its effects, naming
+  the first such ability in byte order of ids when no ability before it
+  fails the smoke pass (VTT-1066).
 - A take never removes a resource no ability of the ruleset spends, nor,
   save two writers at once (below), one another ability on the sheet
   spends.
@@ -423,10 +464,11 @@ left out is a `0`.
 ## Requirements
 
 VTT-617, VTT-618, VTT-670, VTT-671, VTT-672, VTT-674, VTT-675, VTT-676,
-VTT-677, VTT-678, VTT-679, VTT-680, VTT-681, VTT-683, VTT-684, VTT-688,
+VTT-677, VTT-679, VTT-680, VTT-681, VTT-683, VTT-684, VTT-688,
 VTT-689, VTT-690, VTT-700, VTT-715, VTT-717, VTT-718, VTT-720, VTT-721,
 VTT-722, VTT-729, VTT-746, VTT-747, VTT-748, VTT-749, VTT-750, VTT-751,
 VTT-760, VTT-764, VTT-768, VTT-769, VTT-770, VTT-771, VTT-772,
 VTT-773, VTT-775, VTT-776, VTT-777, VTT-778, VTT-785, VTT-786, VTT-787,
 VTT-789, VTT-791, VTT-792, VTT-802, VTT-804, VTT-977, VTT-988, VTT-990,
-VTT-991.
+VTT-991, VTT-1010, VTT-1014, VTT-1062, VTT-1063, VTT-1064, VTT-1065,
+VTT-1066.

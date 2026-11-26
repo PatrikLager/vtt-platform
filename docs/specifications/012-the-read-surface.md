@@ -25,10 +25,13 @@ through `readMetadata` in `internal/mcp/door_tools.go`; pinned by
 `qa_art_root_test.go`, `sheet_route_test.go`, `qa_sheet_route_test.go`,
 `ability_description_route_test.go`,
 `qa_ability_description_route_test.go`, `catalogue_route_test.go`,
-`qa_catalogue_route_test.go`,
+`qa_catalogue_route_test.go`, `places_route_test.go`,
+`qa_places_route_test.go`,
 `internal/mcp/ruleset_tool_test.go`,
 `internal/mcp/qa_ruleset_tool_description_test.go`,
 `internal/mcp/qa_ruleset_catalogue_test.go`,
+`internal/mcp/qa_places_description_test.go`,
+`internal/mcp/qa_item_value_description_test.go`,
 `cmd/vtt/qa_get_ruleset_test.go`, `cmd/vtt/qa_ruleset_by_role_test.go` and,
 for the default cell size, `cmd/vtt/art_test.go`.
 
@@ -45,13 +48,14 @@ Principles 6, 7, 15 and 35 of `docs/blueprint.md`:
   and nothing is cached.
 - **35.** A ruleset is served as data to whoever may see each part of it: a
   summary of every ability, with the ruleset's description of it where it
-  gives one, to the DM and the agent, and to a player of each ability named
-  by the sheets of the actors they control; its conditions, every property
-  it declares with its display name and explanation, the layout of its
-  sheet, its name for an ability that spends no resource, and its forms
-  and its catalogue, each entry with its explanation and its values, to
-  every role; its guide to the DM and the agent. How an ability resolves, and
-  what a resource carries beyond its words, is not served.
+  gives one, to the DM and the agent, and to a player of each ability named by
+  the sheets of the actors they control; its conditions, every property it
+  declares with its display name and explanation, the layout of its sheet, its
+  name for an ability that spends no resource, its forms and its catalogue,
+  each entry with its explanation and its values, and the places on its sheet,
+  each with its explanation, to every role; its guide to the DM and the agent.
+  How an ability resolves, and what a resource carries beyond its words, is
+  not served.
 
 ## How it works
 
@@ -98,17 +102,17 @@ of the caller itself. The HTTP role maps are not cells of `commandRoles` in
 
 **Empty is not an error, and a missing guide is.** `handleRuleset` builds its
 answer with every slice non-nil (`Abilities`, `Conditions`, `Resources`,
-`Properties`, `Sheet`, `Forms` and `Catalogue` start as empty slices), and
-`handleAdventures` and `handleMaps` start from an empty slice, so a server
-with nothing loaded answers `/api/ruleset`, `/api/adventures` and `/api/maps`
-with status 200 and `[]` where a client expects an array, never `null`. A
-guide is different. Each guide route asks the role right after `authed`, so a
-player and a spectator are answered 403 whether or not the guide exists; to
-the DM and the agent, `handleRulesetGuide` answers 404 with `gateway: no
-ruleset guide available` when there is no ruleset or its `Guide` is empty, and
-`handleAdventureGuide` answers 404 with `gateway: no guide for that adventure`
-when the id names no guide or an empty one, because an empty document would
-read as a broken one (VTT-711).
+`Properties`, `Sheet`, `Forms`, `Catalogue` and `Places` start as empty
+slices), and `handleAdventures` and `handleMaps` start from an empty slice, so
+a server with nothing loaded answers `/api/ruleset`, `/api/adventures` and
+`/api/maps` with status 200 and `[]` where a client expects an array, never
+`null`. A guide is different. Each guide route asks the role right after
+`authed`, so a player and a spectator are answered 403 whether or not the
+guide exists; to the DM and the agent, `handleRulesetGuide` answers 404 with
+`gateway: no ruleset guide available` when there is no ruleset or its `Guide`
+is empty, and `handleAdventureGuide` answers 404 with
+`gateway: no guide for that adventure` when the id names no guide or an empty
+one, because an empty document would read as a broken one (VTT-711).
 
 **What `/api/me` answers.** `handleMe` writes `meJSON`: the `participantId`
 and `name` of the `identity.Participant` `authed` returned, and the `role`
@@ -135,18 +139,22 @@ section `sheetSectionJSON` with its `name`, its `kind` and the one list its
 kind names: `values`, the property keys, in order, for `kind` `values`; none
 for `kind` `conditions`; `abilities`, its usages in order, each a `usageJSON`
 with no cost, `{"kind": "atWill"}` or `{"kind": "resource", "resource":
-<key>}`, for `kind` `abilities` (VTT-831). `sheet` is `[]` when no ruleset is
-loaded or the loaded one declares none (VTT-832). `freeUsageName` is the
-ruleset's name for an ability that spends no resource, and the field is absent
-when the ruleset names none or none is loaded (VTT-859). `forms` is the
-ruleset's forms as `formJSON`, in declared order, each with its `key`, `name`,
-`description` and `properties`, the property keys it lists, in order, `[]`
-when it lists none (VTT-1004); `catalogue` is its entries as `entryJSON`, each
-with its `id`, `name`, `description`, `form` and `values`, an object from each
-property key the entry holds a value under, after what it extends, to that
-value, and `{}` when it holds none, since `rules.Load` gives every entry a
-non-nil `Values` (VTT-1005, SPEC-027); no entry's `extends` is served. Each of
-the two is `[]` when no ruleset is loaded or the loaded one declares none. A
+<key>}`, for `kind` `abilities` (VTT-831); `places`, the place keys, in order,
+for `kind` `places` (VTT-1053). `sheet` is `[]` when no ruleset is loaded or
+the loaded one declares none (VTT-832). `freeUsageName` is the ruleset's name
+for an ability that spends no resource, and the field is absent when the
+ruleset names none or none is loaded (VTT-859). `forms` is the ruleset's forms
+as `formJSON`, in declared order, each with its `key`, `name`, `description`
+and `properties`, the property keys it lists, in order, `[]` when it lists
+none (VTT-1004); `catalogue` is its entries as `entryJSON`, each with its
+`id`, `name`, `description`, `form` and `values`, an object from each property
+key the entry holds a value under, after what it extends, to that value, and
+`{}` when it holds none, since `rules.Load` gives every entry a non-nil
+`Values` (VTT-1005, SPEC-027); no entry's `extends` is served. `places` is its
+places as `placeJSON`, in declared order, each with its `key`, `name`,
+`description`, `forms`, the form keys it lists, in order, `copies` and
+`states`, in order, `[]` when it names none (VTT-1052, SPEC-028). Each of the
+three is `[]` when no ruleset is loaded or the loaded one declares none. A
 resource's `default_max_expr` and thresholds are not served. Which abilities
 it writes is decided on every request by `abilitiesReadBy`, from the
 participant `authed` returned: for the DM and the agent, every ability
@@ -162,18 +170,19 @@ between requests, so an ability given to or taken from an actor a player
 controls is in or out of that player's next answer, as a grant or a revocation
 is (`TestAPlayersReadFollowsAGiveAndATake`). An id a sheet names that
 `Compiled` does not hold is not written. `conditions`, `resources`,
-`properties`, `sheet`, `freeUsageName`, `forms` and `catalogue` are every
-role's (VTT-710, VTT-619, VTT-631, VTT-831, VTT-859, VTT-1004, VTT-1005): the
-sheet names property keys and usages, never an ability, and a form and an
-entry name no ability, so none of them holds anything `abilitiesReadBy` would
-filter, and an ability's description is written with its ability, so it
-reaches whoever that ability reaches. The abilities are filtered as they are
-read from `Compiled`, and then they, the conditions and the catalogue are
-sorted by id with `slices.SortFunc`, because `rules.Ruleset.Compiled`,
-`Conditions` and `Catalogue` are maps and Go randomises map iteration;
-`resources` and `properties` are built from `rules.Ruleset.Properties`,
-`sheet` from `rules.Ruleset.Sheet` and `forms` from `rules.Ruleset.Forms`,
-slices, and keep the ruleset's declared order. `handleRulesetGuide` writes
+`properties`, `sheet`, `freeUsageName`, `forms`, `catalogue` and `places` are
+every role's (VTT-710, VTT-619, VTT-631, VTT-831, VTT-859, VTT-1004, VTT-1005,
+VTT-1052): the sheet names property keys, usages and places, never an ability,
+and a form, an entry and a place name no ability, so none of them holds
+anything `abilitiesReadBy` would filter, and an ability's description is
+written with its ability, so it reaches whoever that ability reaches. The
+abilities are filtered as they are read from `Compiled`, and then they, the
+conditions and the catalogue are sorted by id with `slices.SortFunc`, because
+`rules.Ruleset.Compiled`, `Conditions` and `Catalogue` are maps and Go
+randomises map iteration; `resources` and `properties` are built from
+`rules.Ruleset.Properties`, `sheet` from `rules.Ruleset.Sheet`, `forms` from
+`rules.Ruleset.Forms` and `places` from `rules.Ruleset.Places`, slices, and
+keep the ruleset's declared order. `handleRulesetGuide` writes
 `{"guide": ...}` with the ruleset's `Guide` markdown, to the DM and the agent.
 
 **The agent's reader.** The MCP tool `get_ruleset`, which
@@ -197,7 +206,14 @@ loaded; and that it answers, to every role, as `forms`, each form in the
 ruleset's order with its key, name, description and `properties`, and, as
 `catalogue`, every entry sorted by id with its id, name, description,
 `form` and `values`, its numbers keyed by property after what it extends,
-each `[]` when the ruleset declares none (VTT-1006).
+each `[]` when the ruleset declares none (VTT-1006); that it answers, to
+every role, as `places`, each place in the ruleset's order with its key,
+name, description, `forms`, `copies` and `states`, `states` `[]` when the
+place names none and `places` `[]` when the ruleset declares none, and
+that a section of the kind `places` shows the references in the places it
+lists, each by its key (VTT-1054); and that a key a catalogue form lists
+names a value of the form's entries and is refused on a sheet, `add_actor`
+refusing an actor that holds one under `attributes` (VTT-1014, SPEC-025).
 `get_ruleset_guide`'s description points to `get_ruleset` for what a
 property means. `get_ruleset_guide` (`handleGetRulesetGuide`) reads no
 route: it answers with the guide `vtt mcp --ruleset` loaded from its own
@@ -349,8 +365,9 @@ A client author is bound by these:
   grant, a revocation, a give or a take; when the browser client reads it
   again is SPEC-022's.
 - What a property means is read from `/api/ruleset`'s `properties`, or
-  `get_ruleset`, and not from a guide (SPEC-024), and how a sheet is laid
-  out from its `sheet`.
+  `get_ruleset`, and not from a guide (SPEC-024), how a sheet is laid out
+  from its `sheet`, and where it holds references from its `places`
+  (SPEC-028).
 - An entry's `values` are those it holds after what it extends, and no
   `extends` is served, so a reader cannot tell a value an entry sets from
   one it inherits (SPEC-027).
@@ -376,4 +393,4 @@ VTT-137, VTT-578, VTT-581, VTT-619, VTT-620, VTT-621, VTT-631, VTT-632,
 VTT-633, VTT-682, VTT-691, VTT-692, VTT-693, VTT-694, VTT-702, VTT-709,
 VTT-710, VTT-711, VTT-831, VTT-832, VTT-833, VTT-851, VTT-852, VTT-853,
 VTT-859, VTT-860, VTT-889, VTT-975, VTT-976, VTT-1004, VTT-1005,
-VTT-1006.
+VTT-1006, VTT-1052, VTT-1053, VTT-1054.

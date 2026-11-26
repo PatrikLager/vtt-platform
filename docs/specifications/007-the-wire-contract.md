@@ -93,7 +93,25 @@ by `TestAddWhisperCommandRoundTrip` and `TestWhisperAddedEnvelopeRoundTrip` in
 log names, by `TestRulesetNamedEnvelopeRoundTrip` in
 `contract/roundtrip_test.go`, and a take's batch opening with it, by
 `TestATakeNamesTheServedRulesetFirstWhenTheLogNamesNoneOrAnother` in
-`internal/gateway/ruleset_named_test.go` (VTT-988, VTT-992).
+`internal/gateway/ruleset_named_test.go` (VTT-988, VTT-992); a sheet's
+references, by `TestActorWithReferencesRoundTrip`,
+`TestReferenceAddedEnvelopeRoundTrip`,
+`TestReferenceRemovedEnvelopeRoundTrip` and
+`TestReferenceChangedEnvelopeRoundTrip` in `contract/roundtrip_test.go` and
+by `contract/qa_reference_roundtrip_test.go` (VTT-1027), their tools' texts
+by `TestAddActorSaysWhatASheetsReferencesAre`,
+`TestAddActorSaysWhatAReferenceRefuses` and
+`TestTheReferenceToolsSayWhatTheyChangeWhatTheyRefuseAndWhoMayUseThem` in
+`tools/toolgen/main_test.go` and by
+`internal/gateway/qa_reference_commands_test.go` (VTT-1051), what the tools
+require by `TestAReferenceRequiresItsEntryAndItsPlaceAndNotItsState` and
+`TestTheReferenceToolsRequireWhatTheyCannotDoWithout` there, and what they
+send by `internal/mcp/reference_tools_test.go` and
+`cmd/vtt/mcp_reference_change_e2e_test.go`; and that `add_actor`'s
+`attributes` says a key a catalogue form lists is refused, by
+`TestAddActorSaysAKeyACatalogueFormListsIsRefusedOnASheet` in
+`tools/toolgen/main_test.go` and by
+`internal/mcp/qa_item_value_description_test.go` (VTT-1014).
 Gated by `task check:drift` and `task check:breaking`, both inside `task
 check`.
 
@@ -157,7 +175,10 @@ annotation is what `tools/toolgen` reads, unless its manifest replaces a
 message's `required` list for one tool, wherever that tool's schema reaches
 the message (`fieldOverride.requiredOverride`). `add_actor`'s
 `vtt.v1.Resource` requires `current` alone, so a resource's `max` may be
-left out for none (VTT-674).
+left out for none (VTT-674). `referenceOverride` makes a `vtt.v1.Reference`
+require `entryId` and `place` alone, in `add_actor` and `add_reference`,
+and `change_reference` requires `actorId`, `referenceId` and `place`, so a
+reference's `state` may be left out for none.
 
 ### A token's texts and an ability's outcomes
 
@@ -258,6 +279,42 @@ hold and an ability its sheet does not name. Each says that each
 player who controls the actor while it is a party member is told
 (VTT-735), which `WatchableChanged` carries (below) and SPEC-022's window
 shows.
+
+### A sheet's references
+
+`Actor` carries `references` (field 11), a `map<string, Reference>` keyed
+by each reference's id, and `Reference` carries `entry_id` (field 1),
+`place` (field 2) and `state` (field 3). `AddReference`, `RemoveReference`
+and `ChangeReference`, arms 39, 40 and 41 of `ClientCommand.command`, and
+`ReferenceAdded`, `ReferenceRemoved` and `ReferenceChanged`, arms 41, 42 and
+43 of `Envelope.payload`, each carry an `actor_id` (field 1) and a
+`reference_id` (field 2); an addition also carries a `reference` (field 3),
+and a change a `place` (field 3) and a `state` (field 4), and no entry.
+`ToEvent` makes each command its event, copying every field. What a
+reference is, where a sheet's references are read against the ruleset, and
+what each command appends and refuses are SPEC-028's; who may send each,
+SPEC-013's; what a character log is sent of each, SPEC-016's; what a client
+holds and shows of them, SPEC-022's.
+
+`add_actor`'s tool documents `references` as optional: the sheet's
+references to catalogue entries, each under a reference id the caller gives
+it, the sheet's own, so two sheets may use one id, each naming its entry by
+its id in the served ruleset's catalogue, the place on the sheet that holds
+it and its state there. It says which references refuse the whole command
+with a ruleset served, and that an empty reference id refuses it with a
+ruleset served or none (VTT-1051). Its `attributes` says that, with a
+ruleset served, a key a catalogue form lists refuses the whole command
+(VTT-1014).
+
+The `add_reference`, `change_reference` and `remove_reference` tools each
+say what changes and that nothing else does, what each refuses with a
+ruleset served and with none, appending nothing, that no player is sent a
+message of the change and that whoever is sent the sheet sees it there, and
+that each is the DM's and the agent's alone (VTT-1051), where
+`give_ability`'s and `take_ability`'s say that each controlling player is
+told. `change_reference` says to send the place and the state whole, the
+place even when it stays, and that a reference keeps its entry, so naming
+another entry is a removal and an addition.
 
 ### The ruleset the log names
 
@@ -471,6 +528,11 @@ nothing.
 already revoked, and a removal refused for its target revokes nobody and
 appends nothing (VTT-564, SPEC-009).
 
+`add_reference`, `change_reference` and `remove_reference` are refused for
+what SPEC-028 states, and a refusal appends nothing: the gateway's names
+the command, the actor and the field, `reference_id` or `references`, and
+the fold's is `engine.Apply`'s text (SPEC-013).
+
 `set_join_door`, `grant_actor_control`, `promote_participant` and
 `remove_participant` are DM and agent only. `revoke_actor_control` is open to a
 player as well, who may revoke only control they themselves hold
@@ -568,4 +630,5 @@ VTT-184, VTT-232, VTT-473, VTT-479, VTT-480, VTT-505, VTT-559, VTT-560,
 VTT-561, VTT-562, VTT-563, VTT-567, VTT-591, VTT-674, VTT-700, VTT-701,
 VTT-729, VTT-735, VTT-749, VTT-785, VTT-786, VTT-799, VTT-877, VTT-878,
 VTT-894, VTT-895, VTT-896, VTT-897, VTT-898, VTT-899, VTT-900, VTT-913,
-VTT-926, VTT-988, VTT-990, VTT-991, VTT-992.
+VTT-926, VTT-988, VTT-990, VTT-991, VTT-992, VTT-1014, VTT-1027,
+VTT-1051.

@@ -34,7 +34,8 @@ Pinned by `internal/store/character_log_test.go`,
 `append_watch_test.go`, `qa_append_watch_test.go`,
 `every_log_told_test.go`, `character_log_oracle_test.go`,
 `ability_reopen_test.go`, `qa_ability_reopen_test.go`,
-`resource_reopen_test.go`, `ruleset_named_log_test.go`,
+`resource_reopen_test.go`, `reference_reopen_test.go`,
+`qa_reference_reopen_test.go`, `ruleset_named_log_test.go`,
 `qa_ruleset_named_log_test.go` and `poison_internal_test.go`, by
 `internal/perceive/resume_from_fold_test.go`, and, for a creature a player
 runs, by `internal/gateway/creature_test.go`, `qa_creature_test.go`,
@@ -176,7 +177,11 @@ log that holds a party member's ability ids in another order than the world's
 sheet included (`TestACampaignReopenedAfterAGiveResumesEveryLog`,
 `TestQAAbilityReopenResumesALogHoldingTheIdsInAnotherOrder`), as is one
 written while a party member's resources were added and removed
-(`TestACampaignReopenedAfterResourcesAddedAndRemovedResumesEveryLog`). No
+(`TestACampaignReopenedAfterResourcesAddedAndRemovedResumesEveryLog`), and
+one written while a party member's references were added, changed and
+taken off
+(`TestACampaignReopenedAfterReferencesAddedChangedAndRemovedResumesEveryLog`,
+`TestQARCACampaignReopenedAfterReferenceChangesResumesEveryLog`, VTT-1036). No
 entry is changed or removed once written (VTT-326): `grep -rln
 'character_events' --include='*.go' . | grep -v _test.go` prints only
 `internal/store/store.go`, whose statements on the table are its `CREATE
@@ -292,4 +297,4 @@ VTT-315, VTT-316, VTT-319, VTT-320, VTT-321, VTT-322, VTT-323,
 VTT-324, VTT-325, VTT-326, VTT-327, VTT-328, VTT-329, VTT-330, VTT-331,
 VTT-332, VTT-333, VTT-334, VTT-335, VTT-336, VTT-337, VTT-353, VTT-354,
 VTT-355, VTT-356, VTT-357, VTT-371, VTT-372, VTT-373, VTT-390, VTT-391,
-VTT-392, VTT-909, VTT-931, VTT-980, VTT-981, VTT-982.
+VTT-392, VTT-909, VTT-931, VTT-980, VTT-981, VTT-982, VTT-1036.

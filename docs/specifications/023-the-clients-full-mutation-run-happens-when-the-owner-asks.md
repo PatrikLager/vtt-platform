@@ -62,8 +62,13 @@ over every file below, by path and content (VTT-516):
 - under `campaigns/example/art`, the `.png` and `.json` files, the suffixes of
   `internal/artlib`;
 - the files `stryker.conf.json`, `package.json`, `bun.lock`, `bun.lockb`,
-  `client/tsconfig.json`, `contract/gen/tools/tools.json` and
-  `campaigns/example/maps/cellar.json`.
+  `client/tsconfig.json`, `contract/gen/tools/tools.json`,
+  `campaigns/example/maps/cellar.json`,
+  `rulesets/dnd45e-minimal/ruleset.json`,
+  `rulesets/dnd45e-minimal/catalogue/longsword.json`,
+  `rulesets/dnd45e-minimal/catalogue/chainmail.json`,
+  `rulesets/dnd45e-minimal/catalogue/crossbow.json` and
+  `adventures/goblin-ambush/actors/act-fighter.json`.
 
 Each tree must exist, or the hasher prints no hash, only an error on stderr,
 and exits 1. It reads the working tree, so an untracked file with a hashed

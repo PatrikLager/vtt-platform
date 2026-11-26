@@ -7,28 +7,29 @@ Accepted. Implemented by `internal/engine/apply.go` (the const block with
 `maxMoveReasonBytes`, `maxNameBytes` and `maxIDBytes`, and `Apply`'s
 `SessionStarted`, `SceneCreated`, `ActorAdded`, `TokenPlaced`, `TokenMoved`,
 `NarrationAdded`, `WhisperAdded`, `NoteUpserted`, `AdventureLoaded`,
-`RulesetNamed`,
-`AbilityUsed`, `ConditionApplied`, `ResourceAdded`, `ActorControlGranted` and
-`ActorControlRevoked` arms, the last two through `controlTarget`,
-`keyLength` for an actor's keys, and the `AbilityGiven` and `AbilityTaken`
-arms, which bound no ability id) and its TypeScript mirror
-`client/src/fold.ts` (`checkLen`, `checkKeys` for an actor's keys, the
-same arms, the control arms through `requireControlTarget`, and the
-`abilityGiven` and `abilityTaken` arms); mirrored for an adventure's notes,
-opening narration, names and ids by `internal/adventure/load.go`'s constants and for a map's name
-and ids by `internal/mapdef/load.go`'s `maxNameBytes` and `maxIDBytes`, for a
-map's and an adventure's scene objects' ids by `internal/mapdef`'s
-`CheckObjectIDs`, which both loaders call, and for a ruleset's ability,
-condition and catalogue entry ids, property keys, form keys and branch
-labels by `internal/rules/load.go`'s `maxIDBytes`, which the ruleset schemas in
-`internal/rules/schema/` state, and for a ruleset's manifest id, version
-and name by its `checkManifestBounds`, with `maxIDBytes` and
-`maxNameBytes`; stated to an agent by
-`tools/toolgen/main.go`'s `manifest` for `move_token`'s `reason`,
-`add_actor`'s actor `name`, `actorId`, `moduleId`, `attributes` and
+`RulesetNamed`, `AbilityUsed`, `ConditionApplied`, `ResourceAdded`,
+`ActorControlGranted` and `ActorControlRevoked` arms, the last two through
+`controlTarget`, `keyLength` for an actor's keys, and the `AbilityGiven` and
+`AbilityTaken` arms, which bound no ability id, and the `ReferenceAdded`,
+`ReferenceRemoved` and `ReferenceChanged` arms, which bound no field of a
+reference) and its TypeScript mirror `client/src/fold.ts` (`checkLen`,
+`checkKeys` for an actor's keys, the same arms, the control arms through
+`requireControlTarget`, and the `abilityGiven`, `abilityTaken`,
+`referenceAdded`, `referenceRemoved` and `referenceChanged` arms); mirrored
+for an adventure's notes, opening narration, names and ids by
+`internal/adventure/load.go`'s constants and for a map's name and ids by
+`internal/mapdef/load.go`'s `maxNameBytes` and `maxIDBytes`, for a map's and
+an adventure's scene objects' ids by `internal/mapdef`'s `CheckObjectIDs`,
+which both loaders call, and for a ruleset's ability, condition and catalogue
+entry ids, property keys, form keys, place keys, places' states and branch
+labels by `internal/rules/load.go`'s `maxIDBytes`, which the ruleset schemas
+in `internal/rules/schema/` state, and for a ruleset's manifest id, version
+and name by its `checkManifestBounds`, with `maxIDBytes` and `maxNameBytes`;
+stated to an agent by `tools/toolgen/main.go`'s `manifest` for `move_token`'s
+`reason`, `add_actor`'s actor `name`, `actorId`, `moduleId`, `attributes` and
 `resources`, `start_session`'s `name`, `place_token`'s `tokenId` and
-`add_whisper`'s `text`. That both folds refuse an `AbilityGiven` whose
-ability id is empty is held by `internal/engine/ability_change_test.go`,
+`add_whisper`'s `text`. That both folds refuse an `AbilityGiven` whose ability
+id is empty is held by `internal/engine/ability_change_test.go`,
 `internal/engine/qa_ability_change_test.go` and
 `client/test/fold-abilities.test.ts`, and `give_ability`'s refusal of an id
 the served ruleset does not hold by
@@ -38,24 +39,33 @@ the served ruleset does not hold by
 `TestQAWithNoRulesetServedAddActorRefusesNoNonEmptyAbilityIds` hold that the
 server's fold keeps an ability id longer than `maxIDBytes`; no test holds the
 client fold's half, and the searches below show the fold sets no bound.
-Pinned by
+`internal/engine/qa_reference_fold_test.go`'s
+`TestQARFReferenceAddedBoundsNoLength` holds that the server's fold keeps a
+reference whose id, entry, place and state are each longer than `maxIDBytes`,
+and `internal/gateway/qa_reference_commands_test.go`'s
+`TestQARC2WithNoRulesetAnEntryPlaceAndStateAreNotRead` that, with no ruleset
+served, `add_reference` appends a reference whose entry, place and state are
+each past that bound and one whose id is, and `change_reference` a place and a
+state past it; no test holds the client fold's half. Pinned by
 `internal/engine/apply_test.go`, `apply_boundary_test.go`,
 `move_reason_internal_test.go`, `name_bound_internal_test.go`,
 `id_bound_internal_test.go`, `resource_change_test.go`,
 `qa_resource_change_test.go`, `internal/campaign/qa_id_bound_test.go`,
 `internal/gateway/server_test.go`, `qa_ability_value_test.go`,
-`qa_move_reason_bound_test.go`, `qa_name_bound_test.go`, `qa_id_bound_test.go`,
-`client/test/fold-rejections.test.ts`, `fold-resources.test.ts`,
-`qa-resource-change.test.ts`, `qa-move-reason-bound.test.ts`,
-`qa-name-bound.test.ts`, `qa-id-bound.test.ts`,
-`internal/adventure/format_test.go`, `load_test.go`, `qa_name_bound_test.go`,
-`qa_id_bound_test.go`, `internal/mapdef/load_test.go`, `installed_test.go`,
-`qa_name_bound_test.go`, `qa_id_bound_test.go`, `internal/rules/load_test.go`,
-`resolve_test.go`, `id_bound_internal_test.go`, `qa_ruleset_bound_test.go`,
+`qa_move_reason_bound_test.go`, `qa_name_bound_test.go`,
+`qa_id_bound_test.go`, `client/test/fold-rejections.test.ts`,
+`fold-resources.test.ts`, `qa-resource-change.test.ts`,
+`qa-move-reason-bound.test.ts`, `qa-name-bound.test.ts`,
+`qa-id-bound.test.ts`, `internal/adventure/format_test.go`, `load_test.go`,
+`qa_name_bound_test.go`, `qa_id_bound_test.go`,
+`internal/mapdef/load_test.go`, `installed_test.go`, `qa_name_bound_test.go`,
+`qa_id_bound_test.go`, `internal/rules/load_test.go`, `resolve_test.go`,
+`id_bound_internal_test.go`, `qa_ruleset_bound_test.go`,
 `qa_property_format_test.go`, `forms_test.go`, `qa_forms_test.go`,
-`catalogue_test.go`, `qa_catalogue_test.go`,
-`internal/engine/qa_ruleset_bound_test.go`,
-`internal/engine/door_opener_test.go`, `internal/engine/qa_door_opener_test.go`,
+`catalogue_test.go`, `qa_catalogue_test.go`, `places_test.go`,
+`qa_places_test.go`, `internal/engine/qa_ruleset_bound_test.go`,
+`internal/engine/door_opener_test.go`,
+`internal/engine/qa_door_opener_test.go`,
 `client/test/qa-door-opener-fold.test.ts`,
 `internal/gateway/qa_ruleset_bound_test.go`,
 `internal/campaign/qa_ruleset_bound_test.go`,
@@ -64,8 +74,7 @@ Pinned by
 `internal/engine/qa_ruleset_named_test.go`,
 `internal/rules/ruleset_version_test.go`,
 `internal/rules/qa_ruleset_version_test.go`,
-`cmd/vtt/ruleset_named_dump_test.go`,
-`client/test/qa-ruleset-named.test.ts`,
+`cmd/vtt/ruleset_named_dump_test.go`, `client/test/qa-ruleset-named.test.ts`,
 `internal/engine/qa_cmd_id_bound_test.go`,
 `internal/gateway/qa_cmd_id_bound_test.go`,
 `internal/mapdef/qa_cmd_id_bound_test.go`,
@@ -137,7 +146,8 @@ each object in turn, its id's length and then whether an earlier object has
 the same id, a repeat refused as `engine: object "<id>" appears twice in scene
 "<scene>"`; an `ActorAdded` for an actor with an id, then the id's length, a
 duplicate and a declared controller, then its name, then its module id, its
-resource names and its attribute names; a `TokenPlaced` for its id, then a
+resource names and its attribute names, and then whether a reference's id
+is empty (SPEC-028); a `TokenPlaced` for its id, then a
 duplicate, a known scene, a known actor and a position; an `AdventureLoaded`
 for its id, then its name; a `RulesetNamed` for its ruleset id, then its
 version, then its name, each refused empty as it is past its bound
@@ -155,9 +165,11 @@ control event for a participant id, then its length, then a known actor.
 `ResourceAdded.resource` becomes a key of the actor's `resources`, so it has
 the bound `ActorAdded`'s resource keys have. The fields of the table are the
 only texts `apply.go` bounds above; beyond them it
-requires a scene's object ids to be distinct and an `AbilityGiven`'s ability
+requires a scene's object ids to be distinct, an `AbilityGiven`'s ability
 id to be non-empty, refused as `engine: ability_given requires an ability
-id` before its actor is looked up, with no bound on its length. Every other
+id` before its actor is looked up, and a reference's id to be non-empty in
+an `ActorAdded`'s actor and in a `ReferenceAdded` (SPEC-028), each with no
+bound on its length. Every other
 text has no bound of its own in the fold, and what holds each is below.
 
 **A text outside the table has no bound of its own, by decision.** A field
@@ -190,7 +202,7 @@ into `AbilityUsed.outcome_summary` or a reason, and the spectator's one cell,
 
 | Field | What holds it |
 |---|---|
-| `TokenMoved.token_id`, `TokenPlaced.scene_id`, `TokenPlaced.actor_id`, `TokenRemoved.token_id`, `ActorRemoved.actor_id`, `DoorOpened.scene_id`, `DoorClosed.scene_id`, `DoorOpened.actor_id` when not empty, `DoorClosed.actor_id` when not empty, `ResourceChanged.actor_id`, `ResourceChanged.resource`, `ResourceAdded.actor_id`, `ResourceRemoved.actor_id`, `ResourceRemoved.resource`, `ConditionApplied.actor_id`, `ConditionRemoved.actor_id`, `ConditionRemoved.condition_id`, `NoteDeleted.key`, `ActorControlGranted.actor_id`, `ActorControlRevoked.actor_id`, `TokenDescribed.token_id`, `WhisperAdded.to_actor_ids`, `WhisperAdded.from_actor_id`, `AbilityGiven.actor_id`, `AbilityTaken.actor_id` | `engine.Apply` refuses a value that names nothing it has folded, so each equals an id or a name the table bounds |
+| `TokenMoved.token_id`, `TokenPlaced.scene_id`, `TokenPlaced.actor_id`, `TokenRemoved.token_id`, `ActorRemoved.actor_id`, `DoorOpened.scene_id`, `DoorClosed.scene_id`, `DoorOpened.actor_id` when not empty, `DoorClosed.actor_id` when not empty, `ResourceChanged.actor_id`, `ResourceChanged.resource`, `ResourceAdded.actor_id`, `ResourceRemoved.actor_id`, `ResourceRemoved.resource`, `ConditionApplied.actor_id`, `ConditionRemoved.actor_id`, `ConditionRemoved.condition_id`, `NoteDeleted.key`, `ActorControlGranted.actor_id`, `ActorControlRevoked.actor_id`, `TokenDescribed.token_id`, `WhisperAdded.to_actor_ids`, `WhisperAdded.from_actor_id`, `AbilityGiven.actor_id`, `AbilityTaken.actor_id`, `ReferenceAdded.actor_id`, `ReferenceRemoved.actor_id`, `ReferenceChanged.actor_id` | `engine.Apply` refuses a value that names nothing it has folded, so each equals an id or a name the table bounds |
 | `Actor.controller_id`, `Actor.controller_ids` | `engine.Apply` refuses an `ActorAdded` that declares either, and fills them from `ActorControlGranted.participant_id` |
 | `AbilityUsed.actor_id`, `AbilityUsed.target_ids`, `AbilityUsed.Outcome.target_id` | `Resolve` refuses a value that names no folded actor |
 | `AbilityUsed.Outcome.result` | `Resolve` writes a branch label, which `internal/rules/load.go` bounds at `maxIDBytes` |
@@ -208,6 +220,9 @@ into `AbilityUsed.outcome_summary` or a reason, and the spectator's one cell,
 | `Actor.ability_ids` | with a ruleset served, `add_actor`, `adventure.Load` and `give_ability` refuse an id the ruleset does not hold (SPEC-025), and `internal/rules/load.go` bounds an ability id at `maxIDBytes`; with none, the WebSocket frame alone (`maxWSFrameBytes`, SPEC-011), for `add_actor` and `give_ability`, commands of the DM and the agent, since `vtt serve` loads no adventure without a ruleset; `add_actor`, with a ruleset served or none, and `adventure.Load` refuse an empty id (SPEC-025); neither fold bounds the list's length or an id's length, and each keeps it |
 | `AbilityGiven.ability_id` | with a ruleset served, `give_ability` refuses an id the ruleset does not hold (SPEC-025), and `internal/rules/load.go` bounds an ability id at `maxIDBytes`; with none, the WebSocket frame alone (`maxWSFrameBytes`, SPEC-011), for `give_ability`, a command of the DM and the agent; both folds refuse an empty one, and neither bounds its length, by the owner's ruling OD-6 of 2026-11-14 |
 | `AbilityTaken.ability_id` | both folds refuse an id the actor's sheet does not name, so it equals an id of that actor's `Actor.ability_ids` and has that row's bounds |
+| `Actor.references` keys, `ReferenceAdded.reference_id` | both folds refuse an empty one, and so do `add_actor` and `add_reference`, with a ruleset served or none, and `adventure.Load` (SPEC-028); otherwise the WebSocket frame alone (`maxWSFrameBytes`, SPEC-011), for `add_actor` and `add_reference`, commands of the DM and the agent, and nothing for an adventure's actor file, whose loader does not bound one; neither fold bounds its length, and each keeps it |
+| `Reference.entry_id`, `Reference.place`, `Reference.state`, `ReferenceChanged.place`, `ReferenceChanged.state` | with a ruleset served, `add_actor`, `adventure.Load`, `add_reference` and `change_reference` refuse an entry the catalogue does not hold, a place the ruleset does not declare and a state its place does not name (SPEC-028), and `internal/rules/load.go` bounds an entry id, a place key and a state at `maxIDBytes`; with none, the WebSocket frame alone (`maxWSFrameBytes`, SPEC-011), for `add_actor`, `add_reference` and `change_reference`, commands of the DM and the agent, since `vtt serve` loads no adventure without a ruleset; neither fold bounds any of them, and each keeps them |
+| `ReferenceRemoved.reference_id`, `ReferenceChanged.reference_id` | both folds refuse an id the actor's sheet does not hold, so it equals a key of that actor's `Actor.references` and has that row's bounds |
 
 The cells that say nothing or none rest on these searches, each a `git grep`
 over `'*.go' ':!*_test.go' ':!contract/gen' ':!contract-spike'`: `-E
@@ -235,29 +250,39 @@ compares one with the ids a sheet names, and keeps it whole. `-E
 'Envelope_AbilityGiven\{'` prints `ToEvent`'s, for a `give_ability`, the
 projection's correction, which copies an id of the world's sheet into a
 character log (SPEC-016), and `internal/eventgen`'s draws for property
-tests.
+tests. `Reference -- internal/engine ':!*_test.go'` prints only
+`ActorAdded`'s refusal of a reference with an empty id and lines of the
+`ReferenceAdded`, `ReferenceRemoved` and `ReferenceChanged` arms, none of
+which measures a length, and `grep -n -E
+'checkLen\("[^"]*(reference|entry|place|state)' client/src/fold.ts` prints
+nothing, so neither fold bounds a field of a reference. `-E
+'Envelope_Reference(Added|Removed|Changed)\{'` prints `ToEvent`'s, for
+`add_reference`, `remove_reference` and `change_reference`, the
+projection's correction, which copies a reference of the world's sheet
+into a character log (SPEC-016), and `internal/eventgen`'s draws for
+property tests.
 
 A string a map, an adventure or a ruleset file carries and its loader does not
 bound is under the same decision: a ruleset's display names, descriptions, an
-ability's, a form's and a catalogue entry's among them, expressions, atom ids,
-param names and graph keys, its manifest's `free_usage_name`, its sheet's page
-and section names, and its guide; a map's or an adventure's `overrides` values
-and objects' `kind` and `art`; a map's or an adventure's placement `name`,
-`notes`, `gm_name` and `gm_notes`; and a map's placement `actor_id`. Where one
-reaches the log, it is only as a field of the tables above. A ruleset's
-manifest id, version and name are not among them: each reaches the log as a
-field of `RulesetNamed` in the first table (SPEC-026), and
-`checkManifestBounds` refuses a manifest whose id or version is longer than
-`maxIDBytes` or whose name is longer than `maxNameBytes` (SPEC-024). Through
-`/api/ruleset` (SPEC-012), a ruleset's manifest `free_usage_name`, its
-conditions', properties', forms' and catalogue entries' display names and
-descriptions and its sheet's page and section names reach every participant,
-and an ability's display name and description reach the DM, the agent and a
-player who controls an actor whose sheet names it; its guide reaches the DM
-and the agent through `/api/ruleset/guide`. A refusal that quotes such a
-value, or an id a command gave that names nothing, goes to the issuer of the
-command that met it (SPEC-013), or, when a file is refused at boot, to whoever
-starts the server.
+ability's, a form's, a place's and a catalogue entry's among them,
+expressions, atom ids, param names and graph keys, its manifest's
+`free_usage_name`, its sheet's page and section names, and its guide; a map's
+or an adventure's `overrides` values and objects' `kind` and `art`; a map's or
+an adventure's placement `name`, `notes`, `gm_name` and `gm_notes`; and a
+map's placement `actor_id`. Where one reaches the log, it is only as a field
+of the tables above. A ruleset's manifest id, version and name are not among
+them: each reaches the log as a field of `RulesetNamed` in the first table
+(SPEC-026), and `checkManifestBounds` refuses a manifest whose id or version
+is longer than `maxIDBytes` or whose name is longer than `maxNameBytes`
+(SPEC-024). Through `/api/ruleset` (SPEC-012), a ruleset's manifest
+`free_usage_name`, its conditions', properties', forms', places' and catalogue
+entries' display names and descriptions and its sheet's page and section names
+reach every participant, and an ability's display name and description reach
+the DM, the agent and a player who controls an actor whose sheet names it; its
+guide reaches the DM and the agent through `/api/ruleset/guide`. A refusal
+that quotes such a value, or an id a command gave that names nothing, goes to
+the issuer of the command that met it (SPEC-013), or, when a file is refused
+at boot, to whoever starts the server.
 
 **The refusal reaches the issuer.** `campaign.Append` folds the envelope
 before it persists anything and returns the fold's error, so a command whose
@@ -287,11 +312,12 @@ and through `CheckObjectIDs` a map's and an adventure's scene objects' ids,
 held by the `object-id-too-long` rows, `TestAnObjectIDOfExactlyTheBoundLoads`
 and `TestLoadAcceptsValuesExactlyOnEveryLimit`; `internal/rules/load.go` holds
 its own `maxIDBytes`, for a ruleset's ability, condition and catalogue
-entry ids, its property keys, its form keys and its resolutions' branch
-labels,
+entry ids, its property keys, its form keys, its place keys, its places'
+states and its resolutions' branch labels,
 which `TestTheIDBoundMirrorsEngine` pins to 128, and the ruleset schemas state
-it, which `TestTheSchemasStateTheIDBound` requires; a form key and an entry
-id past it are refused, and one exactly at it loads (VTT-994, VTT-998);
+it, which `TestTheSchemasStateTheIDBound` requires; a form key, an entry id,
+a place key and a state past it are refused, and one exactly at it loads
+(VTT-994, VTT-998, VTT-1016, VTT-1017);
 with it and its own
 `maxNameBytes`, `checkManifestBounds` holds a manifest's id and version to
 128 bytes and its name to 256, which
@@ -353,4 +379,4 @@ requires them to state it too. The `add_whisper` tool describes its `text` as
 VTT-264, VTT-265, VTT-266, VTT-274, VTT-275, VTT-276, VTT-277, VTT-278,
 VTT-279, VTT-281, VTT-282, VTT-284, VTT-285, VTT-286, VTT-289, VTT-290,
 VTT-291, VTT-292, VTT-293, VTT-294, VTT-296, VTT-297, VTT-585, VTT-586,
-VTT-624, VTT-770, VTT-866, VTT-972, VTT-974, VTT-1009.
+VTT-624, VTT-770, VTT-866, VTT-972, VTT-974, VTT-1022.

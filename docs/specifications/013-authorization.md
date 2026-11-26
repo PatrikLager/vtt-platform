@@ -6,7 +6,8 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `Authorize`, `mayVoice`, `mayWhisper`, `authorizePlayer`, `playerRules`,
 `errUndecided`, `unrestricted`, `mayWorkDoor`, `authorizeTokenOwnership`,
 `authorizeActorOwnership`, `controls`, `authorizeSelfRevoke`,
-`authorizePromotionTarget`, `roleIn`, `commandName`, `ErrUnauthorized`,
+`authorizePromotionTarget`, `roleIn`, `commandName`, `referenceCommandName`,
+`ErrUnauthorized`,
 `plainRefusal`),
 `internal/gateway/viewpoint.go` (`ownPartyMember`),
 `internal/gateway/grantee.go` (`granteeRefusal`, `runsTheTable`),
@@ -19,15 +20,20 @@ Accepted. Implemented by `internal/gateway/authz.go` (`commandRoles`,
 `internal/gateway/note_validate.go` (`validateUpsertNote`),
 `internal/gateway/convert.go` (`ToEvent`, `voice`),
 `internal/gateway/ruleset.go` (`handleUseAbility`'s refusal of a use the
-sheet does not name, and `rulesetNamed` for a take) and
+sheet does not name, and `rulesetNamed` for a take),
+`internal/gateway/reference_change.go` (`validateAddReference`,
+`handleReferenceChange`, `referenceSheetFault`, `referenceChangeFault`) and
 `internal/gateway/server.go` (`answerCommand`, `authorize`,
-`handleSetViewpoint`, `handleCommand`, `validateForm`, `describeBlockage`,
-`doorSquare`, `reannounceControlChange`),
+`handleSetViewpoint`, `handleCommand`, `handleSheetChange`, `validateForm`,
+`describeBlockage`, `doorSquare`, `reannounceControlChange`),
 with `perceive.SeesActor` and `rules.UnknownTarget` for the sight gate,
-`rules.Ruleset.SheetKeyFault`, `rules.Ruleset.SheetAbilityFault` and
-`rules.Ruleset.SheetSpendFault` for `add_actor`'s sheet,
+`rules.Ruleset.SheetKeyFault`, `rules.Ruleset.SheetAbilityFault`,
+`rules.Ruleset.SheetSpendFault` and `rules.Ruleset.SheetReferenceFault` for
+`add_actor`'s sheet,
 `rules.Ruleset.SheetAbilityFault` and `rules.Ruleset.Spends` for a give,
 `rules.Ruleset.Spends` and `rules.Offers` for a take,
+`rules.Ruleset.ReferenceFault` and `rules.Ruleset.CopyFault` for an addition
+and a change of a reference,
 `rules.Offers` for the sheet's refusal of a use and
 `engine.State.IsDoor` for the door gate, against `internal/engine`'s
 `State`; pinned by `internal/gateway/authz_test.go`,
@@ -39,6 +45,10 @@ with `perceive.SeesActor` and `rules.UnknownTarget` for the sight gate,
 `ability_value_test.go`, `qa_ability_value_test.go`,
 `ruleset_named_test.go`, `qa_ruleset_named_use_test.go`,
 `add_actor_spend_test.go`, `qa_add_actor_spend_test.go`,
+`add_actor_item_value_internal_test.go`, `qa_add_actor_item_value_test.go`,
+`add_actor_references_internal_test.go`, `qa_add_actor_references_test.go`,
+`reference_change_test.go`, `reference_change_internal_test.go`,
+`qa_reference_commands_test.go`,
 `use_ability_sheet_test.go`, `qa_use_unnamed_test.go`,
 `note_validate_test.go`, `convert_test.go`, `server_test.go`,
 `server_visibility_test.go`, `server_internal_test.go`, `watch_test.go`,
@@ -81,7 +91,9 @@ Principles 6, 7, 10, 13, 20, 27 and 34 of `docs/blueprint.md`:
 issue a command, against a snapshot of the fold, and `authorize` in
 `server.go` is its one production caller (`grep -rn 'Authorize(' internal
 cmd` outside the test files). `commandName` maps the `ClientCommand` oneof's
-set arm to that field's proto name, and answers `""` for an unset command.
+set arm to that field's proto name, through `referenceCommandName` for
+`add_reference`, `change_reference` and `remove_reference`, and answers `""`
+for an unset command.
 `commandRoles` is keyed by that name and holds, per command, the roles that
 may issue it:
 
@@ -99,6 +111,9 @@ may issue it:
 | `remove_condition` | yes | yes | `authorizeActorOwnership` | no |
 | `give_ability` | yes | yes | no | no |
 | `take_ability` | yes | yes | no | no |
+| `add_reference` | yes | yes | no | no |
+| `change_reference` | yes | yes | no | no |
+| `remove_reference` | yes | yes | no | no |
 | `add_narration` | yes | yes | `unrestricted` | no |
 | `add_whisper` | yes | yes | `unrestricted` | no |
 | `upsert_note` | yes | yes | no | no |
@@ -128,7 +143,10 @@ eget kommando", the owner's ruling of 2026-10-24). `give_ability` and
 `take_ability` change which abilities a sheet names, so what a character can
 do, and are the DM's and the agent's alone: a player is refused either, an
 actor they control included, by the table before any player rule is asked,
-and `playerRules` holds no entry for either (VTT-716).
+and `playerRules` holds no entry for either (VTT-716). `add_reference`,
+`change_reference` and `remove_reference` change what a sheet refers to and
+hold the same cells, and `playerRules` holds no entry for any of them
+(SPEC-028).
 Granting control, promotion, removing a participant and the join door are
 the DM's and the agent's alone, since each confers or takes away standing at
 a table whose shared link admits spectators (SPEC-009, VTT-028, VTT-565).
@@ -280,19 +298,24 @@ runs, in this order, and stops at the first refusal:
    `validateAddActorWith` for an `add_actor`, which runs `validateAddActor`
    and then, in `validateAddActorSheet`, the actor's keys against the served
    ruleset, an empty ability id with a ruleset served or none, its
-   ability ids against the served ruleset, and its abilities against the
-   resources it holds; `validateGiveAbility` for a `give_ability`, its
-   resources when no ruleset is served, and otherwise its ability id and
-   the keys it carries against the served ruleset;
+   ability ids against the served ruleset, its abilities against the
+   resources it holds, an empty reference id with a ruleset served or none,
+   and its references against the served ruleset; `validateGiveAbility` for
+   a `give_ability`, its resources when no ruleset is served, and otherwise
+   its ability id and the keys it carries against the served ruleset;
+   `validateAddReference` for an `add_reference`, its reference id, and with
+   a ruleset served its reference against the ruleset;
    `validateUpsertNote` for an `upsert_note`; and nothing for any other
    command;
 5. for a `grant_actor_control`, the grantee step below (`granteeRefusal`);
-6. the dispatch of `use_ability`, `give_ability`, `take_ability`,
-   `load_adventure`, `load_map`, `remove_actor`, `remove_participant`,
-   `promote_participant`, `set_join_door` and `rotate_join_link` to their
+6. the dispatch of `use_ability`; of `give_ability`, `take_ability`,
+   `add_reference` and `change_reference`, through `handleSheetChange`; and
+   of `load_adventure`, `load_map`, `remove_actor`, `remove_participant`,
+   `promote_participant`, `set_join_door` and `rotate_join_link`, to their
    handlers, where `handleUseAbility` refuses a use with no ruleset served
-   and then the sheet's refusal below runs, and `handleGiveAbility` reads a
-   give against the actor's sheet (below);
+   and then the sheet's refusal below runs, `handleGiveAbility` reads a
+   give against the actor's sheet, and `handleReferenceChange` reads an
+   addition or a change of a reference against it (below);
 7. `ToEvent`, which makes every other command one envelope stamped with the
    participant's id and role;
 8. for a `TokenMoved`, the backfill of `SceneId` and `From` from the
@@ -421,7 +444,8 @@ nobody controls yet. A command wrong in both the controller and the kind is
 told about the controller. `validateAddActorWith` runs `validateAddActor`
 and then `validateAddActorSheet`, which reads an actor with an id: with a
 ruleset served, it refuses a key the ruleset does not declare, or declares
-as the other type, naming the actor, the map and the key (VTT-677); then,
+as the other type, naming the actor, the map and the key (VTT-677), and then
+a key under `attributes` that a catalogue form lists (SPEC-025); then,
 with a ruleset served or none, an `ability_ids` holding an empty id, as
 `gateway: add_actor: actor "<id>": ability_ids: must not hold an empty id`
 (VTT-747); then, with a ruleset served, an `ability_ids` holding an id the
@@ -430,9 +454,13 @@ ruleset does not hold, naming the actor and the first such id in byte order
 a limited ability the sheet names whose resource it does not hold, or a
 resource it holds that some ability of the ruleset spends and no ability it
 names spends, naming the actor, the field and the key, ability ids before
-resources, each in byte order (VTT-775, SPEC-025). With none served it reads
-no key, refuses no non-empty ability id and reads no ability against a
-resource (VTT-675, VTT-746, VTT-778). `engine.Apply` refuses an
+resources, each in byte order (VTT-775, SPEC-025); then its references, an
+empty reference id with a ruleset served or none and each reference
+against the served ruleset, in the order and the words SPEC-028 states.
+With none served it reads no
+key, refuses no non-empty ability id, reads no ability against a resource
+(VTT-675, VTT-746, VTT-778) and reads no reference against a ruleset
+(SPEC-028). `engine.Apply` refuses an
 `ActorAdded` that names a controller as well, and accepts one with no kind,
 which on a recorded event reads as not a party member; the kind refusal exists
 at the command boundary alone, and so does the refusal of an empty ability id
@@ -529,15 +557,32 @@ not name (SPEC-025), reach the issuer as an ok=false result carrying the
 fold's text, and append nothing (VTT-717, VTT-720, VTT-721, VTT-722); the
 connection stays open.
 
+**An addition and a change of a reference.** `validateAddReference` runs
+where the three validators do, and its refusals do not wrap
+`ErrUnauthorized` either; it reads nothing of the snapshot, and a
+`change_reference` and a `remove_reference` have no validator.
+`handleSheetChange` hands an `add_reference` and a `change_reference` to
+`handleReferenceChange`, which first asks `referenceSheetFault` of the
+snapshot `authorize` took, then appends the one envelope `ToEvent` makes,
+and no `RulesetNamed`, through `campaign.Append`, answers its refusal, the
+fold's among them, as an ok=false result carrying its text, and otherwise
+answers ok=true with the sequence it assigned. A `remove_reference`
+reaches `ToEvent` and `campaign.Append` as every other command does. What
+the validator and `referenceSheetFault` read, in what order and in what
+words, with a ruleset served and with none, and what each leaves to the
+fold, are SPEC-028's.
+
 **What is dispatched, and what becomes one envelope.** `use_ability`
 (`handleUseAbility`), the sheet's refusal above aside, and `load_adventure`
 (`handleLoadAdventure`) are SPEC-012's; `load_map` (`handleLoadMap`) is
 SPEC-014's; `remove_actor` (`handleRemoveActor`) is SPEC-017's;
 `remove_participant` (`handleRemoval`) is SPEC-009's; `give_ability`
-(`handleGiveAbility`) and `take_ability` (`handleTakeAbility`) are above; and
-SPEC-007 states what the `load_map`, `remove_actor`, `remove_participant`,
-`give_ability` and `take_ability` batches carry.
-Each of those handlers appends a whole batch through
+(`handleGiveAbility`), `take_ability` (`handleTakeAbility`), and
+`add_reference` and `change_reference` (`handleReferenceChange`) are above;
+and SPEC-007 states what the `load_map`, `remove_actor`,
+`remove_participant`, `give_ability` and `take_ability` batches carry.
+Each of those handlers but `handleReferenceChange`, which appends one
+envelope through `campaign.Append`, appends a whole batch through
 `campaign.AppendBatch`, but a removal of a participant who controls no actor
 appends nothing, and its ok=true result carries no sequence.
 `promote_participant` (`handlePromotion`) is SPEC-009's and appends a batch
@@ -568,8 +613,9 @@ the re-resolution before every command are SPEC-009's; who may watch whom, the
 viewpoint the move gate judges by, and what a seat is sent are SPEC-015's;
 the other batch handlers are SPEC-012's, SPEC-014's
 and SPEC-017's; the join door and promotion handlers are
-SPEC-009's; what the fold refuses is `engine.Apply`'s, and its byte bounds
-SPEC-018's.
+SPEC-009's; what a sheet's references are, and what each reference command
+refuses and why, are SPEC-028's; what the fold refuses is `engine.Apply`'s,
+and its byte bounds SPEC-018's.
 
 ## Consequences
 
@@ -615,10 +661,16 @@ A client or tool author is bound by these:
   none, a give carrying resources is refused, a give carrying none to an
   actor the campaign holds of any non-empty id its sheet does not name is
   appended, and a take removes no resource.
-- An `add_actor` whose `ability_ids` holds an empty id is refused, with a
-  ruleset served or none; with a ruleset served, so is one whose sheet names
-  a limited ability without the resource it spends, or holds a resource some
-  ability of the ruleset spends that no ability it names spends.
+- Only the DM and the agent change what a sheet refers to: `add_reference`,
+  `change_reference` and `remove_reference` hold `no` in the player and
+  spectator cells above, and each appends one envelope or nothing
+  (SPEC-028).
+- An `add_actor` whose `ability_ids` or `references` holds an empty id is
+  refused, with a ruleset served or none; with a ruleset served, so is one
+  whose sheet holds a key a catalogue form lists, names a limited ability
+  without the resource it spends, holds a resource some ability of the
+  ruleset spends that no ability it names spends, or holds a reference that
+  does not fit the ruleset (SPEC-025, SPEC-028).
 - A token's texts are written by the DM and the agent alone.
 - A player speaks as a named party member they control, or out of
   character; the server writes the name either line is shown under. The DM

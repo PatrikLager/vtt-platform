@@ -12,7 +12,8 @@ Accepted. Implemented by `internal/rules/format.go` (`Property`,
 `checkPropertyKey`, `loadProperty`, `loadResourceDef`, `maxNameBytes`,
 `checkManifestBounds`, `propertyTypes`, `checkPropertyRef`,
 `checkExprRefs`, `crossValidateResources`, `loadAtoms`,
-`validParamKinds`, `checkSheet`, `ShownUsage.UnmarshalJSON`,
+`validParamKinds`, `checkSheet`, `sheetShown`, `checkSection`,
+`ShownUsage.UnmarshalJSON`,
 `loadCompositions`),
 `internal/rules/compile.go`
 (`compilePower`, `bindAtom`, `compileEffects`, `compileTwoActorExpr`)
@@ -27,15 +28,17 @@ and the schemas `internal/rules/schema/ruleset.schema.json`,
 `internal/rules/ability_description_test.go`,
 `internal/rules/qa_ability_description_test.go`,
 `internal/rules/forms_test.go` and `internal/rules/qa_forms_test.go` for a
-form's fields,
+form's fields, `internal/rules/places_test.go` and
+`internal/rules/qa_places_test.go` for a place's fields and a section of
+places,
 `internal/rules/conformance/conformance_test.go`,
 `internal/rules/conformance/qa_shipped_descriptions_test.go` and
 `internal/rules/conformance/qa_shipped_catalogue_test.go`'s
 `TestQASCShippedAbilityDescriptionsHoldNoDigit`.
 Every ruleset under
 `rulesets/` is written in this format. How a character's sheet is read
-against the properties is SPEC-025, and a ruleset's forms and its
-catalogue of entries are SPEC-027's.
+against the properties is SPEC-025, a ruleset's forms and its catalogue
+of entries are SPEC-027's, and its places SPEC-028's.
 
 ## Principles served
 
@@ -53,8 +56,9 @@ Principles 13, 23, 24, 25, 27, 28 and 35 of `docs/blueprint.md`:
   other type, is refused when the ruleset loads, with the file, the field
   and the key named, and so is a declared `sheet` that does not fit the
   ruleset, and a manifest whose id, version or name the log could not carry.
-- **27.** A declared `sheet`'s sections name property keys and usages, never
-  an ability, so an ability the ruleset adds stands in its usage's section.
+- **27.** A declared `sheet`'s sections name property keys, usages and
+  places, never an ability or an entry, so an ability the ruleset adds
+  stands in its usage's section.
 - **28.** Every ruleset declares its own version, which the log names before
   the outcomes the ruleset decides (SPEC-026).
 - **35.** Each property carries its own explanation, which is served to
@@ -65,14 +69,15 @@ Principles 13, 23, 24, 25, 27, 28 and 35 of `docs/blueprint.md`:
 
 **The manifest.** A ruleset's `ruleset.json` holds `id`, `name`,
 `format_version`, `version`, `properties` and, optionally, `sheet`,
-`free_usage_name` and `forms`; the forms, and the entries `rules.Load`
-reads from the ruleset's `catalogue/`, are SPEC-027's. `loadManifest`
-decodes it with `decodeStrict`, which refuses a field the format does not
-know, in the manifest, in a property, in the sheet or in a form, as
+`free_usage_name`, `forms` and `places`; the forms, and the entries
+`rules.Load` reads from the ruleset's `catalogue/`, are SPEC-027's, and the
+places SPEC-028's. `loadManifest` decodes it with `decodeStrict`, which
+refuses a field the format does not know, in the manifest, in a property,
+in the sheet, in a form or in a place, as
 `rules: <path>: json: unknown field "<field>"`, in a usage after `invalid
 shown usage object: `; `encoding/json` matches a field's name
 without regard to case, so a case variant of a defined field is read as it
-(VTT-996).
+(VTT-1018).
 Every other refusal of a ruleset below has the form `rules: <path>: field
 "<field>": <message>`, which `fieldErr` writes. `<path>` is the file's path
 as it was loaded, except that `crossValidateResources`' refusals name
@@ -104,7 +109,7 @@ in that order, each as `field "<field>": must be at most <bound> bytes, got
 ones the log's entry naming the ruleset has (SPEC-018, SPEC-026).
 `ruleset.schema.json` lists `version` as required, a string of at least one
 character whose description states its bound (VTT-986), and the
-descriptions of `id` and `name` state theirs (VTT-1009 for the id).
+descriptions of `id` and `name` state theirs (VTT-1022 for the id).
 `rulesets/dnd45e-minimal` and `rulesets/tavern-brawl` each declare
 `"version": "1"`. What the log makes of the version is SPEC-026's.
 
@@ -136,14 +141,15 @@ holds dice, and neither holds a scoped reference (VTT-630). A
 
 **Where a value lives.** A number property's value is an entry of an actor's
 `attributes`, a resource property's current value and maximum an entry of its
-`resources`, each under the property's key. A `number` property a form lists
-is also what a catalogue entry of that form holds under its key in `values`
-(SPEC-027); it is declared in `properties` as any other, so an expression
-may read it and a sheet may hold it (SPEC-025). An expression reads a number
-property as `@key` and a resource property's current value as `#key`: bare in
-a single-actor position, a resource's `default_max_expr` and a threshold's
-`when`, and scoped as `@caster.key`, `@target.key`, `#caster.key` or
-`#target.key` in a two-actor one, a composed atom's `roll`, `vs` and
+`resources`, each under the property's key, but for a `number` property a form
+lists, whose value is what a catalogue entry of that form holds under its key
+in `values` (SPEC-027) and never a sheet's: it is declared in `properties` as
+any other, so an expression may read it, and a sheet holding it under
+`attributes` is refused where it enters (SPEC-025). An expression reads a
+number property as `@key` and a resource property's current value as `#key`:
+bare in a single-actor position, a resource's `default_max_expr` and a
+threshold's `when`, and scoped as `@caster.key`, `@target.key`, `#caster.key`
+or `#target.key` in a two-actor one, a composed atom's `roll`, `vs` and
 `delta_expr` (VTT-630). Which keys a sheet may hold, and where it is read
 against the ruleset, is SPEC-025.
 
@@ -176,8 +182,9 @@ that type; `condition` names a declared condition (VTT-629).
 **The sheet.** `sheet` is how a character's sheet is laid out: a list of
 pages, each with a `name` and its `sections`, each section with a `name`
 and exactly one of `values`, a list of property keys, `conditions`, which
-is `true`, and `abilities`, a list of usages, each the string `"at_will"`
-or an object `{"spends": "<key>"}`. `rules.Load` returns it as
+is `true`, `abilities`, a list of usages, each the string `"at_will"`
+or an object `{"spends": "<key>"}`, and `places`, a list of place keys
+(SPEC-028). `rules.Load` returns it as
 `Ruleset.Sheet`, a `[]SheetPage` whose sections are `SheetSection` and
 their usages `ShownUsage`, in the order declared, and nil for a manifest
 without `sheet` or with `"sheet": null`
@@ -187,22 +194,29 @@ and an object without `spends`; none of these refusals names where in the
 sheet the usage stands. A section's kind present as `null` reads as absent,
 and a kind of another JSON type is refused by the decode. `checkSheet` runs
 after the abilities compile, so every refusal above keeps its message and
-its order, and refuses, naming the field by its path from `sheet`, as
+its order, and refuses, itself or through `checkSection` for a
+section's own faults, naming
+the field by its path from `sheet`, as
 `sheet[<i>].sections[<j>].values[<k>]`:
 - a sheet with no page, a page with an empty name, the name of a page
   before it or no section, a section with an empty name, showing none or
-  more than one of `values`, `conditions` and `abilities`, with
-  `conditions` `false`, or with an empty list (VTT-825);
+  more than one of `values`, `conditions`, `abilities` and `places`, with
+  `conditions` `false`, or with an empty list (VTT-1019);
 - a key under `values` no property declares, and a `spends` of a key no
-  resource property declares, an empty key among them (VTT-826);
+  resource property declares, an empty key among them (VTT-826), and a key
+  under `places` no place declares (VTT-1060);
 - a key named more than once among the sections' `values`, a usage more
   than once among their `abilities`, and the conditions in more than one
-  section (VTT-827);
+  section (VTT-827), and a place more than once among their `places`
+  (VTT-1060);
 - on the field `sheet`, naming the ability, an ability of the ruleset whose
-  usage no section names, the first in id order (VTT-828).
+  usage no section names, the first in id order (VTT-828), and then, naming
+  the place, a place of the ruleset no section shows, the first in declared
+  order (VTT-1020).
 
 A key may stand both as a value and in the usage that spends it, a property
-need not stand at all, and a `spends` of a resource no ability spends loads.
+need not stand at all, a `spends` of a resource no ability spends loads,
+and a ruleset that declares places and no `sheet` loads.
 `ruleset.schema.json` describes `sheet` and every field it holds (VTT-829).
 `sheet` is optional, and `format_version` is `"3"` either way.
 `rulesets/dnd45e-minimal` declares a sheet; `rulesets/tavern-brawl` declares
@@ -261,8 +275,9 @@ them.
 - A new kind of section needs a change to the loader, the schema, the
   route's answer (SPEC-012) and the client, where `sheetFor` fails the
   typecheck until it handles the kind `SheetSection` names (SPEC-022).
-- A ruleset that declares a sheet shows every ability's usage in a section,
-  so one that adds an ability of a new usage names that usage in a section.
+- A ruleset that declares a sheet shows every ability's usage and every
+  place in a section, so one that adds an ability of a new usage, or a
+  place, names it in a section.
 - A ruleset declares, as a property of the type it is read as, every key
   it reads in a resource's `default_max_expr` or a threshold's `when`, a
   cost, a `number` or `resource` binding, or an atom an ability composes.
@@ -275,6 +290,7 @@ them.
 ## Requirements
 
 VTT-610, VTT-611, VTT-612, VTT-613, VTT-614, VTT-615, VTT-616, VTT-626,
-VTT-628, VTT-629, VTT-630, VTT-824, VTT-825, VTT-826, VTT-827, VTT-828,
-VTT-829, VTT-847, VTT-848, VTT-849, VTT-850, VTT-856, VTT-857, VTT-858,
-VTT-970, VTT-971, VTT-972, VTT-986, VTT-996, VTT-1009.
+VTT-628, VTT-629, VTT-630, VTT-824, VTT-826, VTT-827, VTT-828, VTT-829,
+VTT-847, VTT-848, VTT-849, VTT-850, VTT-856, VTT-857, VTT-858, VTT-970,
+VTT-971, VTT-972, VTT-986, VTT-1018, VTT-1019, VTT-1020, VTT-1022,
+VTT-1060.
