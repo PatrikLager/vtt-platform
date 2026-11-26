@@ -962,3 +962,68 @@ func TestAddActorSaysWhatAReferenceRefuses(t *testing.T) {
 		}
 	}
 }
+
+// VTT-1051
+func TestTheReferenceToolsSayWhatTheyChangeWhatTheyRefuseAndWhoMayUseThem(t *testing.T) {
+	told := "No player is sent a message of the change: whoever is sent the sheet sees it there."
+	for name, wants := range map[string][]string{
+		"add_reference": {"Add one reference to an actor's sheet", "under a reference id you give it",
+			"Only the sheet's references change", "Refused, appending nothing", "an actor the campaign does not hold",
+			"a reference id the sheet holds already", "an empty reference id", "a reference left out",
+			"with a ruleset served, an entry the catalogue does not hold", "a place the ruleset does not declare",
+			"an entry of a form its place does not hold", "no state in a place that names its states",
+			"a state its place does not name", "any state in a place that names none",
+			"an entry another of the sheet's references names in the same place, unless that place holds copies",
+			"with no ruleset served, nothing else: the entry, the place and the state are not read"},
+		"change_reference": {"Move a reference on an actor's sheet to a place, or set its state in the place it is in",
+			"send the place and the state whole", "the place even when it stays",
+			"The reference keeps its entry: to make it name another entry, remove it and add one",
+			"Only that reference's place and state change", "Refused, appending nothing",
+			"an actor the campaign does not hold", "a reference id the sheet does not hold",
+			"with a ruleset served, a place the ruleset does not declare", "a place that does not hold the entry's form",
+			"no state in a place that names its states", "a state its place does not name",
+			"any state in a place that names none",
+			"a place that holds an entry once and holds the reference's entry already under another reference id",
+			"with no ruleset served, nothing else: the place and the state are not read"},
+		"remove_reference": {"Take one reference off an actor's sheet", "Only the sheet's references change",
+			"Refused, appending nothing, with a ruleset served or none", "an actor the campaign does not hold",
+			"a reference id the sheet does not hold", "nothing else is read"},
+	} {
+		desc, _ := findTool(t, name)["description"].(string)
+		for _, want := range append(wants, told, "DM/agent only.") {
+			if !strings.Contains(desc, want) {
+				t.Errorf("%s's description = %q, want it to say %q", name, desc, want)
+			}
+		}
+	}
+}
+
+func TestTheReferenceToolsRequireWhatTheyCannotDoWithout(t *testing.T) {
+	for name, want := range map[string][]any{
+		"add_reference":    {"actorId", "referenceId", "reference"},
+		"change_reference": {"actorId", "referenceId", "place"},
+		"remove_reference": {"actorId", "referenceId"},
+	} {
+		schema := findTool(t, name)["inputSchema"].(map[string]any)
+		if got := schema["required"]; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s required = %v, want %v", name, got, want)
+		}
+		props := schema["properties"].(map[string]any)
+		if desc, _ := props["actorId"].(map[string]any)["description"].(string); desc != "The id of the actor whose sheet changes." {
+			t.Errorf("%s's actorId description = %q", name, desc)
+		}
+	}
+	change := findTool(t, "change_reference")["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	for field, want := range map[string]string{"place": "REQUIRED", "state": "Optional"} {
+		if desc, _ := change[field].(map[string]any)["description"].(string); !strings.HasPrefix(desc, want) {
+			t.Errorf("change_reference's %s description = %q, want it to begin %q", field, desc, want)
+		}
+	}
+	ref := findTool(t, "add_reference")["inputSchema"].(map[string]any)["properties"].(map[string]any)["reference"].(map[string]any)
+	if got, want := ref["required"], []any{"entryId", "place"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("add_reference's reference required = %v, want %v", got, want)
+	}
+	if desc, _ := ref["properties"].(map[string]any)["state"].(map[string]any)["description"].(string); !strings.HasPrefix(desc, "Optional") {
+		t.Errorf("add_reference's reference state description = %q, want it to begin %q", desc, "Optional")
+	}
+}

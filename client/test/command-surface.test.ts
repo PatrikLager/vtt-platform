@@ -98,6 +98,13 @@ export const COMMAND_SURFACE: Record<
   removeCondition: { surface: "dm-console", action: "remove-condition" },
   giveAbility: { surface: "dm-console", action: "give-ability" },
   takeAbility: { surface: "dm-console", action: "take-ability" },
+  // These three take the hatch until Task 10 of
+  // docs/superpowers/plans/2026-11-25-a-sheet-refers-to-the-catalogue.md gives
+  // the DM console their controls, and the variant's note above, that nothing
+  // uses it, is false while they do.
+  addReference: { surface: "not-user-issued", why: "the agent's add_reference tool alone sends it until the DM console has a control for it" },
+  changeReference: { surface: "not-user-issued", why: "the agent's change_reference tool alone sends it until the DM console has a control for it" },
+  removeReference: { surface: "not-user-issued", why: "the agent's remove_reference tool alone sends it until the DM console has a control for it" },
   grantActorControl: { surface: "dm-console", action: "grant-actor-control" },
   revokeActorControl: { surface: "dm-console", action: "revoke-actor-control" },
   promoteParticipant: { surface: "dm-console", action: "demote-", dynamic: true },

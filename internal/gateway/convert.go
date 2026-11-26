@@ -85,6 +85,24 @@ func ToEvent(cmd *vttv1.ClientCommand, p *identity.Participant) (*vttv1.Envelope
 			ActorId:   c.TakeAbility.GetActorId(),
 			AbilityId: c.TakeAbility.GetAbilityId(),
 		}}
+	case *vttv1.ClientCommand_AddReference:
+		env.Payload = &vttv1.Envelope_ReferenceAdded{ReferenceAdded: &vttv1.ReferenceAdded{
+			ActorId:     c.AddReference.GetActorId(),
+			ReferenceId: c.AddReference.GetReferenceId(),
+			Reference:   c.AddReference.GetReference(),
+		}}
+	case *vttv1.ClientCommand_RemoveReference:
+		env.Payload = &vttv1.Envelope_ReferenceRemoved{ReferenceRemoved: &vttv1.ReferenceRemoved{
+			ActorId:     c.RemoveReference.GetActorId(),
+			ReferenceId: c.RemoveReference.GetReferenceId(),
+		}}
+	case *vttv1.ClientCommand_ChangeReference:
+		env.Payload = &vttv1.Envelope_ReferenceChanged{ReferenceChanged: &vttv1.ReferenceChanged{
+			ActorId:     c.ChangeReference.GetActorId(),
+			ReferenceId: c.ChangeReference.GetReferenceId(),
+			Place:       c.ChangeReference.GetPlace(),
+			State:       c.ChangeReference.GetState(),
+		}}
 	case *vttv1.ClientCommand_AddNarration:
 		env.Payload = &vttv1.Envelope_NarrationAdded{NarrationAdded: &vttv1.NarrationAdded{
 			Text:           c.AddNarration.GetText(),

@@ -8,6 +8,7 @@ import {
   moveToken, useAbility, addNarration, upsertNote,
   setJoinDoor, rotateJoinLink, promoteParticipant, removeParticipant, setViewpoint,
   speakAs, speakOutOfCharacter, addWhisper, giveAbility, takeAbility,
+  addReference, changeReference, removeReference,
 } from "../src/commands";
 
 // Commands are asserted against the COMMITTED protojson fixtures in
@@ -67,6 +68,22 @@ test("giveAbility with a resource matches the committed give_ability_with_value 
   sameShape(toJson(ClientCommandSchema, giveAbility("act-fighter", "hunters-flurry",
     { flurry_uses: { current: 1, max: 1 } })) as Record<string, unknown>,
   fixture("give_ability_with_value_command.json"));
+});
+
+test("addReference, changeReference and removeReference match the committed reference command fixtures", () => {
+  sameShape(toJson(ClientCommandSchema, addReference("act-ada", "ref-echo", "echo", "mike", "oscar")) as Record<string, unknown>,
+    fixture("add_reference_command.json"));
+  sameShape(toJson(ClientCommandSchema, changeReference("act-ada", "ref-echo", "mike", "lima")) as Record<string, unknown>,
+    fixture("change_reference_command.json"));
+  sameShape(toJson(ClientCommandSchema, removeReference("act-ada", "ref-delta")) as Record<string, unknown>,
+    fixture("remove_reference_command.json"));
+});
+
+test("a reference in a place that names no state carries none on the wire", () => {
+  const added = toJson(ClientCommandSchema, addReference("act-ada", "ref-delta", "delta", "kilo", "")) as Record<string, any>;
+  expect(added["addReference"]).toEqual({ actorId: "act-ada", referenceId: "ref-delta", reference: { entryId: "delta", place: "kilo" } });
+  const changed = toJson(ClientCommandSchema, changeReference("act-ada", "ref-delta", "kilo", "")) as Record<string, any>;
+  expect(changed["changeReference"]).toEqual({ actorId: "act-ada", referenceId: "ref-delta", place: "kilo" });
 });
 
 test("an omitted move reason is absent from the wire, not an empty string", () => {

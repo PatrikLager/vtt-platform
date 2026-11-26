@@ -1,0 +1,7 @@
+{
+  "requestId": "req-01JC3G1VE0REFERENCE0REMOVE1",
+  "removeReference": {
+    "actorId": "act-ada",
+    "referenceId": "ref-delta"
+  }
+}

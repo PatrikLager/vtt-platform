@@ -139,11 +139,31 @@ func (rs *Ruleset) copiesFault(ids []string, refs map[string]*vttv1.Reference) *
 			continue
 		}
 		if !rs.Place(k.place).Copies {
-			return referenceFault(id, fmt.Sprintf("names entry %q, which reference %q holds in place %q already, "+
-				"and that place holds an entry once", k.entry, earlier, k.place))
+			return copyFault(id, k.entry, earlier, k.place)
 		}
 	}
 	return nil
+}
+
+// CopyFault answers the first of refs but id, in byte order, naming r's entry in
+// r's place when that place holds an entry once, or nil (VTT-1046, VTT-1047).
+// Never ask SheetReferenceFault of refs and r for this: it blames the first id.
+func (rs *Ruleset) CopyFault(refs map[string]*vttv1.Reference, id string, r *vttv1.Reference) *SheetFault {
+	p := rs.Place(r.GetPlace())
+	if p == nil || p.Copies {
+		return nil
+	}
+	for _, other := range slices.Sorted(maps.Keys(refs)) {
+		if other != id && refs[other].GetPlace() == p.Key && refs[other].GetEntryId() == r.GetEntryId() {
+			return copyFault(id, r.GetEntryId(), other, p.Key)
+		}
+	}
+	return nil
+}
+
+func copyFault(id, entry, holder, place string) *SheetFault {
+	return referenceFault(id, fmt.Sprintf("names entry %q, which reference %q holds in place %q already, "+
+		"and that place holds an entry once", entry, holder, place))
 }
 
 func referenceFault(id, reason string) *SheetFault {

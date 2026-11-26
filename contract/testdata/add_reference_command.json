@@ -1,0 +1,8 @@
+{
+  "requestId": "req-01JC3G1VE0REFERENCE0ADD001",
+  "addReference": {
+    "actorId": "act-ada",
+    "referenceId": "ref-echo",
+    "reference": { "entryId": "echo", "place": "mike", "state": "oscar" }
+  }
+}

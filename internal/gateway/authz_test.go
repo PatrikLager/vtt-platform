@@ -96,6 +96,12 @@ func commandFor(t *testing.T, name string) *vttv1.ClientCommand {
 		return giveAbilityCmd("a1", "jab")
 	case "take_ability":
 		return takeAbilityCmd("a1", "jab")
+	case "add_reference":
+		return addReferenceCmd("a1", "r1", "echo", "mike", "lima")
+	case "change_reference":
+		return changeReferenceCmd("a1", "r1", "mike", "oscar")
+	case "remove_reference":
+		return removeReferenceCmd("a1", "r1")
 	case "add_narration":
 		return addNarrationCmd()
 	case "add_whisper":
@@ -398,6 +404,21 @@ var authzCases = []authzCase{
 	{"take_ability", identity.RolePlayer, false},
 	{"take_ability", identity.RoleSpectator, false},
 
+	{"add_reference", identity.RoleDM, true},
+	{"add_reference", identity.RoleAgent, true},
+	{"add_reference", identity.RolePlayer, false},
+	{"add_reference", identity.RoleSpectator, false},
+
+	{"change_reference", identity.RoleDM, true},
+	{"change_reference", identity.RoleAgent, true},
+	{"change_reference", identity.RolePlayer, false},
+	{"change_reference", identity.RoleSpectator, false},
+
+	{"remove_reference", identity.RoleDM, true},
+	{"remove_reference", identity.RoleAgent, true},
+	{"remove_reference", identity.RolePlayer, false},
+	{"remove_reference", identity.RoleSpectator, false},
+
 	{"add_narration", identity.RoleDM, true},
 	{"add_narration", identity.RoleAgent, true},
 	{"add_narration", identity.RolePlayer, true},
@@ -566,8 +587,8 @@ func authzCaseID(role identity.Role) string {
 
 // VTT-028 VTT-139 VTT-140 VTT-450 VTT-344 VTT-565 VTT-590
 func TestAuthorizeTableAllCommandsAllRoles(t *testing.T) {
-	if len(authzCases) != 108 {
-		t.Fatalf("authzCases has %d entries, want 108 (27 commands x 4 roles)", len(authzCases))
+	if len(authzCases) != 120 {
+		t.Fatalf("authzCases has %d entries, want 120 (30 commands x 4 roles)", len(authzCases))
 	}
 	st := ownershipFixture()
 	for _, tc := range authzCases {

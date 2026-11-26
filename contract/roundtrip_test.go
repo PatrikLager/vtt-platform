@@ -76,6 +76,15 @@ func TestGiveAbilityWithAValueCommandRoundTrip(t *testing.T) {
 func TestTakeAbilityCommandRoundTrip(t *testing.T) {
 	roundTrip(t, "take_ability_command.json", &vttv1.ClientCommand{})
 }
+func TestAddReferenceCommandRoundTrip(t *testing.T) {
+	roundTrip(t, "add_reference_command.json", &vttv1.ClientCommand{})
+}
+func TestChangeReferenceCommandRoundTrip(t *testing.T) {
+	roundTrip(t, "change_reference_command.json", &vttv1.ClientCommand{})
+}
+func TestRemoveReferenceCommandRoundTrip(t *testing.T) {
+	roundTrip(t, "remove_reference_command.json", &vttv1.ClientCommand{})
+}
 func TestAttackRolledRoundTrip(t *testing.T) {
 	roundTrip(t, "attack_rolled.json", &vttv1.AttackRolled{})
 }

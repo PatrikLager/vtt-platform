@@ -46,6 +46,9 @@ const cases = [
   ["narration_out_of_character_envelope.json", EnvelopeSchema],
   ["give_ability_command.json", ClientCommandSchema],
   ["take_ability_command.json", ClientCommandSchema],
+  ["add_reference_command.json", ClientCommandSchema],
+  ["change_reference_command.json", ClientCommandSchema],
+  ["remove_reference_command.json", ClientCommandSchema],
   ["open_door_command.json", ClientCommandSchema],
   ["door_opened_envelope.json", EnvelopeSchema],
 ] as const;

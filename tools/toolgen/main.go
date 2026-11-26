@@ -240,6 +240,52 @@ var manifest = []toolSpec{
 		},
 	},
 	{
+		message:     "vtt.v1.AddReference",
+		name:        "add_reference",
+		description: "Add one reference to an actor's sheet: a catalogue entry, by its id in the served ruleset's catalogue, in a place on the sheet and in a state there (get_ruleset lists the catalogue and the places), under a reference id you give it, which is the sheet's own. Only the sheet's references change: nothing else about the actor does. Refused, appending nothing: an actor the campaign does not hold, a reference id the sheet holds already, an empty reference id and a reference left out; with a ruleset served, an entry the catalogue does not hold, a place the ruleset does not declare, an entry of a form its place does not hold, no state in a place that names its states, a state its place does not name, any state in a place that names none, and an entry another of the sheet's references names in the same place, unless that place holds copies; with no ruleset served, nothing else: the entry, the place and the state are not read. No player is sent a message of the change: whoever is sent the sheet sees it there. DM/agent only.",
+		descriptor:  (&vttv1.AddReference{}).ProtoReflect().Descriptor(),
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.AddReference": {
+				fieldDocs: map[string]string{
+					"actorId":     "The id of the actor whose sheet changes.",
+					"referenceId": "The new reference's id, the sheet's own: two sheets may use one id. An empty id refuses the command.",
+				},
+			},
+			"vtt.v1.Reference": referenceOverride,
+		},
+	},
+	{
+		message:     "vtt.v1.ChangeReference",
+		name:        "change_reference",
+		description: "Move a reference on an actor's sheet to a place, or set its state in the place it is in: send the place and the state whole, the place even when it stays, and the state the reference takes there, left out where that place names none. The reference keeps its entry: to make it name another entry, remove it and add one. Only that reference's place and state change. Refused, appending nothing: an actor the campaign does not hold, and a reference id the sheet does not hold; with a ruleset served, a place the ruleset does not declare, a place that does not hold the entry's form, no state in a place that names its states, a state its place does not name, any state in a place that names none, and a place that holds an entry once and holds the reference's entry already under another reference id; with no ruleset served, nothing else: the place and the state are not read. No player is sent a message of the change: whoever is sent the sheet sees it there. DM/agent only.",
+		descriptor:  (&vttv1.ChangeReference{}).ProtoReflect().Descriptor(),
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.ChangeReference": {
+				requiredOverride: []string{"actorId", "referenceId", "place"},
+				fieldDocs: map[string]string{
+					"actorId":     "The id of the actor whose sheet changes.",
+					"referenceId": "The id of the reference on the sheet that changes.",
+					"place":       "REQUIRED; the key of the place that holds the reference afterwards, the one it is in now included (get_ruleset's places). With no ruleset served it is not read.",
+					"state":       "Optional; the reference's state in that place, one of the states it names (get_ruleset's places). Leave it out where the place names none: a state left out is none.",
+				},
+			},
+		},
+	},
+	{
+		message:     "vtt.v1.RemoveReference",
+		name:        "remove_reference",
+		description: "Take one reference off an actor's sheet. Only the sheet's references change: nothing else about the actor does. Refused, appending nothing, with a ruleset served or none: an actor the campaign does not hold, and a reference id the sheet does not hold; nothing else is read. No player is sent a message of the change: whoever is sent the sheet sees it there. DM/agent only.",
+		descriptor:  (&vttv1.RemoveReference{}).ProtoReflect().Descriptor(),
+		overrides: map[protoreflect.FullName]fieldOverride{
+			"vtt.v1.RemoveReference": {
+				fieldDocs: map[string]string{
+					"actorId":     "The id of the actor whose sheet changes.",
+					"referenceId": "The id of the reference the sheet loses.",
+				},
+			},
+		},
+	},
+	{
 		message:     "vtt.v1.AddNarration",
 		name:        "add_narration",
 		description: "Add a story entry to the table's shared narrative — narration, in-character speech, or out-of-character table talk; optionally anchored to the event sequences it narrates. The DM and the agent voice anyone with `as`; a player speaks as a party member they control by `actorId`; `outOfCharacter` speaks as yourself, under the name the server writes.",

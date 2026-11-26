@@ -1,0 +1,9 @@
+{
+  "requestId": "req-01JC3G1VE0REFERENCE0CHANGE1",
+  "changeReference": {
+    "actorId": "act-ada",
+    "referenceId": "ref-echo",
+    "place": "mike",
+    "state": "lima"
+  }
+}

@@ -231,6 +231,32 @@ export function takeAbility(actorId: string, abilityId: string): ClientCommand {
   });
 }
 
+/** Add a reference to an entry, in a place and a state there, to an actor's sheet (SPEC-028). */
+export function addReference(
+  actorId: string, referenceId: string, entryId: string, place: string, state: string,
+): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "addReference", value: { actorId, referenceId, reference: { entryId, place, state } } },
+  });
+}
+
+/** Set a reference's place and state whole, keeping its entry (SPEC-028). */
+export function changeReference(actorId: string, referenceId: string, place: string, state: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "changeReference", value: { actorId, referenceId, place, state } },
+  });
+}
+
+/** Take a reference off an actor's sheet (SPEC-028). */
+export function removeReference(actorId: string, referenceId: string): ClientCommand {
+  return create(ClientCommandSchema, {
+    requestId: requestId(),
+    command: { case: "removeReference", value: { actorId, referenceId } },
+  });
+}
+
 /**
  * parseActorJSON turns a DM's pasted actor into an addActor command.
  *

@@ -139,3 +139,43 @@ func TestSheetReferenceFaultRefusesASecondReferenceToOneEntryInAPlaceHoldingItOn
 			want: referenceFault("c", `names entry "victor", which the catalogue does not hold`)},
 	})
 }
+
+// Keep k the holder and b and z either side of it: the fault names the id
+// asked about, never the one that sorts first.
+// VTT-1046 VTT-1047
+func TestCopyFaultNamesTheReferenceAskedAboutAgainstTheOthersAlone(t *testing.T) {
+	held := map[string]*vttv1.Reference{"k": ref("delta", "kilo", ""), "k2": ref("delta", "kilo", ""),
+		"m": ref("delta", "mike", "lima"), "p": ref("plain-crate", "hook", ""), "w": ref("delta", "whiskey", "")}
+	cases := []struct {
+		name, id string
+		r        *vttv1.Reference
+		want     *rules.SheetFault
+	}{
+		{"an id sorting before the holder", "b", ref("delta", "kilo", ""),
+			referenceFault("b", `names entry "delta", which reference "k" holds in place "kilo" already, `+
+				`and that place holds an entry once`)},
+		{"an id sorting after the holder", "z", ref("delta", "kilo", ""),
+			referenceFault("z", `names entry "delta", which reference "k" holds in place "kilo" already, `+
+				`and that place holds an entry once`)},
+		{"the id itself, skipped for the next holder", "k", ref("delta", "kilo", ""),
+			referenceFault("k", `names entry "delta", which reference "k2" holds in place "kilo" already, `+
+				`and that place holds an entry once`)},
+		{"a place holding copies", "b", ref("delta", "mike", "oscar"), nil},
+		{"a place the ruleset does not declare", "b", ref("delta", "whiskey", ""), nil},
+		{"another entry in a place holding each once", "b", ref("sturdy-crate", "hook", ""), nil},
+	}
+	rs := referenceRuleset(t)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			expectReferenceFault(t, rs.CopyFault(held, c.id, c.r), c.want)
+		})
+	}
+	t.Run("the id itself alone", func(t *testing.T) {
+		expectReferenceFault(t, rs.CopyFault(map[string]*vttv1.Reference{"k": ref("delta", "kilo", "")}, "k",
+			ref("delta", "kilo", "")), nil)
+	})
+	t.Run("an entry held in another place", func(t *testing.T) {
+		expectReferenceFault(t, rs.CopyFault(map[string]*vttv1.Reference{"m": ref("delta", "mike", "lima")}, "b",
+			ref("delta", "kilo", "")), nil)
+	})
+}

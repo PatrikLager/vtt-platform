@@ -739,16 +739,13 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 		return refusal
 	}
 
-	// Dispatch these before ToEvent: each appends its events as one batch, or
+	// Dispatch these before ToEvent: each appends its events in one append, or
 	// nothing (SPEC-012, SPEC-013).
 	if ua, ok := cmd.GetCommand().(*vttv1.ClientCommand_UseAbility); ok {
 		return s.handleUseAbility(requestID, ua.UseAbility, st, p)
 	}
-	if ga, ok := cmd.GetCommand().(*vttv1.ClientCommand_GiveAbility); ok {
-		return s.handleGiveAbility(requestID, cmd, ga.GiveAbility, st, p)
-	}
-	if ta, ok := cmd.GetCommand().(*vttv1.ClientCommand_TakeAbility); ok {
-		return s.handleTakeAbility(requestID, cmd, ta.TakeAbility, st, p)
+	if r, dispatched := s.handleSheetChange(requestID, cmd, st, p); dispatched {
+		return r
 	}
 	if la, ok := cmd.GetCommand().(*vttv1.ClientCommand_LoadAdventure); ok {
 		return s.handleLoadAdventure(requestID, la.LoadAdventure, st, p)
@@ -798,6 +795,25 @@ func (s *Server) handleCommand(p *identity.Participant, cmd *vttv1.ClientCommand
 	return &vttv1.CommandResult{RequestId: requestID, Ok: true, Sequence: seq}
 }
 
+// Dispatch give_ability, take_ability, add_reference and change_reference here:
+// each reads the actor's sheet before it appends (SPEC-013).
+func (s *Server) handleSheetChange(requestID string, cmd *vttv1.ClientCommand, st *engine.State,
+	p *identity.Participant) (*vttv1.CommandResult, bool) {
+	if ga, ok := cmd.GetCommand().(*vttv1.ClientCommand_GiveAbility); ok {
+		return s.handleGiveAbility(requestID, cmd, ga.GiveAbility, st, p), true
+	}
+	if ta, ok := cmd.GetCommand().(*vttv1.ClientCommand_TakeAbility); ok {
+		return s.handleTakeAbility(requestID, cmd, ta.TakeAbility, st, p), true
+	}
+	if _, ok := cmd.GetCommand().(*vttv1.ClientCommand_AddReference); ok {
+		return s.handleReferenceChange(requestID, cmd, st, p), true
+	}
+	if _, ok := cmd.GetCommand().(*vttv1.ClientCommand_ChangeReference); ok {
+		return s.handleReferenceChange(requestID, cmd, st, p), true
+	}
+	return nil, false
+}
+
 // reannounceControlChange re-announces whom a grant or revocation names (VTT-906).
 func (s *Server) reannounceControlChange(cmd *vttv1.ClientCommand) {
 	if g, ok := cmd.GetCommand().(*vttv1.ClientCommand_GrantActorControl); ok {
@@ -817,6 +833,8 @@ func validateForm(cmd *vttv1.ClientCommand, rs *rules.Ruleset) error {
 		return validateAddActorWith(c.AddActor, rs)
 	case *vttv1.ClientCommand_GiveAbility:
 		return validateGiveAbility(c.GiveAbility, rs)
+	case *vttv1.ClientCommand_AddReference:
+		return validateAddReference(c.AddReference, rs)
 	case *vttv1.ClientCommand_UpsertNote:
 		return validateUpsertNote(c.UpsertNote)
 	}

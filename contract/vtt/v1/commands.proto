@@ -141,6 +141,27 @@ message TakeAbility {
   string ability_id = 2;
 }
 
+// AddReference adds one reference to an actor's sheet (SPEC-028).
+message AddReference {
+  string actor_id = 1;
+  string reference_id = 2;
+  Reference reference = 3;
+}
+
+// RemoveReference takes a reference off an actor's sheet (SPEC-028).
+message RemoveReference {
+  string actor_id = 1;
+  string reference_id = 2;
+}
+
+// ChangeReference sets a reference's place and state, keeping its entry (SPEC-028).
+message ChangeReference {
+  string actor_id = 1;
+  string reference_id = 2;
+  string place = 3;
+  string state = 4;
+}
+
 message AddNarration {
   string text = 1;
   string as = 2;
@@ -228,6 +249,10 @@ message ClientCommand {
     // A sheet's ability list changes in play (SPEC-007).
     GiveAbility give_ability = 37;
     TakeAbility take_ability = 38;
+    // A sheet's references change in play (SPEC-028).
+    AddReference add_reference = 39;
+    RemoveReference remove_reference = 40;
+    ChangeReference change_reference = 41;
   }
 }
 

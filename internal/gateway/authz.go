@@ -28,6 +28,9 @@ var commandRoles = map[string]map[identity.Role]bool{
 	"remove_condition":     {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"give_ability":         {identity.RoleDM: true, identity.RoleAgent: true},
 	"take_ability":         {identity.RoleDM: true, identity.RoleAgent: true},
+	"add_reference":        {identity.RoleDM: true, identity.RoleAgent: true},
+	"change_reference":     {identity.RoleDM: true, identity.RoleAgent: true},
+	"remove_reference":     {identity.RoleDM: true, identity.RoleAgent: true},
 	"add_narration":        {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"add_whisper":          {identity.RoleDM: true, identity.RoleAgent: true, identity.RolePlayer: true},
 	"upsert_note":          {identity.RoleDM: true, identity.RoleAgent: true},
@@ -367,6 +370,21 @@ func commandName(cmd *vttv1.ClientCommand) string {
 		return "close_door"
 	case *vttv1.ClientCommand_SetViewpoint:
 		return "set_viewpoint"
+	default:
+		return referenceCommandName(cmd)
+	}
+}
+
+// Keep each name the proto field's, as commandName does
+// (TestEveryClientCommandHasRoleCells).
+func referenceCommandName(cmd *vttv1.ClientCommand) string {
+	switch cmd.GetCommand().(type) {
+	case *vttv1.ClientCommand_AddReference:
+		return "add_reference"
+	case *vttv1.ClientCommand_ChangeReference:
+		return "change_reference"
+	case *vttv1.ClientCommand_RemoveReference:
+		return "remove_reference"
 	default:
 		return ""
 	}
