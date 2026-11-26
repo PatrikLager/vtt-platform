@@ -130,6 +130,35 @@
       ]
     }
   ],
+  "places": [
+    {
+      "key": "wielded",
+      "name": "Wielded",
+      "description": "The weapons a creature holds ready to attack with, two of one kind if it has them.",
+      "forms": [
+        "weapon"
+      ],
+      "copies": true
+    },
+    {
+      "key": "worn",
+      "name": "Worn",
+      "description": "The armor a creature has on, each suit at most once.",
+      "forms": [
+        "armor"
+      ]
+    },
+    {
+      "key": "carried",
+      "name": "Carried",
+      "description": "The weapons and armor a creature has with it but is not wielding or wearing: slung, sheathed or packed away.",
+      "forms": [
+        "weapon",
+        "armor"
+      ],
+      "copies": true
+    }
+  ],
   "sheet": [
     {
       "name": "In play",
@@ -184,6 +213,14 @@
             "fort",
             "ref",
             "will"
+          ]
+        },
+        {
+          "name": "Equipment",
+          "places": [
+            "wielded",
+            "worn",
+            "carried"
           ]
         }
       ]

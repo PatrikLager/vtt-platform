@@ -292,14 +292,17 @@ const references = (p: ReturnType<typeof draw>) =>
 test("a section of places draws each reference by its entry's name and its state, titled by the entry's description", () => {
   const p = draw({ st: carrying(CARRIED), layout: { sheet: GEAR, conditions: CONDS, catalogue: CATALOGUE, places: PLACES } });
   expect(p.h3()).toEqual(["Life", "Gear"]);
-  expect(references(p)).toEqual([["Echo Blade (lima)", "Rings when drawn."], ["Delta Mail (oscar)", null], ["Delta Mail", null]]);
+  expect(references(p)).toEqual([
+    ["Echo Blade (Mike Rack, lima)", "Rings when drawn."], ["Delta Mail (Mike Rack, oscar)", null], ["Delta Mail (Kilo Hook)", null],
+  ]);
 });
 
 // VTT-1055
 test("a reference whose entry the window's catalogue does not hold is drawn by the entry's id, untitled", () => {
   for (const catalogue of [[CATALOGUE[0]!], undefined]) {
     const p = draw({ st: carrying(CARRIED), layout: { sheet: GEAR, conditions: CONDS, catalogue, places: PLACES } });
-    expect(references(p).map(([text]) => text)).toEqual([catalogue ? "Echo Blade (lima)" : "echo (lima)", "delta (oscar)", "delta"]);
+    expect(references(p).map(([text]) => text))
+      .toEqual([catalogue ? "Echo Blade (Mike Rack, lima)" : "echo (Mike Rack, lima)", "delta (Mike Rack, oscar)", "delta (Kilo Hook)"]);
   }
 });
 

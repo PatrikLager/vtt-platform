@@ -86,7 +86,7 @@ const ORDERED = {
   m1: ref("echo", "mike", "lima"),
 };
 const ORDERED_TEXT: Record<string, [string, string]> = {
-  m1: ["Anvil bell", "lima"], m2: ["Zither coat", ""], m3: ["Anvil bell", "oscar"], k1: ["Zither coat", "oscar"],
+  m1: ["Anvil bell", "lima"], m2: ["Zither coat (Rack)", ""], m3: ["Anvil bell", "oscar"], k1: ["Zither coat", "oscar"],
 };
 
 // VTT-1055
@@ -112,7 +112,7 @@ test("a reference is drawn by its entry's name with its state, titled by the ent
   expect(kit?.refs[0]?.text.startsWith("Anvil bell")).toBe(true);
   expect(kit?.refs[0]?.text).toContain("lima");
   expect(kit?.refs[0]?.title).toBe("Rings twice.");
-  expect(kit?.refs[1]?.text).toBe("Zither coat");
+  expect(kit?.refs[1]?.text).toBe("Zither coat (Pouch)");
   expect(kit?.refs[1]?.title).toBe("Hums when struck.");
 });
 
@@ -121,7 +121,7 @@ test("a reference whose entry the window's catalogue lacks is drawn by its entry
   const st = world(character("c1", "Ivo", { x1: ref("echo", "mike"), x2: ref("delta", "mike", "oscar") }));
   const only = CATALOGUE.filter((e) => e.id === "echo");
   const kit = drawn(panel(st, { sheet: KIT_SHEET, catalogue: only, places: PLACES })).find((s) => s.name === "Kit");
-  expect(kit?.refs[0]?.text).toBe("Anvil bell");
+  expect(kit?.refs[0]?.text).toBe("Anvil bell (Rack)");
   expect(kit?.refs[1]?.text.startsWith("delta")).toBe(true);
   expect(kit?.refs[1]?.text).toContain("oscar");
   expect(kit?.refs[1]?.text).not.toContain("Zither");
@@ -157,9 +157,9 @@ test("the panel draws the references of the character it follows and of no other
   );
   const layout = { sheet: KIT_SHEET, catalogue: CATALOGUE, places: PLACES };
   const texts = (n: HTMLElement) => drawn(n).flatMap((s) => s.refs.map((r) => r.text));
-  expect(texts(panel(st, layout, { follow: "c2" }))).toEqual(["Zither coat"]);
-  expect(texts(panel(st, layout, { follow: "c1" }))).toEqual(["Anvil bell"]);
-  expect(texts(panel(st, layout, { follow: "c2", role: "dm" }))).toEqual(["Zither coat"]);
+  expect(texts(panel(st, layout, { follow: "c2" }))).toEqual(["Zither coat (Rack)"]);
+  expect(texts(panel(st, layout, { follow: "c1" }))).toEqual(["Anvil bell (Rack)"]);
+  expect(texts(panel(st, layout, { follow: "c2", role: "dm" }))).toEqual(["Zither coat (Rack)"]);
 });
 
 const JAB: Ability = { id: "jab", name: "Jab", range: 1, maxTargets: 1, usage: { kind: "atWill" } };

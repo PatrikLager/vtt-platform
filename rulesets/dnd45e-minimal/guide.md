@@ -7,8 +7,9 @@ vs a named defense; NO half-level bonus anywhere (it's stripped from both
 attacks and defenses in this house system, since they cancel out); bloodied
 at half hp. Proficiency and any enhancement bonus are already baked into
 each ability's roll expression. The catalogue lists the weapons and armor
-with their numbers, but no sheet refers to an entry yet and no ability reads
-one: each ability still rolls the numbers it names.
+with their numbers, and a sheet refers to the entries a creature wields,
+wears and carries (see "Equipment" below), but no ability reads one: each
+ability still rolls the numbers it names.
 
 Every ability below is built from this ruleset's OWN atomic statements under
 `atoms/` — no borrowed vocabulary, no shared atom with any other ruleset.
@@ -27,6 +28,42 @@ its current value and maximum. A property a form lists is a weapon's or an
 armor's, held by its catalogue entry: `add_actor` refuses a creature whose
 `attributes` hold one, and an adventure whose statblock holds one does not
 load.
+
+### Equipment
+
+A creature's weapons and armor are references on its sheet. Each names a
+catalogue entry by its id and the place on the sheet that holds it:
+`wielded` holds the weapons it has ready, `worn` its armor, and `carried`
+the weapons and armor it has with it but is not using. `get_ruleset` lists
+the places and the catalogue, and a player's sheet lists what the three
+hold under "Equipment" on its "Character" page, each line naming its place,
+as "Longsword (Wielded)". A reference copies nothing of its entry: a
+longsword's numbers stay the catalogue's. Where a reference is decides no
+roll: `use_ability` reads no reference, so the fighter's
+`crossbow-shot` rolls whether its crossbow is wielded or carried. Move it
+when the fiction does.
+
+A place holds as many references as you put there. `wielded` and `carried`
+hold one entry more than once (a goblin with two scimitars wields both, each
+under its own reference id); `worn` holds each entry once, so a second
+reference to chainmail a creature already wears is refused. None of the
+three names a state, so a reference here carries none: leave `state` out,
+or the command is refused.
+
+- **Adding.** `add_actor`'s `references` gives a new creature its
+  equipment, each reference under an id you choose, which is the sheet's
+  own: two sheets may use one id (both goblins' statblocks below hold
+  their armor under the id `leather-armor`, its entry's id, as every
+  statblock here names a reference). `add_reference` adds one
+  to a creature already in play.
+- **Changing.** `change_reference` moves a reference to another place: send
+  the place it moves to, as a crossbow drawn from `carried` into `wielded`. The
+  reference keeps its entry; to swap a longsword for a scimitar,
+  `remove_reference` the one and `add_reference` the other.
+- **Removing.** `remove_reference` takes one off the sheet.
+
+No player is sent a message of any of these changes: whoever is sent the
+sheet sees it there, once you make it. Narrate it if the table should know.
 
 ### The max_hp duplication rule
 
@@ -214,9 +251,9 @@ Each JSON block below is the EXACT `actor` argument to pass to `add_actor`
 — copy it verbatim, wire field for wire field, INCLUDING `kind`.
 
 `add_actor`'s wire schema is `actorId`/`kind`/`name`/`attributes`/
-`resources`/`abilityIds` (plus the opaque `moduleId`/`moduleData` pair
-this slice doesn't use). Two of those fields are not optional in the way
-the rest are:
+`resources`/`abilityIds`/`references` (plus the opaque `moduleId`/
+`moduleData` pair this slice doesn't use). Two of those fields are not
+optional in the way the rest are:
 
 - **`actorId` and `kind` are REQUIRED.** `kind` is `ACTOR_KIND_PARTY_MEMBER`
   for a player's character and `ACTOR_KIND_NON_PARTY` for every monster, NPC
@@ -256,7 +293,9 @@ so they live directly IN the `attributes` map, alongside `str`/`dex`/
   "attributes": {"str": 1, "dex": 3, "con": 1, "max_hp": 8,
                  "ac": 15, "fort": 12, "ref": 14, "will": 11},
   "resources": {"hp": {"current": 8, "max": 8}},
-  "abilityIds": ["goblin-scimitar"]
+  "abilityIds": ["goblin-scimitar"],
+  "references": {"scimitar": {"entryId": "scimitar", "place": "wielded"},
+                 "leather-armor": {"entryId": "leather-armor", "place": "worn"}}
 }
 ```
 
@@ -274,7 +313,10 @@ it.
   "attributes": {"str": 0, "dex": 4, "con": 1, "max_hp": 6,
                  "ac": 14, "fort": 11, "ref": 15, "will": 11},
   "resources": {"hp": {"current": 6, "max": 6}},
-  "abilityIds": ["goblin-scimitar", "goblin-shortbow"]
+  "abilityIds": ["goblin-scimitar", "goblin-shortbow"],
+  "references": {"shortbow": {"entryId": "shortbow", "place": "wielded"},
+                 "leather-armor": {"entryId": "leather-armor", "place": "worn"},
+                 "scimitar": {"entryId": "scimitar", "place": "carried"}}
 }
 ```
 
@@ -293,7 +335,10 @@ it.
   "resources": {"hp": {"current": 28, "max": 28},
                 "flurry_uses": {"current": 1, "max": 1}},
   "abilityIds": ["crossbow-shot", "hunters-flurry", "longsword-strike",
-                 "rally", "staggering-blow"]
+                 "rally", "staggering-blow"],
+  "references": {"longsword": {"entryId": "longsword", "place": "wielded"},
+                 "chainmail": {"entryId": "chainmail", "place": "worn"},
+                 "crossbow": {"entryId": "crossbow", "place": "carried"}}
 }
 ```
 

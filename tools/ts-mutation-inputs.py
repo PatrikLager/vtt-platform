@@ -42,8 +42,10 @@ import sys
 # contract it imports; contract/testdata, which tests read by a name passed in;
 # the goldens fold-parity.test.ts compares the fold against; the tool
 # definitions two QA tests read; and the example campaign's art, which
-# art-assets.test.ts serves, and its map, which it reads. The art's suffixes
-# are internal/artlib's, so a stray .DS_Store moves nothing.
+# art-assets.test.ts serves, and its map, which it reads; and the shipped
+# ruleset, entries and actor, which sheet-place-names.test.ts and
+# qa-reference-place-names.test.ts read. The art's suffixes are
+# internal/artlib's, so a stray .DS_Store moves nothing.
 # test_every_path_the_client_writes_outside_client_is_hashed holds the next
 # path written in the client; a path built from pieces it cannot see.
 TREES = (("client/src", (".ts", ".tsx", ".mts", ".cts")),
@@ -54,7 +56,12 @@ TREES = (("client/src", (".ts", ".tsx", ".mts", ".cts")),
          ("campaigns/example/art", (".png", ".json")))
 FILES = ("stryker.conf.json", "package.json", "bun.lock", "bun.lockb",
          "client/tsconfig.json", "contract/gen/tools/tools.json",
-         "campaigns/example/maps/cellar.json")
+         "campaigns/example/maps/cellar.json",
+         "rulesets/dnd45e-minimal/ruleset.json",
+         "rulesets/dnd45e-minimal/catalogue/longsword.json",
+         "rulesets/dnd45e-minimal/catalogue/chainmail.json",
+         "rulesets/dnd45e-minimal/catalogue/crossbow.json",
+         "adventures/goblin-ambush/actors/act-fighter.json")
 
 
 def stryker_version(root):

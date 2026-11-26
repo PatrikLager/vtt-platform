@@ -37,7 +37,12 @@ NEW_TREES = {
     "scenarios/goldens": ".json",
     "campaigns/example/art": ".png",
 }
-NEW_FILES = ["contract/gen/tools/tools.json", "campaigns/example/maps/cellar.json"]
+NEW_FILES = ["contract/gen/tools/tools.json", "campaigns/example/maps/cellar.json",
+             "rulesets/dnd45e-minimal/ruleset.json",
+             "rulesets/dnd45e-minimal/catalogue/longsword.json",
+             "rulesets/dnd45e-minimal/catalogue/chainmail.json",
+             "rulesets/dnd45e-minimal/catalogue/crossbow.json",
+             "adventures/goblin-ambush/actors/act-fighter.json"]
 
 # Imported from outside client/ by client/src and client/test.
 IMPORTED_OUTSIDE = [

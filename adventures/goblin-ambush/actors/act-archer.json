@@ -21,5 +21,19 @@
   "ability_ids": [
     "goblin-scimitar",
     "goblin-shortbow"
-  ]
+  ],
+  "references": {
+    "shortbow": {
+      "entry_id": "shortbow",
+      "place": "wielded"
+    },
+    "leather-armor": {
+      "entry_id": "leather-armor",
+      "place": "worn"
+    },
+    "scimitar": {
+      "entry_id": "scimitar",
+      "place": "carried"
+    }
+  }
 }

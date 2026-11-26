@@ -28,5 +28,19 @@
     "longsword-strike",
     "rally",
     "staggering-blow"
-  ]
+  ],
+  "references": {
+    "longsword": {
+      "entry_id": "longsword",
+      "place": "wielded"
+    },
+    "chainmail": {
+      "entry_id": "chainmail",
+      "place": "worn"
+    },
+    "crossbow": {
+      "entry_id": "crossbow",
+      "place": "carried"
+    }
+  }
 }

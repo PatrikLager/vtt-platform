@@ -55,6 +55,8 @@ export interface ShownCondition {
 export interface ShownReference {
   id: string;
   name: string;
+  /** The place named, in a section listing more than one place, else "" (VTT-1075). */
+  place: string;
   state: string;
   title: string;
 }
@@ -131,11 +133,13 @@ export function sheetFor(
   });
   const offers = offered(abilities, actor);
   const referenceIds = Object.keys(actor.references).sort();
+  const placeName = (key: string) => places?.find((p) => p.key === key)?.name || key;
   const heldIn = (keys: readonly string[]): ShownReference[] =>
     keys.flatMap((key) => referenceIds.filter((id) => actor.references[id]!.place === key).map((id): ShownReference => {
       const r = actor.references[id]!;
       const e = catalogue?.find((x) => x.id === r.entryId);
-      return { id, name: e?.name || r.entryId, state: r.state, title: e?.description ?? "" };
+      const place = keys.length > 1 ? placeName(key) : "";
+      return { id, name: e?.name || r.entryId, place, state: r.state, title: e?.description ?? "" };
     }));
 
   if (!sheet || sheet.length === 0) {
@@ -160,7 +164,7 @@ export function sheetFor(
     const declared = (places ?? []).map((p) => p.key).filter((key) => holding.has(key));
     const undeclared = [...holding].filter((key) => !declared.includes(key)).sort();
     for (const key of [...declared, ...undeclared]) {
-      sections.push({ name: places?.find((p) => p.key === key)?.name || key, kind: "places", references: heldIn([key]) });
+      sections.push({ name: placeName(key), kind: "places", references: heldIn([key]) });
     }
     return [{ name: "", sections: sections.filter(shows) }];
   }

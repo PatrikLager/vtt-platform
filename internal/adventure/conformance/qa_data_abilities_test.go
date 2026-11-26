@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -424,6 +425,18 @@ func qaDataSentences(text string) []string {
 	return append(out, strings.TrimSpace(flat[start:]))
 }
 
+func qaDataStatblocks(guide string) ([][]string, bool) {
+	start := strings.Index(guide, "\n## Reference statblocks")
+	if start < 0 {
+		return nil, false
+	}
+	section := guide[start+1:]
+	if end := strings.Index(section, "\n## "); end >= 0 {
+		section = section[:end]
+	}
+	return qaDataFence.FindAllStringSubmatch(section, -1), true
+}
+
 func qaDataGuideProblems(root string) (probs, notes []string) {
 	b, err := os.ReadFile(filepath.Join(root, "rulesets", "dnd45e-minimal", "guide.md"))
 	if err != nil {
@@ -443,15 +456,10 @@ func qaDataGuideProblems(root string) (probs, notes []string) {
 			}
 		}
 	}
-	start := strings.Index(guide, "\n## Reference statblocks")
-	if start < 0 {
+	blocks, found := qaDataStatblocks(guide)
+	if !found {
 		return append(probs, "guide has no Reference statblocks section"), nil
 	}
-	section := guide[start+1:]
-	if end := strings.Index(section, "\n## "); end >= 0 {
-		section = section[:end]
-	}
-	blocks := qaDataFence.FindAllStringSubmatch(section, -1)
 	if len(blocks) == 0 {
 		probs = append(probs, "Reference statblocks has no JSON block")
 	}
@@ -805,6 +813,110 @@ func TestQADataGuideStatblocksNameAbilities(t *testing.T) {
 	qaDataReport(t, probs)
 }
 
+type qaDataReference struct {
+	EntryID string `json:"entry_id"`
+	Place   string `json:"place"`
+	State   string `json:"state"`
+}
+
+func qaDataReadReferences(dir string) (map[string]map[string]qaDataReference, error) {
+	files, err := filepath.Glob(filepath.Join(dir, "actors", "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]map[string]qaDataReference{}
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		var a struct {
+			ActorID    string                     `json:"actor_id"`
+			References map[string]qaDataReference `json:"references"`
+		}
+		if err := json.Unmarshal(b, &a); err != nil {
+			return nil, fmt.Errorf("%s: %w", f, err)
+		}
+		out[a.ActorID] = a.References
+	}
+	return out, nil
+}
+
+func qaDataGuideReferenceProblems(root string) (probs, notes []string) {
+	b, err := os.ReadFile(filepath.Join(root, "rulesets", "dnd45e-minimal", "guide.md"))
+	if err != nil {
+		return []string{err.Error()}, nil
+	}
+	actors := map[string]map[string]qaDataReference{}
+	heads, _ := filepath.Glob(filepath.Join(root, "adventures", "*", "adventure.json"))
+	for _, h := range heads {
+		if id, err := qaDataAdventureRuleset(filepath.Dir(h)); err != nil || id != "dnd45e-minimal" {
+			continue
+		}
+		got, err := qaDataReadReferences(filepath.Dir(h))
+		if err != nil {
+			probs = append(probs, err.Error())
+		}
+		for k, v := range got {
+			actors[k] = v
+		}
+	}
+	blocks, _ := qaDataStatblocks(string(b))
+	if len(blocks) == 0 {
+		return append(probs, "guide has no statblock under Reference statblocks"), nil
+	}
+	for _, m := range blocks {
+		var block map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(m[1]), &block); err != nil {
+			probs = append(probs, "statblock does not parse: "+err.Error())
+			continue
+		}
+		var id string
+		_ = json.Unmarshal(block["actorId"], &id)
+		want, found := actors[id]
+		if !found {
+			probs = append(probs, fmt.Sprintf("statblock %s has no adventure actor under dnd45e-minimal", id))
+			continue
+		}
+		raw, has := block["references"]
+		if !has {
+			probs = append(probs, fmt.Sprintf("statblock %s carries no references", id))
+			continue
+		}
+		var wire map[string]struct {
+			EntryID string `json:"entryId"`
+			Place   string `json:"place"`
+			State   string `json:"state"`
+		}
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&wire); err != nil {
+			probs = append(probs, fmt.Sprintf("statblock %s references: %v", id, err))
+			continue
+		}
+		got := map[string]qaDataReference{}
+		for rid, r := range wire {
+			got[rid] = qaDataReference(r)
+		}
+		if !maps.Equal(got, want) {
+			probs = append(probs, fmt.Sprintf("statblock %s names references %v, its adventure actor %v", id, got, want))
+			continue
+		}
+		notes = append(notes, fmt.Sprintf("statblock %s names references %v, equal to its adventure actor", id, got))
+	}
+	return probs, notes
+}
+
+// Keep each guide statblock naming its adventure actor's references in wire names.
+// VTT-1059
+func TestQADataGuideStatblocksNameReferences(t *testing.T) {
+	probs, notes := qaDataGuideReferenceProblems(qaDataRoot(t))
+	for _, n := range notes {
+		t.Log(n)
+	}
+	qaDataReport(t, probs)
+}
+
 // Keep each golden's state.json holding an actor's ability_ids right after kind,
 // and its stream.json's actorAdded list reaching them as its gives and takes apply.
 func TestQADataScenarioGoldensCarryAbilityIDs(t *testing.T) {
@@ -922,12 +1034,92 @@ func TestQADataChecksSeeWrongData(t *testing.T) {
 		probs, _ := qaDataGuideProblems(root)
 		return probs
 	}
+	statblock := func(t *testing.T, fn func(block map[string]any)) (probs []string, id string) {
+		t.Helper()
+		root := qaDataTempRoot(t)
+		qaDataRewrite(t, filepath.Join(root, "rulesets", "dnd45e-minimal", "guide.md"), func(b []byte) ([]byte, error) {
+			blocks, _ := qaDataStatblocks(string(b))
+			for _, m := range blocks {
+				var block map[string]any
+				if json.Unmarshal([]byte(m[1]), &block) != nil || block["references"] == nil {
+					continue
+				}
+				id, _ = block["actorId"].(string)
+				fn(block)
+				out, err := json.Marshal(block)
+				if err != nil {
+					return nil, err
+				}
+				return []byte(strings.Replace(string(b), m[1], string(out)+"\n", 1)), nil
+			}
+			return nil, errors.New("no statblock carries references")
+		})
+		probs, _ = qaDataGuideReferenceProblems(root)
+		return probs, id
+	}
+	eachReference := func(block map[string]any, fn func(r map[string]any)) {
+		refs, _ := block["references"].(map[string]any)
+		for _, v := range refs {
+			if r, ok := v.(map[string]any); ok {
+				fn(r)
+			}
+		}
+	}
+	t.Run("the reference check sees a statblock naming another entry", func(t *testing.T) {
+		probs, id := statblock(t, func(block map[string]any) {
+			eachReference(block, func(r map[string]any) { r["entryId"] = "qa-other" })
+		})
+		qaDataMustSee(t, probs, "statblock "+id+" names references")
+	})
+	t.Run("the reference check sees a statblock without references", func(t *testing.T) {
+		probs, id := statblock(t, func(block map[string]any) { delete(block, "references") })
+		qaDataMustSee(t, probs, "statblock "+id+" carries no references")
+	})
+	t.Run("the reference check reads the wire's names", func(t *testing.T) {
+		probs, id := statblock(t, func(block map[string]any) {
+			eachReference(block, func(r map[string]any) {
+				r["entry_id"] = r["entryId"]
+				delete(r, "entryId")
+			})
+		})
+		qaDataMustSee(t, probs, "statblock "+id+" references")
+	})
+	t.Run("the reference check reads the adventure actor's file", func(t *testing.T) {
+		root := qaDataTempRoot(t)
+		files, _ := filepath.Glob(filepath.Join(root, "adventures", "*", "actors", "*.json"))
+		for _, f := range files {
+			var a struct {
+				ActorID    string                    `json:"actor_id"`
+				References map[string]map[string]any `json:"references"`
+			}
+			b, _ := os.ReadFile(f)
+			rs, _ := qaDataAdventureRuleset(filepath.Dir(filepath.Dir(f)))
+			if json.Unmarshal(b, &a) != nil || rs != "dnd45e-minimal" || len(a.References) == 0 {
+				continue
+			}
+			for _, r := range a.References {
+				r["place"] = "qa-other"
+			}
+			qaDataRewrite(t, f, func(b []byte) ([]byte, error) {
+				var raw map[string]any
+				if err := json.Unmarshal(b, &raw); err != nil {
+					return nil, err
+				}
+				raw["references"] = a.References
+				return json.Marshal(raw)
+			})
+			probs, _ := qaDataGuideReferenceProblems(root)
+			qaDataMustSee(t, probs, "statblock "+a.ActorID+" names references")
+			return
+		}
+		t.Fatal("no adventure actor under dnd45e-minimal holds a reference")
+	})
 	t.Run("the guide check sees a statblock in another order", func(t *testing.T) {
 		qaDataMustSee(t, guide(t, `"abilityIds": ["goblin-scimitar", "goblin-shortbow"]`,
 			`"abilityIds": ["goblin-shortbow", "goblin-scimitar"]`), "statblock act-archer")
 	})
 	t.Run("the guide check sees a wire schema without abilityIds", func(t *testing.T) {
-		qaDataMustSee(t, guide(t, "`resources`/`abilityIds` (plus", "`resources` (plus"), "names no abilityIds")
+		qaDataMustSee(t, guide(t, "`resources`/`abilityIds`/`references` (plus", "`resources`/`references` (plus"), "names no abilityIds")
 	})
 	for _, claim := range []string{
 		"An actor's abilities are not part of `add_actor`'s payload.",

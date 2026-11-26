@@ -20,5 +20,15 @@
   },
   "ability_ids": [
     "goblin-scimitar"
-  ]
+  ],
+  "references": {
+    "scimitar": {
+      "entry_id": "scimitar",
+      "place": "wielded"
+    },
+    "leather-armor": {
+      "entry_id": "leather-armor",
+      "place": "worn"
+    }
+  }
 }

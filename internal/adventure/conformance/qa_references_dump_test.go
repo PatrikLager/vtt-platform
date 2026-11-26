@@ -239,7 +239,7 @@ func TestQAARAGoldenDisagreeingWithReferencesIsRefused(t *testing.T) {
 }
 
 // VTT-1045.
-func TestQAARShippedGoldensHoldNoReferencesAndPass(t *testing.T) {
+func TestQAARShippedGoldensWriteReferencesWhereHeldAndPass(t *testing.T) {
 	repo := filepath.Join("..", "..", "..")
 	dirs, err := filepath.Glob(filepath.Join(repo, "adventures", "*", "adventure.json"))
 	if err != nil || len(dirs) == 0 {
@@ -251,12 +251,35 @@ func TestQAARShippedGoldensHoldNoReferencesAndPass(t *testing.T) {
 			if err := conformance.Run(dir, filepath.Join(repo, "rulesets")); err != nil {
 				t.Errorf("Run: %v", err)
 			}
+			held, err := qaDataReadReferences(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
 			raw, err := os.ReadFile(filepath.Join(dir, "goldens", "compiled-batch.json"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Contains(string(raw), `"references"`) {
-				t.Errorf("the shipped golden writes a references field")
+			var batch []struct {
+				ActorAdded map[string]json.RawMessage `json:"actor_added"`
+			}
+			if err := json.Unmarshal(raw, &batch); err != nil {
+				t.Fatal(err)
+			}
+			seen := 0
+			for _, e := range batch {
+				if e.ActorAdded == nil {
+					continue
+				}
+				seen++
+				var id string
+				_ = json.Unmarshal(e.ActorAdded["actor_id"], &id)
+				_, writes := e.ActorAdded["references"]
+				if writes != (len(held[id]) > 0) {
+					t.Errorf("the shipped golden's actor %s writes a references field: %v; its file holds %d", id, writes, len(held[id]))
+				}
+			}
+			if seen == 0 {
+				t.Error("the shipped golden holds no actor_added")
 			}
 		})
 	}

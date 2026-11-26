@@ -4148,7 +4148,21 @@
         "abilityIds": [
           "goblin-scimitar",
           "goblin-shortbow"
-        ]
+        ],
+        "references": {
+          "leather-armor": {
+            "entryId": "leather-armor",
+            "place": "worn"
+          },
+          "scimitar": {
+            "entryId": "scimitar",
+            "place": "carried"
+          },
+          "shortbow": {
+            "entryId": "shortbow",
+            "place": "wielded"
+          }
+        }
       }
     }
   },
@@ -4180,7 +4194,17 @@
         "kind": "ACTOR_KIND_NON_PARTY",
         "abilityIds": [
           "goblin-scimitar"
-        ]
+        ],
+        "references": {
+          "leather-armor": {
+            "entryId": "leather-armor",
+            "place": "worn"
+          },
+          "scimitar": {
+            "entryId": "scimitar",
+            "place": "wielded"
+          }
+        }
       }
     }
   },
@@ -4220,7 +4244,21 @@
           "longsword-strike",
           "rally",
           "staggering-blow"
-        ]
+        ],
+        "references": {
+          "chainmail": {
+            "entryId": "chainmail",
+            "place": "worn"
+          },
+          "crossbow": {
+            "entryId": "crossbow",
+            "place": "carried"
+          },
+          "longsword": {
+            "entryId": "longsword",
+            "place": "wielded"
+          }
+        }
       }
     }
   },

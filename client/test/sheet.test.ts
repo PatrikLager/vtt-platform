@@ -217,9 +217,9 @@ test("a reference is named by its entry's name, else its entry's id, with its st
     return s?.kind === "places" ? s.references : undefined;
   };
   expect(shown(CATALOGUE)).toEqual([
-    { id: "r-b", name: "Echo Blade", state: "lima", title: "Rings when drawn." },
-    { id: "r-c", name: "Delta Mail", state: "oscar", title: "" },
-    { id: "r-a", name: "Delta Mail", state: "", title: "" },
+    { id: "r-b", name: "Echo Blade", place: "Mike Rack", state: "lima", title: "Rings when drawn." },
+    { id: "r-c", name: "Delta Mail", place: "Mike Rack", state: "oscar", title: "" },
+    { id: "r-a", name: "Delta Mail", place: "Kilo Hook", state: "", title: "" },
   ]);
   expect(shown([CATALOGUE[0]!])?.map((r) => r.name)).toEqual(["Echo Blade", "delta", "delta"]);
   expect(shown(undefined)?.map((r) => [r.name, r.title])).toEqual([["echo", ""], ["delta", ""], ["delta", ""]]);
@@ -264,8 +264,8 @@ test("with no sheet declared, a place's section holds its references by referenc
   const pages = sheetFor(actor({ references: CARRIED }), [], [], PROPS, CONDS, undefined, CATALOGUE, PLACES);
   const mike = pages[0]!.sections.find((s) => s.name === "Mike Rack");
   expect(mike?.kind === "places" && mike.references).toEqual([
-    { id: "r-b", name: "Echo Blade", state: "lima", title: "Rings when drawn." },
-    { id: "r-c", name: "Delta Mail", state: "oscar", title: "" },
+    { id: "r-b", name: "Echo Blade", place: "", state: "lima", title: "Rings when drawn." },
+    { id: "r-c", name: "Delta Mail", place: "", state: "oscar", title: "" },
   ]);
 });
 

@@ -281,7 +281,9 @@ function drawSection(s: ShownSection, button: (ab: Ability) => HTMLElement): HTM
     case "places": {
       const list = el("div", "references");
       for (const r of s.references) {
-        const n = el("span", "reference", r.state === "" ? r.name : `${r.name} (${r.state})`);
+        // VTT-1075
+        const detail = [r.place, r.state].filter((part) => part !== "");
+        const n = el("span", "reference", detail.length === 0 ? r.name : `${r.name} (${detail.join(", ")})`);
         if (r.title !== "") n.title = r.title;
         list.appendChild(n);
       }
