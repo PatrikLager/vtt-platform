@@ -4484,3 +4484,32 @@ test("the ruleset's properties reach the chip and the cost, and the Story draws 
   expect(jab.title).toBe("Vigor Points 2/10, costs 1");
   s?.close();
 });
+
+// VTT-1055 VTT-1056 VTT-1057
+test("a ruleset answer's catalogue and places reach the player panel and the DM console", async () => {
+  for (const role of ["player", "dm"]) {
+    localStorage.setItem("vtt.token", "tok");
+    stubMetadata({
+      "/api/me": { participantId: "p", name: "Lera", role },
+      "/api/ruleset": {
+        id: "r", name: "R", abilities: [], conditions: [], resources: [], properties: [],
+        catalogue: [{ id: "echo", name: "Echo Blade", description: "", form: "zulu", values: {} }],
+        places: [{ key: "mike", name: "Mike Rack", description: "", forms: ["zulu"], copies: true, states: ["lima"] }],
+      },
+      "/api/adventures": { adventures: [] },
+    });
+    useFakeSocket();
+    const r = root();
+    const s = boot(r);
+    const sock = FakeSocket.instances[0]!;
+    sock.open();
+    if (role === "player") opensOn(sock, "a1");
+    seedTable(sock);
+    sock.deliver(envelope(6, { referenceAdded: { actorId: "a1", referenceId: "r-b", reference: { entryId: "echo", place: "mike", state: "lima" } } }));
+    await settle();
+    const texts = (selector: string) => Array.from(r.querySelectorAll(selector), (n) => n.textContent);
+    expect([role, texts(".player .sheet h3"), texts(".player .reference")]).toEqual([role, ["Mike Rack"], ["Echo Blade (lima)"]]);
+    expect([role, texts(".dm .reference-label")]).toEqual([role, role === "dm" ? ["r-b: Echo Blade in Mike Rack (lima)"] : []]);
+    s?.close();
+  }
+});

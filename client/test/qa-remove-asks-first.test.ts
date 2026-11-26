@@ -18,6 +18,7 @@ function actor(id: string, name: string): Actor {
     controllerIds: [],
     kind: 0,
     abilityIds: [],
+    references: {},
   } as unknown as Actor;
 }
 

@@ -98,13 +98,9 @@ export const COMMAND_SURFACE: Record<
   removeCondition: { surface: "dm-console", action: "remove-condition" },
   giveAbility: { surface: "dm-console", action: "give-ability" },
   takeAbility: { surface: "dm-console", action: "take-ability" },
-  // These three take the hatch until Task 10 of
-  // docs/superpowers/plans/2026-11-25-a-sheet-refers-to-the-catalogue.md gives
-  // the DM console their controls, and the variant's note above, that nothing
-  // uses it, is false while they do.
-  addReference: { surface: "not-user-issued", why: "the agent's add_reference tool alone sends it until the DM console has a control for it" },
-  changeReference: { surface: "not-user-issued", why: "the agent's change_reference tool alone sends it until the DM console has a control for it" },
-  removeReference: { surface: "not-user-issued", why: "the agent's remove_reference tool alone sends it until the DM console has a control for it" },
+  addReference: { surface: "dm-console", action: "add-reference" },
+  changeReference: { surface: "dm-console", action: "change-reference" },
+  removeReference: { surface: "dm-console", action: "remove-reference" },
   grantActorControl: { surface: "dm-console", action: "grant-actor-control" },
   revokeActorControl: { surface: "dm-console", action: "revoke-actor-control" },
   promoteParticipant: { surface: "dm-console", action: "demote-", dynamic: true },
@@ -245,14 +241,16 @@ test("no command builder can retract, because the platform cannot", () => {
  * player.ts's early "you control nothing" return never fires and the
  * targets/say-something sections build), and one condition on that actor (so
  * the DM console's "Remove condition" group — otherwise absent entirely,
- * per its own `if (condRow.length > 0)` — renders too).
+ * per its own `if (condRow.length > 0)` — renders too), and one reference on
+ * it, so the console's Catalogue group draws a change and a removal.
  */
 function richState(): State {
   const st = newState();
   st.Scenes["s1"] = { ID: "s1", Name: "Hall", GridWidth: 4, GridHeight: 4 };
   st.Actors["a1"] = {
     actorId: "a1", name: "Hero", moduleId: "", attributes: {}, resources: {},
-    controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.PARTY_MEMBER, abilityIds: ["poke"], references: {},
+    controllerId: "p-me", controllerIds: ["p-me"], kind: ActorKind.PARTY_MEMBER, abilityIds: ["poke"],
+    references: { "r-1": { entryId: "echo", place: "mike", state: "lima" } },
   };
   st.Tokens["t1"] = { ID: "t1", SceneID: "s1", ActorID: "a1", X: 1, Y: 1 };
   st.Conditions["a1"] = [{ ID: "prone", Source: "src", AppliedSeq: 1 }];
@@ -281,6 +279,9 @@ function dmFixture(open: boolean): HTMLElement {
       { id: "poke", name: "Poke", range: 1, maxTargets: 1, usage: { kind: "atWill" } },
       { id: "shove", name: "Shove", range: 1, maxTargets: 1, usage: { kind: "atWill" } },
     ],
+    // An entry and a place, so the Catalogue group draws an addition.
+    catalogue: [{ id: "echo", name: "Echo", description: "", form: "zulu", values: {} }],
+    places: [{ key: "mike", name: "Mike", description: "", forms: ["zulu"], copies: true, states: ["lima"] }],
     guideFor: async () => null,
     participants: [{ participantId: "p-me", displayName: "Hero's Player" }],
     joinLink: { open: false, secret: "s3cret" },

@@ -70,7 +70,7 @@ test("a declared sheet draws no section it does not declare, whatever the charac
   expect(keys(pages[0]!.sections[0])).toEqual(["alpha"]);
 });
 
-// VTT-840
+// VTT-1056
 test("with no sheet declared (undefined or empty) one page of Values, Conditions and Abilities in that order, each left out when empty", () => {
   const a = actor({ attrs: { alpha: 1 }, abilityIds: ["slash"] });
   const all = [ab("slash", { kind: "atWill" })];
@@ -87,7 +87,7 @@ test("with no sheet declared (undefined or empty) one page of Values, Conditions
   }
 });
 
-// VTT-840
+// VTT-1056
 test("with no ruleset at all the undeclared page holds every value the sheet holds, by key", () => {
   const a = actor({ attrs: { b: 2, c: 3, a: 1 }, res: { hp: [1, 2] } });
   const pages = sheetFor(a, [], [], undefined, undefined, undefined);
@@ -95,7 +95,7 @@ test("with no ruleset at all the undeclared page holds every value the sheet hol
   expect(keys(section(pages[0], "Values"))).toEqual(["a", "b", "c", "hp"]);
 });
 
-// VTT-840
+// VTT-1056
 test("the undeclared page orders values by the window's properties, then undeclared keys by key, an attribute before a resource of the same key", () => {
   const a = actor({
     attrs: { alpha: 1, zeta: 2, q: 5, m: 6, k: 7 },
@@ -108,14 +108,14 @@ test("the undeclared page orders values by the window's properties, then undecla
   ]);
 });
 
-// VTT-840
+// VTT-1056
 test("the undeclared page orders undeclared keys by < (code unit order), not by locale", () => {
   const a = actor({ attrs: { b: 1, B: 2, a: 3, Z: 4, _x: 5 } });
   const v = section(sheetFor(a, [], [], [], [], undefined)[0], "Values");
   expect(keys(v)).toEqual(["B", "Z", "_x", "a", "b"]);
 });
 
-// VTT-840
+// VTT-1056
 test("the undeclared page leaves out a property the character does not hold", () => {
   const a = actor({ attrs: { alpha: 1 } });
   const v = section(sheetFor(a, [], [], PROPS, [], undefined)[0], "Values");
@@ -275,14 +275,14 @@ test("a resource usage names only the resource it spends, not another resource",
   expect(ids(section(pages[0], "Fury"))).toEqual(["rage"]);
 });
 
-// VTT-840
+// VTT-1056
 test("the undeclared page's Abilities section holds every offered ability in the list's order and none the sheet does not name", () => {
   const a = actor({ abilityIds: ["jab", "rage", "frost", "slash", "fire"] });
   const pages = sheetFor(a, [], LIST, [], [], undefined);
   expect(ids(section(pages[0], "Abilities"))).toEqual(["fire", "slash", "frost", "rage", "jab"]);
 });
 
-// VTT-840
+// VTT-1056
 test("a character holding nothing on the undeclared page gets one page with no section", () => {
   const pages = sheetFor(actor(), [], LIST, PROPS, [], undefined);
   expect(pages).toHaveLength(1);

@@ -6,7 +6,7 @@
 // firing commands that will bounce, not to enforce anything.
 
 import type { Actor, ActorCondition, State, Token } from "./state";
-import type { Ability, ConditionDef, Me, Property, SheetPage, SheetUsage } from "./metadata";
+import type { Ability, CatalogueEntry, ConditionDef, Me, PlaceDef, Property, SheetPage, SheetUsage } from "./metadata";
 import type { Point } from "./commands";
 
 /** The actors this participant controls. */
@@ -51,19 +51,26 @@ export interface ShownCondition {
   title: string;
 }
 
+/** ShownReference is one reference as the sheet shows it: its entry named, its state, its entry's description. */
+export interface ShownReference {
+  id: string;
+  name: string;
+  state: string;
+  title: string;
+}
+
 /** ShownSection is one section of the sheet with what it shows the character. */
 export type ShownSection =
   | { name: string; kind: "values"; values: ShownValue[] }
   | { name: string; kind: "conditions"; conditions: ShownCondition[] }
-  | { name: string; kind: "abilities"; abilities: Ability[] };
+  | { name: string; kind: "abilities"; abilities: Ability[] }
+  | { name: string; kind: "places"; references: ShownReference[] };
 
 /** ShownPage is one page of the sheet as the panel draws it. */
 export interface ShownPage {
   name: string;
   sections: ShownSection[];
 }
-
-const byKey = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 // VTT-841
 function shownValue(actor: Actor, key: string, type: "number" | "resource", properties: readonly Property[]): ShownValue | undefined {
@@ -96,14 +103,16 @@ function shows(s: ShownSection): boolean {
       return s.conditions.length > 0;
     case "abilities":
       return s.abilities.length > 0;
+    case "places":
+      return s.references.length > 0;
   }
 }
 
 /**
- * sheetFor is the character's sheet as the panel draws it: the window's
- * declared pages and sections in their order, each section left out when it
- * has nothing to show, or one unnamed page of "Values", "Conditions" and
- * "Abilities" when none is declared (VTT-839 to VTT-843).
+ * sheetFor is the character's sheet as the panel draws it: the declared pages
+ * and sections in order, each section left out when empty, or with none
+ * declared one page of "Values", "Conditions", "Abilities" and a section per
+ * place holding a reference (VTT-839, VTT-841 to VTT-843, VTT-1055, VTT-1056).
  */
 export function sheetFor(
   actor: Actor,
@@ -112,6 +121,8 @@ export function sheetFor(
   properties: readonly Property[] | undefined,
   conditionDefs: readonly ConditionDef[] | undefined,
   sheet: readonly SheetPage[] | undefined,
+  catalogue?: readonly CatalogueEntry[],
+  places?: readonly PlaceDef[],
 ): ShownPage[] {
   const props = properties ?? [];
   const shownConditions = conditions.map((c): ShownCondition => {
@@ -119,6 +130,13 @@ export function sheetFor(
     return { id: c.ID, name: d?.name || c.ID, title: d?.description ?? "" };
   });
   const offers = offered(abilities, actor);
+  const referenceIds = Object.keys(actor.references).sort();
+  const heldIn = (keys: readonly string[]): ShownReference[] =>
+    keys.flatMap((key) => referenceIds.filter((id) => actor.references[id]!.place === key).map((id): ShownReference => {
+      const r = actor.references[id]!;
+      const e = catalogue?.find((x) => x.id === r.entryId);
+      return { id, name: e?.name || r.entryId, state: r.state, title: e?.description ?? "" };
+    }));
 
   if (!sheet || sheet.length === 0) {
     const values: ShownValue[] = [];
@@ -126,7 +144,7 @@ export function sheetFor(
       const v = shownValue(actor, p.key, p.type, props);
       if (v) values.push(v);
     }
-    for (const key of [...new Set([...Object.keys(actor.attributes), ...Object.keys(actor.resources)])].sort(byKey)) {
+    for (const key of [...new Set([...Object.keys(actor.attributes), ...Object.keys(actor.resources)])].sort()) {
       for (const type of ["number", "resource"] as const) {
         if (props.some((p) => p.key === key && p.type === type)) continue;
         const v = shownValue(actor, key, type, props);
@@ -138,6 +156,12 @@ export function sheetFor(
       { name: "Conditions", kind: "conditions", conditions: shownConditions },
       { name: "Abilities", kind: "abilities", abilities: offers },
     ];
+    const holding = new Set(referenceIds.map((id) => actor.references[id]!.place));
+    const declared = (places ?? []).map((p) => p.key).filter((key) => holding.has(key));
+    const undeclared = [...holding].filter((key) => !declared.includes(key)).sort();
+    for (const key of [...declared, ...undeclared]) {
+      sections.push({ name: places?.find((p) => p.key === key)?.name || key, kind: "places", references: heldIn([key]) });
+    }
     return [{ name: "", sections: sections.filter(shows) }];
   }
 
@@ -151,6 +175,8 @@ export function sheetFor(
           return { name: s.name, kind: "conditions", conditions: shownConditions };
         case "abilities":
           return { name: s.name, kind: "abilities", abilities: offers.filter((a) => s.abilities.some((u) => usageShows(u, a))) };
+        case "places":
+          return { name: s.name, kind: "places", references: heldIn(s.places) };
       }
     }).filter(shows),
   }));

@@ -6,13 +6,13 @@
 
 import type { State } from "../state";
 import type { Participant } from "../session";
-import type { Ability, AdventureMeta, ConditionDef, JoinLink, MapMeta, Property, Roster } from "../metadata";
+import type { Ability, AdventureMeta, CatalogueEntry, ConditionDef, JoinLink, MapMeta, PlaceDef, Property, Roster } from "../metadata";
 import { ActorKind, NoteVisibility } from "../../../contract/gen/ts/vtt/v1/events_pb";
 import type { ClientCommand, CommandResult } from "../../../contract/gen/ts/vtt/v1/commands_pb";
 import {
   startSession, endSession, placeToken, describeToken, removeToken, loadAdventure, loadMap,
   upsertNote, deleteNote, removeCondition, parseActorJSON, addActor, removeActor,
-  giveAbility, takeAbility,
+  giveAbility, takeAbility, addReference, changeReference, removeReference,
   grantActorControl, revokeActorControl, addNarration, speakOutOfCharacter, addWhisper,
   setJoinDoor,
   rotateJoinLink,
@@ -144,12 +144,13 @@ function noteVisibilityFromWireName(name: string): NoteVisibility | null {
 }
 
 /**
- * choiceSelect asks one closed question. Keep the blank first option: it keeps
- * "the DM did not answer" a state the caller can see, as the server refuses an
- * unstated kind rather than defaulting one (SPEC-013). `field` is the draft key.
+ * choiceSelect asks one closed question. Keep the blank first option where
+ * nothing answers it yet, so "the DM did not answer" stays visible: the server
+ * refuses an unstated kind (SPEC-013). `field` is the draft key; `present` is
+ * what shows with no draft, as a Describe box shows its token's text.
  */
 function choiceSelect(
-  cls: string, field: string, choices: readonly (readonly [string, string])[],
+  cls: string, field: string, choices: readonly (readonly [string, string])[], present?: string,
 ): HTMLSelectElement {
   const sel = document.createElement("select");
   sel.className = cls;
@@ -160,10 +161,11 @@ function choiceSelect(
     sel.appendChild(o);
     // Select on the option, never by assigning `sel.value` after the loop: a
     // draft no option carries leaves nothing selected in a browser, while
-    // happy-dom resets to the first option and hides it. An absent draft
-    // matches no option, so the browser's reset shows the blank first one.
+    // happy-dom resets to the first option and hides it. An absent draft with
+    // no present matches no option, so the browser's reset shows the blank
+    // first one.
     // "a remembered kind selects THAT option, and only that one" holds this.
-    o.selected = value === draft[field];
+    o.selected = value === (draft[field] ?? present);
   }
   sel.addEventListener("change", () => {
     draft[field] = sel.value;
@@ -252,6 +254,10 @@ export interface DMDeps {
   properties?: readonly Property[] | undefined;
   /** The ruleset's conditions, naming a condition a removal button removes (VTT-864). */
   conditions?: readonly ConditionDef[] | undefined;
+  /** The ruleset's catalogue, whose entries the Catalogue group names and offers (VTT-1057). */
+  catalogue?: readonly CatalogueEntry[] | undefined;
+  /** The ruleset's places, which the Catalogue group names and offers (VTT-1057). */
+  places?: readonly PlaceDef[] | undefined;
   guideFor: (id: string) => Promise<string | null>;
   /**
    * The shared join link, or null when there is none to show.
@@ -536,8 +542,72 @@ export function renderDMConsole(d: DMDeps): HTMLElement {
     ),
   );
 
+  const names = namer(d.st, [], true, d.abilities, d.properties, d.conditions, d.catalogue, d.places);
+
+  // --- catalogue: what each sheet refers to (VTT-1057, VTT-1058) ---
+  const entries = d.catalogue ?? [];
+  const places = d.places ?? [];
+  const placeKeys = places.map((p) => p.key);
+  const placeChoice = (key: string) => [key, names.place(key)] as const;
+  const offersAddition = entries.length > 0 && places.length > 0;
+  const referenceRows: HTMLElement[] = [];
+  for (const actorId of Object.keys(d.st.Actors).sort()) {
+    const a = d.st.Actors[actorId]!;
+    const ids = Object.keys(a.references).sort();
+    if (ids.length === 0 && !offersAddition) continue;
+    const row = el("div", "reference-actor");
+    row.dataset["actor"] = a.actorId;
+    const held = a.name !== "" ? a.name : a.actorId;
+    row.appendChild(el("span", "reference-name", held));
+    for (const id of ids) {
+      const r = a.references[id]!;
+      const entry = names.entry(r.entryId);
+      const place = names.place(r.place);
+      const line = el("div", "reference-row");
+      line.dataset["reference"] = id;
+      line.appendChild(el("span", "reference-label", `${id}: ${entry} in ${place}${r.state === "" ? "" : ` (${r.state})`}`));
+      const placeField = `change-reference-place:${a.actorId}:${id}`;
+      const stateField = `change-reference-state:${a.actorId}:${id}`;
+      const pick = choiceSelect("change-reference-place", placeField,
+        (placeKeys.includes(r.place) ? placeKeys : [...placeKeys, r.place]).map(placeChoice), r.place);
+      const state = input("state", stateField, "reference-state", r.state);
+      line.append(pick, state, button("Change", sending(d, `change-reference:${a.actorId}:${id}`, () => ({
+        command: changeReference(a.actorId, id, pick.value, state.value.trim()), clears: [placeField, stateField],
+      })), "change-reference"));
+      // Ask inside the press `sending` runs (SPEC-022). VTT-1058
+      line.appendChild(button("Remove", sending(d, `remove-reference:${a.actorId}:${id}`, () => {
+        if (!d.confirm(`Remove ${id}: ${entry} in ${place} from ${held}? Its id and state go with it.`)) return;
+        return { command: removeReference(a.actorId, id), clears: [] };
+      }), "remove-reference"));
+      row.appendChild(line);
+    }
+    if (offersAddition) {
+      const idField = `add-reference-id:${a.actorId}`;
+      const entryField = `add-reference-entry:${a.actorId}`;
+      const placeField = `add-reference-place:${a.actorId}`;
+      const stateField = `add-reference-state:${a.actorId}`;
+      const refId = input("reference id", idField, "reference-id");
+      const entry = choiceSelect("add-reference-entry", entryField,
+        [["", "choose an entry"], ...entries.map((e) => [e.id, names.entry(e.id)] as const)]);
+      const place = choiceSelect("add-reference-place", placeField,
+        [["", "choose a place"], ...placeKeys.map(placeChoice)]);
+      const state = input("state", stateField, "reference-state");
+      row.append(refId, entry, place, state, button("Add", sending(d, `add-reference:${a.actorId}`, () => {
+        const id = refId.value.trim();
+        if (id === "" || entry.value === "" || place.value === "") {
+          return void d.notify("a reference needs an id, an entry and a place");
+        }
+        return {
+          command: addReference(a.actorId, id, entry.value, place.value, state.value.trim()),
+          clears: [idField, entryField, placeField, stateField],
+        };
+      }), "add-reference"));
+    }
+    referenceRows.push(row);
+  }
+  if (referenceRows.length > 0) wrap.appendChild(group("Catalogue", ...referenceRows));
+
   // --- conditions, straight off the actors that have them ---
-  const names = namer(d.st, [], true, d.abilities, d.properties, d.conditions);
   const condRow: HTMLElement[] = [];
   for (const [actor, list] of Object.entries(d.st.Conditions)) {
     const held = d.st.Actors[actor]?.name || actor;

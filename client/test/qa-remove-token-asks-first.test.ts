@@ -8,7 +8,7 @@ import { newState, type Actor, type Token } from "../src/state";
 const QUESTION = (who: string) => `Remove ${who} from the board? Its place, names and notes go with it.`;
 
 function actor(id: string, name: string): Actor {
-  return { actorId: id, name, moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: 0, abilityIds: [] } as unknown as Actor;
+  return { actorId: id, name, moduleId: "", attributes: {}, resources: {}, controllerId: "", controllerIds: [], kind: 0, abilityIds: [], references: {} } as unknown as Actor;
 }
 function token(id: string, actorId: string, extra: Partial<Token> = {}): Token {
   return {

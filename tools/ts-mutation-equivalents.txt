@@ -276,8 +276,8 @@ client/src/view/dm.ts  ArrayDeclaration  offset=46  span=2  nth=1  copies=1  ["S
 # kills both, so they have no entry.
 
 client/src/view/dm.ts  BooleanLiteral  offset=31  span=4  nth=1  copies=1  false
-    code: const names = namer(d.st, [], true, d.abilities, d.properties, d.conditions);
-    The namer the console builds to name a resource in the Abilities group and a condition on a removal button, its `dm` argument `true` -> `false`. The console reads nothing of the namer but `resource` and `condition`, and each reads its own list alone, `properties` and `conditions`: `dm` reaches only the namer's token and actor names and its `dm` member, and the console reads none of them. Built with either value, the namer runs the same lookups over State.Tokens and over the log, which is `[]` here, and neither throws. So every value field and every refusal of a give names the resource, and every removal button names the condition, as under the original (VTT-806, VTT-864). WHOEVER MAKES namer's `resource` OR `condition` DEPEND ON `dm`, DIRECTLY OR THROUGH ANYTHING THE NAMER BUILDS FROM IT, RE-JUDGES THIS ENTRY: its premise is in client/src/view/naming.ts, and no gate asks.
+    code: const names = namer(d.st, [], true, d.abilities, d.properties, d.conditions, d.catalogue, d.places);
+    The namer the console builds to name a resource in the Abilities group, a condition on a removal button, and an entry and a place in the Catalogue group, its `dm` argument `true` -> `false`. The console reads nothing of the namer but `resource`, `condition`, `entry` and `place` (`git grep -n 'names\.' client/src/view/dm.ts` finds those four, `resource` through `named`), and each reads its own list alone, `properties`, `conditions`, `catalogue` and `places`: `dm` reaches only the namer's token and actor names and its `dm` member, and the console reads none of them. Built with either value, the namer runs the same lookups over State.Tokens and over the log, which is `[]` here, and neither throws. So every value field and every refusal of a give names the resource, every removal button names the condition, and every Catalogue label, choice and question names the entry and the place, as under the original (VTT-806, VTT-864, VTT-1057, VTT-1058). WHOEVER MAKES namer's `resource`, `condition`, `entry` OR `place` DEPEND ON `dm`, DIRECTLY OR THROUGH ANYTHING THE NAMER BUILDS FROM IT, OR MAKES THE CONSOLE READ ANOTHER MEMBER OF ITS NAMER, RE-JUDGES THIS ENTRY: its premise is in client/src/view/naming.ts, and no gate asks.
 
 client/src/view/dm.ts  StringLiteral  offset=38  span=2  nth=1  copies=1  "Stryker was here!"
     code: const now = int32((draft[current] ?? "").trim());
@@ -418,26 +418,6 @@ client/src/player.ts  Regex  offset=24  span=17  nth=1  copies=1  /^(\S*)\S*(.*)
 client/src/player.ts  MethodExpression  offset=46  span=12  nth=1  copies=1  text!
     code: return { kind: "whisper", name: name!, text: text!.trim() };
     `.trim()` dropped. The text is a suffix of the trimmed `t`, after a greedy `\s*`, so it has no whitespace at either end to strip.
-
-client/src/player.ts  EqualityOperator  offset=42  span=5  nth=1  copies=1  a <= b
-    code: const byKey = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-    Comparator boundary that differs only when the two keys are equal. `sheetFor` sorts with it only the keys of a `Set` built from an actor's attribute and resource keys, so no two elements are equal. It also needs the sort never to compare an element with itself, which no ECMAScript rule promises; probed under bun and node, neither does.
-
-client/src/player.ts  ConditionalExpression  offset=55  span=5  nth=1  copies=1  true
-    code: const byKey = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-    Forces the inner `a > b ? 1 : 0` to 1. That branch is reached only when `a < b` is false, which for unique keys means a > b — where 1 is already the answer. `sheetFor` sorts with it only the keys of a `Set` built from an actor's attribute and resource keys, so no two elements are equal. It also needs the sort never to compare an element with itself, which no ECMAScript rule promises; probed under bun and node, neither does.
-
-client/src/player.ts  ConditionalExpression  offset=55  span=5  nth=1  copies=1  false
-    code: const byKey = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-    Forces the inner `a > b ? 1 : 0` to 0, leaving `a < b ? -1 : 0`. For unique keys that is a complete strict-less oracle. That holds in a sort that branches on `< 0`: measured identical to the full comparator on deliberately unsorted keys under bun at n = 3, 5, 10 and 20, and under bun (JavaScriptCore, as in Safari) and node (V8, as in Chrome) at n up to 200. A sort that branches on `<= 0`, as SpiderMonkey's is read to, was not measured, and there the order may differ. `sheetFor` sorts with it only the keys of a `Set` built from an actor's attribute and resource keys, so no two elements are equal.
-
-client/src/player.ts  EqualityOperator  offset=55  span=5  nth=1  copies=1  a >= b
-    code: const byKey = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-    Comparator boundary that differs only when the two keys are equal. `sheetFor` sorts with it only the keys of a `Set` built from an actor's attribute and resource keys, so no two elements are equal. It also needs the sort never to compare an element with itself, which no ECMAScript rule promises; probed under bun and node, neither does.
-
-client/src/player.ts  EqualityOperator  offset=55  span=5  nth=1  copies=1  a <= b
-    code: const byKey = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-    Turns the inner `a > b` into `a <= b`, reached only when `a < b` is false: for unique keys it returns 0 where a > b, the same strict-less oracle as forcing the branch to 0. That holds in a sort that branches on `< 0`: measured identical to the full comparator on deliberately unsorted keys under bun at n = 3, 5, 10 and 20, and under bun (JavaScriptCore, as in Safari) and node (V8, as in Chrome) at n up to 200. A sort that branches on `<= 0`, as SpiderMonkey's is read to, was not measured, and there the order may differ. `sheetFor` sorts with it only the keys of a `Set` built from an actor's attribute and resource keys, so no two elements are equal.
 
 # --- client/src/view/player.ts -----------------------------------------------
 #

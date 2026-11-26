@@ -3,7 +3,7 @@ import "./support/dom"; // see that module: registers once, keeps real fetch/Web
 import { test, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { newState, type State } from "../src/state";
 import { ActorKind, NoteVisibility } from "../../contract/gen/ts/vtt/v1/events_pb";
-import type { ConditionDef, Roster, MapMeta } from "../src/metadata";
+import type { Ability, CatalogueEntry, ConditionDef, PlaceDef, Roster, MapMeta } from "../src/metadata";
 import { renderDMConsole } from "../src/view/dm";
 import joinURL from "../../contract/testdata/join_url_format.json";
 import {
@@ -22,6 +22,9 @@ function harness(
     roster?: Roster[];
     doorsArmed?: boolean;
     conditions?: ConditionDef[];
+    catalogue?: CatalogueEntry[];
+    places?: PlaceDef[];
+    abilities?: Ability[];
     // What the server answers each command: a result, "held" until the test
     // calls release(), or an Error the send rejects with. ok() when unset.
     answer?: CommandResult | "held" | Error;
@@ -51,8 +54,10 @@ function harness(
     st,
     adventures: opts.adventures ?? [{ id: "adv-1", name: "Goblin Ambush" }],
     maps: opts.maps ?? [],
-    abilities: [],
+    abilities: opts.abilities ?? [],
     conditions: opts.conditions,
+    catalogue: opts.catalogue,
+    places: opts.places,
     guideFor: async () => (opts.guide === undefined ? "# guide" : opts.guide),
     participants: opts.participants ?? [],
     // The sharing panel is exercised by its own tests below; these existing
@@ -2372,12 +2377,25 @@ function tableForEveryForm(): State {
     };
     st.Conditions[id] = [{ ID: "dazed", Source: "dm", AppliedSeq: 1 }];
   }
+  st.Actors["act-r1"]!.references = { "r-1": { entryId: "echo", place: "mike", state: "lima" } };
+  st.Actors["act-r1"]!.abilityIds = ["ab-free"];
   return st;
 }
 
 function everyForm(answer: CommandResult | "held" | Error = ok()) {
   return harness(tableForEveryForm(), {
     participants: [{ participantId: "p-bo", displayName: "Bo" }],
+    catalogue: [{ id: "echo", name: "Echo", description: "", form: "zulu", values: {} }],
+    places: [
+      { key: "mike", name: "Mike", description: "", forms: ["zulu"], copies: true, states: ["lima", "oscar"] },
+      { key: "kilo", name: "Kilo", description: "", forms: ["zulu"], copies: false, states: [] },
+    ],
+    // One ability at will and one spending a resource no actor holds, so a Give
+    // shows its value fields.
+    abilities: [
+      { id: "ab-free", name: "Free", range: 1, maxTargets: 1, usage: { kind: "atWill" } },
+      { id: "ab-res", name: "Costly", range: 1, maxTargets: 1, usage: { kind: "resource", resource: "grit", cost: 1 } },
+    ],
     answer,
   });
 }
@@ -2421,6 +2439,66 @@ function grantForm(actor: string): Form {
     typed: { [target]: "p-bo", [kind]: "ACTOR_KIND_NON_PARTY" },
     cleared: { [target]: "", [kind]: "" },
     press: click(`${grantRow(actor)} .grant`),
+  };
+}
+
+const abilityRow = (actor: string) => `.ability-actor[data-actor="${actor}"]`;
+
+/** A row's Give clears its choice and both its value fields, whether or not they fed it. */
+function giveForm(actor: string, ability: string): Form {
+  const pick = `${abilityRow(actor)} .give-ability`;
+  const current = box(`give-ability-current-${actor}`);
+  const max = box(`give-ability-max-${actor}`);
+  return {
+    name: `Give ${actor}`,
+    typed: { [pick]: ability, [current]: "3", [max]: "5" },
+    cleared: { [pick]: "", [current]: "", [max]: "" },
+    press: click(`${abilityRow(actor)} [data-action="give-ability"]`),
+  };
+}
+
+/** A take: no field feeds it, and it clears none. */
+function takeForm(actor: string): Form {
+  return {
+    name: `Take ${actor}`, typed: {}, cleared: {},
+    press: click(`${abilityRow(actor)} [data-action="take-ability"]`),
+  };
+}
+
+const referenceRow = (actor: string) => `.reference-actor[data-actor="${actor}"]`;
+const referenceLine = (actor: string, ref: string) =>
+  `${referenceRow(actor)} .reference-row[data-reference="${ref}"]`;
+
+function addReferenceForm(actor: string): Form {
+  const entry = `${referenceRow(actor)} .add-reference-entry`;
+  const place = `${referenceRow(actor)} .add-reference-place`;
+  const id = box(`add-reference-id:${actor}`);
+  const state = box(`add-reference-state:${actor}`);
+  return {
+    name: `Add reference ${actor}`,
+    typed: { [id]: "r-new", [entry]: "echo", [place]: "mike", [state]: "lima" },
+    cleared: { [id]: "", [entry]: "", [place]: "", [state]: "" },
+    press: click(`${referenceRow(actor)} [data-action="add-reference"]`),
+  };
+}
+
+/** A change shows the reference's present place and state once cleared. */
+function changeReferenceForm(actor: string, ref: string): Form {
+  const place = `${referenceLine(actor, ref)} .change-reference-place`;
+  const state = box(`change-reference-state:${actor}:${ref}`);
+  return {
+    name: `Change reference ${actor}`,
+    typed: { [place]: "kilo", [state]: "oscar" },
+    cleared: { [place]: "mike", [state]: "lima" },
+    press: click(`${referenceLine(actor, ref)} [data-action="change-reference"]`),
+  };
+}
+
+/** A removal: no field feeds it, and it clears none. */
+function removeReferenceForm(actor: string, ref: string): Form {
+  return {
+    name: `Remove reference ${actor}`, typed: {}, cleared: {},
+    press: click(`${referenceLine(actor, ref)} [data-action="remove-reference"]`),
   };
 }
 
@@ -2494,6 +2572,19 @@ const FORMS: Form[] = [
   },
   removeConditionForm("act-r1"),
   grantForm("act-r1"),
+  addReferenceForm("act-r1"),
+  changeReferenceForm("act-r1", "r-1"),
+  removeReferenceForm("act-r1", "r-1"),
+  giveForm("act-r1", "ab-res"),
+  giveForm("act-r2", "ab-free"),
+  takeForm("act-r1"),
+  {
+    // The Say's Send keeps `say-as` (VTT-522).
+    name: "Say",
+    typed: { [box("say-text")]: "The torch gutters.", [box("say-as")]: "Bram" },
+    cleared: { [box("say-text")]: "" },
+    press: click('[data-action="add-narration"]'),
+  },
 ];
 
 /** Type into a box through `input`, or choose in a select through `change`. */
@@ -2576,7 +2667,7 @@ test("an accepted Start session empties the name, and asks for one repaint after
   }
 });
 
-// VTT-533
+// VTT-533 VTT-1074
 test("an accepted command clears the fields of its own form and of no other", async () => {
   try {
     for (const form of FORMS) {
@@ -2652,7 +2743,7 @@ test("a press that sends changes nothing the next render draws until its answer"
 // VTT-523
 test("a press the console's own guard refuses holds nothing back", async () => {
   try {
-    for (const form of FORMS.filter((f) => !/^(Describe|Remove condition) /.test(f.name))) {
+    for (const form of FORMS.filter((f) => !/^(Describe|Remove condition|Change reference|Remove reference|Take) |^Say$/.test(f.name))) {
       forgetEveryForm();
       const h = everyForm(refused("not authorized"));
       form.press(h);

@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
-import { sheetFor, type ShownPage } from "../src/player";
-import type { Actor, ActorCondition } from "../src/state";
-import type { Ability, ConditionDef, Property, SheetPage } from "../src/metadata";
+import { sheetFor, type ShownPage, type ShownSection } from "../src/player";
+import type { Actor, ActorCondition, Reference } from "../src/state";
+import type { Ability, CatalogueEntry, ConditionDef, PlaceDef, Property, SheetPage } from "../src/metadata";
 import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
 
 const actor = (over: Partial<Actor> = {}): Actor => ({
@@ -75,7 +75,7 @@ test("a section with nothing to show for the character is left out, and its page
   expect(outline(bare)).toEqual([["Front", []], ["Back", []]]);
 });
 
-// VTT-840
+// VTT-1056
 test("with no sheet declared, one page of Values, Conditions and Abilities", () => {
   for (const sheet of [undefined, []]) {
     const pages = sheetFor(actor(), applied("dazed"), ABILITIES, PROPS, CONDS, sheet);
@@ -83,7 +83,7 @@ test("with no sheet declared, one page of Values, Conditions and Abilities", () 
   }
 });
 
-// VTT-840
+// VTT-1056
 test("the undeclared page leaves out each section with nothing to show", () => {
   const pages = sheetFor(actor({ abilityIds: [] }), [], ABILITIES, PROPS, CONDS, undefined);
   expect(outline(pages)).toEqual([["", [["Values", "values"]]]]);
@@ -91,7 +91,7 @@ test("the undeclared page leaves out each section with nothing to show", () => {
     .toEqual([["", []]]);
 });
 
-// VTT-840
+// VTT-1056
 test("the undeclared page's values follow the properties' order, then undeclared keys by key", () => {
   const a = actor({
     attributes: { zeal: 1, wit: 4, grit: 2, aim: 7 },
@@ -103,7 +103,7 @@ test("the undeclared page's values follow the properties' order, then undeclared
   ]);
 });
 
-// VTT-840 VTT-841
+// VTT-1056 VTT-841
 test("with no properties, the undeclared page draws each key the actor holds once, its own name included", () => {
   const a = actor({ attributes: {}, resources: { undefined: { current: 1, max: 2 }, vigor: { current: 3, max: 10 } } });
   const values = sheetFor(a, [], ABILITIES, undefined, CONDS, undefined)[0]!.sections[0]!;
@@ -168,4 +168,109 @@ test("an ability used at will stands in no section of a resource, whatever its u
   const odd: Ability[] = [{ id: "jab", name: "Jab", range: 1, maxTargets: 1, usage: { kind: "atWill", resource: "sparks" } }];
   const front = sheetFor(actor(), [], odd, PROPS, CONDS, SHEET)[0]!;
   expect(front.sections.filter((s) => s.kind === "abilities").map((s) => s.name)).toEqual(["Moves"]);
+});
+
+const CATALOGUE: CatalogueEntry[] = [
+  { id: "echo", name: "Echo Blade", description: "Rings when drawn.", form: "zulu", values: {} },
+  { id: "delta", name: "Delta Mail", description: "", form: "yankee", values: {} },
+];
+
+// Mike before kilo, so the window's order is not the keys' order.
+const PLACES: PlaceDef[] = [
+  { key: "mike", name: "Mike Rack", description: "Holds a few.", forms: ["zulu", "yankee"], copies: true, states: ["lima", "oscar"] },
+  { key: "kilo", name: "Kilo Hook", description: "Holds one.", forms: ["yankee"], copies: false, states: [] },
+];
+
+// Written out of id order, so an order by id is the sheet's and not the map's.
+const CARRIED: Record<string, Reference> = {
+  "r-c": { entryId: "delta", place: "mike", state: "oscar" },
+  "r-a": { entryId: "delta", place: "kilo", state: "" },
+  "r-b": { entryId: "echo", place: "mike", state: "lima" },
+};
+
+const refIds = (s: ShownSection | undefined) => (s?.kind === "places" ? s.references.map((r) => r.id) : undefined);
+
+// VTT-1055
+test("a section of places draws the references in the order it lists its places, then by reference id", () => {
+  const sheet: SheetPage[] = [{ name: "Front", sections: [{ name: "Gear", kind: "places", places: ["mike", "kilo"] }] }];
+  const front = sheetFor(actor({ references: CARRIED }), [], ABILITIES, PROPS, CONDS, sheet, CATALOGUE, PLACES)[0]!;
+  expect(outline([front])).toEqual([["Front", [["Gear", "places"]]]]);
+  expect(refIds(front.sections[0])).toEqual(["r-b", "r-c", "r-a"]);
+});
+
+// VTT-1055
+test("a section of places draws only the references held in the places it lists", () => {
+  const sheet: SheetPage[] = [
+    { name: "Front", sections: [{ name: "Rack", kind: "places", places: ["mike"] }] },
+    { name: "Back", sections: [{ name: "Hook", kind: "places", places: ["kilo"] }] },
+  ];
+  const [front, back] = sheetFor(actor({ references: CARRIED }), [], ABILITIES, PROPS, CONDS, sheet, CATALOGUE, PLACES);
+  expect(refIds(front!.sections[0])).toEqual(["r-b", "r-c"]);
+  expect(refIds(back!.sections[0])).toEqual(["r-a"]);
+});
+
+// VTT-1055
+test("a reference is named by its entry's name, else its entry's id, with its state, titled by the entry's description", () => {
+  const sheet: SheetPage[] = [{ name: "Front", sections: [{ name: "Gear", kind: "places", places: ["mike", "kilo"] }] }];
+  const shown = (catalogue: CatalogueEntry[] | undefined) => {
+    const s = sheetFor(actor({ references: CARRIED }), [], ABILITIES, PROPS, CONDS, sheet, catalogue, PLACES)[0]!.sections[0];
+    return s?.kind === "places" ? s.references : undefined;
+  };
+  expect(shown(CATALOGUE)).toEqual([
+    { id: "r-b", name: "Echo Blade", state: "lima", title: "Rings when drawn." },
+    { id: "r-c", name: "Delta Mail", state: "oscar", title: "" },
+    { id: "r-a", name: "Delta Mail", state: "", title: "" },
+  ]);
+  expect(shown([CATALOGUE[0]!])?.map((r) => r.name)).toEqual(["Echo Blade", "delta", "delta"]);
+  expect(shown(undefined)?.map((r) => [r.name, r.title])).toEqual([["echo", ""], ["delta", ""], ["delta", ""]]);
+});
+
+// VTT-1055 VTT-839
+test("a section of places holding none of the character's references is left out, and its page stays", () => {
+  const sheet: SheetPage[] = [{ name: "Front", sections: [
+    { name: "Life", kind: "values", values: ["vigor"] },
+    { name: "Hook", kind: "places", places: ["kilo"] },
+  ] }];
+  const inMike = { "r-b": CARRIED["r-b"]! };
+  for (const references of [inMike, {}]) {
+    expect(outline(sheetFor(actor({ references }), [], ABILITIES, PROPS, CONDS, sheet, CATALOGUE, PLACES)))
+      .toEqual([["Front", [["Life", "values"]]]]);
+  }
+});
+
+// VTT-1056
+test("with no sheet declared, a section per place holding a reference follows Abilities, in the window's order of places", () => {
+  const references = { "r-a": CARRIED["r-a"]!, "r-b": CARRIED["r-b"]! };
+  for (const sheet of [undefined, []]) {
+    const pages = sheetFor(actor({ references }), applied("dazed"), ABILITIES, PROPS, CONDS, sheet, CATALOGUE, PLACES);
+    expect(outline(pages)).toEqual([["", [
+      ["Values", "values"], ["Conditions", "conditions"], ["Abilities", "abilities"],
+      ["Mike Rack", "places"], ["Kilo Hook", "places"],
+    ]]]);
+  }
+});
+
+// VTT-1056
+test("with no sheet declared, a place the window does not hold follows those it holds, by key, named by its key", () => {
+  const references = { "r-a": { ...CARRIED["r-a"]!, place: "mike" }, "r-b": { ...CARRIED["r-b"]!, place: "kilo" } };
+  const names = (places: PlaceDef[] | undefined) =>
+    sheetFor(actor({ references }), [], [], PROPS, CONDS, undefined, CATALOGUE, places)[0]!.sections.map((s) => s.name);
+  expect(names([PLACES[1]!])).toEqual(["Values", "Kilo Hook", "mike"]);
+  for (const places of [undefined, []]) expect(names(places)).toEqual(["Values", "kilo", "mike"]);
+});
+
+// VTT-1056
+test("with no sheet declared, a place's section holds its references by reference id, named and titled as declared", () => {
+  const pages = sheetFor(actor({ references: CARRIED }), [], [], PROPS, CONDS, undefined, CATALOGUE, PLACES);
+  const mike = pages[0]!.sections.find((s) => s.name === "Mike Rack");
+  expect(mike?.kind === "places" && mike.references).toEqual([
+    { id: "r-b", name: "Echo Blade", state: "lima", title: "Rings when drawn." },
+    { id: "r-c", name: "Delta Mail", state: "oscar", title: "" },
+  ]);
+});
+
+// VTT-1056
+test("with no sheet declared, a character holding no reference is drawn no place's section", () => {
+  const pages = sheetFor(actor(), applied("dazed"), ABILITIES, PROPS, CONDS, undefined, CATALOGUE, PLACES);
+  expect(outline(pages)).toEqual([["", [["Values", "values"], ["Conditions", "conditions"], ["Abilities", "abilities"]]]]);
 });

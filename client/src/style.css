@@ -146,9 +146,9 @@ h3 { margin: 0 0 2px; font-size: 14px; }
   border-radius: 4px 4px 0 0; padding: 4px 10px; cursor: pointer; font: inherit;
 }
 .player .tab.sel { color: var(--ink); border-color: var(--line); background: #232830; }
-.player .values, .player .conditions { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 8px; }
-.player .value, .player .condition { font-size: 13px; }
-.player .value[title], .player .condition[title] { cursor: help; }
+.player .values, .player .conditions, .player .references { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 8px; }
+.player .value, .player .condition, .player .reference { font-size: 13px; }
+.player .value[title], .player .condition[title], .player .reference[title] { cursor: help; }
 .hint { color: var(--dim); font-size: 12px; margin: 0 0 8px; }
 .say { display: flex; gap: 6px; }
 .say input {
@@ -225,11 +225,13 @@ h3 { margin: 0 0 2px; font-size: 14px; }
 }
 .dm .chip:hover { border-color: var(--accent); }
 
-/* One actor per line. Without this each .control-actor is a flex item in
-   .row and several actors flow side by side with nothing marking where one
-   ends — unreadable exactly when a table has enough characters to need the
-   panel. */
-.control-actor { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* One actor per line. Without this each .control-actor, .ability-actor and
+   .reference-actor is a flex item in .row and several actors flow side by side
+   with nothing marking where one ends — unreadable exactly when a table has
+   enough characters to need the panel. A reference takes a line of its own. */
+.control-actor, .ability-actor, .reference-actor, .reference-row {
+  flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
 .control-name { font-weight: 600; }
 .held { display: inline-flex; gap: 4px; align-items: center; }
 /* Dim and small on purpose: away is a FACT ABOUT THE CONNECTION, not a

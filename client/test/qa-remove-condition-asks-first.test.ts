@@ -467,7 +467,7 @@ describe("what a removal draws and repaints", () => {
     }
   });
 
-  // An accepted removal clears nothing typed anywhere: D5 of
+  // VTT-1074: an accepted removal clears nothing typed anywhere: D5 of
   // docs/superpowers/plans/2026-11-23-remove-condition-asks-first.md.
   test("an accepted removal clears no field typed anywhere in the console", async () => {
     const st = world({ "act-l13": "Lera" }, { "act-l13": ["dazed"] });

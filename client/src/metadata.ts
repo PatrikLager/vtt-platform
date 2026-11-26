@@ -31,11 +31,12 @@ export interface Property {
 /** SheetUsage picks the abilities a sheet's section shows (VTT-831). */
 export type SheetUsage = { kind: "atWill" } | { kind: "resource"; resource: string };
 
-/** SheetSection is one section of a ruleset's sheet, by what it shows (VTT-831). */
+/** SheetSection is one section of a ruleset's sheet, by what it shows (VTT-831, VTT-1053). */
 export type SheetSection =
   | { name: string; kind: "values"; values: string[] }
   | { name: string; kind: "conditions" }
-  | { name: string; kind: "abilities"; abilities: SheetUsage[] };
+  | { name: string; kind: "abilities"; abilities: SheetUsage[] }
+  | { name: string; kind: "places"; places: string[] };
 
 /** SheetPage is one page of a ruleset's sheet (VTT-831). */
 export interface SheetPage {

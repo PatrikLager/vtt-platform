@@ -4,7 +4,7 @@
 // Offer every token in range, your own included: the ruleset format has no
 // target kind, and the server refuses an illegal use.
 
-import type { Ability, ConditionDef, Me, Property, SheetPage } from "../metadata";
+import type { Ability, CatalogueEntry, ConditionDef, Me, PlaceDef, Property, SheetPage } from "../metadata";
 import type { Actor, State } from "../state";
 import { affordable, controlledActors, offered, readLine, sheetFor, sheetNames, targetableTokens, type ShownSection } from "../player";
 import { moveToken, useAbility, setViewpoint, speakAs, speakOutOfCharacter, addWhisper } from "../commands";
@@ -27,11 +27,13 @@ export interface PlayerUIState {
   saying?: boolean;
 }
 
-/** PanelLayout is what the window's newest ruleset answer lays out (VTT-845, VTT-855). */
+/** PanelLayout is what the window's newest ruleset answer lays out (VTT-845, VTT-855, VTT-1055). */
 export interface PanelLayout {
   sheet?: SheetPage[] | undefined;
   conditions?: ConditionDef[] | undefined;
   freeUsageName?: string | undefined;
+  catalogue?: CatalogueEntry[] | undefined;
+  places?: PlaceDef[] | undefined;
 }
 
 /** A player's switch between the party members the gateway lets them watch (VTT-918). */
@@ -111,7 +113,8 @@ export function renderPlayerPanel(
     wrap.appendChild(el("p", "empty", "That actor has no token on the board yet."));
   }
 
-  const pages = sheetFor(actor, st.Conditions[actorId] ?? [], abilities, properties, layout?.conditions, layout?.sheet);
+  const pages = sheetFor(actor, st.Conditions[actorId] ?? [], abilities, properties, layout?.conditions, layout?.sheet,
+    layout?.catalogue, layout?.places);
   const page = pages.find((p) => p.name === ui.page) ?? pages[0]!;
   if (pages.length > 1) {
     const tabs = el("div", "tabs");
@@ -249,7 +252,7 @@ function costTitle(ab: Ability, actor: Actor, names: Namer, can: boolean, freeUs
   return `${names.resource(key)}${amount}, costs ${ab.usage.cost ?? 0}${can ? "" : " — not enough"}`;
 }
 
-// VTT-839 VTT-841 VTT-842 VTT-843
+// VTT-839 VTT-841 VTT-842 VTT-843 VTT-1055
 function drawSection(s: ShownSection, button: (ab: Ability) => HTMLElement): HTMLElement {
   switch (s.kind) {
     case "values": {
@@ -274,6 +277,15 @@ function drawSection(s: ShownSection, button: (ab: Ability) => HTMLElement): HTM
       const row = el("div", "row");
       for (const ab of s.abilities) row.appendChild(button(ab));
       return row;
+    }
+    case "places": {
+      const list = el("div", "references");
+      for (const r of s.references) {
+        const n = el("span", "reference", r.state === "" ? r.name : `${r.name} (${r.state})`);
+        if (r.title !== "") n.title = r.title;
+        list.appendChild(n);
+      }
+      return list;
     }
   }
 }

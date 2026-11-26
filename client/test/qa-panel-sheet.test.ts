@@ -269,7 +269,7 @@ test("a section with nothing to show is left out with its heading", () => {
   expect(el.textContent).not.toContain("Missing");
 });
 
-// VTT-840
+// VTT-1056
 test("no sheet: one page of Values, Conditions, Abilities, no tab", () => {
   const r = new Rig(actor("a1", "Ann", { attributes: { str: 3 }, abilityIds: ["x"] }));
   r.abilities = [ab("x", "Slash", { kind: "atWill" })];
@@ -283,7 +283,7 @@ test("no sheet: one page of Values, Conditions, Abilities, no tab", () => {
   }
 });
 
-// VTT-840
+// VTT-1056
 test("no sheet: each section with nothing to show is left out", () => {
   const r = new Rig(actor("a1", "Ann"));
   expect(names(r.draw())).toEqual([]);
@@ -294,7 +294,7 @@ test("no sheet: each section with nothing to show is left out", () => {
   expect(names(r.draw())).toEqual(["Values"]);
 });
 
-// VTT-840
+// VTT-1056
 test("no sheet: values in the properties' order", () => {
   const r = new Rig(
     actor("a1", "Ann", {
@@ -306,7 +306,7 @@ test("no sheet: values in the properties' order", () => {
   expect(texts(within(section(r.draw(), "Values"), ".value"))).toEqual(["Zed 2", "Em 1/2", "Ay 1"]);
 });
 
-// VTT-840
+// VTT-1056
 test("no sheet: by key, an attribute before a resource of the same key", () => {
   const r = new Rig(
     actor("a1", "Ann", {

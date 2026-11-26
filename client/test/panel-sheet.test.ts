@@ -2,7 +2,7 @@ import "./support/dom";
 import { test, expect } from "bun:test";
 import { renderPlayerPanel, type PanelLayout, type PlayerUIState, type Switcher } from "../src/view/player";
 import { newState, type State } from "../src/state";
-import type { Ability, ConditionDef, Me, Property, SheetPage } from "../src/metadata";
+import type { Ability, CatalogueEntry, ConditionDef, Me, PlaceDef, Property, SheetPage } from "../src/metadata";
 import { ActorKind } from "../../contract/gen/ts/vtt/v1/events_pb";
 import { create } from "@bufbuild/protobuf";
 import { CommandResultSchema } from "../../contract/gen/ts/vtt/v1/commands_pb";
@@ -154,7 +154,7 @@ test("a section with nothing to show for the character draws no heading", () => 
   expect(draw({ st }).h3()).toEqual(["Moves", "Costly"]);
 });
 
-// VTT-840
+// VTT-1056
 test("with no sheet declared the panel draws no tab and one page of Values, Conditions and Abilities", () => {
   for (const sheet of [undefined, []]) {
     const p = draw({ layout: { sheet, conditions: CONDS } });
@@ -259,4 +259,63 @@ test("an ability armed on one page keeps its targets drawn on another", () => {
   expect(p.h3()).toEqual(["Numbers"]);
   expect(Array.from(p.node().querySelectorAll("h3"), (h) => h.textContent)).toContain("Targets (range 1)");
   expect(p.node().querySelector('[data-action="use-ability"]')).not.toBeNull();
+});
+
+const CATALOGUE: CatalogueEntry[] = [
+  { id: "echo", name: "Echo Blade", description: "Rings when drawn.", form: "zulu", values: {} },
+  { id: "delta", name: "Delta Mail", description: "", form: "yankee", values: {} },
+];
+const PLACES: PlaceDef[] = [
+  { key: "mike", name: "Mike Rack", description: "", forms: ["zulu", "yankee"], copies: true, states: ["lima", "oscar"] },
+  { key: "kilo", name: "Kilo Hook", description: "", forms: ["yankee"], copies: false, states: [] },
+];
+const GEAR: SheetPage[] = [{ name: "Front", sections: [
+  { name: "Life", kind: "values", values: ["vigor"] },
+  { name: "Gear", kind: "places", places: ["mike", "kilo"] },
+] }];
+
+function carrying(references: State["Actors"][string]["references"]): State {
+  const st = table();
+  st.Actors["a1"]!.references = references;
+  return st;
+}
+
+const CARRIED = {
+  "r-c": { entryId: "delta", place: "mike", state: "oscar" },
+  "r-a": { entryId: "delta", place: "kilo", state: "" },
+  "r-b": { entryId: "echo", place: "mike", state: "lima" },
+};
+const references = (p: ReturnType<typeof draw>) =>
+  Array.from(p.node().querySelectorAll(".sheet .references > .reference"), (r) => [r.textContent, r.getAttribute("title")]);
+
+// VTT-1055
+test("a section of places draws each reference by its entry's name and its state, titled by the entry's description", () => {
+  const p = draw({ st: carrying(CARRIED), layout: { sheet: GEAR, conditions: CONDS, catalogue: CATALOGUE, places: PLACES } });
+  expect(p.h3()).toEqual(["Life", "Gear"]);
+  expect(references(p)).toEqual([["Echo Blade (lima)", "Rings when drawn."], ["Delta Mail (oscar)", null], ["Delta Mail", null]]);
+});
+
+// VTT-1055
+test("a reference whose entry the window's catalogue does not hold is drawn by the entry's id, untitled", () => {
+  for (const catalogue of [[CATALOGUE[0]!], undefined]) {
+    const p = draw({ st: carrying(CARRIED), layout: { sheet: GEAR, conditions: CONDS, catalogue, places: PLACES } });
+    expect(references(p).map(([text]) => text)).toEqual([catalogue ? "Echo Blade (lima)" : "echo (lima)", "delta (oscar)", "delta"]);
+  }
+});
+
+// VTT-1055 VTT-839
+test("a section of places with none of the character's references draws no heading", () => {
+  const p = draw({ st: carrying({}), layout: { sheet: GEAR, conditions: CONDS, catalogue: CATALOGUE, places: PLACES } });
+  expect(p.h3()).toEqual(["Life"]);
+  expect(p.node().querySelector(".references")).toBeNull();
+});
+
+// VTT-1056
+test("with no sheet declared the panel draws, after Abilities, a section per place holding a reference, named as the window names it", () => {
+  const p = draw({ st: carrying(CARRIED), layout: { conditions: CONDS, catalogue: CATALOGUE, places: PLACES } });
+  expect(p.node().querySelector(".tabs")).toBeNull();
+  expect(p.h3()).toEqual(["Values", "Conditions", "Abilities", "Mike Rack", "Kilo Hook"]);
+  expect(references(p).map(([text]) => text)).toEqual(["Echo Blade (lima)", "Delta Mail (oscar)", "Delta Mail"]);
+  const bare = draw({ st: carrying(CARRIED), layout: { conditions: CONDS } });
+  expect(bare.h3()).toEqual(["Values", "Conditions", "Abilities", "kilo", "mike"]);
 });
